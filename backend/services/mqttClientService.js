@@ -4,13 +4,13 @@ const logger = require('../utils/logger');
 
 /**
  * 单例 MQTT 客户端服务
- * - 自动连接到 mqtt://easysmart.local:1883
+ * - 自动连接到 mqtt://127.0.0.1:1883
  * - 支持订阅、发布、取消订阅
  * - 支持注册消息处理回调（多个）
  * - 具有重连与状态查询
  */
 
-const BROKER_URL = process.env.MQTT_CLIENT_URL || 'mqtt://easysmart.local:1883';
+const BROKER_URL = process.env.MQTT_CLIENT_URL || 'mqtt://127.0.0.1:1883';
 const CLIENT_ID = process.env.MQTT_CLIENT_ID || `fb-client-${os.hostname()}-${Date.now()}`;
 
 let state = {
