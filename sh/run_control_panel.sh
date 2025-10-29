@@ -1,6 +1,9 @@
 #!/usr/bin/env sh
 set -e
 
+# 替换 Termux 源为清华大学镜像
+sed -i 's@^\(deb.*stable main\)$@#\1\ndeb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main stable main@' $PREFIX/etc/apt/sources.list
+
 # 固定安装目录（Termux 下通常为 $HOME）
 INSTALL_PARENT="${HOME}"
 WORK_DIR="${INSTALL_PARENT}/control-panel-main"
