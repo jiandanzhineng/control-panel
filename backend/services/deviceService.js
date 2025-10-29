@@ -275,6 +275,7 @@ async function handleDeviceMessage(message) {
     if (device) {
       device.lastReport = Date.now();
       if (!device.connected) {
+        logger.info('设备已连接', { deviceId });
         device.connected = true;
       }
       saveDevices();

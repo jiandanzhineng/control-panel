@@ -25,10 +25,6 @@ app.use((req, res, next) => {
 try {
   const mqttClient = require('./services/mqttClientService');
   mqttClient.init();
-  // 可选：注册一个日志处理器
-  mqttClient.onMessage(({ topic, text }) => {
-    logger.debug('[mqtt] message', { topic, text: text.slice(0, 200) });
-  });
   // 注册设备消息处理器
   mqttClient.onMessage(deviceService.handleDeviceMessage);
 } catch (e) {
