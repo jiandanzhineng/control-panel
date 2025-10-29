@@ -3,6 +3,8 @@ const cors = require('cors');
 const logger = require('./utils/logger');
 // 引入设备服务（原 deviceStore 重构后）
 const deviceService = require('./services/deviceService');
+// 引入 MQTT 服务
+const mqttService = require('./services/mqttService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -33,6 +35,21 @@ try {
 
 // 初始化设备列表（加载持久化数据并启动离线检查循环）
 deviceService.initDeviceList();
+
+// 自动启动 MQTT 服务（mosquitto broker）
+try {
+  const result = mqttService.start();
+  if (result.running) {
+    logger.info('MQTT service started successfully', { 
+      pid: result.pid, 
+      port: result.port || 1883 
+    });
+  }
+} catch (error) {
+  logger.warn('Failed to start MQTT service, continuing without it', { 
+    error: error.message 
+  });
+}
 
 // 路由：将实现与接口分离
 app.use('/api/mqtt', require('./routes/mqtt'));
@@ -67,6 +84,22 @@ if (require.main === module) {
 }
 
 // 进程退出清理设备服务定时器
-process.on('SIGINT', deviceService.cleanup);
+// 进程退出时的清理工作
+process.on('SIGINT', () => {
+  logger.info('Received SIGINT, cleaning up...');
+  
+  // 清理设备服务
+  deviceService.cleanup();
+  
+  // 停止 MQTT 服务
+  try {
+    mqttService.stop();
+    logger.info('MQTT service stopped');
+  } catch (error) {
+    logger.warn('Error stopping MQTT service', { error: error.message });
+  }
+  
+  process.exit(0);
+});
 
 module.exports = app;
