@@ -11,8 +11,8 @@ if command -v pkg >/dev/null 2>&1; then
 fi
 
 # 下载文件，优先使用 wget，缺失则使用 curl
-ZIP_URL="https://www.ezsapi.top/control-panel-main.zip"
-ZIP_FILE="${INSTALL_PARENT}/control-panel-main.zip"
+ZIP_URL="https://www.ezsapi.top/control-panel-stable.zip"
+ZIP_FILE="${INSTALL_PARENT}/control-panel-stable.zip"
 
 if command -v wget >/dev/null 2>&1; then
   wget -O "$ZIP_FILE" "$ZIP_URL"
