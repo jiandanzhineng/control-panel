@@ -50,7 +50,7 @@ const state = {
       if (!deviceId) return sendLog('warn', '设备未映射，忽略属性设置', { logicalId });
       try {
         deviceService.notifyDeviceUpdate(deviceId, properties || {});
-        sendLog('debug', '下发设备属性', { logicalId, deviceId, properties });
+        // sendLog('debug', '下发设备属性', { logicalId, deviceId, properties });
       } catch (e) {
         sendLog('error', '下发设备属性失败', { logicalId, deviceId, error: e?.message || String(e) });
       }
@@ -141,6 +141,28 @@ function runInSandbox(transformedCode, absPath) {
     module: { exports: {} },
     exports: {},
     console,
+    // 定时器相关方法
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    setImmediate,
+    clearImmediate,
+    // 时间相关
+    Date,
+    // 数学相关
+    Math,
+    // 常用全局对象
+    JSON,
+    parseInt,
+    parseFloat,
+    isNaN,
+    isFinite,
+    // 错误处理
+    Error,
+    TypeError,
+    ReferenceError,
+    SyntaxError,
   };
   const context = vm.createContext(sandbox, { name: 'GameplaySandbox' });
   const script = new vm.Script(transformedCode, { filename: absPath, displayErrors: true });

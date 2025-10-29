@@ -69,7 +69,7 @@ function init() {
   client.on('message', (topic, payload, packet) => {
     const text = safePayloadToString(payload);
     // 内部日志（截断以防过长）
-    logger.debug('MQTT message', { topic, payload: text.slice(0, 500) });
+    // logger.debug('MQTT message', { topic, payload: text.slice(0, 500) });
     // 调用用户注册的处理器
     for (const fn of state.handlers) {
       try { fn({ topic, payload, text, packet }); } catch (e) {

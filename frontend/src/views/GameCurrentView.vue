@@ -1,13 +1,14 @@
 <template>
   <div class="page">
-    <h1>当前运行游戏</h1>
     <section class="card">
       <div class="row space-between">
         <div class="row" style="flex-wrap: wrap; gap: 8px 12px;">
           <button @click="reloadHtml" :disabled="loading">{{ loading ? '加载中...' : '刷新页面' }}</button>
+          <button @click="stopGame" :disabled="stopping" class="danger">{{ stopping ? '停止中...' : '停止游戏' }}</button>
         </div>
         <div class="status">
           <span v-if="error" class="error">{{ error }}</span>
+          <span v-if="stopError" class="error">{{ stopError }}</span>
         </div>
       </div>
     </section>
@@ -21,11 +22,15 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { useRouter } from 'vue-router';
 
+const router = useRouter();
 const containerRef = ref<HTMLDivElement | null>(null);
 const loading = ref(false);
 const error = ref('');
 const empty = ref(false);
+const stopping = ref(false);
+const stopError = ref('');
 
 let cleanupRunner: () => void = () => {};
 let appendedStyles: HTMLStyleElement[] = [];
@@ -69,6 +74,24 @@ async function loadHtml() {
 }
 
 function reloadHtml() { loadHtml(); }
+
+async function stopGame() {
+  stopping.value = true;
+  stopError.value = '';
+  try {
+    const res = await fetch('/api/games/stop-current', { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) {
+      throw new Error(data?.message || '停止游戏失败');
+    }
+    // 停止成功，跳转回游戏列表
+    router.push({ name: 'gamelist' });
+  } catch (e: any) {
+    stopError.value = e?.message || '停止游戏失败';
+  } finally {
+    stopping.value = false;
+  }
+}
 
 function clearContainer() {
   const container = containerRef.value;
@@ -162,6 +185,7 @@ function executeScripts(scripts: HTMLScriptElement[]) {
 .error { color: #e11d48; }
 .muted { color: #6b7280; }
 button { padding: 6px 12px; border: 1px solid #0ea5e9; background: #0ea5e9; color: white; border-radius: 6px; cursor: pointer; }
+button.danger { border-color: #e11d48; background: #e11d48; }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
 .embedded-html { min-height: 240px; border: 1px dashed #e5e7eb; border-radius: 8px; padding: 8px; background: #fff; }
 </style>
