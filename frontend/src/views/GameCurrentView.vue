@@ -148,8 +148,8 @@ function executeScripts(scripts: HTMLScriptElement[]) {
 
   // 包装 EventSource，用于路由离开时关闭连接，避免泄漏
   try {
-    (window as any).EventSource = function(...args: any[]) {
-      const es = new originals.EventSource(...args);
+    (window as any).EventSource = function(url: string | URL, config?: EventSourceInit) {
+      const es = new originals.EventSource(url as any, config as any);
       try { esList.push(es); } catch {}
       return es;
     } as any;

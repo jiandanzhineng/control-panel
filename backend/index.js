@@ -25,10 +25,10 @@ app.use((req, res, next) => {
 
 // 先初始化 MQTT 客户端单例（自动连接）
 try {
-  const mqttClient = require('./services/mqttClientService');
-  mqttClient.init();
-  // 注册设备消息处理器
-  mqttClient.onMessage(deviceService.handleDeviceMessage);
+  // const mqttClient = require('./services/mqttClientService');
+  // mqttClient.init();
+  // // 注册设备消息处理器
+  // mqttClient.onMessage(deviceService.handleDeviceMessage);
 } catch (e) {
   logger.warn('MQTT client init failed', e?.message || e);
 }
