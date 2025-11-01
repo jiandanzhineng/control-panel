@@ -147,12 +147,39 @@ import { Monitor, VideoPlay, Connection } from '@element-plus/icons-vue'
 
 /* 响应式设计 */
 @media (max-width: 768px) {
+  .home-page {
+    padding: 0;
+  }
+  
+  .welcome-card {
+    margin-bottom: 16px;
+  }
+  
   .feature-cards {
     margin-bottom: 16px;
   }
   
+  .feature-cards .el-col {
+    margin-bottom: 12px;
+  }
+  
   .feature-content {
-    padding: 16px 8px;
+    padding: 20px 12px;
+  }
+  
+  .feature-icon {
+    font-size: 28px;
+    margin-bottom: 10px;
+  }
+  
+  .feature-content h3 {
+    font-size: 16px;
+    margin-bottom: 6px;
+  }
+  
+  .feature-content p {
+    font-size: 13px;
+    line-height: 1.4;
   }
   
   .welcome-content {
@@ -161,6 +188,76 @@ import { Monitor, VideoPlay, Connection } from '@element-plus/icons-vue'
   
   .welcome-content h2 {
     font-size: 20px;
+    margin-bottom: 8px;
+  }
+  
+  .welcome-content p {
+    font-size: 14px;
+  }
+  
+  .card-header {
+    font-size: 16px;
+  }
+  
+  .header-icon {
+    font-size: 18px;
+  }
+  
+  .info-card {
+    margin-bottom: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .welcome-card {
+    margin-bottom: 12px;
+  }
+  
+  .feature-cards {
+    margin-bottom: 12px;
+  }
+  
+  .feature-cards .el-col {
+    margin-bottom: 8px;
+  }
+  
+  .feature-content {
+    padding: 16px 8px;
+  }
+  
+  .feature-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+  }
+  
+  .feature-content h3 {
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+  
+  .feature-content p {
+    font-size: 12px;
+  }
+  
+  .welcome-content {
+    padding: 12px 0;
+  }
+  
+  .welcome-content h2 {
+    font-size: 18px;
+    margin-bottom: 6px;
+  }
+  
+  .welcome-content p {
+    font-size: 13px;
+  }
+  
+  .card-header {
+    font-size: 15px;
+  }
+  
+  .header-icon {
+    font-size: 16px;
   }
 }
 </style>

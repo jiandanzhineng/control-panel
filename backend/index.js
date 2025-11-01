@@ -5,6 +5,8 @@ const logger = require('./utils/logger');
 const deviceService = require('./services/deviceService');
 // 引入 MQTT 服务
 const mqttService = require('./services/mqttService');
+// 引入日志服务
+const logService = require('./services/logService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -56,13 +58,15 @@ app.use('/api/mqtt', require('./routes/mqtt'));
 app.use('/api/network', require('./routes/network'));
 app.use('/api/mdns', require('./routes/mdns'));
 app.use('/api/mqtt-client', require('./routes/mqttClient'));
-// 设备管理与设备类型
+// 设备管理路由
 app.use('/api/devices', require('./routes/devices'));
 app.use('/api/device-types', require('./routes/deviceTypes'));
-// 游戏列表管理
+// 游戏管理路由
 app.use('/api/games', require('./routes/games'));
-// 玩法运行期接口（嵌入式HTML + SSE）
+// 游戏玩法路由
 app.use('/api/games', require('./routes/gameplay'));
+// 日志管理路由
+app.use('/api/logs', require('./routes/logs'));
 
 // 健康检查与示例接口
 app.get('/api/hello', (req, res) => {

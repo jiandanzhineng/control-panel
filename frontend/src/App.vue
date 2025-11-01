@@ -50,6 +50,11 @@
             <el-icon><Connection /></el-icon>
             <template #title>网络设置</template>
           </el-menu-item>
+          
+          <el-menu-item index="/logs">
+            <el-icon><Document /></el-icon>
+            <template #title>日志管理</template>
+          </el-menu-item>
         </el-menu>
       </div>
 
@@ -58,6 +63,14 @@
         <!-- 顶部工具栏 -->
         <div class="main-header">
           <div class="header-content">
+            <!-- 移动端菜单按钮 -->
+            <el-button 
+              v-if="isMobile"
+              :icon="Menu" 
+              @click="toggleSidebar"
+              class="mobile-menu-btn"
+              text
+            />
             <el-breadcrumb separator="/">
               <el-breadcrumb-item :to="{ path: '/home' }">首页</el-breadcrumb-item>
               <el-breadcrumb-item v-if="$route.meta.title && $route.path !== '/home'">{{ $route.meta.title }}</el-breadcrumb-item>
@@ -83,7 +96,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Present } from '@element-plus/icons-vue'
+import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Present, Menu, Document } from '@element-plus/icons-vue'
 
 const isCollapsed = ref(false)
 const isMobile = ref(false)
@@ -224,6 +237,19 @@ html, body {
 
 .header-content {
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mobile-menu-btn {
+  color: #606266 !important;
+  padding: 8px !important;
+  min-height: auto !important;
+}
+
+.mobile-menu-btn:hover {
+  background-color: rgba(0, 0, 0, 0.05) !important;
 }
 
 .main-content {
@@ -247,13 +273,17 @@ html, body {
 /* 移动端适配 */
 @media (max-width: 768px) {
   .sidebar {
-    transform: translateX(-100%);
     transition: transform 0.3s ease, width 0.3s ease;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+    width: 240px !important;
+  }
+  
+  .sidebar.sidebar-collapsed {
+    transform: translateX(-100%);
   }
   
   .sidebar:not(.sidebar-collapsed) {
     transform: translateX(0);
-    width: 200px !important;
   }
   
   .main-container {
@@ -261,17 +291,62 @@ html, body {
   }
   
   .main-header {
-    padding: 0 16px;
+    padding: 0 12px;
+    height: 56px;
   }
   
   .main-content {
-    padding: 16px;
+    padding: 12px;
+  }
+  
+  .sidebar-header {
+    height: 56px;
+    padding: 0 12px;
+  }
+  
+  .logo {
+    font-size: 16px;
+  }
+  
+  .toggle-btn {
+    padding: 12px !important;
+  }
+  
+  .sidebar-menu .el-menu-item {
+    height: 48px;
+    line-height: 48px;
+    font-size: 14px;
   }
 }
 
 @media (max-width: 480px) {
   .main-content {
-    padding: 12px;
+    padding: 8px;
+  }
+  
+  .main-header {
+    padding: 0 8px;
+    height: 52px;
+  }
+  
+  .sidebar:not(.sidebar-collapsed) {
+    width: 220px !important;
+  }
+  
+  .sidebar-header {
+    padding: 0 8px;
+    height: 52px;
+  }
+  
+  .sidebar-menu .el-menu-item {
+    height: 44px;
+    line-height: 44px;
+    font-size: 13px;
+    padding-left: 16px !important;
+  }
+  
+  .logo {
+    font-size: 15px;
   }
 }
 </style>

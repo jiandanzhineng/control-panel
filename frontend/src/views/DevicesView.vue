@@ -42,6 +42,7 @@
         <span>设备列表</span>
       </template>
       
+      <!-- 桌面端表格 -->
       <el-table 
         :data="devices" 
         style="width: 100%"
@@ -49,6 +50,7 @@
         @current-change="handleCurrentChange"
         v-loading="loading"
         empty-text="暂无设备数据"
+        class="desktop-table"
       >
         <el-table-column prop="type" label="类型" width="120">
           <template #default="{ row }">
@@ -96,6 +98,57 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <!-- 移动端卡片列表 -->
+      <div class="mobile-device-list">
+        <div 
+          v-for="device in devices" 
+          :key="device.id" 
+          class="mobile-device-card"
+        >
+          <div class="device-card-header">
+            <div class="device-type">
+              {{ deviceTypeMap[device.type] || device.type }}
+            </div>
+            <el-tag :type="device.connected ? 'success' : 'danger'" size="small">
+              {{ device.connected ? '在线' : '离线' }}
+            </el-tag>
+          </div>
+          
+          <div class="device-card-content">
+            <div class="device-info-row">
+              <span class="info-label">设备ID:</span>
+              <span class="info-value">{{ device.id }}</span>
+            </div>
+            
+            <div class="device-info-row">
+              <span class="info-label">电量:</span>
+              <el-tag 
+                :type="getBatteryTagType(device.data?.battery)" 
+                size="small"
+              >
+                {{ formatBattery(device.data?.battery) }}
+              </el-tag>
+            </div>
+            
+            <div class="device-info-row">
+              <span class="info-label">最后上报:</span>
+              <span class="info-value">{{ formatLastReport(device.lastReport) }}</span>
+            </div>
+          </div>
+          
+          <div class="device-card-actions">
+            <el-button 
+              type="danger" 
+              size="small"
+              :icon="Delete"
+              @click="removeDevice(device.id)"
+            >
+              删除
+            </el-button>
+          </div>
+        </div>
+      </div>
     </el-card>
 
     <el-card v-if="selectedDevice" shadow="never" style="margin-top: 10px">
@@ -452,15 +505,85 @@ function formatLastReport(timestamp: string | null) {
   gap: 12px;
 }
 
+/* 移动端卡片样式 */
+.mobile-device-list {
+  display: none;
+}
+
+.mobile-device-card {
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.device-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.device-type {
+  font-weight: 600;
+  font-size: 16px;
+  color: #303133;
+}
+
+.device-card-content {
+  margin-bottom: 12px;
+}
+
+.device-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.device-info-row:last-child {
+  margin-bottom: 0;
+}
+
+.info-label {
+  color: #606266;
+  font-weight: 500;
+  min-width: 80px;
+}
+
+.info-value {
+  color: #303133;
+  flex: 1;
+  text-align: right;
+  word-break: break-all;
+}
+
+.device-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
+}
+
 /* 移动端适配 */
 @media (max-width: 768px) {
   .devices-page {
-    padding: 15px;
+    padding: 12px;
+  }
+  
+  .stats-card {
+    margin-bottom: 16px;
   }
   
   .stats-header {
     flex-direction: column;
     align-items: stretch;
+    gap: 16px;
   }
   
   .stats-info {
@@ -480,20 +603,57 @@ function formatLastReport(timestamp: string | null) {
   .device-detail-header .el-button-group {
     align-self: center;
   }
+  
+  /* 隐藏桌面端表格，显示移动端卡片 */
+  .desktop-table {
+    display: none;
+  }
+  
+  .mobile-device-list {
+    display: block;
+  }
 }
 
 @media (max-width: 480px) {
   .devices-page {
-    padding: 10px;
+    padding: 8px;
+  }
+  
+  .stats-card {
+    margin-bottom: 12px;
   }
   
   .stats-info {
     flex-direction: column;
-    gap: 15px;
+    gap: 12px;
+    text-align: center;
+  }
+  
+  .actions {
+    flex-direction: column;
+    gap: 8px;
   }
   
   .actions .el-button {
-    flex: 1;
+    width: 100%;
+  }
+  
+  .mobile-device-card {
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+  
+  .device-type {
+    font-size: 15px;
+  }
+  
+  .device-info-row {
+    font-size: 13px;
+    margin-bottom: 6px;
+  }
+  
+  .info-label {
+    min-width: 70px;
   }
 }
 </style>
