@@ -53,17 +53,17 @@ function init() {
 
   client.on('reconnect', () => {
     state.connecting = true;
-    // logger.info('MQTT client reconnecting...', { url: BROKER_URL });
+    logger.info('MQTT client reconnecting...', { url: BROKER_URL });
   });
 
   client.on('close', () => {
     state.connected = false;
-    // logger.warn('MQTT client connection closed');
+    logger.warn('MQTT client connection closed');
   });
 
   client.on('error', (err) => {
     state.lastError = err?.message || String(err);
-    // logger.error('MQTT client error', state.lastError);
+    logger.error('MQTT client error', state.lastError);
   });
 
   client.on('message', (topic, payload, packet) => {

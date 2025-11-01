@@ -27,10 +27,10 @@ app.use((req, res, next) => {
 
 // 先初始化 MQTT 客户端单例（自动连接）
 try {
-  // const mqttClient = require('./services/mqttClientService');
-  // mqttClient.init();
-  // // 注册设备消息处理器
-  // mqttClient.onMessage(deviceService.handleDeviceMessage);
+  const mqttClient = require('./services/mqttClientService');
+  mqttClient.init();
+  // 注册设备消息处理器
+  mqttClient.onMessage(deviceService.handleDeviceMessage);
 } catch (e) {
   logger.warn('MQTT client init failed', e?.message || e);
 }
@@ -38,20 +38,23 @@ try {
 // 初始化设备列表（加载持久化数据并启动离线检查循环）
 deviceService.initDeviceList();
 
-// 自动启动 MQTT 服务（mosquitto broker）
-try {
-  const result = mqttService.start();
-  if (result.running) {
-    logger.info('MQTT service started successfully', { 
-      pid: result.pid, 
-      port: result.port || 1883 
+// 自动启动 MQTT 服务（mosquitto broker 或 EMQX）
+(async () => {
+  try {
+    const result = await mqttService.start();
+    if (result.running) {
+      logger.info('MQTT service started successfully', { 
+        broker: result.broker,
+        pid: result.pid, 
+        port: result.port || 1883 
+      });
+    }
+  } catch (error) {
+    logger.warn('Failed to start MQTT service, continuing without it', { 
+      error: error.message 
     });
   }
-} catch (error) {
-  logger.warn('Failed to start MQTT service, continuing without it', { 
-    error: error.message 
-  });
-}
+})();
 
 // 路由：将实现与接口分离
 app.use('/api/mqtt', require('./routes/mqtt'));
@@ -89,7 +92,7 @@ if (require.main === module) {
 
 // 进程退出清理设备服务定时器
 // 进程退出时的清理工作
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   logger.info('Received SIGINT, cleaning up...');
   
   // 清理设备服务
@@ -97,7 +100,7 @@ process.on('SIGINT', () => {
   
   // 停止 MQTT 服务
   try {
-    mqttService.stop();
+    await mqttService.stop();
     logger.info('MQTT service stopped');
   } catch (error) {
     logger.warn('Error stopping MQTT service', { error: error.message });
