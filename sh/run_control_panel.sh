@@ -41,7 +41,7 @@ fi
 # 进入目录并安装依赖
 cd "$WORK_DIR"
 if [ -f package.json ]; then
-  npm install
+  npm install --production
 fi
 
 # 安装 backend 依赖

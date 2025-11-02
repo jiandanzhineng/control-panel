@@ -64,11 +64,21 @@
         <p v-if="mqttClientStatus.lastError" class="error">最后错误：{{ mqttClientStatus.lastError }}</p>
       </div>
     </section>
+
+    <!-- 悬浮日志组件 -->
+    <div class="floating-log">
+      <RealTimeLog 
+        :module-filter="['emqx', 'mqtt', 'mdns']" 
+        height="120px"
+        :compact="true"
+      />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue';
+import RealTimeLog from '@/components/RealTimeLog.vue';
 
 // mDNS 状态
 const ips = ref<Array<{ interface: string; ip: string; cidr: number }>>([]);
@@ -80,8 +90,12 @@ const ipsUpdated = ref(false);
 const mdnsBusy = ref(false);
 const mdnsError = ref('');
 const mdnsList = ref<Array<{ id: string; ip: string; pid?: number; running: boolean }>>([]);
-const currentMdnsIp = computed(() => mdnsList.value.find(r => r.running)?.ip || '');
+const currentMdnsIp = computed(() => {
+  if (!Array.isArray(mdnsList.value)) return '';
+  return mdnsList.value.find(r => r.running)?.ip || '';
+});
 const mdnsStatusText = computed(() => {
+  if (!Array.isArray(mdnsList.value)) return '已停止';
   const any = mdnsList.value.find(r => r.running);
   return any ? '运行中' : '已停止';
 });
@@ -256,7 +270,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page { max-width: 960px; margin: 40px auto; padding: 0 24px; text-align: left; }
+.page { max-width: 960px; margin: 40px auto; padding: 0 24px 150px 24px; text-align: left; }
 .card { margin-top: 24px; padding: 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
 .row { display: flex; gap: 12px; align-items: center; }
 .ip-list { list-style: none; padding: 0; }
@@ -268,4 +282,18 @@ onMounted(async () => {
 .status p { margin: 6px 0; }
 button { padding: 6px 12px; border: 1px solid #0ea5e9; background: #0ea5e9; color: white; border-radius: 6px; cursor: pointer; }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* 悬浮日志组件样式 */
+.floating-log {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  border-top: 2px solid #0ea5e9;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  padding: 8px;
+  height: 136px;
+}
 </style>

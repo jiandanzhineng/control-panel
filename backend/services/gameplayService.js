@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const logger = require('../utils/logger');
+const logService = require('./logService');
 const mqttClient = require('./mqttClientService');
 const deviceService = require('./deviceService');
 
@@ -96,9 +96,16 @@ function removeLogCallback(cb) { if (typeof cb === 'function') state.logCallback
 
 function sendLog(level, message, extra = {}) {
   const payload = { ts: Date.now(), level, message, extra };
-  try { logger[level] ? logger[level](message, extra) : logger.info(message, extra); } catch (_) {}
+  try { 
+    const logMessage = extra && Object.keys(extra).length > 0 ? `${message} ${JSON.stringify(extra)}` : message;
+    if (logService[level]) {
+      logService[level]('GamePlay', logMessage);
+    } else {
+      logService.info('GamePlay', logMessage);
+    }
+  } catch (_) {}
   if (state.logCallback) {
-    try { state.logCallback(payload); } catch (e) { logger.warn('logCallback error', e?.message || e); }
+    try { state.logCallback(payload); } catch (e) { logService.warn('GamePlay', `logCallback error: ${e?.message || e}`); }
   }
   // 广播到所有订阅者
   try {
@@ -245,7 +252,7 @@ function notifyState(delta = {}) {
   try {
     if (!delta || typeof delta !== 'object') return;
     for (const cb of state.stateUpdateCallbacks) {
-      try { cb(delta); } catch (e) { logger.warn('stateUpdate callback error', e?.message || e); }
+      try { cb(delta); } catch (e) { logService.warn('GamePlay', `stateUpdate callback error: ${e?.message || e}`); }
     }
   } catch (_) {}
 }
@@ -253,7 +260,7 @@ function notifyUi(delta = {}) {
   try {
     if (!delta || typeof delta !== 'object') return;
     for (const cb of state.uiUpdateCallbacks) {
-      try { cb(delta); } catch (e) { logger.warn('uiUpdate callback error', e?.message || e); }
+      try { cb(delta); } catch (e) { logService.warn('GamePlay', `uiUpdate callback error: ${e?.message || e}`); }
     }
   } catch (_) {}
 }

@@ -1,151 +1,287 @@
 <template>
-  <div class="page">
-    <h1>启动前配置</h1>
-
-    <section class="card">
-      <div class="row space-between">
-        <div>
-          <h2 class="title">{{ game?.name || '未知玩法' }}</h2>
-          <p v-if="game?.description" class="desc">{{ game?.description }}</p>
-          <div class="meta">
-            <span>版本：<strong>{{ game?.version || '-' }}</strong></span>
-            <span>最后游玩：{{ formatLastPlayed(game?.lastPlayed) }}</span>
+  <div class="game-start-config-page">
+    <el-card shadow="never" class="config-header-card">
+      <template #header>
+        <div class="card-header">
+          <el-icon><Setting /></el-icon>
+          <span>启动前配置</span>
+        </div>
+      </template>
+      <div class="game-overview">
+        <div class="game-basic-info">
+          <h2 class="game-title">{{ game?.name || '未知玩法' }}</h2>
+          <p v-if="game?.description" class="game-description">{{ game?.description }}</p>
+          <div class="game-meta">
+            <el-tag size="small" type="info">
+              版本：{{ game?.version || '-' }}
+            </el-tag>
+            <el-tag size="small" type="success">
+              最后游玩：{{ formatLastPlayed(game?.lastPlayed) }}
+            </el-tag>
           </div>
         </div>
-        <div class="status">
-          <span v-if="loadingAll" class="muted">加载中...</span>
-          <span v-if="error" class="error">{{ error }}</span>
+        <div class="loading-status">
+          <div v-if="loadingAll" class="loading-info">
+            <el-icon class="is-loading"><Loading /></el-icon>
+            <span>加载中...</span>
+          </div>
+          <el-alert 
+            v-if="error" 
+            :title="error" 
+            type="error" 
+            :closable="false"
+            show-icon
+          />
         </div>
       </div>
-    </section>
+    </el-card>
 
     <!-- 设备映射 -->
-    <section class="card">
-      <div class="row space-between">
-        <h3>设备映射</h3>
-        <span class="muted">必需设备需映射到在线设备</span>
-      </div>
-      <div v-if="requiredDevices.length === 0" class="empty">
-        <p class="muted">该玩法未声明设备需求或数据暂不可用</p>
-      </div>
-      <div v-else class="map-list">
-        <div v-for="d in requiredDevices" :key="d.logicalId || d.name" class="map-row">
-          <div class="map-info">
-            <div class="map-title">
-              <strong>{{ d.name || d.logicalId || '设备' }}</strong>
-              <span class="pill" :class="d.required ? 'pill-required' : 'pill-optional'">
-                {{ d.required ? '必需' : '可选' }}
-              </span>
-            </div>
-            <div class="map-meta">
-              <span>类型：<strong>{{ typeName(d.type) }}</strong></span>
-              <span v-if="d.description" class="muted">{{ d.description }}</span>
-            </div>
-          </div>
-          <div class="map-select">
-            <div class="radio-list">
-              <label v-for="dev in sameTypeDevices(d)" :key="dev.id" class="radio-item">
-                <input
-                  type="radio"
-                  :name="`map-${rdKey(d)}`"
-                  :value="dev.id"
-                  v-model="deviceMapping[rdKey(d)]"
-                />
-                <span class="radio-text">
-                  {{ dev.name || dev.id }} — {{ typeName(dev.type) }} — {{ dev.connected ? '在线' : '离线' }}
-                </span>
-              </label>
-              <label class="radio-item">
-                <input
-                  type="radio"
-                  :name="`map-${rdKey(d)}`"
-                  value=""
-                  v-model="deviceMapping[rdKey(d)]"
-                />
-                <span class="radio-text">未映射</span>
-              </label>
-            </div>
-            <div class="hints">
-              <span v-if="deviceMapping[rdKey(d)] && !getDevice(deviceMapping[rdKey(d)])?.connected" class="warn">设备离线</span>
-              <span v-if="d.type && deviceMapping[rdKey(d)] && getDevice(deviceMapping[rdKey(d)])?.type !== d.type" class="warn">类型不匹配：期望 {{ typeName(d.type) }}</span>
-            </div>
-          </div>
+    <el-card shadow="never" class="device-mapping-card">
+      <template #header>
+        <div class="card-header">
+          <el-icon><Connection /></el-icon>
+          <span>设备映射</span>
         </div>
+      </template>
+      <div v-if="loadingDevices" class="loading-container">
+        <el-skeleton :rows="3" animated />
       </div>
-    </section>
+      <el-alert 
+        v-else-if="deviceError" 
+        :title="deviceError" 
+        type="error" 
+        :closable="false"
+        show-icon
+      />
+      <div v-else>
+        <el-table :data="deviceMappings" stripe style="width: 100%">
+          <el-table-column prop="roleName" label="游戏角色" width="200">
+            <template #default="{ row }">
+              <div class="role-info">
+                <strong>{{ row.roleName }}</strong>
+                <div class="role-description">{{ row.roleDescription }}</div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="映射设备" width="300">
+            <template #default="{ row }">
+              <el-select 
+                v-model="row.deviceId" 
+                placeholder="请选择设备"
+                @change="updateMapping(row)"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="device in availableDevices"
+                  :key="device.id"
+                  :label="`${device.name} (${device.ip})`"
+                  :value="device.id"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="设备状态" width="120">
+            <template #default="{ row }">
+              <el-tag 
+                v-if="row.deviceId" 
+                :type="getDeviceStatusType(row.deviceId)"
+                size="small"
+              >
+                {{ getDeviceStatus(row.deviceId) }}
+              </el-tag>
+              <el-tag v-else type="info" size="small">未选择</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="120">
+            <template #default="{ row }">
+              <el-button 
+                v-if="row.deviceId" 
+                size="small"
+                :icon="Connection"
+                :loading="testing === row.deviceId"
+                @click="testDevice(row.deviceId)"
+              >
+                {{ testing === row.deviceId ? '测试中' : '测试' }}
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-card>
 
     <!-- 参数配置 -->
-    <section class="card">
-      <div class="row space-between">
-        <h3>参数配置</h3>
-        <span class="muted">支持 string/number/boolean/enum/range</span>
-      </div>
-
-      <div v-if="schemaEntries.length === 0" class="empty">
-        <p class="muted">暂无参数元信息。</p>
-      </div>
-
-      <div v-else class="param-grid">
-        <div v-for="p in schemaEntries" :key="p.key" class="param-row">
-          <label class="label">{{ p.name || p.key }}</label>
-          <div class="param-input">
-            <input v-if="p.type === 'string'" class="input" type="text" :placeholder="p.placeholder || ''" v-model="parameters[p.key]" />
-            <input v-else-if="p.type === 'number'" class="input" type="number" :min="p.min" :max="p.max" v-model.number="parameters[p.key]" />
-            <select v-else-if="p.type === 'enum'" class="input" v-model="parameters[p.key]">
-              <option v-for="opt in (p.enum || [])" :key="String(opt)" :value="opt">{{ String(opt) }}</option>
-            </select>
-            <input v-else-if="p.type === 'boolean'" type="checkbox" v-model="parameters[p.key]" />
-            <input v-else class="input" type="text" v-model="parameters[p.key]" />
-            <span v-if="p.required && (parameters[p.key] === undefined || parameters[p.key] === null || parameters[p.key] === '')" class="warn">必填</span>
-          </div>
+    <el-card shadow="never" class="params-config-card">
+      <template #header>
+        <div class="card-header">
+          <el-icon><Tools /></el-icon>
+          <span>参数配置</span>
         </div>
-      </div>
-
-      
-    </section>
+      </template>
+      <el-empty 
+        v-if="schemaEntries.length === 0" 
+        description="暂无参数元信息"
+        :image-size="80"
+      />
+      <el-form v-else :model="parameters" label-width="120px" class="params-form">
+        <el-form-item 
+          v-for="p in schemaEntries" 
+          :key="p.key"
+          :label="p.name || p.key"
+        >
+          <template #label>
+            <div class="param-label">
+              <span>{{ p.name || p.key }}</span>
+              <el-tooltip v-if="p.placeholder" :content="p.placeholder" placement="top">
+                <el-icon><QuestionFilled /></el-icon>
+              </el-tooltip>
+            </div>
+          </template>
+          
+          <el-input
+            v-if="p.type === 'string'"
+            v-model="parameters[p.key]"
+            :placeholder="p.placeholder || ''"
+          />
+          <el-input-number
+            v-else-if="p.type === 'number'"
+            v-model="parameters[p.key]"
+            :min="p.min"
+            :max="p.max"
+            style="width: 200px"
+          />
+          <el-select
+            v-else-if="p.type === 'enum'"
+            v-model="parameters[p.key]"
+            placeholder="请选择"
+            style="width: 200px"
+          >
+            <el-option
+              v-for="opt in (p.enum || [])"
+              :key="String(opt)"
+              :label="String(opt)"
+              :value="opt"
+            />
+          </el-select>
+          <el-switch
+            v-else-if="p.type === 'boolean'"
+            v-model="parameters[p.key]"
+          />
+          <el-input
+            v-else
+            v-model="parameters[p.key]"
+            :placeholder="p.placeholder || ''"
+          />
+          
+          <div v-if="p.required && (parameters[p.key] === undefined || parameters[p.key] === null || parameters[p.key] === '')" class="param-warning">
+            <el-text type="warning" size="small">必填</el-text>
+          </div>
+        </el-form-item>
+      </el-form>
+    </el-card>
 
     <!-- 摘要与校验 -->
-    <section class="card">
-      <div class="row space-between">
-        <h3>摘要与校验</h3>
-        <div class="status">
-          <span v-if="blocking.length === 0" class="ok">校验通过</span>
-          <span v-else class="warn">有阻塞 {{ blocking.length }} 项</span>
+    <el-card shadow="never" class="summary-card">
+      <template #header>
+        <div class="card-header">
+          <el-icon><DocumentChecked /></el-icon>
+          <span>摘要与校验</span>
+          <div class="status-badge">
+            <el-tag v-if="blocking.length === 0" type="success" size="small">
+              校验通过
+            </el-tag>
+            <el-tag v-else type="warning" size="small">
+              有阻塞 {{ blocking.length }} 项
+            </el-tag>
+          </div>
+        </div>
+      </template>
+      
+      <div class="summary-content">
+        <div class="summary-section">
+          <h4>设备映射</h4>
+          <ul class="mapping-list">
+            <li v-for="d in requiredDevices" :key="d.logicalId || d.name">
+              {{ d.logicalId || d.name }} → {{ deviceMapping[rdKey(d)] ? (getDevice(deviceMapping[rdKey(d)])?.name || deviceMapping[rdKey(d)]) : '未映射' }}
+            </li>
+          </ul>
+        </div>
+        
+        <div class="summary-section">
+          <h4>参数</h4>
+          <el-input
+            type="textarea"
+            :value="safeStringify(parameters)"
+            readonly
+            :rows="6"
+            class="params-preview"
+          />
         </div>
       </div>
-      <div class="summary">
-        <h4>设备映射</h4>
-        <ul>
-          <li v-for="d in requiredDevices" :key="d.logicalId || d.name">
-            {{ d.logicalId || d.name }} → {{ deviceMapping[rdKey(d)] ? (getDevice(deviceMapping[rdKey(d)])?.name || deviceMapping[rdKey(d)]) : '未映射' }}
-          </li>
-        </ul>
-        <h4>参数</h4>
-        <pre class="pre">{{ safeStringify(parameters) }}</pre>
-      </div>
-      <div class="row space-between">
-        <div class="status">
-          <span v-if="startError" class="error">{{ startError }}</span>
+      
+      <div class="action-section">
+        <div class="error-display">
+          <el-alert 
+            v-if="startError" 
+            :title="startError" 
+            type="error" 
+            :closable="false"
+            show-icon
+          />
         </div>
-        <div class="row">
-          <button class="primary" :disabled="blocking.length > 0 || startBusy" @click="start(false)">{{ startBusy ? '启动中...' : '启动' }}</button>
-          <button :disabled="startBusy" @click="start(true)">强行启动</button>
-          <button @click="cancel">取消返回</button>
+        
+        <div class="action-buttons">
+          <el-button @click="cancel" :icon="ArrowLeft">
+            取消返回
+          </el-button>
+          <el-button 
+            :disabled="startBusy" 
+            @click="start(true)"
+          >
+            强行启动
+          </el-button>
+          <el-button 
+            type="primary" 
+            :icon="VideoPlay"
+            :loading="startBusy"
+            :disabled="blocking.length > 0"
+            @click="start(false)"
+          >
+            {{ startBusy ? '启动中...' : '启动' }}
+          </el-button>
         </div>
       </div>
-      <div v-if="blocking.length > 0" class="block-list">
+      
+      <div v-if="blocking.length > 0" class="blocking-section">
         <h4>阻塞项</h4>
-        <ul>
-          <li v-for="b in blocking" :key="b">{{ b }}</li>
-        </ul>
+        <el-alert
+          v-for="b in blocking"
+          :key="b"
+          :title="b"
+          type="warning"
+          :closable="false"
+          show-icon
+          style="margin-bottom: 8px"
+        />
       </div>
-    </section>
+    </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+
+import { 
+  Setting, 
+  Connection, 
+  Tools, 
+  QuestionFilled, 
+  DocumentChecked, 
+  VideoPlay, 
+  ArrowLeft,
+  Loading
+} from '@element-plus/icons-vue';
 
 interface GameItem {
   id: string;
@@ -178,6 +314,9 @@ const error = ref('');
 
 const deviceMapping = reactive<Record<string, string>>({});
 const parameters = reactive<Record<string, any>>({});
+const testing = ref<string | null>(null);
+const deviceError = ref('');
+const loadingDevices = ref(false);
  
 
 const requiredDevices = computed(() => {
@@ -206,6 +345,24 @@ const schemaEntries = computed(() => {
   return list;
 });
 
+const deviceMappings = computed(() => {
+  return requiredDevices.value.map(rd => ({
+    roleName: rd.name || rd.logicalId || '未知角色',
+    roleDescription: rd.description || '',
+    deviceId: deviceMapping[rdKey(rd)] || '',
+    logicalId: rd.logicalId,
+    required: rd.required
+  }));
+});
+
+const availableDevices = computed(() => {
+  return devices.value.map(device => ({
+    id: device.id,
+    name: device.name || device.id,
+    ip: device.data?.ip || '未知IP'
+  }));
+});
+
 function formatLastPlayed(ts?: number | null) {
   if (!ts) return '从未游玩';
   try { return new Date(ts).toLocaleString('zh-CN'); } catch { return String(ts); }
@@ -221,6 +378,44 @@ function typeName(t?: string) {
   return map[t] ?? t;
 }
 function getDevice(id?: string) { return devices.value.find(d => d.id === id) || null; }
+
+async function testDevice(deviceId: string) {
+  if (testing.value) return;
+  testing.value = deviceId;
+  try {
+    const response = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/test`, {
+      method: 'POST'
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result?.message || '设备测试失败');
+    }
+    // 测试成功的处理逻辑可以在这里添加
+  } catch (e: any) {
+    console.error('设备测试失败:', e.message);
+  } finally {
+    testing.value = null;
+  }
+}
+
+function updateMapping(row: any) {
+  const key = rdKey({ logicalId: row.logicalId, name: row.roleName });
+  if (key) {
+    deviceMapping[key] = row.deviceId;
+  }
+}
+
+function getDeviceStatusType(deviceId: string): string {
+  const device = getDevice(deviceId);
+  if (!device) return 'danger';
+  return device.connected ? 'success' : 'warning';
+}
+
+function getDeviceStatus(deviceId: string): string {
+  const device = getDevice(deviceId);
+  if (!device) return '设备不存在';
+  return device.connected ? '在线' : '离线';
+}
 
 function rdKey(d: { logicalId?: string; name?: string }) {
   return String(d.logicalId ?? d.name ?? '');
@@ -364,39 +559,166 @@ onMounted(() => { loadAll().then(() => recomputeBlocking()); });
 </script>
 
 <style scoped>
-.page { max-width: 960px; margin: 40px auto; padding: 0 24px; text-align: left; }
-.card { margin-top: 24px; padding: 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
-.row { display: flex; gap: 12px; align-items: center; }
-.space-between { justify-content: space-between; }
-.status { display: flex; gap: 12px; align-items: center; }
-.error { color: #e11d48; }
-.ok { color: #16a34a; }
-.warn { color: #f59e0b; }
-.muted { color: #6b7280; }
-.title { margin: 0; font-size: 20px; }
-.desc { margin: 6px 0 8px; color: #374151; }
-.meta { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: #6b7280; }
-.input { padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 6px; min-width: 240px; }
-button { padding: 6px 12px; border: 1px solid #0ea5e9; background: #0ea5e9; color: white; border-radius: 6px; cursor: pointer; }
-button.primary { border-color: #0ea5e9; background: #0ea5e9; }
-button:disabled { opacity: 0.6; cursor: not-allowed; }
-.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
-.pill-required { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
-.pill-optional { background: #e5e7eb; color: #374151; border: 1px solid #d1d5db; }
-.map-list { display: grid; grid-template-columns: 1fr; gap: 12px; }
-.map-row { display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; align-items: start; }
-.map-title { display: flex; align-items: center; gap: 8px; }
-.map-meta { display: flex; gap: 12px; font-size: 12px; color: #6b7280; margin-top: 4px; }
-.hints { display: flex; gap: 8px; font-size: 12px; }
-.radio-list { display: grid; gap: 8px; }
-.radio-item { display: flex; align-items: center; gap: 8px; }
-.radio-text { font-size: 14px; }
-.param-grid { display: grid; grid-template-columns: 1fr; gap: 12px; }
-.param-row { display: grid; grid-template-columns: 160px 1fr; gap: 12px; align-items: center; }
-.label { font-size: 13px; color: #374151; }
-.json-box { margin-top: 12px; }
-.summary { margin-top: 8px; }
-.pre { background: #fff; border: 1px dashed #e5e7eb; border-radius: 6px; padding: 8px; max-height: 200px; overflow: auto; }
-.block-list { margin-top: 12px; }
-.empty { text-align: left; padding: 8px 0; }
+.game-start-config-page {
+  padding: 16px;
+}
+
+.config-header-card,
+.device-mapping-card,
+.params-config-card,
+.summary-card {
+  margin-bottom: 16px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.status-badge {
+  margin-left: auto;
+}
+
+.game-overview {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.game-basic-info {
+  flex: 1;
+}
+
+.game-title {
+  margin: 0 0 8px 0;
+  font-size: 20px;
+  color: var(--el-text-color-primary);
+}
+
+.game-description {
+  margin: 0 0 12px 0;
+  color: var(--el-text-color-regular);
+}
+
+.game-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.loading-status {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.loading-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--el-text-color-regular);
+}
+
+.loading-container {
+  padding: 20px 0;
+}
+
+.role-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.role-description {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.params-form {
+  margin-top: 16px;
+}
+
+.param-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.param-warning {
+  margin-top: 4px;
+}
+
+.summary-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.summary-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.mapping-list {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--el-text-color-regular);
+}
+
+.mapping-list li {
+  margin-bottom: 4px;
+}
+
+.params-preview {
+  font-family: 'Courier New', monospace;
+}
+
+.action-section {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.blocking-section {
+  margin-top: 16px;
+}
+
+.blocking-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-color-warning);
+}
+
+@media (max-width: 768px) {
+  .game-start-config-page {
+    padding: 12px;
+  }
+  
+  .game-overview {
+    flex-direction: column;
+    gap: 16px;
+  }
+  
+  .action-buttons {
+    flex-direction: column;
+  }
+  
+  .action-buttons .el-button {
+    width: 100%;
+  }
+}
 </style>

@@ -1,28 +1,72 @@
 <template>
-  <div class="page">
-    <section class="card">
-      <div class="row space-between">
-        <div class="row" style="flex-wrap: wrap; gap: 8px 12px;">
-          <button @click="reloadHtml" :disabled="loading">{{ loading ? '加载中...' : '刷新页面' }}</button>
-          <button @click="stopGame" :disabled="stopping" class="danger">{{ stopping ? '停止中...' : '停止游戏' }}</button>
+  <div class="game-current-page">
+    <el-card shadow="never" class="control-card">
+      <template #header>
+        <div class="card-header">
+          <el-icon><VideoPlay /></el-icon>
+          <span>游戏控制</span>
         </div>
-        <div class="status">
-          <span v-if="error" class="error">{{ error }}</span>
-          <span v-if="stopError" class="error">{{ stopError }}</span>
+      </template>
+      <div class="control-content">
+        <div class="control-buttons">
+          <el-button 
+            type="primary" 
+            :icon="Refresh" 
+            :loading="loading"
+            @click="reloadHtml"
+          >
+            {{ loading ? '加载中...' : '刷新页面' }}
+          </el-button>
+          <el-button 
+            type="danger" 
+            :icon="Close"
+            :loading="stopping"
+            @click="stopGame"
+          >
+            {{ stopping ? '停止中...' : '停止游戏' }}
+          </el-button>
+        </div>
+        <div class="status-info" v-if="error || stopError">
+          <el-alert 
+            v-if="error" 
+            :title="error" 
+            type="error" 
+            :closable="false"
+            show-icon
+          />
+          <el-alert 
+            v-if="stopError" 
+            :title="stopError" 
+            type="error" 
+            :closable="false"
+            show-icon
+          />
         </div>
       </div>
-    </section>
+    </el-card>
 
-    <section class="card">
+    <el-card shadow="never" class="game-content-card">
+      <template #header>
+        <span>游戏界面</span>
+      </template>
       <div ref="containerRef" class="embedded-html"></div>
-      <p v-if="!loading && !error && empty" class="muted">暂无运行中的玩法，请先在“游戏列表”启动。</p>
-    </section>
+      <el-empty 
+        v-if="!loading && !error && empty" 
+        description="暂无运行中的玩法，请先在游戏列表启动"
+        :image-size="120"
+      >
+        <el-button type="primary" @click="$router.push('/games')">
+          前往游戏列表
+        </el-button>
+      </el-empty>
+    </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
+import { VideoPlay, Refresh, Close } from '@element-plus/icons-vue';
 
 const router = useRouter();
 const containerRef = ref<HTMLDivElement | null>(null);
@@ -148,8 +192,8 @@ function executeScripts(scripts: HTMLScriptElement[]) {
 
   // 包装 EventSource，用于路由离开时关闭连接，避免泄漏
   try {
-    (window as any).EventSource = function(...args: any[]) {
-      const es = new originals.EventSource(...args);
+    (window as any).EventSource = function(url: string | URL, config?: EventSourceInit) {
+      const es = new originals.EventSource(url as any, config as any);
       try { esList.push(es); } catch {}
       return es;
     } as any;
@@ -177,15 +221,62 @@ function executeScripts(scripts: HTMLScriptElement[]) {
 </script>
 
 <style scoped>
-.page { max-width: 960px; margin: 40px auto; padding: 0 24px; text-align: left; }
-.card { margin-top: 24px; padding: 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
-.row { display: flex; gap: 12px; align-items: center; }
-.space-between { justify-content: space-between; }
-.status { display: flex; gap: 12px; align-items: center; }
-.error { color: #e11d48; }
-.muted { color: #6b7280; }
-button { padding: 6px 12px; border: 1px solid #0ea5e9; background: #0ea5e9; color: white; border-radius: 6px; cursor: pointer; }
-button.danger { border-color: #e11d48; background: #e11d48; }
-button:disabled { opacity: 0.6; cursor: not-allowed; }
-.embedded-html { min-height: 240px; border: 1px dashed #e5e7eb; border-radius: 8px; padding: 8px; background: #fff; }
+.game-current-page {
+  padding: 16px;
+}
+
+.control-card {
+  margin-bottom: 16px;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.control-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.control-buttons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.status-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.game-content-card {
+  min-height: 500px;
+}
+
+.embedded-html {
+  min-height: 400px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: var(--el-border-radius-base);
+  overflow: hidden;
+  background: #f8f9fa;
+}
+
+@media (max-width: 768px) {
+  .game-current-page {
+    padding: 12px;
+  }
+  
+  .control-buttons {
+    flex-direction: column;
+  }
+  
+  .control-buttons .el-button {
+    width: 100%;
+  }
+}
 </style>

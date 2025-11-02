@@ -235,4 +235,115 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 .device-tag { padding: 2px 8px; background: #f3f4f6; border-radius: 12px; border: 1px solid #e5e7eb; }
 .game-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
 .empty { text-align: center; padding: 24px 0; }
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .page { 
+    margin: 20px auto; 
+    padding: 0 16px; 
+  }
+  
+  .card { 
+    margin-top: 16px; 
+    padding: 12px; 
+  }
+  
+  .row { 
+    flex-direction: column; 
+    align-items: stretch; 
+    gap: 8px; 
+  }
+  
+  .space-between { 
+    flex-direction: column; 
+    align-items: stretch; 
+  }
+  
+  .input { 
+    min-width: auto; 
+    width: 100%; 
+  }
+  
+  button { 
+    width: 100%; 
+    padding: 10px 12px; 
+  }
+  
+  .grid { 
+    grid-template-columns: 1fr; 
+    gap: 12px; 
+  }
+  
+  .game-card { 
+    flex-direction: column; 
+    gap: 12px; 
+  }
+  
+  .game-main { 
+    max-width: 100%; 
+  }
+  
+  .game-actions { 
+    flex-direction: row; 
+    justify-content: space-between; 
+    align-items: center; 
+  }
+  
+  .game-actions button { 
+    width: auto; 
+    flex: 1; 
+    margin: 0 4px; 
+  }
+  
+  .title { 
+    font-size: 16px; 
+  }
+  
+  .status { 
+    flex-direction: column; 
+    align-items: stretch; 
+    gap: 8px; 
+  }
+}
+
+@media (max-width: 480px) {
+  .page { 
+    margin: 16px auto; 
+    padding: 0 12px; 
+  }
+  
+  .card { 
+    margin-top: 12px; 
+    padding: 8px; 
+  }
+  
+  .game-card { 
+    padding: 8px; 
+  }
+  
+  .title { 
+    font-size: 15px; 
+  }
+  
+  .desc { 
+    font-size: 13px; 
+  }
+  
+  .meta { 
+    font-size: 12px; 
+  }
+  
+  .devices { 
+    font-size: 11px; 
+  }
+  
+  .device-tag { 
+    padding: 1px 6px; 
+  }
+  
+  button { 
+    padding: 8px 10px; 
+    font-size: 13px; 
+  }
+}
 </style>

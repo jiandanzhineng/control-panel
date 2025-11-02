@@ -2,12 +2,42 @@ const { spawn } = require('child_process');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const logger = require('../utils/logger');
+const logService = require('./logService');
+
+// 根据操作系统选择MQTT broker
+const isWindows = process.platform === 'win32';
+let emqxService = null;
+if (isWindows) {
+  try {
+    emqxService = require('./emqxService');
+  } catch (error) {
+    logService.error('Mqtt', `Failed to load EMQX service on Windows: ${error.message}`);
+  }
+}
 
 // 内部状态，用于管理单例 mosquitto 进程
 let state = { child: null, meta: null, tmpConfPath: null };
 
-function start({ port = 1883, bind = '0.0.0.0', configPath } = {}) {
+async function start({ port = 1883, bind = '0.0.0.0', configPath } = {}) {
+  // Windows系统使用EMQX
+  if (isWindows && emqxService) {
+    try {
+      logService.info('Mqtt', `Starting EMQX broker on Windows - Port: ${port}, Bind: ${bind}`);
+      const result = await emqxService.startBroker();
+      if (result.success) {
+        state.meta = { port: 1883, bind: '0.0.0.0', broker: 'emqx' }; // EMQX默认端口
+        return { running: true, broker: 'emqx', port: 1883, status: result.status };
+      } else {
+        logService.error('Mqtt', `Failed to start EMQX broker: ${result.error}`);
+        throw new Error(result.error);
+      }
+    } catch (error) {
+      logService.error('Mqtt', `EMQX startup error, falling back to mosquitto: ${error.message}`);
+      // 如果EMQX启动失败，继续使用mosquitto逻辑
+    }
+  }
+
+  // Linux/macOS系统或EMQX启动失败时使用mosquitto
   if (state.child && !state.child.killed) {
     return { running: true, pid: state.child.pid, port: state.meta?.port };
   }
@@ -23,7 +53,7 @@ function start({ port = 1883, bind = '0.0.0.0', configPath } = {}) {
     const tmpConf = path.join(os.tmpdir(), `mosquitto_${Date.now()}.conf`);
     const confContent = `listener ${port} ${bind}\nallow_anonymous true\n`;
     fs.writeFileSync(tmpConf, confContent, 'utf8');
-    logger.info('Generated temporary config file', { tmpConf, confContent });
+    logService.info('Mqtt', `Generated temporary config file - Path: ${tmpConf}, Content: ${confContent.trim()}`);
     confPath = tmpConf;
     state.tmpConfPath = tmpConf;
   } else {
@@ -32,18 +62,17 @@ function start({ port = 1883, bind = '0.0.0.0', configPath } = {}) {
 
   const child = spawn('mosquitto', ['-c', confPath], { stdio: ['pipe', 'pipe', 'pipe'] });
   state.child = child;
-  state.meta = { port, bind };
+  state.meta = { port, bind, broker: 'mosquitto' };
 
-  logger.info('Starting mosquitto', { confPath, port, bind });
-  logger.attachChild('mosquitto', child);
+  logService.info('Mqtt', `Starting mosquitto - Config: ${confPath}, Port: ${port}, Bind: ${bind}`);
 
-  child.on('exit', () => {
+  child.on('exit', (code, signal) => {
     state.child = null;
     if (state.tmpConfPath) {
       try { fs.unlinkSync(state.tmpConfPath); } catch (_) {}
       state.tmpConfPath = null;
     }
-    logger.info('mosquitto exited');
+    logService.info('Mqtt', `mosquitto exited - Code: ${code}, Signal: ${signal || 'none'}`);
   });
 
   child.on('error', (err) => {
@@ -52,15 +81,33 @@ function start({ port = 1883, bind = '0.0.0.0', configPath } = {}) {
       state.tmpConfPath = null;
     }
     state.child = null;
-    logger.error('mosquitto error', err?.message || err);
+    logService.error('Mqtt', `mosquitto error: ${err?.message || err}`);
   });
 
-  return { running: true, pid: child.pid, port };
+  return { running: true, pid: child.pid, port, broker: 'mosquitto' };
 }
 
-function status() {
+async function status() {
+  // 如果使用EMQX
+  if (state.meta?.broker === 'emqx' && isWindows && emqxService) {
+    try {
+      const emqxStatus = await emqxService.checkStatus();
+      return {
+        running: emqxStatus.running,
+        broker: 'emqx',
+        port: 1883,
+        status: emqxStatus.status,
+        output: emqxStatus.output
+      };
+    } catch (error) {
+      logService.error('Mqtt', `Failed to check EMQX status: ${error.message}`);
+      return { running: false, broker: 'emqx', error: error.message };
+    }
+  }
+
+  // mosquitto状态检查
   const running = !!(state.child && !state.child.killed);
-  const payload = { running };
+  const payload = { running, broker: 'mosquitto' };
   if (running) {
     payload.pid = state.child.pid;
     payload.port = state.meta?.port;
@@ -68,7 +115,21 @@ function status() {
   return payload;
 }
 
-function stop() {
+async function stop() {
+  // 如果使用EMQX
+  if (state.meta?.broker === 'emqx' && isWindows && emqxService) {
+    try {
+      logService.info('Mqtt', 'Stopping EMQX broker');
+      const result = await emqxService.stopBroker();
+      state.meta = null;
+      return { running: false, broker: 'emqx', success: result.success };
+    } catch (error) {
+      logService.error('Mqtt', `Failed to stop EMQX broker: ${error.message}`);
+      return { running: false, broker: 'emqx', error: error.message };
+    }
+  }
+
+  // mosquitto停止
   if (state.child) {
     try { state.child.kill('SIGTERM'); } catch (_) {}
   }
@@ -77,7 +138,8 @@ function stop() {
     try { fs.unlinkSync(state.tmpConfPath); } catch (_) {}
     state.tmpConfPath = null;
   }
-  return { running: false };
+  state.meta = null;
+  return { running: false, broker: 'mosquitto' };
 }
 
 module.exports = { start, status, stop };

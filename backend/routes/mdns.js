@@ -8,7 +8,7 @@ router.post('/publish', (req, res) => {
     const { ip } = req.body || {};
     if (!ip) return sendError(res, 'MDNS_PUBLISH_FAILED', 'Missing ip', 400);
     const result = mdnsService.publish({ ip });
-    res.json({ running: true, pid: result.pid, ip, id: result.id });
+    res.json({ running: true, pid: result.pid, ip });
   } catch (e) {
     sendError(res, 'MDNS_PUBLISH_FAILED', e.message);
   }
@@ -16,19 +16,17 @@ router.post('/publish', (req, res) => {
 
 router.post('/unpublish', (req, res) => {
   try {
-    const { id } = req.body || {};
-    if (!id) return sendError(res, 'MDNS_PUBLISH_FAILED', 'Missing id', 400);
-    const result = mdnsService.unpublish(id);
+    const result = mdnsService.unpublish();
     res.json(result);
   } catch (e) {
-    sendError(res, 'MDNS_PUBLISH_FAILED', e.message);
+    sendError(res, 'MDNS_UNPUBLISH_FAILED', e.message);
   }
 });
 
 router.get('/status', (req, res) => {
   try {
-    const rows = mdnsService.status();
-    res.json(rows);
+    const status = mdnsService.status();
+    res.json(status);
   } catch (e) {
     sendError(res, 'MDNS_STATUS_FAILED', e.message);
   }

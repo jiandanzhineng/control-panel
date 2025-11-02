@@ -2,6 +2,13 @@ const levels = ['debug', 'info', 'warn', 'error'];
 const currentLevel = (process.env.LOG_LEVEL || 'info').toLowerCase();
 const currentIdx = levels.indexOf(currentLevel) === -1 ? levels.indexOf('info') : levels.indexOf(currentLevel);
 
+let logService = null;
+try {
+  logService = require('../services/logService');
+} catch (e) {
+  // logService not available yet
+}
+
 function emit(level, ...args) {
   const idx = levels.indexOf(level);
   if (idx < currentIdx) return;
@@ -9,6 +16,14 @@ function emit(level, ...args) {
   const prefix = `[${ts}] [${level.toUpperCase()}]`;
   const out = level === 'error' ? console.error : (level === 'warn' ? console.warn : console.log);
   out(prefix, ...args);
+  
+  // 同时记录到日志服务
+  if (logService) {
+    const message = args.map(arg => 
+      typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+    ).join(' ');
+    logService.log(level.toUpperCase(), 'System', message);
+  }
 }
 
 function attachChild(name, child) {

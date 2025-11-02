@@ -33,37 +33,46 @@ const mdnsService = require('../services/mdnsService');
 
 describe('mdnsService', () => {
   afterEach(() => {
-    // ensure clean state by unpublishing all known entries
-    const rows = mdnsService.status();
-    for (const row of rows) {
-      try { mdnsService.unpublish(row.id); } catch (_) {}
-    }
+    try { mdnsService.unpublish(); } catch (_) {}
     jest.clearAllMocks();
   });
 
-  it('publish -> status -> unpublish: should manage mdns entries and process', () => {
+  it('publish -> status -> unpublish: should manage single mdns instance', () => {
     const res = mdnsService.publish({ ip: '192.168.1.10' });
     expect(res.running).toBe(true);
     expect(typeof res.pid).toBe('number');
-    expect(typeof res.id).toBe('string');
     expect(res.ip).toBe('192.168.1.10');
 
-    const list = mdnsService.status();
-    expect(Array.isArray(list)).toBe(true);
-    expect(list.length).toBeGreaterThanOrEqual(1);
-    const row = list.find(r => r.id === res.id);
-    expect(row).toBeDefined();
-    expect(row.running).toBe(true);
-    expect(row.pid).toBe(res.pid);
+    const status = mdnsService.status();
+    expect(status.running).toBe(true);
+    expect(status.pid).toBe(res.pid);
+    expect(status.ip).toBe('192.168.1.10');
 
-    const out = mdnsService.unpublish(res.id);
+    const out = mdnsService.unpublish();
     expect(out.running).toBe(false);
 
-    const list2 = mdnsService.status();
-    expect(list2.find(r => r.id === res.id)).toBeUndefined();
+    const status2 = mdnsService.status();
+    expect(status2.running).toBe(false);
 
     // verify child kill happened via mocked child state
     const child = cp.__mockChildren[0];
     expect(child.killed).toBe(true);
+  });
+
+  it('should replace existing instance when publishing new one', () => {
+    const res1 = mdnsService.publish({ ip: '192.168.1.10' });
+    expect(res1.running).toBe(true);
+
+    const res2 = mdnsService.publish({ ip: '192.168.1.20' });
+    expect(res2.running).toBe(true);
+    expect(res2.ip).toBe('192.168.1.20');
+
+    const status = mdnsService.status();
+    expect(status.running).toBe(true);
+    expect(status.ip).toBe('192.168.1.20');
+
+    // verify first child was killed
+    const child1 = cp.__mockChildren[0];
+    expect(child1.killed).toBe(true);
   });
 });

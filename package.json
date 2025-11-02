@@ -2,12 +2,80 @@
   "name": "frontbacken-client",
   "private": true,
   "version": "1.0.0",
+  "main": "electron/main.js",
   "scripts": {
     "dev:all": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
     "dev:backend": "npm --prefix backend run dev",
-    "dev:frontend": "npm --prefix frontend run dev"
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "electron:prod": "electron electron/main.js",
+    "electron:dev": "set VITE_DEV_SERVER_URL=http://localhost:5173 && electron electron/main.js",
+    "build": "npm run build:frontend && electron-builder --dir",
+    "build:win": "npm run build:frontend && electron-builder --win --dir",
+    "build:installer": "npm run build:frontend && electron-builder --win nsis --x64 --publish=never"
+  },
+  "build": {
+    "appId": "com.controlpanel.app",
+    "productName": "Control Panel",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "backend/**/*",
+      "frontend/dist/**/*",
+      "backend/node_modules/**/*",
+      "!backend/logs",
+      "!backend/data",
+      "!backend/tests",
+      "!backend/test_*.js",
+      "!backend/.gitignore"
+    ],
+    "extraResources": [
+      {
+        "from": "backend/inner-tools",
+        "to": "inner-tools",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "backend/game",
+        "to": "game",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Control Panel"
+    }
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "electron": "^39.0.0",
+    "electron-builder": "26.0.14"
+  },
+  "dependencies": {
+    "concurrently": "^9.2.1",
+    "cors": "^2.8.5",
+    "eventsource": "^4.0.0",
+    "express": "^5.1.0",
+    "http-proxy-middleware": "^3.0.5",
+    "mqtt": "^5.14.1",
+    "multer": "^1.4.5-lts.1"
   }
 }

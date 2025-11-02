@@ -11,6 +11,12 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  
+  /* 移动端优化变量 */
+  --mobile-padding: 12px;
+  --desktop-padding: 16px;
+  --mobile-font-size: 14px;
+  --desktop-font-size: 16px;
 }
 
 a {
@@ -28,11 +34,31 @@ body {
   place-items: center;
   min-width: 320px;
   min-height: 100vh;
+  font-size: var(--desktop-font-size);
 }
 
 h1 {
   font-size: 3.2em;
   line-height: 1.1;
+}
+
+/* 移动端字体大小优化 */
+@media (max-width: 768px) {
+  body {
+    font-size: var(--mobile-font-size);
+  }
+  
+  h1 {
+    font-size: 2.4em;
+  }
+  
+  h2 {
+    font-size: 1.8em;
+  }
+  
+  h3 {
+    font-size: 1.4em;
+  }
 }
 
 button {

@@ -5,6 +5,8 @@ const logger = require('./utils/logger');
 const deviceService = require('./services/deviceService');
 // 引入 MQTT 服务
 const mqttService = require('./services/mqttService');
+// 引入日志服务
+const logService = require('./services/logService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -36,33 +38,38 @@ try {
 // 初始化设备列表（加载持久化数据并启动离线检查循环）
 deviceService.initDeviceList();
 
-// 自动启动 MQTT 服务（mosquitto broker）
-try {
-  const result = mqttService.start();
-  if (result.running) {
-    logger.info('MQTT service started successfully', { 
-      pid: result.pid, 
-      port: result.port || 1883 
+// 自动启动 MQTT 服务（mosquitto broker 或 EMQX）
+(async () => {
+  try {
+    const result = await mqttService.start();
+    if (result.running) {
+      logger.info('MQTT service started successfully', { 
+        broker: result.broker,
+        pid: result.pid, 
+        port: result.port || 1883 
+      });
+    }
+  } catch (error) {
+    logger.warn('Failed to start MQTT service, continuing without it', { 
+      error: error.message 
     });
   }
-} catch (error) {
-  logger.warn('Failed to start MQTT service, continuing without it', { 
-    error: error.message 
-  });
-}
+})();
 
 // 路由：将实现与接口分离
 app.use('/api/mqtt', require('./routes/mqtt'));
 app.use('/api/network', require('./routes/network'));
 app.use('/api/mdns', require('./routes/mdns'));
 app.use('/api/mqtt-client', require('./routes/mqttClient'));
-// 设备管理与设备类型
+// 设备管理路由
 app.use('/api/devices', require('./routes/devices'));
 app.use('/api/device-types', require('./routes/deviceTypes'));
-// 游戏列表管理
+// 游戏管理路由
 app.use('/api/games', require('./routes/games'));
-// 玩法运行期接口（嵌入式HTML + SSE）
+// 游戏玩法路由
 app.use('/api/games', require('./routes/gameplay'));
+// 日志管理路由
+app.use('/api/logs', require('./routes/logs'));
 
 // 健康检查与示例接口
 app.get('/api/hello', (req, res) => {
@@ -85,7 +92,7 @@ if (require.main === module) {
 
 // 进程退出清理设备服务定时器
 // 进程退出时的清理工作
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
   logger.info('Received SIGINT, cleaning up...');
   
   // 清理设备服务
@@ -93,7 +100,7 @@ process.on('SIGINT', () => {
   
   // 停止 MQTT 服务
   try {
-    mqttService.stop();
+    await mqttService.stop();
     logger.info('MQTT service stopped');
   } catch (error) {
     logger.warn('Error stopping MQTT service', { error: error.message });

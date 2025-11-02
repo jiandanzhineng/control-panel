@@ -52,10 +52,10 @@ function extractTitleFromJs(content) {
 
 function toConfigPath(absFilePath) {
   const relToProject = path.relative(projectRoot, absFilePath);
-  // ensure starts with backend/game
-  return relToProject.startsWith('backend/game')
-    ? relToProject
-    : path.join('backend', relToProject);
+  const relNormalized = String(relToProject).replace(/\\/g, '/');
+  return relNormalized.startsWith('backend/game')
+    ? relNormalized
+    : `backend/${relNormalized}`;
 }
 
 function createGameEntryForFile(absFilePath) {
@@ -151,8 +151,9 @@ function saveUploadedJs({ originalName, buffer }) {
 function absPathFromConfig(configPath) {
   const prefix = 'backend/game/';
   if (!configPath || typeof configPath !== 'string') return null;
-  if (!configPath.startsWith(prefix)) return null;
-  const relWithinGame = configPath.slice(prefix.length);
+  const normalized = String(configPath).replace(/\\/g, '/');
+  if (!normalized.startsWith(prefix)) return null;
+  const relWithinGame = normalized.slice(prefix.length);
   const abs = path.resolve(gameDir, relWithinGame);
   // sanity: ensure inside gameDir
   const normGame = gameDir.endsWith(path.sep) ? gameDir : gameDir + path.sep;
