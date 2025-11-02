@@ -266,9 +266,22 @@ function executeScripts(scripts: HTMLScriptElement[]) {
   background: #f8f9fa;
 }
 
+/* 移动端优化 - 消除左边白边 */
 @media (max-width: 768px) {
   .game-current-page {
-    padding: 12px;
+    padding: 0;
+    margin: 0;
+  }
+  
+  .control-card {
+    margin: 0 0 8px 0;
+    border-radius: 0;
+  }
+  
+  .game-content-card {
+    margin: 0;
+    border-radius: 0;
+    min-height: calc(100vh - 200px);
   }
   
   .control-buttons {
@@ -277,6 +290,38 @@ function executeScripts(scripts: HTMLScriptElement[]) {
   
   .control-buttons .el-button {
     width: 100%;
+  }
+  
+  .embedded-html {
+    min-height: calc(100vh - 280px);
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+}
+
+/* 超小屏幕优化 */
+@media (max-width: 480px) {
+  .game-current-page {
+    padding: 0;
+  }
+  
+  .control-card {
+    margin: 0 0 4px 0;
+    border-radius: 0;
+  }
+  
+  .game-content-card {
+    margin: 0;
+    border-radius: 0;
+    min-height: calc(100vh - 180px);
+  }
+  
+  .embedded-html {
+    min-height: calc(100vh - 260px);
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
   }
 }
 </style>

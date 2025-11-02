@@ -296,7 +296,8 @@ html, body {
   }
   
   .main-content {
-    padding: 12px;
+    padding: 0;
+    margin: 0;
   }
   
   .sidebar-header {
@@ -321,7 +322,8 @@ html, body {
 
 @media (max-width: 480px) {
   .main-content {
-    padding: 8px;
+    padding: 0;
+    margin: 0;
   }
   
   .main-header {

@@ -55,6 +55,7 @@
         show-icon
       />
       <div v-else>
+        <!-- 桌面端表格布局 -->
         <el-table :data="deviceMappings" stripe style="width: 100%">
           <el-table-column prop="roleName" label="游戏角色" width="200">
             <template #default="{ row }">
@@ -73,9 +74,9 @@
                 style="width: 100%"
               >
                 <el-option
-                  v-for="device in availableDevices"
+                  v-for="device in getAvailableDevicesForRole(row)"
                   :key="device.id"
-                  :label="`${device.name} (${device.ip})`"
+                  :label="device.name"
                   :value="device.id"
                 />
               </el-select>
@@ -93,20 +94,40 @@
               <el-tag v-else type="info" size="small">未选择</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="120">
-            <template #default="{ row }">
-              <el-button 
-                v-if="row.deviceId" 
-                size="small"
-                :icon="Connection"
-                :loading="testing === row.deviceId"
-                @click="testDevice(row.deviceId)"
-              >
-                {{ testing === row.deviceId ? '测试中' : '测试' }}
-              </el-button>
-            </template>
-          </el-table-column>
         </el-table>
+        
+        <!-- 移动端卡片布局 -->
+        <div class="device-mapping-mobile">
+          <div v-for="row in deviceMappings" :key="row.logicalId || row.roleName" class="device-card">
+            <div class="device-card-header">
+              <div class="device-card-title">{{ row.roleName }}</div>
+              <el-tag 
+                v-if="row.deviceId" 
+                :type="getDeviceStatusType(row.deviceId)"
+                size="small"
+              >
+                {{ getDeviceStatus(row.deviceId) }}
+              </el-tag>
+              <el-tag v-else type="info" size="small">未选择</el-tag>
+            </div>
+            <div v-if="row.roleDescription" class="device-card-description">
+              {{ row.roleDescription }}
+            </div>
+            <el-select 
+              v-model="row.deviceId" 
+              placeholder="请选择设备"
+              @change="updateMapping(row)"
+              class="device-card-select"
+            >
+              <el-option
+                v-for="device in getAvailableDevicesForRole(row)"
+                :key="device.id"
+                :label="device.name"
+                :value="device.id"
+              />
+            </el-select>
+          </div>
+        </div>
       </div>
     </el-card>
 
@@ -314,7 +335,6 @@ const error = ref('');
 
 const deviceMapping = reactive<Record<string, string>>({});
 const parameters = reactive<Record<string, any>>({});
-const testing = ref<string | null>(null);
 const deviceError = ref('');
 const loadingDevices = ref(false);
  
@@ -351,17 +371,35 @@ const deviceMappings = computed(() => {
     roleDescription: rd.description || '',
     deviceId: deviceMapping[rdKey(rd)] || '',
     logicalId: rd.logicalId,
-    required: rd.required
+    required: rd.required,
+    deviceType: rd.type
   }));
 });
 
 const availableDevices = computed(() => {
   return devices.value.map(device => ({
     id: device.id,
-    name: device.name || device.id,
-    ip: device.data?.ip || '未知IP'
+    name: device.name || device.id
   }));
 });
+
+function getAvailableDevicesForRole(row: any) {
+  const deviceType = row.deviceType;
+  let filteredDevices = devices.value;
+  
+  // 如果指定了设备类型，只显示匹配的设备
+  if (deviceType) {
+    filteredDevices = devices.value.filter(device => device.type === deviceType);
+  }
+  
+  // 在线设备优先排序
+  filteredDevices.sort((a, b) => Number(b.connected) - Number(a.connected));
+  
+  return filteredDevices.map(device => ({
+    id: device.id,
+    name: device.name || device.id
+  }));
+}
 
 function formatLastPlayed(ts?: number | null) {
   if (!ts) return '从未游玩';
@@ -378,25 +416,6 @@ function typeName(t?: string) {
   return map[t] ?? t;
 }
 function getDevice(id?: string) { return devices.value.find(d => d.id === id) || null; }
-
-async function testDevice(deviceId: string) {
-  if (testing.value) return;
-  testing.value = deviceId;
-  try {
-    const response = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/test`, {
-      method: 'POST'
-    });
-    const result = await response.json();
-    if (!response.ok) {
-      throw new Error(result?.message || '设备测试失败');
-    }
-    // 测试成功的处理逻辑可以在这里添加
-  } catch (e: any) {
-    console.error('设备测试失败:', e.message);
-  } finally {
-    testing.value = null;
-  }
-}
 
 function updateMapping(row: any) {
   const key = rdKey({ logicalId: row.logicalId, name: row.roleName });
@@ -550,7 +569,7 @@ async function start(force: boolean) {
   }
 }
 
-function cancel() { router.push({ name: 'gamelist' }); }
+function cancel() { router.push({ name: 'games' }); }
 
 const startBusy = ref(false);
 const startError = ref('');
@@ -561,6 +580,9 @@ onMounted(() => { loadAll().then(() => recomputeBlocking()); });
 <style scoped>
 .game-start-config-page {
   padding: 16px;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .config-header-card,
@@ -705,20 +727,174 @@ onMounted(() => { loadAll().then(() => recomputeBlocking()); });
 
 @media (max-width: 768px) {
   .game-start-config-page {
-    padding: 12px;
+    padding: 8px;
+    min-height: 100vh;
+    box-sizing: border-box;
+    overflow-x: hidden;
+    position: relative;
+  }
+  
+  .config-header-card,
+  .device-mapping-card,
+  .params-config-card,
+  .summary-card {
+    margin-bottom: 12px;
   }
   
   .game-overview {
     flex-direction: column;
+    gap: 12px;
+  }
+  
+  .game-title {
+    font-size: 18px;
+  }
+  
+  .game-meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  /* 设备映射表格在移动端改为卡片式布局 */
+  .el-table {
+    display: none;
+  }
+  
+  .device-mapping-mobile {
+    display: block;
+  }
+  
+  .device-card {
+    border: 1px solid var(--el-border-color);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+    background: var(--el-bg-color);
+  }
+  
+  .device-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  
+  .device-card-title {
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+  }
+  
+  .device-card-description {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+    margin-bottom: 12px;
+  }
+  
+  .device-card-select {
+    width: 100%;
+    margin-bottom: 8px;
+  }
+  
+  .params-form .el-form-item {
+    margin-bottom: 16px;
+  }
+  
+  .params-form .el-form-item__label {
+    line-height: 1.4;
+    margin-bottom: 8px;
+  }
+  
+  .params-form .el-input-number,
+  .params-form .el-select {
+    width: 100% !important;
+  }
+  
+  .summary-content {
     gap: 16px;
+  }
+  
+  .mapping-list {
+    font-size: 14px;
+  }
+  
+  /* 修复按钮区域的布局问题 */
+  .action-section {
+    margin-top: 20px;
+    margin-bottom: 30px;
+    padding: 20px 0;
+    position: relative;
+    z-index: 10;
+    background: var(--el-bg-color);
   }
   
   .action-buttons {
     flex-direction: column;
+    gap: 12px;
+    width: 100%;
   }
   
   .action-buttons .el-button {
     width: 100%;
+    height: 48px;
+    font-size: 16px;
+    border-radius: 8px;
+    touch-action: manipulation;
+  }
+  
+  /* 确保摘要卡片不会遮挡按钮 */
+  .summary-card {
+    margin-bottom: 20px;
+    overflow: visible;
+  }
+  
+  .summary-card .el-card__body {
+    padding-bottom: 20px;
+  }
+  
+  .blocking-section {
+    margin-bottom: 20px;
+  }
+  
+  .blocking-section .el-alert {
+    margin-bottom: 8px;
+    font-size: 14px;
+  }
+  
+  /* 确保页面底部有足够的空间 */
+  .game-start-config-page::after {
+    content: '';
+    display: block;
+    height: 40px;
+  }
+  
+  /* 优化表单元素的触摸体验 */
+  .el-input__inner,
+  .el-select .el-input__inner,
+  .el-input-number .el-input__inner {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  
+  .el-select-dropdown__item {
+    min-height: 44px;
+    line-height: 44px;
+    font-size: 16px;
+  }
+  
+  /* 确保卡片内容不会溢出 */
+  .el-card {
+    overflow: visible;
+  }
+  
+  .el-card__body {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+}
+
+@media (min-width: 769px) {
+  .device-mapping-mobile {
+    display: none;
   }
 }
 </style>
