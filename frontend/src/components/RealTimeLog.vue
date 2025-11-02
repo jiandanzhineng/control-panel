@@ -1,24 +1,24 @@
 <template>
   <div class="real-time-log">
-    <div class="log-header">
+    <div v-if="!compact" class="log-header">
       <h3>实时日志</h3>
       <div class="controls">
         <button @click="clearLogs">清空</button>
       </div>
     </div>
     
-    <div class="log-container" ref="logContainer">
+    <div class="log-container" ref="logContainer" :style="{ maxHeight: height }">
       <div 
-        v-for="log in logs" 
+        v-for="log in filteredLogs" 
         :key="log.id" 
-        :class="['log-entry', `level-${log.level.toLowerCase()}`]"
+        :class="['log-entry', `level-${log.level.toLowerCase()}`, { compact: compact }]"
       >
         <span class="timestamp">{{ formatTime(log.timestamp) }}</span>
-        <span class="level">{{ log.level }}</span>
-        <span class="module">{{ log.module }}</span>
+        <span class="level">{{ formatLevel(log.level) }}</span>
+        <span class="module">{{ formatModule(log.module) }}</span>
         <span class="message">{{ log.message }}</span>
       </div>
-      <div v-if="logs.length === 0" class="no-logs">
+      <div v-if="filteredLogs.length === 0" class="no-logs">
         暂无日志数据
       </div>
     </div>
@@ -26,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 
 interface LogEntry {
   id: number
@@ -36,10 +36,35 @@ interface LogEntry {
   message: string
 }
 
+interface Props {
+  moduleFilter?: string[]
+  height?: string
+  compact?: boolean
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  moduleFilter: () => [],
+  height: '400px',
+  compact: false
+})
+
 const logs = ref<LogEntry[]>([])
 const eventSource = ref<EventSource | null>(null)
 const logContainer = ref<HTMLElement>()
 let logIdCounter = 0
+
+const filteredLogs = computed(() => {
+  if (!props.moduleFilter || props.moduleFilter.length === 0) {
+    return logs.value
+  }
+  
+  return logs.value.filter(log => {
+    const moduleText = log.module.toLowerCase()
+    return props.moduleFilter.some(filter => 
+      moduleText.includes(filter.toLowerCase())
+    )
+  })
+})
 
 const connectToLogStream = () => {
   if (eventSource.value) {
@@ -83,7 +108,43 @@ const scrollToBottom = () => {
 }
 
 const formatTime = (timestamp: string) => {
-  return new Date(timestamp).toLocaleTimeString()
+  const date = new Date(timestamp)
+  if (props.compact) {
+    // 紧凑模式：只显示时:分:秒
+    return date.toLocaleTimeString('zh-CN', { 
+      hour12: false, 
+      hour: '2-digit', 
+      minute: '2-digit', 
+      second: '2-digit' 
+    })
+  }
+  return date.toLocaleTimeString()
+}
+
+const formatLevel = (level: string) => {
+  if (props.compact) {
+    // 紧凑模式：使用单字符标识符
+    const levelMap: { [key: string]: string } = {
+      'INFO': 'I',
+      'WARN': 'W', 
+      'ERROR': 'E',
+      'DEBUG': 'D',
+      'TRACE': 'T'
+    }
+    return levelMap[level.toUpperCase()] || level.charAt(0)
+  }
+  return level
+}
+
+const formatModule = (module: string) => {
+  if (props.compact) {
+    // 紧凑模式：缩短模块名
+    if (module.length > 8) {
+      return module.substring(0, 6) + '..'
+    }
+    return module
+  }
+  return module
 }
 
 onMounted(() => {
@@ -148,10 +209,47 @@ onUnmounted(() => {
   border-bottom: none;
 }
 
+.log-entry.compact {
+  padding: 2px 8px;
+  gap: 6px;
+  font-size: 11px;
+}
+
 .timestamp {
   color: #666;
   min-width: 80px;
   text-align: left;
+}
+
+.log-entry.compact .timestamp {
+  min-width: 50px;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.log-entry.compact .level {
+  min-width: 12px;
+  font-size: 10px;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.log-entry.compact .module {
+  min-width: 50px;
+  max-width: 60px;
+  font-size: 10px;
+  color: #6c757d;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.log-entry.compact .message {
+  flex: 1;
+  font-size: 11px;
+  line-height: 1.2;
+  word-break: break-word;
 }
 
 .level {
