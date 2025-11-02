@@ -1,5 +1,13 @@
 // 后端设备存储与状态管理（去除 Pinia，保留原功能）
-const { deviceTypeMap, getDeviceTypeName } = require('../config/deviceTypes');
+const { 
+  deviceTypeMap, 
+  getDeviceTypeName, 
+  getDeviceOperations, 
+  getDeviceMonitorData, 
+  hasMonitorData, 
+  hasOperations,
+  getDeviceTypeConfig 
+} = require('../config/deviceTypes');
 const fileStorage = require('../utils/fileStorage');
 const logger = require('../utils/logger');
 const mqttClient = require('./mqttClientService');
@@ -105,11 +113,14 @@ function updateDeviceData(deviceId, data) {
 
   // 若有差异则触发回调
   if (changed && state.dataChangeHandlers.length) {
+    logger.info('设备数据发生变更，触发回调', { deviceId, changes, handlerCount: state.dataChangeHandlers.length });
     try {
       emitDeviceDataChange(device, changes, prevData, device.data);
     } catch (e) {
       logger.warn('触发数据变更回调失败', e?.message || e);
     }
+  } else if (changed) {
+    logger.warn('设备数据发生变更，但没有注册的监听器', { deviceId, changes });
   }
 }
 
@@ -217,9 +228,12 @@ async function handleDeviceMessage(message) {
     const topic = message?.topic;
     if (typeof topic !== 'string') return;
 
+    logger.info('收到MQTT消息', { topic });
+
     // 检查是否是 dpub 设备主题格式: /dpub/XXXX
     const topicMatch = topic.match(/^\/dpub\/(.+)$/);
     if (!topicMatch) {
+      logger.debug('忽略非设备主题', { topic });
       return; // 不是设备topic，忽略
     }
     const deviceId = topicMatch[1];
@@ -227,6 +241,7 @@ async function handleDeviceMessage(message) {
     // 解析消息内容（优先使用 text，其次 payload Buffer）
     let payloadObj;
     const rawText = typeof message?.text === 'string' ? message.text : (message?.payload ? message.payload.toString('utf8') : '');
+    logger.info('解析MQTT消息内容', { deviceId, rawText });
     try {
       payloadObj = JSON.parse(rawText);
     } catch (e) {
@@ -339,6 +354,135 @@ function clearDevices() {
 function getDeviceTypesForApi() {
   return { ...state.deviceTypeMap };
 }
+
+// ====== 设备操作相关功能 ======
+function executeDeviceOperation(deviceId, operationKey, params = {}) {
+  logger.info('开始执行设备操作', { 
+    deviceId, 
+    operationKey, 
+    params 
+  });
+
+  const device = getDeviceById(deviceId);
+  if (!device) {
+    logger.error('设备操作失败：设备不存在', { 
+      deviceId, 
+      operationKey, 
+      params,
+      availableDevices: state.devices.map(d => d.id)
+    });
+    const error = new Error('设备不存在');
+    error.code = 'DEVICE_NOT_FOUND';
+    throw error;
+  }
+
+  logger.info('设备信息', { 
+    deviceId, 
+    deviceType: device.type, 
+    connected: device.connected,
+    lastReport: device.lastReport 
+  });
+
+  const operations = getDeviceOperations(device.type);
+  logger.info('设备类型支持的操作', { 
+    deviceType: device.type, 
+    availableOperations: operations.map(op => op.key) 
+  });
+
+  const operation = operations.find(op => op.key === operationKey);
+  
+  if (!operation) {
+    logger.error('设备操作失败：操作不存在', { 
+      deviceId, 
+      operationKey, 
+      deviceType: device.type,
+      availableOperations: operations.map(op => op.key)
+    });
+    const error = new Error(`操作不存在: ${operationKey}`);
+    error.code = 'OPERATION_NOT_FOUND';
+    throw error;
+  }
+
+  // 合并操作数据和参数
+  const mqttData = { ...operation.mqttData, ...params };
+  const topic = `/drecv/${deviceId}`;
+  
+  logger.info('准备发送MQTT消息', { 
+    deviceId, 
+    operationKey, 
+    topic, 
+    mqttData,
+    operationConfig: operation
+  });
+  
+  try {
+    mqttClient.publish(topic, mqttData);
+    logger.info('设备操作执行成功', { 
+      deviceId, 
+      operationKey, 
+      topic,
+      mqttData 
+    });
+    return { success: true, message: '操作执行成功' };
+  } catch (error) {
+    logger.error('设备操作执行失败：MQTT发布失败', { 
+      deviceId, 
+      operationKey, 
+      topic,
+      mqttData,
+      error: error.message,
+      stack: error.stack,
+      mqttClientStatus: mqttClient.status ? mqttClient.status() : 'unknown'
+    });
+    const wrappedError = new Error(`操作执行失败: ${error.message}`);
+    wrappedError.code = 'MQTT_PUBLISH_FAILED';
+    wrappedError.originalError = error;
+    throw wrappedError;
+  }
+}
+
+// 获取设备当前监控数据
+function getDeviceMonitorDataForApi(deviceId) {
+  const device = getDeviceById(deviceId);
+  if (!device) {
+    return null;
+  }
+
+  const monitorDataDef = getDeviceMonitorData(device.type);
+  const result = {
+    deviceId: device.id,
+    type: device.type,
+    data: {},
+    timestamp: device.lastReport ? new Date(device.lastReport).toISOString() : null
+  };
+
+  // 根据监控数据定义提取相应的数据
+  monitorDataDef.forEach(def => {
+    if (device.data && device.data.hasOwnProperty(def.key)) {
+      result.data[def.key] = device.data[def.key];
+    }
+  });
+
+  return result;
+}
+
+// 获取设备类型配置（包含操作和监控数据定义）
+function getDeviceTypeConfigForApi(type) {
+  return getDeviceTypeConfig(type);
+}
+
+// 检查设备是否支持监控数据
+function deviceHasMonitorData(deviceId) {
+  const device = getDeviceById(deviceId);
+  return device ? hasMonitorData(device.type) : false;
+}
+
+// 检查设备是否支持操作
+function deviceHasOperations(deviceId) {
+  const device = getDeviceById(deviceId);
+  return device ? hasOperations(device.type) : false;
+}
+
 module.exports = {
   // 状态与快照
   state,
@@ -373,4 +517,10 @@ module.exports = {
   deleteDeviceById,
   clearDevices,
   getDeviceTypesForApi,
+  // 设备操作和监控数据相关
+  executeDeviceOperation,
+  getDeviceMonitorDataForApi,
+  getDeviceTypeConfigForApi,
+  deviceHasMonitorData,
+  deviceHasOperations,
 }

@@ -85,16 +85,46 @@
           </template>
         </el-table-column>
         
-        <el-table-column label="操作" width="100">
+        <el-table-column label="操作" width="200">
           <template #default="{ row }">
-            <el-button 
-              type="danger" 
-              size="small"
-              :icon="Delete"
-              @click="removeDevice(row.id)"
-            >
-              删除
-            </el-button>
+            <div class="table-actions">
+              <el-button 
+                v-if="hasMonitorData(row.type)"
+                type="primary" 
+                size="small"
+                @click="openMonitorModal(row)"
+              >
+                数据监控
+              </el-button>
+              <el-dropdown 
+                v-if="hasOperations(row.type)"
+                @command="(command) => executeDeviceOperation(row, command)"
+                trigger="click"
+              >
+                <el-button type="success" size="small">
+                   操作 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                 </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item 
+                      v-for="operation in getDeviceOperations(row.type)" 
+                      :key="operation.key"
+                      :command="operation"
+                    >
+                      {{ operation.name }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+              <el-button 
+                type="danger" 
+                size="small"
+                :icon="Delete"
+                @click="removeDevice(row.id)"
+              >
+                删除
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -138,6 +168,34 @@
           </div>
           
           <div class="device-card-actions">
+            <el-button 
+              v-if="hasMonitorData(device.type)"
+              type="primary" 
+              size="small"
+              @click="openMonitorModal(device)"
+            >
+              数据监控
+            </el-button>
+            <el-dropdown 
+              v-if="hasOperations(device.type)"
+              @command="(command) => executeDeviceOperation(device, command)"
+              trigger="click"
+            >
+              <el-button type="success" size="small">
+                 操作 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+               </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item 
+                    v-for="operation in getDeviceOperations(device.type)" 
+                    :key="operation.key"
+                    :command="operation"
+                  >
+                    {{ operation.name }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
             <el-button 
               type="danger" 
               size="small"
@@ -233,17 +291,62 @@
             </el-form-item>
           </el-form>
         </el-col>
+
+        <!-- 设备操作 -->
+        <el-col :xs="24" :sm="12" :md="8" v-if="deviceOperations.length > 0">
+          <h4>设备操作</h4>
+          <div class="device-operations">
+            <el-button 
+              v-for="operation in deviceOperations" 
+              :key="operation.key"
+              :type="operation.type || 'primary'"
+              :loading="operationLoading[operation.key]"
+              @click="executeOperation(operation)"
+              style="margin-bottom: 8px; width: 100%;"
+            >
+              {{ operation.name }}
+            </el-button>
+          </div>
+        </el-col>
+
+        <!-- 监控数据 -->
+        <el-col :xs="24" :sm="12" :md="8" v-if="monitorData && Object.keys(monitorData).length > 0">
+          <h4>监控数据 
+            <el-tag :type="monitorConnected ? 'success' : 'danger'" size="small">
+              {{ monitorConnected ? '实时' : '离线' }}
+            </el-tag>
+          </h4>
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item 
+              v-for="(config, key) in deviceMonitorConfig" 
+              :key="key" 
+              :label="config.name"
+            >
+              <span :style="{ color: getMonitorValueColor(key, monitorData[key]) }">
+                {{ formatMonitorValue(key, monitorData[key]) }}
+              </span>
+            </el-descriptions-item>
+          </el-descriptions>
+        </el-col>
       </el-row>
     </el-card>
 
     <el-empty v-else description="请选择一个设备查看详情" style="margin-top: 20px" />
+
+    <!-- 数据监控弹窗 -->
+    <DeviceMonitorModal 
+      :visible="monitorModalVisible"
+      :device-info="monitorDevice"
+      @close="closeMonitorModal"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { Refresh, Delete, Edit, Check, Close } from '@element-plus/icons-vue'
+import { Refresh, Delete, Edit, Check, Close, ArrowDown } from '@element-plus/icons-vue'
+import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
 
 interface DeviceData { [key: string]: any }
 interface Device {
@@ -257,15 +360,42 @@ interface Device {
 
 const devices = ref<Device[]>([]);
 const deviceTypeMap = ref<Record<string, string>>({});
+const deviceTypeConfigs = ref<Record<string, any>>({});
 const loading = ref(false);
 const loadError = ref('');
 const selectedDeviceId = ref('');
+
+// 设备操作相关
+const operationLoading = ref<Record<string, boolean>>({});
+
+// 监控数据相关
+const monitorData = ref<Record<string, any>>({});
+const monitorConnected = ref(false);
+const monitorEventSource = ref<EventSource | null>(null);
+
+// 监控弹窗相关
+const monitorModalVisible = ref(false);
+const monitorDevice = ref<Device | null>(null);
 
 const selectedDevice = computed<Device | null>(() => {
   return devices.value.find(d => d.id === selectedDeviceId.value) || null;
 });
 const connectedCount = computed(() => devices.value.filter(d => d.connected).length);
 const disconnectedCount = computed(() => devices.value.filter(d => !d.connected).length);
+
+// 当前设备的操作配置
+const deviceOperations = computed(() => {
+  if (!selectedDevice.value) return [];
+  const config = deviceTypeConfigs.value[selectedDevice.value.type];
+  return config?.operations || [];
+});
+
+// 当前设备的监控数据配置
+const deviceMonitorConfig = computed(() => {
+  if (!selectedDevice.value) return {};
+  const config = deviceTypeConfigs.value[selectedDevice.value.type];
+  return config?.monitorData || {};
+});
 
 // 编辑状态
 const isEditing = ref(false);
@@ -276,11 +406,15 @@ onMounted(async () => {
   await init();
 });
 
+onUnmounted(() => {
+  closeMonitorConnection();
+});
+
 async function init() {
   loading.value = true;
   loadError.value = '';
   try {
-    await Promise.all([loadDeviceTypes(), refreshDevices()]);
+    await Promise.all([loadDeviceTypes(), loadDeviceTypeConfigs(), refreshDevices()]);
   } catch (e: any) {
     loadError.value = e?.message || '数据加载失败';
   } finally {
@@ -294,6 +428,12 @@ async function loadDeviceTypes() {
   deviceTypeMap.value = await res.json();
 }
 
+async function loadDeviceTypeConfigs() {
+  const res = await fetch('/api/device-types/configs');
+  if (!res.ok) throw new Error('设备类型配置获取失败');
+  deviceTypeConfigs.value = await res.json();
+}
+
 async function refreshDevices() {
   const res = await fetch('/api/devices');
   if (!res.ok) throw new Error('设备列表获取失败');
@@ -303,8 +443,15 @@ async function refreshDevices() {
 
 
 function handleCurrentChange(currentRow: Device | null) {
+  // 关闭之前的监控连接
+  closeMonitorConnection();
+  
   if (currentRow) {
     selectedDeviceId.value = currentRow.id;
+    // 如果设备支持监控数据，建立SSE连接
+    setupMonitorConnection(currentRow.id, currentRow.type);
+  } else {
+    selectedDeviceId.value = '';
   }
 }
 
@@ -423,6 +570,27 @@ async function publishMessage(topic: string, message: any) {
   return true;
 }
 
+// 执行设备操作
+async function executeOperation(operation: any) {
+  if (!selectedDevice.value) return;
+  
+  const operationKey = operation.key;
+  operationLoading.value[operationKey] = true;
+  
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(selectedDevice.value.id)}/operations/${operationKey}`, {
+      method: 'POST'
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.message || '操作执行失败');
+    ElMessage.success(`${operation.name} 执行成功`);
+  } catch (error: any) {
+    ElMessage.error(error?.message || `${operation.name} 执行失败`);
+  } finally {
+    operationLoading.value[operationKey] = false;
+  }
+}
+
 function getInputType(value: any): 'number' | 'checkbox' | 'text' {
   if (typeof value === 'number') return 'number';
   if (typeof value === 'boolean') return 'checkbox';
@@ -457,6 +625,134 @@ function formatLastReport(timestamp: string | null) {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+}
+
+// 建立监控数据连接
+async function setupMonitorConnection(deviceId: string, deviceType: string) {
+  const config = deviceTypeConfigs.value[deviceType];
+  if (!config?.monitorData || Object.keys(config.monitorData).length === 0) {
+    return;
+  }
+
+  try {
+    // 先获取当前监控数据
+    const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/monitor-data`);
+    if (res.ok) {
+      const data = await res.json();
+      if (!data.error) {
+        monitorData.value = data;
+      }
+    }
+
+    // 建立SSE连接获取实时数据
+    const eventSource = new EventSource(`/api/devices/${encodeURIComponent(deviceId)}/monitor-stream`);
+    
+    eventSource.onopen = () => {
+      monitorConnected.value = true;
+    };
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        monitorData.value = { ...monitorData.value, ...data };
+      } catch (e) {
+        console.error('解析监控数据失败:', e);
+      }
+    };
+    
+    eventSource.onerror = () => {
+      monitorConnected.value = false;
+    };
+    
+    monitorEventSource.value = eventSource;
+  } catch (error) {
+    console.error('建立监控连接失败:', error);
+  }
+}
+
+// 关闭监控数据连接
+function closeMonitorConnection() {
+  if (monitorEventSource.value) {
+    monitorEventSource.value.close();
+    monitorEventSource.value = null;
+  }
+  monitorConnected.value = false;
+  monitorData.value = {};
+}
+
+// 格式化监控数据值
+function formatMonitorValue(key: string, value: any) {
+  const config = deviceMonitorConfig.value[key];
+  if (!config) return String(value || '-');
+  
+  if (value === undefined || value === null) return '-';
+  
+  if (config.unit) {
+    return `${value}${config.unit}`;
+  }
+  
+  return String(value);
+}
+
+// 获取监控数据值的颜色
+function getMonitorValueColor(key: string, value: any) {
+  const config = deviceMonitorConfig.value[key];
+  if (!config || !config.thresholds || value === undefined || value === null) {
+    return '#606266';
+  }
+  
+  const numValue = Number(value);
+  if (isNaN(numValue)) return '#606266';
+  
+  const { warning, danger } = config.thresholds;
+  
+  if (danger && numValue >= danger) return '#f56c6c';
+  if (warning && numValue >= warning) return '#e6a23c';
+  return '#67c23a';
+}
+
+// 检查设备是否支持监控数据
+function hasMonitorData(deviceType: string) {
+  const config = deviceTypeConfigs.value[deviceType];
+  return config?.monitorData && Object.keys(config.monitorData).length > 0;
+}
+
+// 检查设备是否支持操作
+function hasOperations(deviceType: string) {
+  const config = deviceTypeConfigs.value[deviceType];
+  return config?.operations && config.operations.length > 0;
+}
+
+// 获取设备操作列表
+function getDeviceOperations(deviceType: string) {
+  const config = deviceTypeConfigs.value[deviceType];
+  return config?.operations || [];
+}
+
+// 打开监控弹窗
+function openMonitorModal(device: Device) {
+  monitorDevice.value = device;
+  monitorModalVisible.value = true;
+}
+
+// 关闭监控弹窗
+function closeMonitorModal() {
+  monitorModalVisible.value = false;
+  monitorDevice.value = null;
+}
+
+// 执行设备操作（从表格/卡片操作按钮）
+async function executeDeviceOperation(device: Device, operation: any) {
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(device.id)}/operations/${operation.key}`, {
+      method: 'POST'
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.message || '操作执行失败');
+    ElMessage.success(`${operation.name} 执行成功`);
+  } catch (error: any) {
+    ElMessage.error(error?.message || `${operation.name} 执行失败`);
+  }
 }
 </script>
 
@@ -503,6 +799,12 @@ function formatLastReport(timestamp: string | null) {
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.table-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 /* 移动端卡片样式 */
@@ -566,6 +868,8 @@ function formatLastReport(timestamp: string | null) {
 .device-card-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
   padding-top: 8px;
   border-top: 1px solid #f0f0f0;
 }

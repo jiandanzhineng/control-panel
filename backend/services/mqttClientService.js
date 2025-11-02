@@ -113,15 +113,56 @@ function unsubscribe(topic) {
 }
 
 function publish(topic, message, options = { qos: 0, retain: false }) {
-  if (!state.client) throw new Error('MQTT client not initialized');
+  if (!state.client) {
+    const error = new Error('MQTT client not initialized');
+    error.code = 'MQTT_CLIENT_NOT_INITIALIZED';
+    throw error;
+  }
+  
+  if (!state.connected) {
+    const error = new Error('MQTT client not connected');
+    error.code = 'MQTT_CLIENT_NOT_CONNECTED';
+    error.details = {
+      connecting: state.connecting,
+      lastError: state.lastError,
+      brokerUrl: BROKER_URL
+    };
+    throw error;
+  }
+  
   const payload = typeof message === 'string' ? message : JSON.stringify(message);
-  state.client.publish(topic, payload, options, (err) => {
-    if (err) {
-      logger.warn('MQTT publish failed', { topic, err: err?.message || err });
-    } else {
-      logger.debug('MQTT publish ok', { topic });
+  
+  // 使用同步方式检查发布状态
+  try {
+    state.client.publish(topic, payload, options, (err) => {
+      if (err) {
+        logger.warn('MQTT publish failed (async callback)', { 
+          topic, 
+          err: err?.message || err,
+          connected: state.connected,
+          clientState: state.client?.connected
+        });
+      } else {
+        logger.debug('MQTT publish ok', { topic });
+      }
+    });
+    
+    // 立即检查客户端状态
+    if (!state.client.connected) {
+      const error = new Error('MQTT client disconnected during publish');
+      error.code = 'MQTT_CLIENT_DISCONNECTED';
+      throw error;
     }
-  });
+    
+  } catch (syncError) {
+    logger.error('MQTT publish failed (sync)', { 
+      topic, 
+      error: syncError.message,
+      connected: state.connected,
+      clientConnected: state.client?.connected
+    });
+    throw syncError;
+  }
 }
 
 function onMessage(handler) {
