@@ -9,7 +9,7 @@ const {
   getDeviceTypeConfig 
 } = require('../config/deviceTypes');
 const fileStorage = require('../utils/fileStorage');
-const logger = require('../utils/logger');
+const logger = require('./logService');
 const mqttClient = require('./mqttClientService');
 
 const state = {
@@ -113,14 +113,11 @@ function updateDeviceData(deviceId, data) {
 
   // 若有差异则触发回调
   if (changed && state.dataChangeHandlers.length) {
-    logger.info('设备数据发生变更，触发回调', { deviceId, changes, handlerCount: state.dataChangeHandlers.length });
     try {
       emitDeviceDataChange(device, changes, prevData, device.data);
     } catch (e) {
-      logger.warn('触发数据变更回调失败', e?.message || e);
+      logger.warn('Device', '触发数据变更回调失败');
     }
-  } else if (changed) {
-    logger.warn('设备数据发生变更，但没有注册的监听器', { deviceId, changes });
   }
 }
 
@@ -198,7 +195,7 @@ function deepEqual(a, b) {
 function onDeviceDataChange(handler) {
   if (typeof handler === 'function') {
     state.dataChangeHandlers.push(handler);
-    logger.info('设备数据变更回调已注册', { count: state.dataChangeHandlers.length });
+    logger.info('Device', '设备数据变更回调已注册');
   }
 }
 
@@ -207,7 +204,7 @@ function emitDeviceDataChange(device, changes, prevData, nextData) {
     try {
       fn({ deviceId: device.id, device, changes, prevData, nextData });
     } catch (e) {
-      logger.warn('设备数据变更回调执行错误', e?.message || e);
+      logger.warn('Device', '设备数据变更回调执行错误');
     }
   }
 }
@@ -228,12 +225,12 @@ async function handleDeviceMessage(message) {
     const topic = message?.topic;
     if (typeof topic !== 'string') return;
 
-    logger.info('收到MQTT消息', { topic });
+    logger.info('Device', `收到MQTT消息 ${topic}`);
 
     // 检查是否是 dpub 设备主题格式: /dpub/XXXX
     const topicMatch = topic.match(/^\/dpub\/(.+)$/);
     if (!topicMatch) {
-      logger.debug('忽略非设备主题', { topic });
+      // logger.debug('Device', '忽略非设备主题');
       return; // 不是设备topic，忽略
     }
     const deviceId = topicMatch[1];
@@ -241,11 +238,11 @@ async function handleDeviceMessage(message) {
     // 解析消息内容（优先使用 text，其次 payload Buffer）
     let payloadObj;
     const rawText = typeof message?.text === 'string' ? message.text : (message?.payload ? message.payload.toString('utf8') : '');
-    logger.info('解析MQTT消息内容', { deviceId, rawText });
+    logger.info('Device', `解析MQTT消息内容: ${rawText}`);
     try {
       payloadObj = JSON.parse(rawText);
     } catch (e) {
-      logger.error('解析MQTT消息失败', e?.message || e);
+      logger.error('Device', `解析MQTT消息失败: ${e?.message || e}`);
       return;
     }
 
@@ -262,7 +259,7 @@ async function handleDeviceMessage(message) {
           type: devType,
         };
         addDevice(deviceData);
-        logger.info('自动添加设备', { name: deviceData.name, deviceId });
+        logger.info('Device', '自动添加设备');
         device = getDeviceById(deviceId);
       } else {
         // 非 report 消息且设备不存在
@@ -290,13 +287,13 @@ async function handleDeviceMessage(message) {
     if (device) {
       device.lastReport = Date.now();
       if (!device.connected) {
-        logger.info('设备已连接', { deviceId });
+        logger.info('Device', '设备已连接');
         device.connected = true;
       }
       saveDevices();
     }
   } catch (error) {
-    logger.error('处理设备消息失败', error?.message || error);
+    logger.error('Device', '处理设备消息失败');
   }
 }
 // ====== API 适配器与业务方法（供路由层调用） ======
@@ -357,47 +354,25 @@ function getDeviceTypesForApi() {
 
 // ====== 设备操作相关功能 ======
 function executeDeviceOperation(deviceId, operationKey, params = {}) {
-  logger.info('开始执行设备操作', { 
-    deviceId, 
-    operationKey, 
-    params 
-  });
+  logger.info('Device', '开始执行设备操作');
 
   const device = getDeviceById(deviceId);
   if (!device) {
-    logger.error('设备操作失败：设备不存在', { 
-      deviceId, 
-      operationKey, 
-      params,
-      availableDevices: state.devices.map(d => d.id)
-    });
+    logger.error('Device', '设备操作失败：设备不存在');
     const error = new Error('设备不存在');
     error.code = 'DEVICE_NOT_FOUND';
     throw error;
   }
 
-  logger.info('设备信息', { 
-    deviceId, 
-    deviceType: device.type, 
-    connected: device.connected,
-    lastReport: device.lastReport 
-  });
+  logger.info('Device', '设备信息');
 
   const operations = getDeviceOperations(device.type);
-  logger.info('设备类型支持的操作', { 
-    deviceType: device.type, 
-    availableOperations: operations.map(op => op.key) 
-  });
+  logger.info('Device', '设备类型支持的操作');
 
   const operation = operations.find(op => op.key === operationKey);
   
   if (!operation) {
-    logger.error('设备操作失败：操作不存在', { 
-      deviceId, 
-      operationKey, 
-      deviceType: device.type,
-      availableOperations: operations.map(op => op.key)
-    });
+    logger.error('Device', '设备操作失败：操作不存在');
     const error = new Error(`操作不存在: ${operationKey}`);
     error.code = 'OPERATION_NOT_FOUND';
     throw error;
@@ -407,33 +382,14 @@ function executeDeviceOperation(deviceId, operationKey, params = {}) {
   const mqttData = { ...operation.mqttData, ...params };
   const topic = `/drecv/${deviceId}`;
   
-  logger.info('准备发送MQTT消息', { 
-    deviceId, 
-    operationKey, 
-    topic, 
-    mqttData,
-    operationConfig: operation
-  });
+  logger.info('Device', '准备发送MQTT消息');
   
   try {
     mqttClient.publish(topic, mqttData);
-    logger.info('设备操作执行成功', { 
-      deviceId, 
-      operationKey, 
-      topic,
-      mqttData 
-    });
+    logger.info('Device', '设备操作执行成功');
     return { success: true, message: '操作执行成功' };
   } catch (error) {
-    logger.error('设备操作执行失败：MQTT发布失败', { 
-      deviceId, 
-      operationKey, 
-      topic,
-      mqttData,
-      error: error.message,
-      stack: error.stack,
-      mqttClientStatus: mqttClient.status ? mqttClient.status() : 'unknown'
-    });
+    logger.error('Device', '设备操作执行失败：MQTT发布失败');
     const wrappedError = new Error(`操作执行失败: ${error.message}`);
     wrappedError.code = 'MQTT_PUBLISH_FAILED';
     wrappedError.originalError = error;

@@ -1,7 +1,7 @@
 const { spawn } = require('child_process');
 const path = require('path');
 const os = require('os');
-const logger = require('../utils/logger');
+const logger = require('./logService');
 
 let currentInstance = null;
 
@@ -20,8 +20,8 @@ function publish({ ip }) {
     const port = '8080';
     const spawnOpts = { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true };
     
-    logger.debug('mdns publish input (Windows)', { ip, port });
-    logger.info('Spawning Windows mDNS tool', { cmd: mdnsToolPath, args: [port], spawnOpts });
+    logger.debug('Mdns', `Windows mDNS publish - IP: ${ip}, Port: ${port}, Tool: ${mdnsToolPath}`);
+    logger.info('Mdns', `Starting Windows mDNS tool - Command: ${mdnsToolPath}, Args: [${port}]`);
     child = spawn(mdnsToolPath, [port], spawnOpts);
   } else {
     const scriptPath = path.resolve(__dirname, '..', '..', 'mdns', 'mdns_register_ip.py');
@@ -29,26 +29,25 @@ function publish({ ip }) {
     const spawnOpts = { stdio: ['pipe', 'pipe', 'pipe'] };
     const venvPython = path.resolve(__dirname, '..', '..', 'mdns', '.venv', 'bin', 'python');
     
-    logger.debug('mdns publish input (Linux)', { ip });
-    logger.info('Spawning venv python for mDNS', { cmd: venvPython, args, spawnOpts });
+    logger.debug('Mdns', `Linux mDNS publish - IP: ${ip}, Script: ${scriptPath}`);
+    logger.info('Mdns', `Starting venv python for mDNS - Command: ${venvPython}, Args: [${args.join(', ')}]`);
     child = spawn(venvPython, args, spawnOpts);
   }
   
   currentInstance = { ip, child };
 
-  logger.info('Starting mDNS publisher', { platform: isWindows ? 'Windows' : 'Linux', ip });
-  logger.attachChild('mdns', child);
+  logger.info('Mdns', `mDNS publisher started - Platform: ${isWindows ? 'Windows' : 'Linux'}, IP: ${ip}`);
 
   child.on('exit', (code, signal) => {
     if (currentInstance) currentInstance.child = null;
-    logger.info('mdns child exited', { code, signal });
+    logger.info('Mdns', `mDNS child process exited - Code: ${code}, Signal: ${signal}, IP: ${currentInstance?.ip || 'unknown'}`);
   });
   child.on('error', (err) => {
     currentInstance = null;
-    logger.error('mdns child error', err?.message || err);
+    logger.error('Mdns', `mDNS child process error - ${err?.message || err}`);
   });
 
-  logger.info('mdns child started', { pid: child.pid, ip, platform: isWindows ? 'Windows' : 'Linux' });
+  logger.info('Mdns', `mDNS child process started - PID: ${child.pid}, IP: ${ip}, Platform: ${isWindows ? 'Windows' : 'Linux'}`);
   return { pid: child.pid, running: true, ip };
 }
 
@@ -57,13 +56,14 @@ function unpublish() {
   if (currentInstance.child) {
     try { 
       currentInstance.child.kill('SIGTERM'); 
-      logger.info('mdns child kill sent'); 
+      logger.info('Mdns', `mDNS child process kill signal sent - PID: ${currentInstance.child.pid}, IP: ${currentInstance.ip}`); 
     } catch (e) { 
-      logger.warn('mdns child kill failed', { err: e?.message || e }); 
+      logger.warn('Mdns', `mDNS child process kill failed - Error: ${e?.message || e}, IP: ${currentInstance.ip}`); 
     }
   }
+  const previousIp = currentInstance.ip;
   currentInstance = null;
-  logger.info('mdns unpublish');
+  logger.info('Mdns', `mDNS service unpublished - Previous IP: ${previousIp}`);
   return { running: false };
 }
 

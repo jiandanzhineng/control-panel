@@ -3,9 +3,6 @@
     <div class="log-header">
       <h3>实时日志</h3>
       <div class="controls">
-        <button @click="toggleConnection" :class="{ connected: isConnected }">
-          {{ isConnected ? '断开连接' : '连接' }}
-        </button>
         <button @click="clearLogs">清空</button>
       </div>
     </div>
@@ -40,7 +37,6 @@ interface LogEntry {
 }
 
 const logs = ref<LogEntry[]>([])
-const isConnected = ref(false)
 const eventSource = ref<EventSource | null>(null)
 const logContainer = ref<HTMLElement>()
 let logIdCounter = 0
@@ -52,10 +48,6 @@ const connectToLogStream = () => {
 
   eventSource.value = new EventSource('http://localhost:3000/api/logs/current')
   
-  eventSource.value.onopen = () => {
-    isConnected.value = true
-  }
-
   eventSource.value.onmessage = (event) => {
     const logData = JSON.parse(event.data)
     logs.value.push({
@@ -71,25 +63,12 @@ const connectToLogStream = () => {
       scrollToBottom()
     })
   }
-
-  eventSource.value.onerror = () => {
-    isConnected.value = false
-  }
 }
 
 const disconnectFromLogStream = () => {
   if (eventSource.value) {
     eventSource.value.close()
     eventSource.value = null
-  }
-  isConnected.value = false
-}
-
-const toggleConnection = () => {
-  if (isConnected.value) {
-    disconnectFromLogStream()
-  } else {
-    connectToLogStream()
   }
 }
 
@@ -145,12 +124,6 @@ onUnmounted(() => {
   border-radius: 4px;
 }
 
-.controls button.connected {
-  background: #28a745;
-  color: white;
-  border-color: #28a745;
-}
-
 .log-container {
   flex: 1;
   overflow-y: auto;
@@ -165,6 +138,7 @@ onUnmounted(() => {
 
 .log-entry {
   display: flex;
+  align-items: flex-start;
   gap: 10px;
   padding: 2px 0;
   border-bottom: 1px solid #eee;
@@ -177,11 +151,13 @@ onUnmounted(() => {
 .timestamp {
   color: #666;
   min-width: 80px;
+  text-align: left;
 }
 
 .level {
   min-width: 60px;
   font-weight: bold;
+  text-align: left;
 }
 
 .level-error {
@@ -203,15 +179,17 @@ onUnmounted(() => {
 .module {
   min-width: 120px;
   color: #495057;
+  text-align: left;
 }
 
 .message {
   flex: 1;
   color: #212529;
+  text-align: left;
 }
 
 .no-logs {
-  text-align: center;
+  text-align: left;
   color: #6c757d;
   padding: 20px;
 }

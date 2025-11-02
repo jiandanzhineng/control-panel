@@ -1,6 +1,6 @@
 const mqtt = require('mqtt');
 const os = require('os');
-const logger = require('../utils/logger');
+const logService = require('./logService');
 
 /**
  * 单例 MQTT 客户端服务
@@ -33,7 +33,7 @@ function init() {
     connectTimeout: 8000,
   };
 
-  logger.info('MQTT client init', { url: BROKER_URL, clientId: CLIENT_ID });
+  logService.info('mqttClient', `MQTT client init - url: ${BROKER_URL}, clientId: ${CLIENT_ID}`);
   const client = mqtt.connect(BROKER_URL, opts);
   state.client = client;
   state.connecting = true;
@@ -42,7 +42,7 @@ function init() {
     state.connected = true;
     state.connecting = false;
     state.lastError = null;
-    logger.info('MQTT client connected', { url: BROKER_URL });
+    logService.info('mqttClient', `MQTT client connected - url: ${BROKER_URL}`);
     // 默认订阅：如果已有订阅，重新订阅；否则可选择订阅通配符
     if (state.subscriptions.size === 0) {
       trySubscribe('#'); // 可按需改为具体主题
@@ -53,17 +53,17 @@ function init() {
 
   client.on('reconnect', () => {
     state.connecting = true;
-    logger.info('MQTT client reconnecting...', { url: BROKER_URL });
+    logService.info('mqttClient', `MQTT client reconnecting... - url: ${BROKER_URL}`);
   });
 
   client.on('close', () => {
     state.connected = false;
-    logger.warn('MQTT client connection closed');
+    logService.warn('mqttClient', 'MQTT client connection closed');
   });
 
   client.on('error', (err) => {
     state.lastError = err?.message || String(err);
-    logger.error('MQTT client error', state.lastError);
+    logService.error('mqttClient', `MQTT client error: ${state.lastError}`);
   });
 
   client.on('message', (topic, payload, packet) => {
@@ -73,7 +73,7 @@ function init() {
     // 调用用户注册的处理器
     for (const fn of state.handlers) {
       try { fn({ topic, payload, text, packet }); } catch (e) {
-        logger.warn('MQTT handler error', e?.message || e);
+        logService.warn('mqttClient', `MQTT handler error: ${e?.message || e}`);
       }
     }
   });
@@ -90,10 +90,10 @@ function trySubscribe(topic, qos = 0) {
   if (!state.client) return;
   state.client.subscribe(topic, { qos }, (err) => {
     if (err) {
-      logger.warn('MQTT subscribe failed', { topic, err: err?.message || err });
+      logService.warn('mqttClient', `MQTT subscribe failed - topic: ${topic}, error: ${err?.message || err}`);
     } else {
       state.subscriptions.add(topic);
-      logger.info('MQTT subscribed', { topic, qos });
+      logService.info('mqttClient', `MQTT subscribed - topic: ${topic}, qos: ${qos}`);
     }
   });
 }
@@ -104,10 +104,10 @@ function unsubscribe(topic) {
   if (!state.client) return;
   state.client.unsubscribe(topic, (err) => {
     if (err) {
-      logger.warn('MQTT unsubscribe failed', { topic, err: err?.message || err });
+      logService.warn('mqttClient', `MQTT unsubscribe failed - topic: ${topic}, error: ${err?.message || err}`);
     } else {
       state.subscriptions.delete(topic);
-      logger.info('MQTT unsubscribed', { topic });
+      logService.info('mqttClient', `MQTT unsubscribed - topic: ${topic}`);
     }
   });
 }
@@ -136,14 +136,9 @@ function publish(topic, message, options = { qos: 0, retain: false }) {
   try {
     state.client.publish(topic, payload, options, (err) => {
       if (err) {
-        logger.warn('MQTT publish failed (async callback)', { 
-          topic, 
-          err: err?.message || err,
-          connected: state.connected,
-          clientState: state.client?.connected
-        });
+        logService.warn('mqttClient', `MQTT publish failed (async callback) - topic: ${topic}, error: ${err?.message || err}, connected: ${state.connected}, clientState: ${state.client?.connected}`);
       } else {
-        logger.debug('MQTT publish ok', { topic });
+        logService.debug('mqttClient', `MQTT publish ok - topic: ${topic}`);
       }
     });
     
@@ -155,12 +150,7 @@ function publish(topic, message, options = { qos: 0, retain: false }) {
     }
     
   } catch (syncError) {
-    logger.error('MQTT publish failed (sync)', { 
-      topic, 
-      error: syncError.message,
-      connected: state.connected,
-      clientConnected: state.client?.connected
-    });
+    logService.error('mqttClient', `MQTT publish failed (sync) - topic: ${topic}, error: ${syncError.message}, connected: ${state.connected}, clientConnected: ${state.client?.connected}`);
     throw syncError;
   }
 }
@@ -168,7 +158,7 @@ function publish(topic, message, options = { qos: 0, retain: false }) {
 function onMessage(handler) {
   if (typeof handler === 'function') {
     state.handlers.push(handler);
-    logger.info('MQTT handler registered', { count: state.handlers.length });
+    logService.info('mqttClient', `MQTT handler registered - count: ${state.handlers.length}`);
   }
 }
 
@@ -189,7 +179,7 @@ function disconnect() {
   try { state.client.end(true); } catch (_) {}
   state.connected = false;
   state.connecting = false;
-  logger.info('MQTT client disconnected');
+  logService.info('mqttClient', 'MQTT client disconnected');
 }
 
 module.exports = {
