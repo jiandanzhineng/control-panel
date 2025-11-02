@@ -11,7 +11,8 @@
     "electron:prod": "electron electron/main.js",
     "electron:dev": "set VITE_DEV_SERVER_URL=http://localhost:5173 && electron electron/main.js",
     "build": "npm run build:frontend && electron-builder --dir",
-    "build:win": "npm run build:frontend && electron-builder --win --dir"
+    "build:win": "npm run build:frontend && electron-builder --win --dir",
+    "build:installer": "npm run build:frontend && electron-builder --win nsis --x64 --publish=never"
   },
   "build": {
     "appId": "com.controlpanel.app",
@@ -23,22 +24,45 @@
       "electron/**/*",
       "backend/**/*",
       "frontend/dist/**/*",
-      "node_modules/**/*",
-      "backend/node_modules/**/*"
+      "backend/node_modules/**/*",
+      "!backend/logs",
+      "!backend/data",
+      "!backend/tests",
+      "!backend/test_*.js",
+      "!backend/.gitignore"
+    ],
+    "extraResources": [
+      {
+        "from": "backend/inner-tools",
+        "to": "inner-tools",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "backend/game",
+        "to": "game",
+        "filter": [
+          "**/*"
+        ]
+      }
     ],
     "win": {
       "target": [
         {
-          "target": "dir",
-          "arch": [
-            "x64"
-          ]
+          "target": "nsis",
+          "arch": ["x64"]
         }
-      ]
+      ],
+      "icon": "assets/icon.ico"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Control Panel"
     }
   },
   "devDependencies": {

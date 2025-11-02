@@ -2,9 +2,18 @@ const path = require('path');
 const { app, BrowserWindow } = require('electron');
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
+const fs = require('fs');
 
 let server;
 let frontendServer;
+
+// 获取资源路径，兼容开发和打包环境
+function getResourcePath(relativePath) {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, relativePath);
+  }
+  return path.join(__dirname, '..', relativePath);
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -24,15 +33,33 @@ function createWindow() {
   } else if (frontendUrl) {
     win.loadURL(frontendUrl);
   } else {
-    win.loadFile(path.join(__dirname, '..', 'frontend', 'dist', 'index.html'));
+    const indexPath = app.isPackaged 
+      ? path.join(__dirname, '..', 'frontend', 'dist', 'index.html')
+      : path.join(__dirname, '..', 'frontend', 'dist', 'index.html');
+    
+    console.log(`[electron] Loading index.html from: ${indexPath}`);
+    if (fs.existsSync(indexPath)) {
+      win.loadFile(indexPath);
+    } else {
+      console.error(`[electron] Index file not found: ${indexPath}`);
+      win.loadURL('data:text/html,<h1>Frontend files not found</h1>');
+    }
   }
-
-  // 如需自动导航或探针，可在此处添加 win.webContents 逻辑
 }
 
 function startFrontendServer(callback) {
   const frontendApp = express();
-  const distPath = path.join(__dirname, '..', 'frontend', 'dist');
+  const distPath = app.isPackaged 
+    ? path.join(__dirname, '..', 'frontend', 'dist')
+    : path.join(__dirname, '..', 'frontend', 'dist');
+  
+  console.log(`[electron] Frontend dist path: ${distPath}`);
+  
+  if (!fs.existsSync(distPath)) {
+    console.error(`[electron] Frontend dist directory not found: ${distPath}`);
+    callback();
+    return;
+  }
   
   // API转发中间件：将/api/*请求转发到后端
   frontendApp.use('/api', createProxyMiddleware({
@@ -58,22 +85,44 @@ function startFrontendServer(callback) {
 }
 
 function startBackendThenWindow() {
-  const expressApp = require(path.join(__dirname, '..', 'backend', 'index.js'));
-  const BACKEND_PORT = 5278;
-  server = expressApp.listen(BACKEND_PORT, () => {
-    process.env.BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
-    console.log(`[electron] backend started: ${process.env.BACKEND_URL}`);
+  try {
+    const backendPath = app.isPackaged 
+      ? path.join(__dirname, '..', 'backend', 'index.js')
+      : path.join(__dirname, '..', 'backend', 'index.js');
     
-    // 如果不是开发模式，启动前端服务器
-    console.log(`[electron] VITE_DEV_SERVER_URL: ${process.env.VITE_DEV_SERVER_URL}`);
-    if (!process.env.VITE_DEV_SERVER_URL) {
-      console.log('[electron] starting frontend server...');
-      startFrontendServer(createWindow);
-    } else {
-      console.log('[electron] using dev server, skipping frontend server');
-      createWindow();
+    console.log(`[electron] Backend path: ${backendPath}`);
+    
+    if (!fs.existsSync(backendPath)) {
+      console.error(`[electron] Backend file not found: ${backendPath}`);
+      createWindow(); // 即使后端启动失败也创建窗口
+      return;
     }
-  });
+    
+    const expressApp = require(backendPath);
+    const BACKEND_PORT = 5278;
+    server = expressApp.listen(BACKEND_PORT, () => {
+      process.env.BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
+      console.log(`[electron] backend started: ${process.env.BACKEND_URL}`);
+      
+      // 如果不是开发模式，启动前端服务器
+      console.log(`[electron] VITE_DEV_SERVER_URL: ${process.env.VITE_DEV_SERVER_URL}`);
+      if (!process.env.VITE_DEV_SERVER_URL) {
+        console.log('[electron] starting frontend server...');
+        startFrontendServer(createWindow);
+      } else {
+        console.log('[electron] using dev server, skipping frontend server');
+        createWindow();
+      }
+    });
+    
+    server.on('error', (err) => {
+      console.error('[electron] Backend server error:', err);
+      createWindow(); // 后端启动失败时仍然创建窗口
+    });
+  } catch (error) {
+    console.error('[electron] Error starting backend:', error);
+    createWindow(); // 出现异常时仍然创建窗口
+  }
 }
 
 app.whenReady().then(startBackendThenWindow);

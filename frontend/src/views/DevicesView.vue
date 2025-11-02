@@ -98,7 +98,7 @@
               </el-button>
               <el-dropdown 
                 v-if="hasOperations(row.type)"
-                @command="(command) => executeDeviceOperation(row, command)"
+                @command="(command: any) => executeDeviceOperation(row, command)"
                 trigger="click"
               >
                 <el-button type="success" size="small">
@@ -178,7 +178,7 @@
             </el-button>
             <el-dropdown 
               v-if="hasOperations(device.type)"
-              @command="(command) => executeDeviceOperation(device, command)"
+              @command="(command: any) => executeDeviceOperation(device, command)"
               trigger="click"
             >
               <el-button type="success" size="small">
@@ -322,8 +322,8 @@
               :key="key" 
               :label="config.name"
             >
-              <span :style="{ color: getMonitorValueColor(key, monitorData[key]) }">
-                {{ formatMonitorValue(key, monitorData[key]) }}
+              <span :style="{ color: getMonitorValueColor(String(key), monitorData[key]) }">
+                {{ formatMonitorValue(String(key), monitorData[key]) }}
               </span>
             </el-descriptions-item>
           </el-descriptions>
