@@ -1,0 +1,54 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22.5.1'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: |
+        if (Test-Path ".npmrc") { Remove-Item ".npmrc" -Force }
+        npm cache verify
+        npm install
+        cd backend
+        npm install
+        cd ../frontend
+        npm install
+      shell: powershell
+      
+    - name: Build and publish application
+      run: npm run build:installer
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          ./dist/*.exe
+          ./dist/*.blockmap
+          ./dist/latest.yml
+        name: Release ${{ github.ref_name }}
+        tag_name: ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
