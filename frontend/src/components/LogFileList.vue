@@ -55,7 +55,7 @@ const loading = ref(false)
 const fetchFiles = async () => {
   loading.value = true
   try {
-    const response = await fetch('http://localhost:3000/api/logs/files')
+    const response = await fetch('/api/logs/files')
     const data = await response.json()
     files.value = data.files || []
   } catch (error) {
@@ -70,7 +70,7 @@ const refreshFiles = () => {
 }
 
 const downloadFile = (filename: string) => {
-  const url = `http://localhost:3000/api/logs/download/${filename}`
+  const url = `/api/logs/download/${filename}`
   const link = document.createElement('a')
   link.href = url
   link.download = filename

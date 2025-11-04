@@ -33,9 +33,8 @@ function createWindow() {
   } else if (frontendUrl) {
     win.loadURL(frontendUrl);
   } else {
-    const indexPath = app.isPackaged 
-      ? path.join(__dirname, '..', 'frontend', 'dist', 'index.html')
-      : path.join(__dirname, '..', 'frontend', 'dist', 'index.html');
+    const appPath = app.isPackaged ? app.getAppPath() : path.join(__dirname, '..');
+    const indexPath = path.join(appPath, 'frontend', 'dist', 'index.html');
     
     console.log(`[electron] Loading index.html from: ${indexPath}`);
     if (fs.existsSync(indexPath)) {
@@ -49,9 +48,8 @@ function createWindow() {
 
 function startFrontendServer(callback) {
   const frontendApp = express();
-  const distPath = app.isPackaged 
-    ? path.join(__dirname, '..', 'frontend', 'dist')
-    : path.join(__dirname, '..', 'frontend', 'dist');
+  const appPath = app.isPackaged ? app.getAppPath() : path.join(__dirname, '..');
+  const distPath = path.join(appPath, 'frontend', 'dist');
   
   console.log(`[electron] Frontend dist path: ${distPath}`);
   
@@ -86,9 +84,10 @@ function startFrontendServer(callback) {
 
 function startBackendThenWindow() {
   try {
-    const backendPath = app.isPackaged 
-      ? path.join(__dirname, '..', 'backend', 'index.js')
-      : path.join(__dirname, '..', 'backend', 'index.js');
+    const appPath = app.isPackaged ? app.getAppPath() : path.join(__dirname, '..');
+    const backendPath = path.join(appPath, 'backend', 'index.js');
+    const userDataDir = app.getPath('userData');
+    process.env.BACKEND_DATA_DIR = path.join(userDataDir, 'data');
     
     console.log(`[electron] Backend path: ${backendPath}`);
     

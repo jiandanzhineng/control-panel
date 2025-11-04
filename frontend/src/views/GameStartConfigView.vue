@@ -376,12 +376,6 @@ const deviceMappings = computed(() => {
   }));
 });
 
-const availableDevices = computed(() => {
-  return devices.value.map(device => ({
-    id: device.id,
-    name: device.name || device.id
-  }));
-});
 
 function getAvailableDevicesForRole(row: any) {
   const deviceType = row.deviceType;

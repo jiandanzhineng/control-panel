@@ -71,7 +71,7 @@ const connectToLogStream = () => {
     eventSource.value.close()
   }
 
-  eventSource.value = new EventSource('http://localhost:3000/api/logs/current')
+  eventSource.value = new EventSource('/api/logs/current')
   
   eventSource.value.onmessage = (event) => {
     const logData = JSON.parse(event.data)

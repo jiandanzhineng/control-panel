@@ -1,7 +1,8 @@
 const fs = require('fs')
 const path = require('path')
 
-const dataDir = path.resolve(__dirname, '../data')
+const fallbackDir = path.resolve(__dirname, '../data')
+const dataDir = process.env.BACKEND_DATA_DIR ? path.resolve(process.env.BACKEND_DATA_DIR) : fallbackDir
 
 function ensureDataDir() {
   if (!fs.existsSync(dataDir)) {
