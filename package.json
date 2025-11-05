@@ -1,7 +1,7 @@
 {
   "name": "frontbacken-client",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.3",
   "main": "electron/main.js",
   "scripts": {
     "dev:all": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
