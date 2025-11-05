@@ -911,6 +911,8 @@ async function executeDeviceOperation(device: Device, operation: any) {
   /* 隐藏桌面端表格，显示移动端卡片 */
   .desktop-table {
     display: none;
+    width: 100%;
+    overflow-x: auto;
   }
   
   .mobile-device-list {

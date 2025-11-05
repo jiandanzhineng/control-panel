@@ -300,7 +300,7 @@ onUnmounted(() => {
 
 .charts-container {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 20px;
 }
 
@@ -338,5 +338,11 @@ onUnmounted(() => {
 .no-charts {
   text-align: center;
   padding: 40px;
+}
+
+@media (max-width: 768px) {
+  :deep(.el-dialog) {
+    width: 95% !important;
+  }
 }
 </style>

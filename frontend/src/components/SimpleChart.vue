@@ -1,5 +1,5 @@
 <template>
-  <div class="simple-chart" :style="{ height: height + 'px' }">
+  <div class="simple-chart" :style="{ height: height + 'px' }" ref="chartRef">
     <div v-if="!data || data.length === 0" class="no-data">
       暂无数据
     </div>
@@ -81,7 +81,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 
 const props = defineProps({
   data: {
@@ -98,13 +98,36 @@ const props = defineProps({
   },
   width: {
     type: Number,
-    default: 400
+    default: null
   }
 })
 
+const chartRef = ref(null)
+const dynamicWidth = ref(0)
+
 const padding = 40
-const chartWidth = computed(() => props.width - 2 * padding)
+const chartWidth = computed(() => (props.width || dynamicWidth.value) - 2 * padding)
 const chartHeight = computed(() => props.height - 2 * padding)
+
+let resizeObserver = null
+
+onMounted(() => {
+  if (chartRef.value) {
+    resizeObserver = new ResizeObserver(entries => {
+      if (entries[0]) {
+        dynamicWidth.value = entries[0].contentRect.width
+      }
+    })
+    resizeObserver.observe(chartRef.value)
+    dynamicWidth.value = chartRef.value.offsetWidth
+  }
+})
+
+onUnmounted(() => {
+  if (resizeObserver && chartRef.value) {
+    resizeObserver.unobserve(chartRef.value)
+  }
+})
 
 const values = computed(() => props.data.map(item => item.value))
 const times = computed(() => props.data.map(item => item.time))

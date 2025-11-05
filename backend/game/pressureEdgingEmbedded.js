@@ -348,13 +348,13 @@ const pressureEdging = {
     <title>气压寸止玩法</title>
     <style>
       :root { color-scheme: light dark; }
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; margin: 0; padding: 16px; }
-      header { display: flex; align-items: center; gap: 8px; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; margin: 0; padding: 8px; }
+      header { display: flex; align-items: center; gap: 6px; }
       .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #eee; color: #333; font-size: 12px; }
-      main { margin-top: 16px; display: grid; grid-template-columns: 1fr; gap: 12px; }
-      .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; }
-      .actions { display: flex; gap: 8px; }
-      button { padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; background: #fafafa; cursor: pointer; }
+      main { margin-top: 8px; display: grid; grid-template-columns: 1fr; gap: 8px; }
+      .card { border: 1px solid #ddd; border-radius: 8px; padding: 8px; }
+      .actions { display: flex; gap: 6px; }
+      button { padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; background: #fafafa; cursor: pointer; }
       button.primary { background: #2563eb; color: white; border-color: #1d4ed8; }
       .hidden { display: none !important; }
       .ok { color: #16a34a; }
@@ -403,7 +403,19 @@ const pressureEdging = {
         function render() {
           $('[data-bind]').forEach(el => {
             const key = el.getAttribute('data-bind');
-            const val = (key in state) ? state[key] : (key in uiFields ? uiFields[key] : el.textContent);
+            let val = (key in state) ? state[key] : (key in uiFields ? uiFields[key] : el.textContent);
+            if (key === 'startTime') {
+              const num = Number(val);
+              if (!Number.isNaN(num) && num > 0) {
+                val = new Date(num).toLocaleString();
+              }
+            }
+            if (el.tagName === 'STRONG') {
+              const num = Number(val);
+              if (!Number.isNaN(num)) {
+                val = num.toFixed(2);
+              }
+            }
             el.textContent = (val === undefined || val === null) ? '' : String(val);
           });
           $('[data-show]').forEach(el => {

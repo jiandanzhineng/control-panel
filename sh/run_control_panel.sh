@@ -1,8 +1,14 @@
-#!/usr/bin/env sh
+#!/usr/bin/env bash
 set -e
 
-# 替换 Termux 源为清华大学镜像
-sed -i 's@^\(deb.*stable main\)$@#\1\ndeb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main stable main@' $PREFIX/etc/apt/sources.list
+# 替换 Termux 源为清华大学镜像（仅在 Termux 且文件存在时）
+if command -v pkg >/dev/null 2>&1; then
+  PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+  SOURCES_FILE="$PREFIX/etc/apt/sources.list"
+  if [ -f "$SOURCES_FILE" ]; then
+    sed -i 's@^\(deb.*stable main\)$@#\1\ndeb https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main stable main@' "$SOURCES_FILE"
+  fi
+fi
 
 # 固定安装目录（Termux 下通常为 $HOME）
 INSTALL_PARENT="${HOME}"
@@ -14,17 +20,12 @@ if command -v pkg >/dev/null 2>&1; then
 fi
 
 # 下载文件，优先使用 wget，缺失则使用 curl
-ZIP_URL="https://www.ezsapi.top/control-panel-stable.zip"
+ZIP_URL="https://update.ezsapi.top/control-panel-stable.zip"
 ZIP_FILE="${INSTALL_PARENT}/control-panel-stable.zip"
 
-if command -v wget >/dev/null 2>&1; then
-  wget -O "$ZIP_FILE" "$ZIP_URL"
-elif command -v curl >/dev/null 2>&1; then
-  curl -L -o "$ZIP_FILE" "$ZIP_URL"
-else
-  echo "未找到 wget 或 curl，请安装其中之一后重试." >&2
-  exit 1
-fi
+
+curl -L -o "$ZIP_FILE" "$ZIP_URL"
+
 
 # 解压到固定目录
 mkdir -p "$INSTALL_PARENT"

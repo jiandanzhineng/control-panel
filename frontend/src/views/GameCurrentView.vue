@@ -1,12 +1,6 @@
 <template>
   <div class="game-current-page">
     <el-card shadow="never" class="control-card">
-      <template #header>
-        <div class="card-header">
-          <el-icon><VideoPlay /></el-icon>
-          <span>游戏控制</span>
-        </div>
-      </template>
       <div class="control-content">
         <div class="control-buttons">
           <el-button 
@@ -25,22 +19,6 @@
           >
             {{ stopping ? '停止中...' : '停止游戏' }}
           </el-button>
-        </div>
-        <div class="status-info" v-if="error || stopError">
-          <el-alert 
-            v-if="error" 
-            :title="error" 
-            type="error" 
-            :closable="false"
-            show-icon
-          />
-          <el-alert 
-            v-if="stopError" 
-            :title="stopError" 
-            type="error" 
-            :closable="false"
-            show-icon
-          />
         </div>
       </div>
     </el-card>
@@ -129,7 +107,7 @@ async function stopGame() {
       throw new Error(data?.message || '停止游戏失败');
     }
     // 停止成功，跳转回游戏列表
-    router.push({ name: 'gamelist' });
+    router.push('/games');
   } catch (e: any) {
     stopError.value = e?.message || '停止游戏失败';
   } finally {
@@ -222,7 +200,7 @@ function executeScripts(scripts: HTMLScriptElement[]) {
 
 <style scoped>
 .game-current-page {
-  padding: 16px;
+  padding: 8px;
 }
 
 .control-card {
@@ -239,12 +217,12 @@ function executeScripts(scripts: HTMLScriptElement[]) {
 .control-content {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
 }
 
 .control-buttons {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -255,7 +233,7 @@ function executeScripts(scripts: HTMLScriptElement[]) {
 }
 
 .game-content-card {
-  min-height: 500px;
+  min-height: 360px;
 }
 
 .embedded-html {
