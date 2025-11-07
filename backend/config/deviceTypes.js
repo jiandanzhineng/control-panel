@@ -79,7 +79,7 @@ const deviceTypeConfig = {
       {
         key: 'distance',
         name: '距离',
-        unit: 'm'
+        unit: 'mm'
       },
       {
         key: 'button0',

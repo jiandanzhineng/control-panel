@@ -25,6 +25,9 @@
           >
             清空设备
           </el-button>
+          <el-checkbox v-model="autoRefreshEnabled" style="margin-left: 12px;">
+            自动刷新(3秒)
+          </el-checkbox>
         </div>
       </div>
     </el-card>
@@ -343,7 +346,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { Refresh, Delete, Edit, Check, Close, ArrowDown } from '@element-plus/icons-vue'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
@@ -364,6 +367,8 @@ const deviceTypeConfigs = ref<Record<string, any>>({});
 const loading = ref(false);
 const loadError = ref('');
 const selectedDeviceId = ref('');
+const autoRefreshEnabled = ref(true);
+const autoRefreshTimer = ref<number | null>(null);
 
 // 设备操作相关
 const operationLoading = ref<Record<string, boolean>>({});
@@ -404,10 +409,12 @@ const originalData = ref<DeviceData>({});
 
 onMounted(async () => {
   await init();
+  if (autoRefreshEnabled.value) startAutoRefresh();
 });
 
 onUnmounted(() => {
   closeMonitorConnection();
+  stopAutoRefresh();
 });
 
 async function init() {
@@ -437,21 +444,45 @@ async function loadDeviceTypeConfigs() {
 async function refreshDevices() {
   const res = await fetch('/api/devices');
   if (!res.ok) throw new Error('设备列表获取失败');
-  devices.value = await res.json();
+  const list: Device[] = await res.json();
+  devices.value = list;
+  // 刷新后保留原选中设备；若设备已不存在则清空并关闭监控
+  if (selectedDeviceId.value) {
+    const exists = list.some(d => d.id === selectedDeviceId.value);
+    if (!exists) {
+      selectedDeviceId.value = '';
+      closeMonitorConnection();
+    }
+  }
 }
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  autoRefreshTimer.value = window.setInterval(() => {
+    refreshDevices();
+  }, 3000);
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshTimer.value) {
+    clearInterval(autoRefreshTimer.value);
+    autoRefreshTimer.value = null;
+  }
+}
+
+watch(autoRefreshEnabled, (enabled) => {
+  if (enabled) startAutoRefresh();
+  else stopAutoRefresh();
+});
 
 
 
 function handleCurrentChange(currentRow: Device | null) {
-  // 关闭之前的监控连接
-  closeMonitorConnection();
-  
+  // 仅在明确选中新的行时才切换设备与监控连接
   if (currentRow) {
+    closeMonitorConnection();
     selectedDeviceId.value = currentRow.id;
-    // 如果设备支持监控数据，建立SSE连接
     setupMonitorConnection(currentRow.id, currentRow.type);
-  } else {
-    selectedDeviceId.value = '';
   }
 }
 
