@@ -1,11 +1,13 @@
 const path = require('path');
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const fs = require('fs');
 
 let server;
 let frontendServer;
+let mainWindow;
 
 // 获取资源路径，兼容开发和打包环境
 function getResourcePath(relativePath) {
@@ -24,6 +26,7 @@ function createWindow() {
       contextIsolation: false,
     },
   });
+  mainWindow = win;
 
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   const frontendUrl = process.env.FRONTEND_URL;
@@ -44,6 +47,44 @@ function createWindow() {
       win.loadURL('data:text/html,<h1>Frontend files not found</h1>');
     }
   }
+}
+
+function initAutoUpdate() {
+  if (!app.isPackaged) return;
+
+  autoUpdater.on('update-available', () => {
+    // 简单提示，有更新
+    try {
+      dialog.showMessageBox(mainWindow || undefined, {
+        type: 'info',
+        title: '更新可用',
+        message: '检测到新版本，正在下载…',
+        buttons: ['好的']
+      });
+    } catch {}
+  });
+
+  autoUpdater.on('update-downloaded', () => {
+    // 下载完成，询问是否重启安装
+    try {
+      dialog
+        .showMessageBox(mainWindow || undefined, {
+          type: 'question',
+          title: '更新已准备就绪',
+          message: '更新已下载，是否立即重启并安装？',
+          buttons: ['立即安装', '稍后'],
+          defaultId: 0,
+        })
+        .then(({ response }) => {
+          if (response === 0) autoUpdater.quitAndInstall();
+        });
+    } catch {
+      autoUpdater.quitAndInstall();
+    }
+  });
+
+  // 最简调用：检查并提示
+  try { autoUpdater.checkForUpdatesAndNotify(); } catch {}
 }
 
 function startFrontendServer(callback) {
@@ -124,7 +165,10 @@ function startBackendThenWindow() {
   }
 }
 
-app.whenReady().then(startBackendThenWindow);
+app.whenReady().then(() => {
+  startBackendThenWindow();
+  initAutoUpdate();
+});
 app.on('before-quit', () => { 
   try { 
     server && server.close(); 
