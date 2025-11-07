@@ -5,10 +5,8 @@ const { sendError } = require('../utils/http');
 
 router.post('/publish', (req, res) => {
   try {
-    const { ip } = req.body || {};
-    if (!ip) return sendError(res, 'MDNS_PUBLISH_FAILED', 'Missing ip', 400);
-    const result = mdnsService.publish({ ip });
-    res.json({ running: true, pid: result.pid, ip });
+    const result = mdnsService.publish();
+    res.json(result);
   } catch (e) {
     sendError(res, 'MDNS_PUBLISH_FAILED', e.message);
   }

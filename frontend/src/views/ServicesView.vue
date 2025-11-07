@@ -4,24 +4,9 @@
 
     <section class="card">
       <h2>mDNS 服务</h2>
-      <p class="muted">请选择要使用的本机 IP</p>
-
       <div class="row">
-        <button @click="refreshIps" :disabled="loadingIps">{{ loadingIps ? '刷新中...' : '刷新 IP 列表' }}</button>
-        <span v-if="ipsError" class="error">{{ ipsError }}</span>
-        <span v-if="ipsUpdated" class="ok">已更新 IP 列表</span>
-      </div>
-
-      <ul class="ip-list">
-        <li v-for="row in ips" :key="row.ip" :class="{ selected: selectedIp === row.ip }" @click="selectedIp = row.ip">
-          {{ row.interface }} - {{ row.ip }}/{{ row.cidr }}
-        </li>
-      </ul>
-
-      <div class="row">
-        <button @click="startMdns" :disabled="!selectedIp || mdnsBusy">{{ mdnsBusy ? '启动中...' : '启动 mDNS' }}</button>
+        <button @click="startMdns" :disabled="mdnsBusy">{{ mdnsBusy ? '启动中...' : '启动 mDNS' }}</button>
         <button @click="stopMdns" :disabled="mdnsBusy">暂停 mDNS</button>
-        <span class="muted" v-if="!selectedIp">请先选择 IP</span>
       </div>
 
       <div class="row">
@@ -42,6 +27,11 @@
       <div class="row">
         <button @click="startMqtt" :disabled="mqttBusy">{{ mqttBusy ? '启动中...' : '启动 MQTT' }}</button>
         <button @click="stopMqtt" :disabled="mqttBusy">暂停 MQTT</button>
+      </div>
+      <div class="row">
+        <button @click="refreshMqttStatus" :disabled="mqttStatusLoading">{{ mqttStatusLoading ? '刷新中...' : '刷新状态' }}</button>
+        <span v-if="mqttStatusError" class="error">{{ mqttStatusError }}</span>
+        <span v-if="mqttStatusUpdated" class="ok">状态已更新</span>
       </div>
       <div class="status">
         <p>状态：{{ mqttStatus.running ? '运行中' : '已停止' }}</p>
@@ -77,28 +67,16 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue';
+import { onMounted, onUnmounted, ref, computed } from 'vue';
 import RealTimeLog from '@/components/RealTimeLog.vue';
 
-// mDNS 状态
-const ips = ref<Array<{ interface: string; ip: string; cidr: number }>>([]);
-const selectedIp = ref<string>('');
-const loadingIps = ref(false);
-const ipsError = ref<string>('');
-const ipsUpdated = ref(false);
+// mDNS 状态（对象形式）
+const mdnsStatus = ref<{ ip?: string; pid?: number; running: boolean }>({ running: false });
 
 const mdnsBusy = ref(false);
 const mdnsError = ref('');
-const mdnsList = ref<Array<{ id: string; ip: string; pid?: number; running: boolean }>>([]);
-const currentMdnsIp = computed(() => {
-  if (!Array.isArray(mdnsList.value)) return '';
-  return mdnsList.value.find(r => r.running)?.ip || '';
-});
-const mdnsStatusText = computed(() => {
-  if (!Array.isArray(mdnsList.value)) return '已停止';
-  const any = mdnsList.value.find(r => r.running);
-  return any ? '运行中' : '已停止';
-});
+const currentMdnsIp = computed(() => mdnsStatus.value.ip || '');
+const mdnsStatusText = computed(() => (mdnsStatus.value.running ? '运行中' : '已停止'));
 
 const mdnsStatusLoading = ref(false);
 const mdnsStatusError = ref('');
@@ -107,35 +85,20 @@ const mdnsStatusUpdated = ref(false);
 const mqttStatus = ref<{ running: boolean; pid?: number; port?: number }>({ running: false });
 const mqttBusy = ref(false);
 const mqttError = ref('');
+const mqttStatusLoading = ref(false);
+const mqttStatusError = ref('');
+const mqttStatusUpdated = ref(false);
 
 // MQTT 客户端状态
 const mqttClientStatus = ref<{ url?: string; clientId?: string; connected: boolean; connecting: boolean; subscriptions?: string[]; handlerCount?: number; lastError?: string | null }>({ connected: false, connecting: false });
 const mqttClientLoading = ref(false);
 const mqttClientError = ref('');
 
-async function refreshIps() {
-  loadingIps.value = true;
-  ipsError.value = '';
-  ipsUpdated.value = false;
-  try {
-    const res = await fetch('/api/network/ips');
-    if (!res.ok) throw new Error('IP 列表获取失败，请稍后重试');
-    const data = await res.json();
-    ips.value = data;
-    ipsUpdated.value = true;
-  } catch (e: any) {
-    ipsError.value = e?.message || 'IP 列表获取失败，请稍后重试';
-  } finally {
-    loadingIps.value = false;
-    setTimeout(() => (ipsUpdated.value = false), 1500);
-  }
-}
-
 async function loadMdnsStatus() {
   try {
     const res = await fetch('/api/mdns/status');
     if (res.ok) {
-      mdnsList.value = await res.json();
+      mdnsStatus.value = await res.json();
       return true;
     }
     return false;
@@ -161,14 +124,13 @@ async function refreshMdnsStatus() {
 }
 
 async function startMdns() {
-  if (!selectedIp.value) return;
   mdnsBusy.value = true;
   mdnsError.value = '';
   try {
     const res = await fetch('/api/mdns/publish', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ip: selectedIp.value }),
+      body: JSON.stringify({}),
     });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.message || 'mDNS 启动失败');
@@ -184,16 +146,10 @@ async function stopMdns() {
   mdnsBusy.value = true;
   mdnsError.value = '';
   try {
-    // 取第一个运行中的 id
-    const row = mdnsList.value.find(r => r.running);
-    if (!row) {
-      mdnsBusy.value = false;
-      return;
-    }
     const res = await fetch('/api/mdns/unpublish', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: row.id }),
+      body: JSON.stringify({}),
     });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.message || 'mDNS 暂停失败');
@@ -210,6 +166,23 @@ async function loadMqttStatus() {
     const res = await fetch('/api/mqtt/status');
     if (res.ok) mqttStatus.value = await res.json();
   } catch {}
+}
+
+async function refreshMqttStatus() {
+  mqttStatusLoading.value = true;
+  mqttStatusError.value = '';
+  mqttStatusUpdated.value = false;
+  try {
+    const res = await fetch('/api/mqtt/status');
+    if (!res.ok) throw new Error('状态获取失败');
+    mqttStatus.value = await res.json();
+    mqttStatusUpdated.value = true;
+  } catch (e: any) {
+    mqttStatusError.value = e?.message || '状态获取失败';
+  } finally {
+    mqttStatusLoading.value = false;
+    setTimeout(() => (mqttStatusUpdated.value = false), 1500);
+  }
 }
 
 async function loadMqttClientStatus() {
@@ -261,11 +234,23 @@ async function stopMqtt() {
   }
 }
 
+let refreshTimer: any = null;
 onMounted(async () => {
-  await refreshIps();
   await loadMdnsStatus();
   await loadMqttStatus();
   await loadMqttClientStatus();
+  refreshTimer = setInterval(() => {
+    loadMdnsStatus();
+    loadMqttStatus();
+    loadMqttClientStatus();
+  }, 3000);
+});
+
+onUnmounted(() => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
 });
 </script>
 
@@ -273,9 +258,6 @@ onMounted(async () => {
 .page { max-width: 960px; margin: 40px auto; padding: 0 24px 150px 24px; text-align: left; }
 .card { margin-top: 24px; padding: 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
 .row { display: flex; gap: 12px; align-items: center; }
-.ip-list { list-style: none; padding: 0; }
-.ip-list li { padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 6px; margin: 6px 0; cursor: pointer; }
-.ip-list li.selected { background: #e0f2fe; border-color: #38bdf8; }
 .error { color: #e11d48; }
 .ok { color: #16a34a; }
 .muted { color: #6b7280; }
