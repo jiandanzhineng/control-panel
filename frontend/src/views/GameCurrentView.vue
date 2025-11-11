@@ -1,16 +1,9 @@
 <template>
   <div class="game-current-page">
-    <el-card shadow="never" class="control-card">
-      <div class="control-content">
-        <div class="control-buttons">
-          <el-button 
-            type="primary" 
-            :icon="Refresh" 
-            :loading="loading"
-            @click="reloadHtml"
-          >
-            {{ loading ? '加载中...' : '刷新页面' }}
-          </el-button>
+    <el-card shadow="never" class="game-content-card">
+      <template #header>
+        <div class="game-header">
+          <span>游戏界面</span>
           <el-button 
             type="danger" 
             :icon="Close"
@@ -20,12 +13,6 @@
             {{ stopping ? '停止中...' : '停止游戏' }}
           </el-button>
         </div>
-      </div>
-    </el-card>
-
-    <el-card shadow="never" class="game-content-card">
-      <template #header>
-        <span>游戏界面</span>
       </template>
       <div ref="containerRef" class="embedded-html"></div>
       <el-empty 
@@ -44,7 +31,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
-import { VideoPlay, Refresh, Close } from '@element-plus/icons-vue';
+import { Close } from '@element-plus/icons-vue';
 
 const router = useRouter();
 const containerRef = ref<HTMLDivElement | null>(null);
@@ -203,32 +190,10 @@ function executeScripts(scripts: HTMLScriptElement[]) {
   padding: 8px;
 }
 
-.control-card {
-  margin-bottom: 16px;
-}
-
-.card-header {
+.game-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.control-content {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.control-buttons {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.status-info {
-  display: flex;
-  flex-direction: column;
+  justify-content: space-between;
   gap: 8px;
 }
 
