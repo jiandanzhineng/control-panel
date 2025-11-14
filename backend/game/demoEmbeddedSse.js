@@ -13,6 +13,7 @@ const demo = {
     { logicalId: 'TD_DEVICE', name: '振动器', type: 'TD01', required: false },
     // 新增：QTZ 设备（测距及脚踏传感器），用于监听按钮属性变化
     { logicalId: 'QTZ_DEVICE', name: '测距及脚踏传感器', type: 'QTZ', required: true },
+    { logicalId: 'STRENGTH_DEVICE', name: '强度接口设备', interface: 'strength', required: false },
   ],
 
   // 运行时内部状态（不持久化，由玩法自行维护）

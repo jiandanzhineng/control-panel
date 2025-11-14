@@ -15,7 +15,7 @@
 
     <el-row :gutter="20" class="feature-cards">
       <el-col :xs="24" :sm="12" :md="8">
-        <el-card shadow="hover" class="feature-card" @click="$router.push('/')">
+        <el-card shadow="hover" class="feature-card" @click="$router.push('/devices')">
           <div class="feature-content">
             <el-icon class="feature-icon"><Monitor /></el-icon>
             <h3>设备管理</h3>

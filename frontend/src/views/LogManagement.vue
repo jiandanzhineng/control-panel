@@ -1,7 +1,5 @@
 <template>
   <div class="log-management">
-    <h1>日志管理系统</h1>
-    
     <div class="tabs">
       <button 
         :class="{ active: activeTab === 'realtime' }" 
@@ -17,7 +15,7 @@
       </button>
     </div>
 
-    <div class="tab-content">
+    <div class="tab-content" :class="{ realtime: activeTab === 'realtime' }">
       <RealTimeLog v-if="activeTab === 'realtime'" />
       <LogFileList v-if="activeTab === 'files'" />
     </div>
@@ -39,8 +37,9 @@ const activeTab = ref('realtime')
 
 .tabs {
   display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
+  gap: 12px;
+  justify-content: flex-start;
+  margin-bottom: 16px;
 }
 
 .tabs button {
@@ -62,5 +61,16 @@ const activeTab = ref('realtime')
   border-radius: 4px;
   padding: 20px;
   min-height: 500px;
+}
+
+.tab-content.realtime {
+  max-width: 1000px;
+}
+
+@media (max-width: 768px) {
+  .tabs {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
 }
 </style>

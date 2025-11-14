@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const logService = require('./logService');
+const { hasInterface } = require('../config/deviceTypes');
 const mqttClient = require('./mqttClientService');
 const deviceService = require('./deviceService');
 
@@ -283,7 +284,7 @@ function validateDeviceDependencies() {
   const gp = state.currentGameplay;
   if (!gp) return;
   for (const item of gp.requiredDevices) {
-    const { logicalId, required } = item || {};
+    const { logicalId, required, interface: iface } = item || {};
     const deviceId = state.deviceManager.deviceMap[logicalId];
     if (required) {
       if (!deviceId) {
@@ -297,6 +298,12 @@ function validateDeviceDependencies() {
         const err = new Error(`必需设备离线或不存在: ${logicalId}`);
         err.code = 'DEVICE_OFFLINE';
         sendLog('error', err.message, { logicalId, deviceId });
+        throw err;
+      }
+      if (iface && typeof dev?.type === 'string' && !hasInterface(dev.type, iface)) {
+        const err = new Error(`必需设备接口不匹配: ${logicalId}`);
+        err.code = 'DEVICE_INTERFACE_MISMATCH';
+        sendLog('error', err.message, { logicalId, deviceId, interface: iface, type: dev.type });
         throw err;
       }
     }

@@ -96,6 +96,17 @@ const deviceTypeConfig = {
   },
 };
 
+const interfaceConfig = {
+  strength: {
+    name: '强度控制',
+    spec: { mqttKey: 'power', range: [0, 255] }
+  }
+};
+
+const typeInterfaceMap = {
+  TD01: ['strength']
+};
+
 // 获取设备类型显示名称
 function getDeviceTypeName(type) {
   return deviceTypeMap[type] || type;
@@ -145,6 +156,27 @@ function getAllDeviceTypeConfigs() {
   return deviceTypeConfig;
 }
 
+function getInterfaceName(iface) {
+  const cfg = interfaceConfig[iface];
+  return cfg ? cfg.name : iface;
+}
+function getAllInterfaces() {
+  return Object.keys(interfaceConfig);
+}
+function getInterfaceConfig(iface) {
+  return interfaceConfig[iface] || null;
+}
+function getTypeInterfaces(type) {
+  return typeInterfaceMap[type] || [];
+}
+function hasInterface(type, iface) {
+  const interfaces = getTypeInterfaces(type);
+  return interfaces.includes(iface);
+}
+function getTypesByInterface(iface) {
+  return Object.keys(typeInterfaceMap).filter(t => (typeInterfaceMap[t] || []).includes(iface));
+}
+
 module.exports = {
   deviceTypeMap,
   deviceTypeConfig,
@@ -156,5 +188,13 @@ module.exports = {
   hasMonitorData,
   hasOperations,
   getDeviceTypeConfig,
-  getAllDeviceTypeConfigs
+  getAllDeviceTypeConfigs,
+  interfaceConfig,
+  typeInterfaceMap,
+  getInterfaceName,
+  getAllInterfaces,
+  getInterfaceConfig,
+  getTypeInterfaces,
+  hasInterface,
+  getTypesByInterface
 };

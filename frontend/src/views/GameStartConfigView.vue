@@ -62,6 +62,10 @@
               <div class="role-info">
                 <strong>{{ row.roleName }}</strong>
                 <div class="role-description">{{ row.roleDescription }}</div>
+                <div class="role-description">
+                  <span v-if="row.deviceInterface">接口：{{ row.deviceInterface }}</span>
+                  <span v-else-if="row.deviceType">类型：{{ typeName(row.deviceType) }}</span>
+                </div>
               </div>
             </template>
           </el-table-column>
@@ -311,7 +315,7 @@ interface GameItem {
   status?: string;
   arguments?: string;
   configPath?: string;
-  requiredDevices?: Array<{ logicalId?: string; name?: string; type?: string; required?: boolean; description?: string }>;
+  requiredDevices?: Array<{ logicalId?: string; name?: string; type?: string; interface?: string; required?: boolean; description?: string }>;
   version?: string;
   author?: string;
   createdAt?: number;
@@ -330,6 +334,7 @@ const gameId = computed(() => String(route.params.id || ''));
 const game = ref<GameItem | null>(null);
 const devices = ref<DeviceItem[]>([]);
 const deviceTypeMap = ref<Record<string, string>>({});
+const typeInterfaceMap = ref<Record<string, string[]>>({});
 const loadingAll = ref(false);
 const error = ref('');
 
@@ -372,27 +377,30 @@ const deviceMappings = computed(() => {
     deviceId: deviceMapping[rdKey(rd)] || '',
     logicalId: rd.logicalId,
     required: rd.required,
-    deviceType: rd.type
+    deviceType: rd.type,
+    deviceInterface: (rd as any).interface
   }));
 });
 
 
+function typeSupportsInterface(type?: string, iface?: string) {
+  if (!iface) return true;
+  if (!type) return false;
+  const list = typeInterfaceMap.value[type] || [];
+  return list.includes(iface);
+}
+
 function getAvailableDevicesForRole(row: any) {
   const deviceType = row.deviceType;
+  const deviceInterface = row.deviceInterface;
   let filteredDevices = devices.value;
-  
-  // 如果指定了设备类型，只显示匹配的设备
-  if (deviceType) {
-    filteredDevices = devices.value.filter(device => device.type === deviceType);
+  if (deviceInterface) {
+    filteredDevices = devices.value.filter(device => device.connected && typeSupportsInterface(device.type, deviceInterface));
+  } else if (deviceType) {
+    filteredDevices = devices.value.filter(device => device.connected && device.type === deviceType);
   }
-  
-  // 在线设备优先排序
   filteredDevices.sort((a, b) => Number(b.connected) - Number(a.connected));
-  
-  return filteredDevices.map(device => ({
-    id: device.id,
-    name: device.name || device.id
-  }));
+  return filteredDevices.map(device => ({ id: device.id, name: device.name || device.id }));
 }
 
 function formatLastPlayed(ts?: number | null) {
@@ -446,11 +454,12 @@ async function loadAll() {
   loadingAll.value = true;
   error.value = '';
   try {
-    const [gRes, metaRes, dRes, tRes] = await Promise.all([
+    const [gRes, metaRes, dRes, tRes, iRes] = await Promise.all([
       fetch(`/api/games/${encodeURIComponent(gameId.value)}`),
       fetch(`/api/games/${encodeURIComponent(gameId.value)}/meta`),
       fetch('/api/devices'),
       fetch('/api/device-types'),
+      fetch('/api/device-interfaces'),
     ]);
     const g = await gRes.json();
     if (!gRes.ok) throw new Error(g?.message || '获取游戏详情失败');
@@ -465,12 +474,21 @@ async function loadAll() {
     const types = await tRes.json();
     if (!tRes.ok) throw new Error(types?.message || '获取设备类型失败');
     deviceTypeMap.value = types || {};
+    const iface = await iRes.json();
+    if (!iRes.ok) throw new Error(iface?.message || '获取设备接口失败');
+    typeInterfaceMap.value = (iface?.typeInterfaceMap) || {};
     // 初始化映射默认值：按类型筛选并默认选择第一项（在线优先）
     for (const rd of requiredDevices.value) {
       const key = rdKey(rd);
       if (!key) continue;
-      const candidates = sameTypeDevices(rd);
-      const candidate = candidates.find(d => d.connected) || candidates[0];
+      let candidates: DeviceItem[] = [];
+      const ifaceName = (rd as any).interface as string | undefined;
+      if (ifaceName) {
+        candidates = devices.value.filter(d => d.connected && typeSupportsInterface(d.type, ifaceName));
+      } else {
+        candidates = devices.value.filter(d => d.connected && (!rd.type || d.type === rd.type));
+      }
+      const candidate = candidates.find(d => d.connected) || undefined;
       deviceMapping[key] = candidate ? candidate.id : '';
     }
   } catch (e: any) {
@@ -495,6 +513,8 @@ function recomputeBlocking() {
       const dev = getDevice(devId);
       if (!dev || !dev.connected) items.push(`设备离线或不存在: ${key}`);
       if (rd.type && dev && dev.type !== rd.type) items.push(`类型不匹配(${key}): 期望 ${typeName(rd.type)} 实际 ${typeName(dev?.type)}`);
+      const ifaceName = (rd as any).interface as string | undefined;
+      if (ifaceName && dev && !typeSupportsInterface(dev.type, ifaceName)) items.push(`接口不匹配(${key}): 需 ${ifaceName}`);
     }
   }
   // 参数校验（若有）
