@@ -158,6 +158,8 @@ const pressureEdging = {
       currentIntensity: this._runtime.currentIntensity,
       targetIntensity: this._runtime.targetIntensity,
       shockCount: this._runtime.shockCount,
+      criticalPressure: this._runtime.config.criticalPressure,
+      maxMotorIntensity: this._runtime.config.maxMotorIntensity,
     });
     deviceManager.emitUi({ fields: { statusText: '准备就绪', btnText: '暂停' } });
   },
@@ -347,74 +349,98 @@ const pressureEdging = {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>气压寸止玩法</title>
     <style>
-      :root { color-scheme: light dark; }
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; margin: 0; padding: 8px; }
-      header { display: flex; align-items: center; gap: 6px; }
-      .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #eee; color: #333; font-size: 12px; }
-      main { margin-top: 8px; display: grid; grid-template-columns: 1fr; gap: 8px; }
-      .card { border: 1px solid #ddd; border-radius: 8px; padding: 8px; }
-      .actions { display: flex; gap: 6px; }
-      button { padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; background: #fafafa; cursor: pointer; }
-      button.primary { background: #2563eb; color: white; border-color: #1d4ed8; }
-      .hidden { display: none !important; }
-      .ok { color: #16a34a; }
-      .warn { color: #f59e0b; }
+      :root { --bg:#f5f7fa; --bg2:#ffffff; --card:#ffffff; --text:#1f2937; --muted:#64748b; --border:#e5e7eb; --primary:#3b82f6; --accent:#22d3ee; --ok:#16a34a; --warn:#d97706; --danger:#dc2626; }
+      * { box-sizing: border-box; }
+      body { margin:0; padding:16px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif; color:var(--text); background: var(--bg); }
+      header { display:flex; align-items:center; gap:12px; }
+      .title { font-size:20px; margin:0; color:#0f172a; }
+      .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:#f8fafc; color:var(--muted); border:1px solid var(--border); font-size:12px; }
+      .pill.ok { color:var(--ok); }
+      main { margin-top:12px; display:grid; grid-template-columns:1fr; gap:12px; }
+      .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; box-shadow:0 6px 18px rgba(0,0,0,0.06); }
+      .section-title { margin:0 0 8px; font-size:16px; color:#0f172a; }
+      .stats { display:grid; grid-template-columns:1fr; gap:12px; }
+      @media (min-width: 760px) { .stats { grid-template-columns:1fr 1fr; } }
+      .stat { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:12px; }
+      .stat .label { color:var(--muted); font-size:12px; }
+      .stat .value { font-weight:600; font-size:18px; color:#0f172a; }
+      .progress { height:10px; background:#f1f5f9; border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-top:6px; }
+      .bar { height:100%; width:0%; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width .25s ease; }
+      .bar.secondary { background: linear-gradient(90deg, #93c5fd, #a5b4fc); opacity:.55; }
+      .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+      button { padding:10px 14px; border-radius:12px; border:1px solid var(--border); background:#f8fafc; color:#0f172a; cursor:pointer; }
+      button.primary { background: linear-gradient(180deg, #60a5fa, #3b82f6); border-color:#3b82f6; color:#fff; }
+      button.danger { background: linear-gradient(180deg, #f87171, #dc2626); border-color:#dc2626; color:#fff; }
+      .muted { color:var(--muted); }
+      .row { display:flex; align-items:center; gap:8px; }
+      #logs { list-style:none; margin:0; padding:0; max-height:180px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+      #logs li { padding:6px 8px; border-bottom:1px solid var(--border); color:#334155; }
+      #logs li.l-warn { color:var(--warn); }
+      #logs li.l-error { color:#ef4444; }
+      .hidden { display:none !important; }
     </style>
   </head>
   <body>
     <header>
-      <h2 data-bind="title">气压寸止玩法</h2>
-      <span class="pill">运行中：<span data-bind="running">false</span></span>
-      <span class="pill">开始时间：<span data-bind="startTime">-</span></span>
+      <h2 class="title" data-bind="title">气压寸止玩法</h2>
+      <span class="pill"><span class="muted">开始</span> <span data-bind="startTime">-</span></span>
+      <span class="pill ok"><span class="muted">状态</span> <span data-bind="running">false</span></span>
     </header>
     <main>
       <section class="card">
-        <h3>压力与强度</h3>
-        <p>当前压力：<strong data-bind="currentPressure">0</strong> kPa</p>
-        <p>平均压力(近60点)：<strong data-bind="averagePressure">0</strong> kPa</p>
-        <p>当前强度：<strong data-bind="currentIntensity">0</strong></p>
-        <p>目标强度：<strong data-bind="targetIntensity">0</strong></p>
+        <h3 class="section-title">压力与强度</h3>
+        <div class="stats">
+          <div class="stat">
+            <div class="label">当前压力(kPa)</div>
+            <div class="value"><strong data-bind="currentPressure">0</strong></div>
+            <div class="progress"><div id="pBar" class="bar"></div></div>
+            <div class="label">平均压力(近60点)：<strong data-bind="averagePressure">0</strong></div>
+          </div>
+          <div class="stat">
+            <div class="label">当前强度</div>
+            <div class="value"><strong data-bind="currentIntensity">0</strong></div>
+            <div class="progress"><div id="iBar" class="bar"></div></div>
+            <div class="label">目标强度：<strong data-bind="targetIntensity">0</strong></div>
+            <div class="progress"><div id="tBar" class="bar secondary"></div></div>
+          </div>
+        </div>
+        
         <p class="warn" data-show="paused">已暂停</p>
         <div class="actions">
           <button class="primary" data-action="pause"><span data-bind="btnText">暂停</span></button>
           <button data-action="addIntensity" data-payload='{"delta":10}'>目标强度 +10</button>
-          <button data-action="shockOnce">手动电击</button>
-          <button data-action="ping">Ping</button>
+          <button class="danger" data-action="shockOnce">手动电击</button>
         </div>
       </section>
       <section class="card">
-        <h3>状态</h3>
-        <p>状态文本：<span data-bind="statusText">-</span></p>
-        <p>电击次数：<strong data-bind="shockCount">0</strong></p>
-        <p>累计刺激时长：<strong data-bind="totalStimulationTime">0</strong> 秒</p>
-        <p>上次 ping：<span data-bind="lastPing">-</span></p>
+        <h3 class="section-title">状态</h3>
+        <div class="row"><span class="muted">状态文本</span> <span data-bind="statusText">-</span></div>
+        <div class="row"><span class="muted">电击次数</span> <strong data-bind="shockCount">0</strong></div>
+        <div class="row"><span class="muted">累计刺激时长</span> <strong data-bind="totalStimulationTime">0</strong> 秒</div>
+        <div class="row"><span class="muted">上次 ping</span> <span data-bind="lastPing">-</span></div>
       </section>
       <section class="card">
-        <h3>日志（最近 10 条）</h3>
-        <ul id="logs" style="max-height:160px; overflow:auto; margin:0; padding-left:16px;"></ul>
+        <h3 class="section-title">日志（最近 10 条）</h3>
+        <ul id="logs"></ul>
       </section>
     </main>
-
     <script>
       (function(){
         const state = {};
         const uiFields = {};
         const $ = (sel) => Array.from(document.querySelectorAll(sel));
-        function render() {
+        function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+        function render(){
           $('[data-bind]').forEach(el => {
             const key = el.getAttribute('data-bind');
             let val = (key in state) ? state[key] : (key in uiFields ? uiFields[key] : el.textContent);
             if (key === 'startTime') {
               const num = Number(val);
-              if (!Number.isNaN(num) && num > 0) {
-                val = new Date(num).toLocaleString();
-              }
+              if (!Number.isNaN(num) && num > 0) val = new Date(num).toLocaleString();
             }
             if (el.tagName === 'STRONG') {
               const num = Number(val);
-              if (!Number.isNaN(num)) {
-                val = num.toFixed(2);
-              }
+              if (!Number.isNaN(num)) val = num.toFixed(2);
             }
             el.textContent = (val === undefined || val === null) ? '' : String(val);
           });
@@ -423,29 +449,30 @@ const pressureEdging = {
             const val = !!state[key];
             el.classList.toggle('hidden', !val);
           });
-          $('[data-class]').forEach(el => {
-            const raw = el.getAttribute('data-class') || '';
-            const m = raw.match(/\s*([^:]+)\s*:\s*(.+)\s*/);
-            if (!m) return;
-            const key = m[1]; const cls = m[2];
-            el.classList.toggle(cls, !!state[key]);
-          });
+          const c = Number(state.criticalPressure) || 20;
+          const m = Number(state.maxMotorIntensity) || 200;
+          const cp = clamp((Number(state.currentPressure)||0)/c, 0, 1);
+          const ci = clamp((Number(state.currentIntensity)||0)/m, 0, 1);
+          const ti = clamp((Number(state.targetIntensity)||0)/m, 0, 1);
+          const pBar = document.getElementById('pBar');
+          const iBar = document.getElementById('iBar');
+          const tBar = document.getElementById('tBar');
+          if (pBar) pBar.style.width = (cp*100).toFixed(1)+'%';
+          if (iBar) iBar.style.width = (ci*100).toFixed(1)+'%';
+          if (tBar) tBar.style.width = (ti*100).toFixed(1)+'%';
         }
-        function merge(obj, patch) { Object.assign(obj, patch || {}); }
-        function addLog(item) {
+        function merge(obj, patch){ Object.assign(obj, patch || {}); }
+        function addLog(item){
           const li = document.createElement('li');
+          li.className = 'l-' + (item.level||'info');
           li.textContent = '[' + new Date(item.ts).toLocaleTimeString() + '] ' + item.level + ' — ' + item.message;
           const ul = document.getElementById('logs');
           ul.insertBefore(li, ul.firstChild);
           while (ul.children.length > 10) ul.removeChild(ul.lastChild);
         }
-        function postAction(name, payload) {
-          return fetch('/api/games/current/actions', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: name, payload })
-          }).catch(() => {});
+        function postAction(name, payload){
+          return fetch('/api/games/current/actions', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ action:name, payload }) }).catch(()=>{});
         }
-        // 绑定按钮动作
         $('[data-action]').forEach(el => {
           const name = el.getAttribute('data-action');
           const raw = el.getAttribute('data-payload');
@@ -453,17 +480,9 @@ const pressureEdging = {
           try { if (raw) payload = JSON.parse(raw); } catch(_) {}
           el.addEventListener('click', () => postAction(name, payload));
         });
-
-        // 订阅 SSE
         const es = new EventSource('/api/games/current/stream');
-        es.addEventListener('hello', (e) => {
-          try {
-            const data = JSON.parse(e.data);
-            merge(state, data.snapshot || {});
-            render();
-          } catch(_) {}
-        });
-        es.addEventListener('state', (e) => { try { merge(state, JSON.parse(e.data)); render(); } catch(_){} });
+        es.addEventListener('hello', (e) => { try { const data = JSON.parse(e.data); merge(state, data.snapshot || {}); render(); } catch(_){} });
+        es.addEventListener('state', (e) => { try { const d = JSON.parse(e.data); merge(state, d); render(); } catch(_){} });
         es.addEventListener('ui', (e) => { try { const d = JSON.parse(e.data); merge(uiFields, d.fields || {}); render(); } catch(_){} });
         es.addEventListener('log', (e) => { try { addLog(JSON.parse(e.data)); } catch(_){} });
       })();
