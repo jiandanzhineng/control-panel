@@ -69,32 +69,20 @@
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="映射设备" width="300">
+          <el-table-column label="映射设备" width="380">
             <template #default="{ row }">
-              <el-select 
-                v-model="row.deviceId" 
-                placeholder="请选择设备"
-                @change="updateMapping(row)"
-                style="width: 100%"
-              >
-                <el-option
+              <el-checkbox-group v-model="row.deviceIds" @change="updateMapping(row)" style="display:flex;flex-wrap:wrap;gap:8px">
+                <el-checkbox
                   v-for="device in getAvailableDevicesForRole(row)"
                   :key="device.id"
-                  :label="device.name"
-                  :value="device.id"
-                />
-              </el-select>
+                  :label="device.id"
+                >{{ device.name }}</el-checkbox>
+              </el-checkbox-group>
             </template>
           </el-table-column>
-          <el-table-column label="设备状态" width="120">
+          <el-table-column label="设备状态" width="160">
             <template #default="{ row }">
-              <el-tag 
-                v-if="row.deviceId" 
-                :type="getDeviceStatusType(row.deviceId)"
-                size="small"
-              >
-                {{ getDeviceStatus(row.deviceId) }}
-              </el-tag>
+              <el-tag v-if="(row.deviceIds && row.deviceIds.length > 0)" type="success" size="small">已选 {{ row.deviceIds.length }} 台</el-tag>
               <el-tag v-else type="info" size="small">未选择</el-tag>
             </template>
           </el-table-column>
@@ -105,31 +93,19 @@
           <div v-for="row in deviceMappings" :key="row.logicalId || row.roleName" class="device-card">
             <div class="device-card-header">
               <div class="device-card-title">{{ row.roleName }}</div>
-              <el-tag 
-                v-if="row.deviceId" 
-                :type="getDeviceStatusType(row.deviceId)"
-                size="small"
-              >
-                {{ getDeviceStatus(row.deviceId) }}
-              </el-tag>
+              <el-tag v-if="(row.deviceIds && row.deviceIds.length > 0)" type="success" size="small">已选 {{ row.deviceIds.length }} 台</el-tag>
               <el-tag v-else type="info" size="small">未选择</el-tag>
             </div>
             <div v-if="row.roleDescription" class="device-card-description">
               {{ row.roleDescription }}
             </div>
-            <el-select 
-              v-model="row.deviceId" 
-              placeholder="请选择设备"
-              @change="updateMapping(row)"
-              class="device-card-select"
-            >
-              <el-option
+            <el-checkbox-group v-model="row.deviceIds" @change="updateMapping(row)" class="device-card-select" style="display:flex;flex-direction:column;gap:8px">
+              <el-checkbox
                 v-for="device in getAvailableDevicesForRole(row)"
                 :key="device.id"
-                :label="device.name"
-                :value="device.id"
-              />
-            </el-select>
+                :label="device.id"
+              >{{ device.name }}</el-checkbox>
+            </el-checkbox-group>
           </div>
         </div>
       </div>
@@ -227,7 +203,7 @@
           <h4>设备映射</h4>
           <ul class="mapping-list">
             <li v-for="d in requiredDevices" :key="d.logicalId || d.name">
-              {{ d.logicalId || d.name }} → {{ deviceMapping[rdKey(d)] ? (getDevice(deviceMapping[rdKey(d)])?.name || deviceMapping[rdKey(d)]) : '未映射' }}
+              {{ d.logicalId || d.name }} → {{ (deviceMapping[rdKey(d)] && deviceMapping[rdKey(d)].length) ? deviceMapping[rdKey(d)].map(id => getDevice(id)?.name || id).join(', ') : '未映射' }}
             </li>
           </ul>
         </div>
@@ -338,7 +314,7 @@ const typeInterfaceMap = ref<Record<string, string[]>>({});
 const loadingAll = ref(false);
 const error = ref('');
 
-const deviceMapping = reactive<Record<string, string>>({});
+const deviceMapping = reactive<Record<string, string[]>>({});
 const parameters = reactive<Record<string, any>>({});
 const deviceError = ref('');
 const loadingDevices = ref(false);
@@ -374,7 +350,7 @@ const deviceMappings = computed(() => {
   return requiredDevices.value.map(rd => ({
     roleName: rd.name || rd.logicalId || '未知角色',
     roleDescription: rd.description || '',
-    deviceId: deviceMapping[rdKey(rd)] || '',
+    deviceIds: deviceMapping[rdKey(rd)] || [],
     logicalId: rd.logicalId,
     required: rd.required,
     deviceType: rd.type,
@@ -422,7 +398,7 @@ function getDevice(id?: string) { return devices.value.find(d => d.id === id) ||
 function updateMapping(row: any) {
   const key = rdKey({ logicalId: row.logicalId, name: row.roleName });
   if (key) {
-    deviceMapping[key] = row.deviceId;
+    deviceMapping[key] = Array.isArray(row.deviceIds) ? row.deviceIds.slice() : [];
   }
 }
 
@@ -489,7 +465,7 @@ async function loadAll() {
         candidates = devices.value.filter(d => d.connected && (!rd.type || d.type === rd.type));
       }
       const candidate = candidates.find(d => d.connected) || undefined;
-      deviceMapping[key] = candidate ? candidate.id : '';
+      deviceMapping[key] = candidate ? [candidate.id] : [];
     }
   } catch (e: any) {
     error.value = e?.message || '数据加载失败';
@@ -507,10 +483,10 @@ function recomputeBlocking() {
   for (const rd of requiredDevices.value) {
     const key = rdKey(rd);
     if (!key) continue;
-    const devId = deviceMapping[key];
-    if (rd.required && (!devId || devId.length === 0)) items.push(`必需设备未映射: ${key}`);
-    if (devId) {
-      const dev = getDevice(devId);
+    const ids = deviceMapping[key] || [];
+    if (rd.required && ids.length === 0) items.push(`必需设备未映射: ${key}`);
+    for (const id of ids) {
+      const dev = getDevice(id);
       if (!dev || !dev.connected) items.push(`设备离线或不存在: ${key}`);
       if (rd.type && dev && dev.type !== rd.type) items.push(`类型不匹配(${key}): 期望 ${typeName(rd.type)} 实际 ${typeName(dev?.type)}`);
       const ifaceName = (rd as any).interface as string | undefined;
@@ -595,7 +571,8 @@ onMounted(() => { loadAll().then(() => recomputeBlocking()); });
 .game-start-config-page {
   padding: 16px;
   width: 100%;
-  max-width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
   box-sizing: border-box;
 }
 

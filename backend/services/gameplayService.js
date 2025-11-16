@@ -47,23 +47,19 @@ const state = {
       sendLog('info', '已注册设备属性监听', { logicalId, property, count: arr.length });
     },
     setDeviceProperty(logicalId, properties) {
-      const deviceId = this.deviceMap[logicalId];
-      if (!deviceId) return sendLog('warn', '设备未映射，忽略属性设置', { logicalId });
-      try {
-        deviceService.notifyDeviceUpdate(deviceId, properties || {});
-        // sendLog('debug', '下发设备属性', { logicalId, deviceId, properties });
-      } catch (e) {
-        sendLog('error', '下发设备属性失败', { logicalId, deviceId, error: e?.message || String(e) });
+      const ids = this.deviceMap[logicalId];
+      const arr = Array.isArray(ids) ? ids : (ids ? [ids] : []);
+      if (!arr.length) return sendLog('warn', '设备未映射，忽略属性设置', { logicalId });
+      for (const deviceId of arr) {
+        try { deviceService.notifyDeviceUpdate(deviceId, properties || {}); } catch (e) { sendLog('error', '下发设备属性失败', { logicalId, deviceId, error: e?.message || String(e) }); }
       }
     },
     sendDeviceMqttMessage(logicalId, message) {
-      const deviceId = this.deviceMap[logicalId];
-      if (!deviceId) return sendLog('warn', '设备未映射，忽略发送MQTT', { logicalId });
-      try {
-        mqttClient.publish(`/drecv/${deviceId}`, message || {});
-        sendLog('debug', '发送设备MQTT消息', { logicalId, deviceId, message });
-      } catch (e) {
-        sendLog('error', '发送设备MQTT消息失败', { logicalId, deviceId, error: e?.message || String(e) });
+      const ids = this.deviceMap[logicalId];
+      const arr = Array.isArray(ids) ? ids : (ids ? [ids] : []);
+      if (!arr.length) return sendLog('warn', '设备未映射，忽略发送MQTT', { logicalId });
+      for (const deviceId of arr) {
+        try { mqttClient.publish(`/drecv/${deviceId}`, message || {}); sendLog('debug', '发送设备MQTT消息', { logicalId, deviceId, message }); } catch (e) { sendLog('error', '发送设备MQTT消息失败', { logicalId, deviceId, error: e?.message || String(e) }); }
       }
     },
     sendMqttMessage(topic, message) {
@@ -75,9 +71,10 @@ const state = {
       }
     },
     getDeviceProperty(logicalId, property) {
-      const deviceId = this.deviceMap[logicalId];
-      if (!deviceId) return undefined;
-      const dev = deviceService.getDeviceById(deviceId);
+      const ids = this.deviceMap[logicalId];
+      const firstId = Array.isArray(ids) ? ids[0] : ids;
+      if (!firstId) return undefined;
+      const dev = deviceService.getDeviceById(firstId);
       const data = dev?.data || {};
       return data[property];
     },
@@ -269,12 +266,10 @@ function notifyUi(delta = {}) {
 // ===== 设备映射与依赖验证 =====
 function applyDeviceMapping(deviceMapping = {}) {
   const map = {};
-  for (const [logicalId, deviceId] of Object.entries(deviceMapping || {})) {
-    if (typeof deviceId !== 'string' || deviceId.length === 0) {
-      sendLog('warn', '设备映射项无效，已忽略', { logicalId, deviceId });
-      continue;
-    }
-    map[logicalId] = deviceId;
+  for (const [logicalId, val] of Object.entries(deviceMapping || {})) {
+    const arr = Array.isArray(val) ? val.filter(x => typeof x === 'string' && x.length > 0) : (typeof val === 'string' && val.length > 0 ? [val] : []);
+    if (!arr.length) { sendLog('warn', '设备映射项无效，已忽略', { logicalId }); continue; }
+    map[logicalId] = arr;
   }
   state.deviceManager.deviceMap = map;
   sendLog('info', '设备映射已应用', { count: Object.keys(map).length, map });
@@ -285,14 +280,15 @@ function validateDeviceDependencies() {
   if (!gp) return;
   for (const item of gp.requiredDevices) {
     const { logicalId, required, interface: iface } = item || {};
-    const deviceId = state.deviceManager.deviceMap[logicalId];
-    if (required) {
-      if (!deviceId) {
-        const err = new Error(`必需设备未映射: ${logicalId}`);
-        err.code = 'DEVICE_MAPPING_MISSING';
-        sendLog('error', err.message, { logicalId });
-        throw err;
-      }
+    const ids = state.deviceManager.deviceMap[logicalId];
+    const arr = Array.isArray(ids) ? ids : (ids ? [ids] : []);
+    if (required && arr.length === 0) {
+      const err = new Error(`必需设备未映射: ${logicalId}`);
+      err.code = 'DEVICE_MAPPING_MISSING';
+      sendLog('error', err.message, { logicalId });
+      throw err;
+    }
+    for (const deviceId of arr) {
       const dev = deviceService.getDeviceById(deviceId);
       if (!dev || dev.connected !== true) {
         const err = new Error(`必需设备离线或不存在: ${logicalId}`);
@@ -313,8 +309,9 @@ function validateDeviceDependencies() {
 // ===== MQTT 与设备属性监听 =====
 function makeReverseDeviceMap() {
   const rev = new Map();
-  for (const [logicalId, deviceId] of Object.entries(state.deviceManager.deviceMap || {})) {
-    if (deviceId) rev.set(deviceId, logicalId);
+  for (const [logicalId, ids] of Object.entries(state.deviceManager.deviceMap || {})) {
+    const arr = Array.isArray(ids) ? ids : (ids ? [ids] : []);
+    for (const deviceId of arr) { if (deviceId) rev.set(deviceId, logicalId); }
   }
   return rev;
 }

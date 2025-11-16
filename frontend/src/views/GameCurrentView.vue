@@ -188,6 +188,10 @@ function executeScripts(scripts: HTMLScriptElement[]) {
 <style scoped>
 .game-current-page {
   padding: 8px;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .game-header {
@@ -214,6 +218,7 @@ function executeScripts(scripts: HTMLScriptElement[]) {
   .game-current-page {
     padding: 0;
     margin: 0;
+    width: 100vw;
   }
   
   .control-card {
@@ -224,7 +229,8 @@ function executeScripts(scripts: HTMLScriptElement[]) {
   .game-content-card {
     margin: 0;
     border-radius: 0;
-    min-height: calc(100vh - 200px);
+    min-height: 100vh;
+    border: none;
   }
   
   .control-buttons {
@@ -236,10 +242,16 @@ function executeScripts(scripts: HTMLScriptElement[]) {
   }
   
   .embedded-html {
-    min-height: calc(100vh - 280px);
+    min-height: 100vh;
+    width: 100vw;
+    margin: 0;
+    border: none;
     border-radius: 0;
-    border-left: none;
-    border-right: none;
+    background: transparent;
+  }
+
+  .game-content-card .el-card__body {
+    padding: 0;
   }
 }
 
@@ -247,6 +259,8 @@ function executeScripts(scripts: HTMLScriptElement[]) {
 @media (max-width: 480px) {
   .game-current-page {
     padding: 0;
+    margin: 0;
+    width: 100vw;
   }
   
   .control-card {
@@ -257,14 +271,17 @@ function executeScripts(scripts: HTMLScriptElement[]) {
   .game-content-card {
     margin: 0;
     border-radius: 0;
-    min-height: calc(100vh - 180px);
+    min-height: 100vh;
+    border: none;
   }
   
   .embedded-html {
-    min-height: calc(100vh - 260px);
+    min-height: 100vh;
+    width: 100vw;
+    margin: 0;
+    border: none;
     border-radius: 0;
-    border-left: none;
-    border-right: none;
+    background: transparent;
   }
 }
 </style>

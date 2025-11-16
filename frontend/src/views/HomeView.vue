@@ -67,7 +67,11 @@ import { Monitor, VideoPlay, Connection } from '@element-plus/icons-vue'
 
 <style scoped>
 .home-page {
-  padding: 0;
+  padding: 0 16px;
+  width: 100%;
+  max-width: 960px;
+  margin: 20px auto;
+  box-sizing: border-box;
 }
 
 .welcome-card {
@@ -146,9 +150,10 @@ import { Monitor, VideoPlay, Connection } from '@element-plus/icons-vue'
 }
 
 /* 响应式设计 */
-@media (max-width: 768px) {
+  @media (max-width: 768px) {
   .home-page {
-    padding: 0;
+    padding: 0 12px;
+    margin: 12px auto;
   }
   
   .welcome-card {

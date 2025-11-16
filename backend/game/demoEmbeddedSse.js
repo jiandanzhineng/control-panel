@@ -122,7 +122,8 @@ const demo = {
     <title>Demo — Embedded HTML + SSE</title>
     <style>
       :root { color-scheme: light dark; }
-      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; margin: 0; padding: 16px; }
+      html, body { height: 100%; }
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; margin: 0; padding: 16px; box-sizing: border-box; }
       header { display: flex; align-items: center; gap: 8px; }
       .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #eee; color: #333; font-size: 12px; }
       main { margin-top: 16px; display: grid; grid-template-columns: 1fr; gap: 12px; }
@@ -133,6 +134,11 @@ const demo = {
       .hidden { display: none !important; }
       .ok { color: #16a34a; }
       .warn { color: #f59e0b; }
+      @media (max-width: 768px) {
+        body { padding: 0; }
+        main { margin-top: 8px; }
+        .card { border-radius: 0; }
+      }
     </style>
   </head>
   <body>
