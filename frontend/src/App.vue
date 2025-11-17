@@ -59,7 +59,7 @@
       </div>
 
       <!-- 主内容区域 -->
-      <div class="main-container" :style="{ marginLeft: isCollapsed ? '64px' : '200px' }">
+      <div class="main-container" :style="isMobile ? { marginLeft: 0 } : { marginLeft: isCollapsed ? '64px' : '200px', width: 'calc(100% - ' + (isCollapsed ? '64px' : '200px') + ')' }">
         <!-- 顶部工具栏 -->
         <div class="main-header">
           <div class="header-content">
