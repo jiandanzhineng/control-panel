@@ -203,7 +203,7 @@
           <h4>设备映射</h4>
           <ul class="mapping-list">
             <li v-for="d in requiredDevices" :key="d.logicalId || d.name">
-              {{ d.logicalId || d.name }} → {{ (deviceMapping[rdKey(d)] && deviceMapping[rdKey(d)].length) ? deviceMapping[rdKey(d)].map(id => getDevice(id)?.name || id).join(', ') : '未映射' }}
+              {{ d.logicalId || d.name }} → {{ formatMapping(d) }}
             </li>
           </ul>
         </div>
@@ -416,6 +416,12 @@ function getDeviceStatus(deviceId: string): string {
 
 function rdKey(d: { logicalId?: string; name?: string }) {
   return String(d.logicalId ?? d.name ?? '');
+}
+
+function formatMapping(d: { logicalId?: string; name?: string }): string {
+  const arr = deviceMapping[rdKey(d)] ?? [];
+  if (arr.length === 0) return '未映射';
+  return arr.map(id => getDevice(id)?.name || id).join(', ');
 }
 
 function sameTypeDevices(d: { type?: string }) {
