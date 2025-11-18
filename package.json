@@ -1,7 +1,7 @@
 {
-  "name": "frontbacken-client",
+  "name": "undersilicon",
   "private": true,
-  "version": "1.0.9",
+  "version": "1.0.10",
   "main": "electron/main.js",
   "scripts": {
     "dev:all": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
@@ -16,7 +16,8 @@
   },
   "build": {
     "appId": "com.controlpanel.app",
-    "productName": "Control Panel",
+    "productName": "UnderSilicon",
+    "artifactName": "${productName}-Setup-${version}.${ext}",
     "directories": {
       "output": "dist"
     },

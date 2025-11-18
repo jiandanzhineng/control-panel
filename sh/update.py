@@ -15,14 +15,14 @@ from urllib.parse import urljoin
 
 
 class UpdateMirror:
-    def __init__(self, output_dir="./mirror"):
+    def __init__(self, output_dir="./mirror", base_url="https://github.com/jiandanzhineng/electron-client/releases/latest/download/"):
         """
         初始化更新镜像工具
         
         Args:
             output_dir (str): 输出目录路径
         """
-        self.base_url = "https://github.com/jiandanzhineng/electron-client/releases/latest/download/"
+        self.base_url = base_url
         self.latest_yml_url = urljoin(self.base_url, "latest.yml")
         self.output_dir = Path(output_dir)
         self.session = requests.Session()
@@ -253,10 +253,20 @@ def main():
     )
     
     args = parser.parse_args()
+    output_dir = Path(args.output).absolute()
     
     # 创建并运行镜像工具
-    mirror = UpdateMirror(args.output)
+    mirror = UpdateMirror(output_dir=output_dir)
     success = mirror.run()
+    control_panel_dir = output_dir / "control-panel"
+    control_panel_baseurl = "https://github.com/jiandanzhineng/control-panel/releases/latest/download/"
+    cp_mirror = UpdateMirror(output_dir=control_panel_dir, base_url=control_panel_baseurl)
+    cp_success = cp_mirror.run()
+    if cp_success:
+        print(f"✓ control-panel目录更新完成: {control_panel_dir}")
+    else:
+        print("✗ control-panel目录更新失败")
+
     
     sys.exit(0 if success else 1)
 
