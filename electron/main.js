@@ -52,17 +52,9 @@ function createWindow() {
 function initAutoUpdate() {
   if (!app.isPackaged) return;
 
-  autoUpdater.on('update-available', () => {
-    // 简单提示，有更新
-    try {
-      dialog.showMessageBox(mainWindow || undefined, {
-        type: 'info',
-        title: '更新可用',
-        message: '检测到新版本，正在下载…',
-        buttons: ['好的']
-      });
-    } catch {}
-  });
+  try { autoUpdater.setFeedURL({ provider: 'generic', url: 'https://update.ezsapi.top/control-panel/' }); } catch {}
+
+  autoUpdater.on('update-available', () => {});
 
   autoUpdater.on('update-downloaded', () => {
     // 下载完成，询问是否重启安装

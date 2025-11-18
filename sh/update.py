@@ -15,7 +15,9 @@ from urllib.parse import urljoin
 
 
 class UpdateMirror:
-    def __init__(self, output_dir="./mirror", base_url="https://github.com/jiandanzhineng/electron-client/releases/latest/download/"):
+    def __init__(self, output_dir="./mirror", 
+    base_url="https://github.com/jiandanzhineng/electron-client/releases/latest/download/", 
+    product_name="EasySmart-Setup"):
         """
         初始化更新镜像工具
         
@@ -26,6 +28,7 @@ class UpdateMirror:
         self.latest_yml_url = urljoin(self.base_url, "latest.yml")
         self.output_dir = Path(output_dir)
         self.session = requests.Session()
+        self.product_name = product_name
         
         # 创建输出目录
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -119,7 +122,7 @@ class UpdateMirror:
         Args:
             exe_file_path (Path): exe文件路径
         """
-        zip_path = self.output_dir / "EasySmart-Setup.zip"
+        zip_path = self.output_dir / f"{self.product_name}.zip"
         
         try:
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED,compresslevel=6) as zipf:
@@ -131,7 +134,7 @@ class UpdateMirror:
             original_size_mb = exe_file_path.stat().st_size / (1024 * 1024)
             compression_ratio = (1 - zip_size_mb / original_size_mb) * 100
             
-            print(f"✓ 创建压缩文件: EasySmart-Setup.zip")
+            print(f"✓ 创建压缩文件: {zip_path.name}")
             print(f"  原始大小: {original_size_mb:.1f} MB")
             print(f"  压缩大小: {zip_size_mb:.1f} MB")
             print(f"  压缩率: {compression_ratio:.1f}%")
@@ -208,7 +211,7 @@ class UpdateMirror:
         
         # 5. 创建重命名副本
         print("\n5. 创建重命名副本...")
-        generic_name = "EasySmart-Setup.exe"
+        generic_name = f"{self.product_name}.exe"
         generic_path = self.output_dir / generic_name
         
         try:
@@ -260,7 +263,7 @@ def main():
     success = mirror.run()
     control_panel_dir = output_dir / "control-panel"
     control_panel_baseurl = "https://github.com/jiandanzhineng/control-panel/releases/latest/download/"
-    cp_mirror = UpdateMirror(output_dir=control_panel_dir, base_url=control_panel_baseurl)
+    cp_mirror = UpdateMirror(output_dir=control_panel_dir, base_url=control_panel_baseurl, product_name="UnderSilicon")
     cp_success = cp_mirror.run()
     if cp_success:
         print(f"✓ control-panel目录更新完成: {control_panel_dir}")
