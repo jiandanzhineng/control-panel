@@ -130,6 +130,8 @@ function startBackendThenWindow() {
       return;
     }
     
+    const logService = require(path.join(appPath, 'backend', 'services', 'logService.js'));
+    logService.cleanOldLogs();
     const expressApp = require(backendPath);
     const BACKEND_PORT = 5278;
     server = expressApp.listen(BACKEND_PORT, () => {

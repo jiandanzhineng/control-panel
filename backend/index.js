@@ -86,6 +86,7 @@ app.use((err, req, res, next) => {
 
 // 测试时仅导出 app，不启动监听；直接运行该文件时才监听
 if (require.main === module) {
+  logService.cleanOldLogs();
   app.listen(PORT, () => {
     logger.info(`Backend server running at http://localhost:${PORT}`);
   });

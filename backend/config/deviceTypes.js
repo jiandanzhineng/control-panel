@@ -7,11 +7,27 @@ const deviceTypeMap = {
   'TD01': '偏轴电机控制器',
   'DIANJI': '电脉冲设备',
   'QIYA': '气压传感器',
+  'PJ01': '往复电机控制器',
   'other': '其他'
 };
 
 // 设备类型详细配置
 const deviceTypeConfig = {
+    'PJ01': {
+    name: '往复电机控制器',
+    operations: [
+      {
+        key: 'start',
+        name: '启动',
+        mqttData: { method: 'update', power: 255 }
+      },
+      {
+        key: 'stop',
+        name: '关闭',
+        mqttData: { method: 'update', power: 0 }
+      }
+    ]
+  },
   'TD01': {
     name: '偏轴电机控制器',
     operations: [
@@ -104,7 +120,8 @@ const interfaceConfig = {
 };
 
 const typeInterfaceMap = {
-  TD01: ['strength']
+  TD01: ['strength'],
+  PJ01: ['strength']
 };
 
 // 获取设备类型显示名称
