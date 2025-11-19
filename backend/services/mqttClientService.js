@@ -20,6 +20,7 @@ let state = {
   lastError: null,
   subscriptions: new Set(),
   handlers: [],
+  heartbeatTimer: null,
 };
 
 function init() {
@@ -49,6 +50,7 @@ function init() {
     } else {
       for (const t of state.subscriptions) trySubscribe(t);
     }
+    startHeartbeat();
   });
 
   client.on('reconnect', () => {
@@ -59,11 +61,13 @@ function init() {
   client.on('close', () => {
     state.connected = false;
     logService.warn('mqttClient', 'MQTT client connection closed');
+    stopHeartbeat();
   });
 
   client.on('error', (err) => {
     state.lastError = err?.message || String(err);
     logService.error('mqttClient', `MQTT client error: ${state.lastError}`);
+    stopHeartbeat();
   });
 
   client.on('message', (topic, payload, packet) => {
@@ -155,6 +159,30 @@ function publish(topic, message, options = { qos: 0, retain: false }) {
   }
 }
 
+function startHeartbeat() {
+  if (state.heartbeatTimer) return;
+  state.heartbeatTimer = setInterval(() => {
+    if (state.client && state.client.connected) {
+      const heartbeatMessage = { message: 'Master controller is online' };
+      try {
+        publish('/all', heartbeatMessage);
+        logService.info('mqttClient', `Heartbeat message sent to /all`);
+      } catch (e) {
+        logService.warn('mqttClient', `Heartbeat publish failed: ${e?.message || e}`);
+      }
+    }
+  }, 60000);
+  logService.info('mqttClient', 'Heartbeat timer started, sending every 60s to /all');
+}
+
+function stopHeartbeat() {
+  if (state.heartbeatTimer) {
+    clearInterval(state.heartbeatTimer);
+    state.heartbeatTimer = null;
+    logService.info('mqttClient', 'Heartbeat timer stopped');
+  }
+}
+
 function onMessage(handler) {
   if (typeof handler === 'function') {
     state.handlers.push(handler);
@@ -180,6 +208,7 @@ function disconnect() {
   state.connected = false;
   state.connecting = false;
   logService.info('mqttClient', 'MQTT client disconnected');
+  stopHeartbeat();
 }
 
 module.exports = {
