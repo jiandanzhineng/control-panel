@@ -82,6 +82,7 @@
           </el-table-column>
           <el-table-column label="设备状态" width="160">
             <template #default="{ row }">
+              <el-tag :type="row.required ? 'danger' : 'success'" size="small" style="margin-right:8px">{{ row.required ? '必需' : '可选' }}</el-tag>
               <el-tag v-if="(row.deviceIds && row.deviceIds.length > 0)" type="success" size="small">已选 {{ row.deviceIds.length }} 台</el-tag>
               <el-tag v-else type="info" size="small">未选择</el-tag>
             </template>
@@ -93,6 +94,7 @@
           <div v-for="row in deviceMappings" :key="row.logicalId || row.roleName" class="device-card">
             <div class="device-card-header">
               <div class="device-card-title">{{ row.roleName }}</div>
+              <el-tag :type="row.required ? 'danger' : 'success'" size="small" style="margin-right:8px">{{ row.required ? '必需' : '可选' }}</el-tag>
               <el-tag v-if="(row.deviceIds && row.deviceIds.length > 0)" type="success" size="small">已选 {{ row.deviceIds.length }} 台</el-tag>
               <el-tag v-else type="info" size="small">未选择</el-tag>
             </div>

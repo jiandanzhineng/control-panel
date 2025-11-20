@@ -21,7 +21,7 @@ const pressureEdging = {
 
   requiredDevices: [
     { logicalId: 'QIYA_DEVICE', name: '气压传感器', type: 'QIYA', required: true },
-    { logicalId: 'TD_DEVICE', name: '偏轴电机控制器', type: 'TD01', required: true },
+    { logicalId: 'TD_DEVICE', name: '偏轴电机控制器', interface: 'strength', required: true },
     { logicalId: 'DIANJI_DEVICE', name: '电击设备', type: 'DIANJI', required: false },
     { logicalId: 'ZIDONGSUO_DEVICE', name: '自动锁', type: 'ZIDONGSUO', required: false },
   ],

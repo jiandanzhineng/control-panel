@@ -22,7 +22,7 @@ const game = {
     { logicalId: 'auto_lock', name: '自动锁', type: 'ZIDONGSUO', required: false },
     { logicalId: 'shock_device', name: '电击设备', type: 'DIANJI', required: true },
     { logicalId: 'qtz_sensor', name: 'QTZ激光测距+脚踏', type: 'QTZ', required: true },
-    { logicalId: 'td01_device', name: 'TD01设备', type: 'TD01', required: false },
+    { logicalId: 'td01_device', name: 'TD01设备', interface: 'strength', required: false },
   ],
 
   // 运行时状态

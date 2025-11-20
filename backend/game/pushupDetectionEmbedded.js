@@ -27,7 +27,7 @@ const game = {
     { logicalId: 'distance_sensor', name: 'QTZ距离传感器', type: 'QTZ', required: true },
     { logicalId: 'auto_lock', name: '自动锁', type: 'ZIDONGSUO', required: false },
     { logicalId: 'shock_device', name: '电击设备', type: 'DIANJI', required: false },
-    { logicalId: 'vibrator_device', name: '跳蛋设备', type: 'TD01', required: false },
+    { logicalId: 'vibrator_device', name: '跳蛋设备', interface: 'strength', required: false },
   ],
 
   // 运行时状态
