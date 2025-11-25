@@ -259,8 +259,6 @@ def main():
     output_dir = Path(args.output).absolute()
     
     # 创建并运行镜像工具
-    mirror = UpdateMirror(output_dir=output_dir)
-    success = mirror.run()
     control_panel_dir = output_dir / "control-panel"
     control_panel_baseurl = "https://github.com/jiandanzhineng/control-panel/releases/latest/download/"
     cp_mirror = UpdateMirror(output_dir=control_panel_dir, base_url=control_panel_baseurl, product_name="UnderSilicon")
@@ -270,6 +268,8 @@ def main():
     else:
         print("✗ control-panel目录更新失败")
 
+    mirror = UpdateMirror(output_dir=output_dir)
+    success = mirror.run()
     
     sys.exit(0 if success else 1)
 
