@@ -45,14 +45,15 @@
         <span>设备列表</span>
       </template>
       
-      <!-- 桌面端表格 -->
+      <!-- 桌面端：在线设备表格 -->
+      <h4 style="margin: 8px 0 12px">在线设备（{{ connectedCount }}）</h4>
       <el-table 
-        :data="devices" 
+        :data="onlineDevices" 
         style="width: 100%"
         highlight-current-row
         @current-change="handleCurrentChange"
         v-loading="loading"
-        empty-text="暂无设备数据"
+        empty-text="暂无在线设备"
         class="desktop-table"
       >
         <el-table-column prop="type" label="类型" width="120">
@@ -132,10 +133,96 @@
         </el-table-column>
       </el-table>
 
-      <!-- 移动端卡片列表 -->
+      <!-- 桌面端：离线设备折叠表格 -->
+      <el-collapse v-model="offlineCollapseActive" class="desktop-table">
+        <el-collapse-item :name="'offline'">
+          <template #title>
+            <span>离线设备（{{ disconnectedCount }}）</span>
+          </template>
+          <el-table 
+            :data="offlineDevices" 
+            style="width: 100%"
+            empty-text="暂无离线设备"
+          >
+            <el-table-column prop="type" label="类型" width="120">
+              <template #default="{ row }">
+                {{ deviceTypeMap[row.type] || row.type }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="id" label="设备ID" min-width="150" />
+            <el-table-column prop="connected" label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="row.connected ? 'success' : 'danger'" size="small">
+                  {{ row.connected ? '在线' : '离线' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="battery" label="电量" width="120">
+              <template #default="{ row }">
+                <el-tag 
+                  :type="getBatteryTagType(row.data?.battery)" 
+                  size="small"
+                >
+                  {{ formatBattery(row.data?.battery) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="lastReport" label="最后上报" width="150">
+              <template #default="{ row }">
+                {{ formatLastReport(row.lastReport) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="200">
+              <template #default="{ row }">
+                <div class="table-actions">
+                  <el-button 
+                    v-if="hasMonitorData(row.type)"
+                    type="primary" 
+                    size="small"
+                    @click="openMonitorModal(row)"
+                  >
+                    数据监控
+                  </el-button>
+                  <el-dropdown 
+                    v-if="hasOperations(row.type)"
+                    @command="(command: any) => executeDeviceOperation(row, command)"
+                    trigger="click"
+                  >
+                    <el-button type="success" size="small">
+                       操作 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                     </el-button>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item 
+                          v-for="operation in getDeviceOperations(row.type)" 
+                          :key="operation.key"
+                          :command="operation"
+                        >
+                          {{ operation.name }}
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
+                  <el-button 
+                    type="danger" 
+                    size="small"
+                    :icon="Delete"
+                    @click="removeDevice(row.id)"
+                  >
+                    删除
+                  </el-button>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-collapse-item>
+      </el-collapse>
+
+      <!-- 移动端：在线设备卡片 -->
+      <h4 class="mobile-device-list" style="margin: 8px 0 12px">在线设备（{{ connectedCount }}）</h4>
       <div class="mobile-device-list">
         <div 
-          v-for="device in devices" 
+          v-for="device in onlineDevices" 
           :key="device.id" 
           class="mobile-device-card"
         >
@@ -210,6 +297,88 @@
           </div>
         </div>
       </div>
+
+      <!-- 移动端：离线设备折叠卡片 -->
+      <el-collapse v-model="offlineCollapseActive" class="mobile-device-list">
+        <el-collapse-item :name="'offline'">
+          <template #title>
+            <span>离线设备（{{ disconnectedCount }}）</span>
+          </template>
+          <div class="mobile-device-list">
+            <div 
+              v-for="device in offlineDevices" 
+              :key="device.id" 
+              class="mobile-device-card"
+            >
+              <div class="device-card-header">
+                <div class="device-type">
+                  {{ deviceTypeMap[device.type] || device.type }}
+                </div>
+                <el-tag :type="device.connected ? 'success' : 'danger'" size="small">
+                  {{ device.connected ? '在线' : '离线' }}
+                </el-tag>
+              </div>
+              <div class="device-card-content">
+                <div class="device-info-row">
+                  <span class="info-label">设备ID:</span>
+                  <span class="info-value">{{ device.id }}</span>
+                </div>
+                <div class="device-info-row">
+                  <span class="info-label">电量:</span>
+                  <el-tag 
+                    :type="getBatteryTagType(device.data?.battery)" 
+                    size="small"
+                  >
+                    {{ formatBattery(device.data?.battery) }}
+                  </el-tag>
+                </div>
+                <div class="device-info-row">
+                  <span class="info-label">最后上报:</span>
+                  <span class="info-value">{{ formatLastReport(device.lastReport) }}</span>
+                </div>
+              </div>
+              <div class="device-card-actions">
+                <el-button 
+                  v-if="hasMonitorData(device.type)"
+                  type="primary" 
+                  size="small"
+                  @click="openMonitorModal(device)"
+                >
+                  数据监控
+                </el-button>
+                <el-dropdown 
+                  v-if="hasOperations(device.type)"
+                  @command="(command: any) => executeDeviceOperation(device, command)"
+                  trigger="click"
+                >
+                  <el-button type="success" size="small">
+                     操作 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                   </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item 
+                        v-for="operation in getDeviceOperations(device.type)" 
+                        :key="operation.key"
+                        :command="operation"
+                      >
+                        {{ operation.name }}
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+                <el-button 
+                  type="danger" 
+                  size="small"
+                  :icon="Delete"
+                  @click="removeDevice(device.id)"
+                >
+                  删除
+                </el-button>
+              </div>
+            </div>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
     </el-card>
 
     <el-card v-if="selectedDevice" shadow="never" style="margin-top: 10px">
@@ -387,6 +556,9 @@ const selectedDevice = computed<Device | null>(() => {
 });
 const connectedCount = computed(() => devices.value.filter(d => d.connected).length);
 const disconnectedCount = computed(() => devices.value.filter(d => !d.connected).length);
+const onlineDevices = computed(() => devices.value.filter(d => d.connected));
+const offlineDevices = computed(() => devices.value.filter(d => !d.connected));
+const offlineCollapseActive = ref<string[]>([]);
 
 // 当前设备的操作配置
 const deviceOperations = computed(() => {
