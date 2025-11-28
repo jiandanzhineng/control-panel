@@ -225,6 +225,7 @@
           v-for="device in onlineDevices" 
           :key="device.id" 
           class="mobile-device-card"
+          @click="selectDevice(device)"
         >
           <div class="device-card-header">
             <div class="device-type">
@@ -262,7 +263,7 @@
               v-if="hasMonitorData(device.type)"
               type="primary" 
               size="small"
-              @click="openMonitorModal(device)"
+              @click.stop="openMonitorModal(device)"
             >
               数据监控
             </el-button>
@@ -271,7 +272,7 @@
               @command="(command: any) => executeDeviceOperation(device, command)"
               trigger="click"
             >
-              <el-button type="success" size="small">
+              <el-button type="success" size="small" @click.stop>
                  操作 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
                </el-button>
               <template #dropdown>
@@ -290,7 +291,7 @@
               type="danger" 
               size="small"
               :icon="Delete"
-              @click="removeDevice(device.id)"
+              @click.stop="removeDevice(device.id)"
             >
               删除
             </el-button>
@@ -309,6 +310,7 @@
               v-for="device in offlineDevices" 
               :key="device.id" 
               class="mobile-device-card"
+              @click="selectDevice(device)"
             >
               <div class="device-card-header">
                 <div class="device-type">
@@ -342,7 +344,7 @@
                   v-if="hasMonitorData(device.type)"
                   type="primary" 
                   size="small"
-                  @click="openMonitorModal(device)"
+                  @click.stop="openMonitorModal(device)"
                 >
                   数据监控
                 </el-button>
@@ -351,7 +353,7 @@
                   @command="(command: any) => executeDeviceOperation(device, command)"
                   trigger="click"
                 >
-                  <el-button type="success" size="small">
+                  <el-button type="success" size="small" @click.stop>
                      操作 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
                    </el-button>
                   <template #dropdown>
@@ -370,7 +372,7 @@
                   type="danger" 
                   size="small"
                   :icon="Delete"
-                  @click="removeDevice(device.id)"
+                  @click.stop="removeDevice(device.id)"
                 >
                   删除
                 </el-button>
@@ -654,8 +656,12 @@ function handleCurrentChange(currentRow: Device | null) {
   if (currentRow) {
     closeMonitorConnection();
     selectedDeviceId.value = currentRow.id;
-    setupMonitorConnection(currentRow.id, currentRow.type);
   }
+}
+
+function selectDevice(device: Device) {
+  closeMonitorConnection();
+  selectedDeviceId.value = device.id;
 }
 
 async function clearAllDevices() {
@@ -935,6 +941,11 @@ function getDeviceOperations(deviceType: string) {
 // 打开监控弹窗
 function openMonitorModal(device: Device) {
   monitorDevice.value = device;
+  if (selectedDeviceId.value !== device.id) {
+    selectedDeviceId.value = device.id;
+  }
+  closeMonitorConnection();
+  setupMonitorConnection(device.id, device.type);
   monitorModalVisible.value = true;
 }
 
@@ -942,6 +953,7 @@ function openMonitorModal(device: Device) {
 function closeMonitorModal() {
   monitorModalVisible.value = false;
   monitorDevice.value = null;
+  closeMonitorConnection();
 }
 
 // 执行设备操作（从表格/卡片操作按钮）
