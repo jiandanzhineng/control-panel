@@ -1,7 +1,7 @@
 {
   "name": "undersilicon",
   "private": true,
-  "version": "1.0.12",
+  "version": "1.0.13",
   "main": "electron/main.js",
   "scripts": {
     "dev:all": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
