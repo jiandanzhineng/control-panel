@@ -75,7 +75,7 @@
                 <el-checkbox
                   v-for="device in getAvailableDevicesForRole(row)"
                   :key="device.id"
-                  :label="device.id"
+                  :value="device.id"
                 >{{ device.name }}</el-checkbox>
               </el-checkbox-group>
             </template>
@@ -105,7 +105,7 @@
               <el-checkbox
                 v-for="device in getAvailableDevicesForRole(row)"
                 :key="device.id"
-                :label="device.id"
+                :value="device.id"
               >{{ device.name }}</el-checkbox>
             </el-checkbox-group>
           </div>
