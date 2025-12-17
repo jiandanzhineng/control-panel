@@ -129,7 +129,13 @@
         description="暂无参数元信息"
         :image-size="80"
       />
-      <el-form v-else :model="parameters" label-width="120px" class="params-form">
+      <el-form
+        v-else
+        :model="parameters"
+        :label-position="isMobile ? 'top' : 'right'"
+        :label-width="isMobile ? undefined : '150px'"
+        class="params-form"
+      >
         <el-form-item 
           v-for="p in schemaEntries" 
           :key="p.key"
@@ -154,13 +160,13 @@
             v-model="parameters[p.key]"
             :min="p.min"
             :max="p.max"
-            style="width: 200px"
+            :style="{ width: isMobile ? '100%' : '200px' }"
           />
           <el-select
             v-else-if="p.type === 'enum'"
             v-model="parameters[p.key]"
             placeholder="请选择"
-            style="width: 200px"
+            :style="{ width: isMobile ? '100%' : '200px' }"
           >
             <el-option
               v-for="opt in (p.enum || [])"
@@ -346,6 +352,16 @@ const schemaEntries = computed(() => {
   for (const p of list) {
     if (parameters[p.key] === undefined && p.default !== undefined) {
       parameters[p.key] = p.default;
+    }
+  }
+  // 提取括号说明到 tooltip
+  for (const p of list) {
+    const nm = String(p.name ?? p.key ?? '');
+    const m = nm.match(/^(.*?)(?:（(.*?)）|\((.*?)\))$/);
+    if (m) {
+      p.name = m[1].trim() || p.name;
+      const extra = (m[2] ?? m[3] ?? '').trim();
+      if (extra && !p.placeholder) p.placeholder = extra;
     }
   }
   return list;
@@ -674,6 +690,8 @@ onMounted(() => { loadAll().then(() => recomputeBlocking()); });
   display: flex;
   align-items: center;
   gap: 4px;
+  white-space: normal;
+  word-break: break-word;
 }
 
 .param-warning {
