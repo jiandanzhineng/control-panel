@@ -67,6 +67,7 @@ router.post('/:id/start', (req, res) => {
     const { deviceMapping = {}, parameters = {} } = req.body || {};
     const result = gameplayService.startGameplay(g.configPath, deviceMapping, parameters);
     try { configService.saveParametersForGame(id, parameters); } catch (_) {}
+    try { gameService.updateGameById(id, { lastPlayed: Date.now() }); } catch (_) {}
     res.json({ ok: true, result, status: gameplayService.status() });
   } catch (e) {
     const code = e?.code === 'GAMEPLAY_ALREADY_RUNNING' ? 409 : 500;

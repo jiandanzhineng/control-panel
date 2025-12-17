@@ -187,6 +187,16 @@ function deleteGameById(id, { removeFile } = {}) {
   return { ok: true, removedFile };
 }
 
+function updateGameById(id, changes = {}) {
+  const rows = readGames();
+  const idx = rows.findIndex((g) => g && g.id === id);
+  if (idx < 0) return { ok: false, notFound: true };
+  const g = rows[idx] || {};
+  rows[idx] = { ...g, ...(changes || {}) };
+  writeGames(rows);
+  return { ok: true };
+}
+
 module.exports = {
   listGames,
   getGameById,
@@ -194,4 +204,5 @@ module.exports = {
   saveUploadedJs,
   deleteGameById,
   ensureGameDir,
+  updateGameById,
 };

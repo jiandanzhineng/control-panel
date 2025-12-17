@@ -37,7 +37,6 @@
             <h3 class="title">{{ g.name }}</h3>
             <p v-if="g.description" class="desc">{{ g.description }}</p>
             <div class="meta">
-              <span>状态：<strong>{{ statusText(g.status) }}</strong></span>
               <span v-if="g.arguments">参数：<code>{{ g.arguments }}</code></span>
               <span>最后游玩：{{ formatLastPlayed(g.lastPlayed) }}</span>
             </div>
@@ -86,8 +85,11 @@ const fileInput = ref<HTMLInputElement | null>(null);
 
 const filteredGames = computed(() => {
   const q = search.value.trim().toLowerCase();
-  if (!q) return games.value;
-  return games.value.filter(g => (g.name || '').toLowerCase().includes(q));
+  const base = q
+    ? games.value.filter(g => (g.name || '').toLowerCase().includes(q))
+    : games.value.slice();
+  base.sort((a, b) => (Number(b.lastPlayed || 0) - Number(a.lastPlayed || 0)));
+  return base;
 });
 
 onMounted(async () => {
