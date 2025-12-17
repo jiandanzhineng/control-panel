@@ -119,6 +119,9 @@
         <div class="card-header">
           <el-icon><Tools /></el-icon>
           <span>参数配置</span>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <el-button size="small" @click="resetToDefault">恢复默认配置</el-button>
+          </div>
         </div>
       </template>
       <el-empty 
@@ -438,12 +441,13 @@ async function loadAll() {
   loadingAll.value = true;
   error.value = '';
   try {
-    const [gRes, metaRes, dRes, tRes, iRes] = await Promise.all([
+    const [gRes, metaRes, dRes, tRes, iRes, cfgRes] = await Promise.all([
       fetch(`/api/games/${encodeURIComponent(gameId.value)}`),
       fetch(`/api/games/${encodeURIComponent(gameId.value)}/meta`),
       fetch('/api/devices'),
       fetch('/api/device-types'),
       fetch('/api/device-interfaces'),
+      fetch(`/api/games/${encodeURIComponent(gameId.value)}/config`),
     ]);
     const g = await gRes.json();
     if (!gRes.ok) throw new Error(g?.message || '获取游戏详情失败');
@@ -452,6 +456,7 @@ async function loadAll() {
       console.warn('获取玩法元信息失败', meta?.message || meta);
     }
     game.value = { ...(g || {}), ...(meta || {}) } as any;
+    const saved = await cfgRes.json().catch(() => null);
     const devs = await dRes.json();
     if (!dRes.ok) throw new Error(devs?.message || '获取设备列表失败');
     devices.value = Array.isArray(devs) ? devs : [];
@@ -461,6 +466,9 @@ async function loadAll() {
     const iface = await iRes.json();
     if (!iRes.ok) throw new Error(iface?.message || '获取设备接口失败');
     typeInterfaceMap.value = (iface?.typeInterfaceMap) || {};
+    const defaults = (meta && typeof meta.parameter === 'object') ? meta.parameter : {};
+    for (const k of Object.keys(parameters)) delete (parameters as any)[k];
+    Object.assign(parameters, (saved && typeof saved === 'object') ? saved : defaults);
     // 初始化映射默认值：按类型筛选并默认选择第一项（在线优先）
     for (const rd of requiredDevices.value) {
       const key = rdKey(rd);
@@ -897,3 +905,13 @@ onMounted(() => { loadAll().then(() => recomputeBlocking()); });
   }
 }
 </style>
+async function resetToDefault() {
+  try {
+    const res = await fetch(`/api/games/${encodeURIComponent(gameId.value)}/config/reset`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    const def = (data && typeof data.default === 'object') ? data.default : {};
+    for (const k of Object.keys(parameters)) delete (parameters as any)[k];
+    Object.assign(parameters, def);
+    recomputeBlocking();
+  } catch (_) {}
+}

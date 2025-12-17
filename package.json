@@ -71,7 +71,7 @@
       "allowElevation": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Control Panel"
+      "shortcutName": "UnderSilicon"
     }
   },
   "devDependencies": {

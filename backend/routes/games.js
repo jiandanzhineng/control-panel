@@ -4,6 +4,7 @@ const multer = require('multer');
 const { sendError } = require('../utils/http');
 const gameService = require('../services/gameService');
 const gameplayService = require('../services/gameplayService');
+const configService = require('../services/gameConfigService');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -44,6 +45,18 @@ router.get('/:id/meta', (req, res) => {
   }
 });
 
+router.get('/:id/config', (req, res) => {
+  try {
+    const id = req.params.id;
+    const g = gameService.getGameById(id);
+    if (!g) return sendError(res, 'GAME_NOT_FOUND', '游戏不存在', 404);
+    const params = configService.getParametersForGame(id);
+    res.json(params || null);
+  } catch (e) {
+    sendError(res, 'GAME_CONFIG_READ_FAILED', e?.message || String(e), 500);
+  }
+});
+
 // 3) 启动游戏：加载玩法文件并进入运行循环
 router.post('/:id/start', (req, res) => {
   try {
@@ -53,6 +66,7 @@ router.post('/:id/start', (req, res) => {
 
     const { deviceMapping = {}, parameters = {} } = req.body || {};
     const result = gameplayService.startGameplay(g.configPath, deviceMapping, parameters);
+    try { configService.saveParametersForGame(id, parameters); } catch (_) {}
     res.json({ ok: true, result, status: gameplayService.status() });
   } catch (e) {
     const code = e?.code === 'GAMEPLAY_ALREADY_RUNNING' ? 409 : 500;
