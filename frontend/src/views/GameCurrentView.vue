@@ -131,7 +131,15 @@ function injectHtml(html: string) {
   appendedStyles = [];
   Array.from(doc.head.querySelectorAll('style')).forEach(styleEl => {
     const s = document.createElement('style');
-    s.textContent = styleEl.textContent || '';
+    let css = styleEl.textContent || '';
+    
+    // 简单的 CSS 作用域隔离，防止 body/html 样式污染全局
+    // 将 body, :root, html 选择器替换为 .embedded-html
+    css = css.replace(/(^|[}\s])body\s*\{/g, '$1.embedded-html {');
+    css = css.replace(/(^|[}\s]):root\s*\{/g, '$1.embedded-html {');
+    css = css.replace(/(^|[}\s])html\s*\{/g, '$1.embedded-html {');
+    
+    s.textContent = css;
     document.head.appendChild(s);
     appendedStyles.push(s);
   });
@@ -218,7 +226,7 @@ function executeScripts(scripts: HTMLScriptElement[]) {
   .game-current-page {
     padding: 0;
     margin: 0;
-    width: 100vw;
+    width: 100%;
   }
   
   .control-card {
@@ -243,11 +251,12 @@ function executeScripts(scripts: HTMLScriptElement[]) {
   
   .embedded-html {
     min-height: 100vh;
-    width: 100vw;
+    width: 100%;
     margin: 0;
     border: none;
     border-radius: 0;
     background: transparent;
+    box-sizing: border-box;
   }
 
   .game-content-card .el-card__body {
@@ -260,7 +269,7 @@ function executeScripts(scripts: HTMLScriptElement[]) {
   .game-current-page {
     padding: 0;
     margin: 0;
-    width: 100vw;
+    width: 100%;
   }
   
   .control-card {
@@ -277,11 +286,12 @@ function executeScripts(scripts: HTMLScriptElement[]) {
   
   .embedded-html {
     min-height: 100vh;
-    width: 100vw;
+    width: 100%;
     margin: 0;
     border: none;
     border-radius: 0;
     background: transparent;
+    box-sizing: border-box;
   }
 }
 </style>
