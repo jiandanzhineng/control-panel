@@ -281,7 +281,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, watch } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { 
@@ -331,6 +331,9 @@ const deviceError = ref('');
 const loadingDevices = ref(false);
  
 
+const isMobile = ref(window.innerWidth <= 768);
+function onResize() { isMobile.value = window.innerWidth <= 768; }
+
 const requiredDevices = computed(() => {
   const arr = (game.value?.requiredDevices || []).filter(Boolean);
   return Array.isArray(arr) ? arr : [];
@@ -359,7 +362,7 @@ const schemaEntries = computed(() => {
     const nm = String(p.name ?? p.key ?? '');
     const m = nm.match(/^(.*?)(?:（(.*?)）|\((.*?)\))$/);
     if (m) {
-      p.name = m[1].trim() || p.name;
+      p.name = (m[1] ?? '').trim() || p.name;
       const extra = (m[2] ?? m[3] ?? '').trim();
       if (extra && !p.placeholder) p.placeholder = extra;
     }
@@ -562,6 +565,17 @@ function recomputeBlocking() {
 
 watch([deviceMapping, parameters, requiredDevices, schemaEntries], () => { recomputeBlocking(); }, { deep: true });
 
+async function resetToDefault() {
+  try {
+    const res = await fetch(`/api/games/${encodeURIComponent(gameId.value)}/config/reset`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    const def = (data && typeof data.default === 'object') ? data.default : {};
+    for (const k of Object.keys(parameters)) delete (parameters as any)[k];
+    Object.assign(parameters, def);
+    recomputeBlocking();
+  } catch (_) {}
+}
+
 async function start(force: boolean) {
   startError.value = '';
   if (!force && blocking.value.length > 0) {
@@ -596,7 +610,8 @@ function cancel() { router.push({ name: 'games' }); }
 const startBusy = ref(false);
 const startError = ref('');
 
-onMounted(() => { loadAll().then(() => recomputeBlocking()); });
+onMounted(() => { onResize(); window.addEventListener('resize', onResize); loadAll().then(() => recomputeBlocking()); });
+onUnmounted(() => { window.removeEventListener('resize', onResize); });
 </script>
 
 <style scoped>
@@ -923,13 +938,4 @@ onMounted(() => { loadAll().then(() => recomputeBlocking()); });
   }
 }
 </style>
-async function resetToDefault() {
-  try {
-    const res = await fetch(`/api/games/${encodeURIComponent(gameId.value)}/config/reset`, { method: 'POST' });
-    const data = await res.json().catch(() => ({}));
-    const def = (data && typeof data.default === 'object') ? data.default : {};
-    for (const k of Object.keys(parameters)) delete (parameters as any)[k];
-    Object.assign(parameters, def);
-    recomputeBlocking();
-  } catch (_) {}
-}
+ 
