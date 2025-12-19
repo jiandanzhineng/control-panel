@@ -413,286 +413,219 @@ const pressureEdging = {
   getHtml() {
     return `<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>气压寸止玩法</title>
-    <style>
-      :root { --bg:#f5f7fa; --bg2:#ffffff; --card:#ffffff; --text:#1f2937; --muted:#64748b; --border:#e5e7eb; --primary:#3b82f6; --accent:#22d3ee; --ok:#16a34a; --warn:#d97706; --danger:#dc2626; }
-      * { box-sizing: border-box; }
-      body { margin:0; padding:16px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif; color:var(--text); background: var(--bg); }
-      header { display:flex; align-items:center; gap:12px; }
-      .title { font-size:20px; margin:0; color:#0f172a; }
-      .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:#f8fafc; color:var(--muted); border:1px solid var(--border); font-size:12px; }
-      .pill.ok { color:var(--ok); }
-      main { margin-top:12px; display:grid; grid-template-columns:1fr; gap:12px; }
-      .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; box-shadow:0 6px 18px rgba(0,0,0,0.06); }
-      .section-title { margin:0 0 8px; font-size:16px; color:#0f172a; }
-      .stats { display:grid; grid-template-columns:1fr; gap:12px; }
-      @media (min-width: 760px) { .stats { grid-template-columns:1fr 1fr; } }
-      .stat { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:12px; }
-      .stat .label { color:var(--muted); font-size:12px; }
-      .stat .value { font-weight:700; font-size:26px; color:#0f172a; }
-      .progress { height:10px; background:#f1f5f9; border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-top:6px; }
-      .bar { height:100%; width:0%; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width .25s ease; }
-      .bar.secondary { background: linear-gradient(90deg, #93c5fd, #a5b4fc); opacity:.55; }
-      .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
-      button { padding:10px 14px; border-radius:12px; border:1px solid var(--border); background:#f8fafc; color:#0f172a; cursor:pointer; }
-      button.primary { background: linear-gradient(180deg, #60a5fa, #3b82f6); border-color:#3b82f6; color:#fff; }
-      button.danger { background: linear-gradient(180deg, #f87171, #dc2626); border-color:#dc2626; color:#fff; }
-      .muted { color:var(--muted); }
-      .row { display:flex; align-items:center; gap:8px; }
-      #logs { list-style:none; margin:0; padding:0; max-height:180px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-      #logs li { padding:6px 8px; border-bottom:1px solid var(--border); color:#334155; }
-      #logs li.l-warn { color:var(--warn); }
-      #logs li.l-error { color:#ef4444; }
-      .hidden { display:none !important; }
-    </style>
-  </head>
-  <body>
-    <header>
-      <h2 class="title" data-bind="title">气压寸止玩法</h2>
-      <span class="pill"><span class="muted">开始</span> <span data-bind="startTime">-</span></span>
-      <span class="pill ok"><span class="muted">状态</span> <span data-bind="running">false</span></span>
-    </header>
-    <main>
-      <section class="card">
-        <h3 class="section-title">压力与强度</h3>
-        <div class="stats">
-          <div class="stat">
-            <div class="label">当前压力(kPa)</div>
-            <div class="value"><strong data-bind="currentPressure">0</strong></div>
-            <div class="progress"><div id="pBar" class="bar"></div></div>
-            <div class="label">平均压力(近60点)：<strong data-bind="averagePressure">0</strong></div>
-          </div>
-          <div class="stat">
-            <div class="label">当前强度</div>
-            <div class="value"><strong data-bind="currentIntensity">0</strong></div>
-            <div class="progress"><div id="iBar" class="bar"></div></div>
-            <div class="label">目标强度：<strong data-bind="targetIntensity">0</strong></div>
-            <div class="progress"><div id="tBar" class="bar secondary"></div></div>
-          </div>
-        </div>
-        
-        <p class="warn" data-show="paused">已暂停</p>
-        <div class="actions">
-          <button class="primary" data-action="pause"><span data-bind="btnText">暂停</span></button>
-          <button data-action="addIntensity" data-payload='{"delta":10}'>目标强度 +10</button>
-          <button class="danger" data-action="shockOnce">手动电击</button>
-        </div>
-      </section>
-      <section class="card">
-        <h3 class="section-title">动态控制图</h3>
-        <canvas id="chart" width="600" height="220" style="width:100%; height:220px; border:1px solid var(--border); border-radius:12px; background:#f8fafc"></canvas>
-        <div class="row muted">X=压力，Y=强度；拖拽底部两个点调节 P_mid/P_crit</div>
-      </section>
-      <section class="card">
-        <h3 class="section-title">状态</h3>
-        <div class="row"><span class="muted">状态文本</span> <span data-bind="statusText">-</span></div>
-        <div class="row"><span class="muted">电击次数</span> <strong data-bind="shockCount">0</strong></div>
-        <div class="row"><span class="muted">累计刺激时长</span> <strong data-bind="totalStimulationTime">0</strong> 秒</div>
-        <div class="row"><span class="muted">上次 ping</span> <span data-bind="lastPing">-</span></div>
-      </section>
-      <section class="card">
-        <h3 class="section-title">日志（最近 10 条）</h3>
-        <ul id="logs"></ul>
-      </section>
-    </main>
-    <script>
-      (function(){
-        const state = {};
-        const uiFields = {};
-        const $ = (sel) => Array.from(document.querySelectorAll(sel));
-        function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
-        let chartXMin = 15;
-        let chartXMax = 25;
-        function render(){
-          $('[data-bind]').forEach(el => {
-            const key = el.getAttribute('data-bind');
-            let val = (key in state) ? state[key] : (key in uiFields ? uiFields[key] : el.textContent);
-            if (key === 'startTime') {
-              const num = Number(val);
-              if (!Number.isNaN(num) && num > 0) val = new Date(num).toLocaleString();
-            }
-            if (el.tagName === 'STRONG') {
-              const num = Number(val);
-              if (!Number.isNaN(num)) val = num.toFixed(2);
-            }
-            el.textContent = (val === undefined || val === null) ? '' : String(val);
-          });
-          $('[data-show]').forEach(el => {
-            const key = el.getAttribute('data-show');
-            const val = !!state[key];
-            el.classList.toggle('hidden', !val);
-          });
-          const c = Number(state.criticalPressure) || 20;
-          const m = Number(state.maxMotorIntensity) || 200;
-          const cp = clamp((Number(state.currentPressure)||0)/c, 0, 1);
-          const ci = clamp((Number(state.currentIntensity)||0)/m, 0, 1);
-          const ti = clamp((Number(state.targetIntensity)||0)/m, 0, 1);
-          const pBar = document.getElementById('pBar');
-          const iBar = document.getElementById('iBar');
-          const tBar = document.getElementById('tBar');
-          if (pBar) pBar.style.width = (cp*100).toFixed(1)+'%';
-          if (iBar) iBar.style.width = (ci*100).toFixed(1)+'%';
-          if (tBar) tBar.style.width = (ti*100).toFixed(1)+'%';
-          drawChart();
-        }
-        function merge(obj, patch){ Object.assign(obj, patch || {}); }
-        function addLog(item){
-          const li = document.createElement('li');
-          li.className = 'l-' + (item.level||'info');
-          li.textContent = '[' + new Date(item.ts).toLocaleTimeString() + '] ' + item.level + ' — ' + item.message;
-          const ul = document.getElementById('logs');
-          ul.insertBefore(li, ul.firstChild);
-          while (ul.children.length > 10) ul.removeChild(ul.lastChild);
-        }
-        function postAction(name, payload){
-          return fetch('/api/games/current/actions', { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify({ action:name, payload }) }).catch(()=>{});
-        }
-        $('[data-action]').forEach(el => {
-          const name = el.getAttribute('data-action');
-          const raw = el.getAttribute('data-payload');
-          let payload = undefined;
-          try { if (raw) payload = JSON.parse(raw); } catch(_) {}
-          el.addEventListener('click', () => postAction(name, payload));
-        });
-        const es = new EventSource('/api/games/current/stream');
-        es.addEventListener('hello', (e) => { try { const data = JSON.parse(e.data); merge(state, data.snapshot || {}); render(); } catch(_){} });
-        es.addEventListener('state', (e) => { try { const d = JSON.parse(e.data); merge(state, d); render(); } catch(_){} });
-        es.addEventListener('ui', (e) => { try { const d = JSON.parse(e.data); merge(uiFields, d.fields || {}); render(); } catch(_){} });
-        es.addEventListener('log', (e) => { try { addLog(JSON.parse(e.data)); } catch(_){} });
-        function drawChart(){
-          const el = document.getElementById('chart');
-          if (!el) return;
-          const dpr = window.devicePixelRatio || 1;
-          const w = el.clientWidth, h = el.clientHeight;
-          if (el.width !== Math.round(w*dpr)) el.width = Math.round(w*dpr);
-          if (el.height !== Math.round(h*dpr)) el.height = Math.round(h*dpr);
-          const ctx = el.getContext('2d');
-          ctx.setTransform(dpr,0,0,dpr,0,0);
-          ctx.clearRect(0,0,w,h);
-          const c = Number(state.criticalPressure)||20;
-          const mBase = Number(state.maxMotorIntensity)||200;
-          const pm = Number(state.midPressure|| (c*0.9));
-          const im = Number(state.midIntensity|| (mBase*0.5));
-          const pc = Number(state.currentPressure)||0;
-          const ic = Number(state.currentIntensity)||0;
-          const pad = 28;
-          const gx0 = pad, gx1 = w - pad, gy0 = h - pad, gy1 = pad;
-          chartXMax = Math.min(35, Math.max(chartXMax, 25, c + 5));
-          const desiredMin = Math.max(0, pm - 5);
-          if (chartXMin > desiredMin) chartXMin = desiredMin;
-          function xOfP(p){
-            const pp = Math.max(chartXMin, Math.min(chartXMax, p));
-            return gx0 + (gx1-gx0) * ((pp - chartXMin) / Math.max(1e-6, (chartXMax - chartXMin)));
-          }
-          let m = Math.max(mBase, ic + 20, (Number(state.targetIntensity)||0) + 20, (Number(state.midIntensity)||0) + 10);
-          function yOfI(i){ return gy0 - (gy0-gy1) * (Math.max(0, Math.min(m, i)) / Math.max(1e-6, m)); }
-          ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.moveTo(gx0, gy0); ctx.lineTo(gx1, gy0); ctx.lineTo(gx1, gy1); ctx.stroke();
-          const tickN = 5;
-          const fmt = (v) => (v % 1 === 0 ? String(v) : v.toFixed(1));
-          ctx.fillStyle = '#64748b';
-          ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-          ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-          for (let i = 0; i <= tickN; i++){
-            const p = chartXMin + (chartXMax - chartXMin) * i / tickN; const x = xOfP(p);
-            ctx.beginPath(); ctx.moveTo(x, gy0); ctx.lineTo(x, gy0+4); ctx.stroke();
-            ctx.fillText(fmt(p), x, gy0+6);
-          }
-          ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-          for (let i = 0; i <= tickN; i++){
-            const v = m * i / tickN; const y = yOfI(v);
-            ctx.beginPath(); ctx.moveTo(gx0, y); ctx.lineTo(gx0-4, y); ctx.stroke();
-            ctx.fillText(fmt(v), gx0-6, y);
-          }
-          const xMid = xOfP(pm), xCrit = xOfP(c), yMid = yOfI(im);
-          const inset = 8;
-          const dxMid = Math.max(gx0+inset, Math.min(gx1-inset, xMid));
-          const dxCrit = Math.max(gx0+inset, Math.min(gx1-inset, xCrit));
-          ctx.fillStyle = 'rgba(59,130,246,0.15)';
-          ctx.beginPath(); ctx.moveTo(dxMid, gy0); ctx.lineTo(dxCrit, gy0); ctx.lineTo(dxMid, yMid); ctx.closePath(); ctx.fill();
-          ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.moveTo(dxMid, gy0); ctx.lineTo(dxMid, yMid); ctx.lineTo(dxCrit, gy0); ctx.stroke();
-          ctx.fillStyle = '#0ea5e9';
-          ctx.beginPath(); ctx.arc(dxMid, gy0, 6, 0, Math.PI*2); ctx.fill();
-          ctx.fillStyle = '#f97316';
-          ctx.beginPath(); ctx.arc(dxCrit, gy0, 6, 0, Math.PI*2); ctx.fill();
-          const xCur = xOfP(pc), yCur = yOfI(ic);
-          ctx.fillStyle = '#10b981';
-          ctx.beginPath(); ctx.arc(xCur, yCur, 8, 0, Math.PI*2); ctx.fill();
-          ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(16,185,129,0.5)'; ctx.stroke();
-          const st = String(uiFields.statusText||'');
-          let mode = 'NORMAL';
-          if (pc >= c) mode = 'OVERLOAD';
-          else if (st.indexOf('冷却') !== -1 || st.indexOf('延迟') !== -1) mode = 'DELAY';
-          const color = mode === 'OVERLOAD' ? '#ef4444' : (mode === 'DELAY' ? '#f59e0b' : '#10b981');
-          ctx.save();
-          ctx.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-          const text = mode;
-          const tw = ctx.measureText(text).width + 12;
-          const th = 20;
-          const bx = gx0 + 6, by = gy1 + 6;
-          ctx.fillStyle = 'rgba(248,250,252,0.9)';
-          ctx.fillRect(bx, by, tw, th);
-          ctx.strokeStyle = color; ctx.lineWidth = 1;
-          ctx.strokeRect(bx, by, tw, th);
-          ctx.fillStyle = color; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-          ctx.fillText(text, bx + 6, by + th/2);
-          ctx.restore();
-          let info = document.getElementById('chart-info');
-          if (!info) {
-            info = document.createElement('div');
-            info.id = 'chart-info';
-            info.style.marginTop = '6px';
-            info.style.font = '12px system-ui, -apple-system, Segoe UI, Roboto, Arial';
-            info.style.color = '#334155';
-            el.parentNode.insertBefore(info, el.nextSibling);
-          }
-          info.textContent = 'midPressure: ' + fmt(pm) + ' | criticalPressure: ' + fmt(c) + ' | midIntensity: ' + fmt(im);
-        }
-        (function initDrag(){
-          const el = document.getElementById('chart'); if(!el) return;
-          let dragging = null;
-          function nearestHandle(x){
-            const c = Number(state.criticalPressure)||20;
-            const pm = Number(state.midPressure|| (c*0.9));
-            const pad = 28; const w = el.clientWidth; const gx0 = pad, gx1 = w-pad;
-            const inset = 8;
-            const xMid = gx0 + (gx1-gx0) * ((Math.max(chartXMin, Math.min(chartXMax, pm)) - chartXMin) / Math.max(1e-6, (chartXMax - chartXMin)));
-            const xCrit = gx0 + (gx1-gx0) * ((Math.max(chartXMin, Math.min(chartXMax, c)) - chartXMin) / Math.max(1e-6, (chartXMax - chartXMin)));
-            const dxMid = Math.max(gx0+inset, Math.min(gx1-inset, xMid));
-            const dxCrit = Math.max(gx0+inset, Math.min(gx1-inset, xCrit));
-            return (Math.abs(x-dxMid) < Math.abs(x-dxCrit)) ? 'mid' : 'crit';
-          }
-          function setFromX(which, x){
-            const c = Number(state.criticalPressure)||20;
-            const pad = 28; const w = el.clientWidth; const gx0 = pad, gx1 = w-pad;
-            const p = chartXMin + (x - gx0) / Math.max(1e-6, (gx1-gx0)) * (chartXMax - chartXMin);
-            const inset = 8;
-            const pInset = inset / Math.max(1e-6, (gx1-gx0)) * (chartXMax - chartXMin);
-            const pClamped = Math.max(chartXMin + pInset, Math.min(chartXMax - pInset, p));
-            if (which === 'mid') {
-              const cp = Number(state.criticalPressure)||c;
-              state.midPressure = Math.max(chartXMin + pInset, Math.min(cp-0.1, pClamped));
-            } else {
-              const mp = Number(state.midPressure)|| (c*0.9);
-              const np = Math.max(Math.max(mp+0.1, chartXMin + pInset), Math.min(60, pClamped));
-              state.criticalPressure = np;
-            }
-            render();
-          }
-          el.addEventListener('mousedown', (e)=>{ const rect = el.getBoundingClientRect(); dragging = nearestHandle(e.clientX - rect.left); });
-          window.addEventListener('mousemove', (e)=>{ if(!dragging) return; const rect = el.getBoundingClientRect(); setFromX(dragging, e.clientX - rect.left); });
-          window.addEventListener('mouseup', ()=>{
-            if(!dragging) return; dragging = null;
-            postAction('setThresholds', { midPressure: Number(state.midPressure), criticalPressure: Number(state.criticalPressure) });
-          });
-        })();
-      })();
-    </script>
-  </body>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>气压寸止</title>
+<style>
+  :root{--bg:#f8fafc;--card:#fff;--text:#1e293b;--sub:#64748b;--border:#e2e8f0;--primary:#3b82f6;--danger:#ef4444;--warn:#f59e0b;--ok:#22c55e;}
+  body{margin:0;padding:16px;font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;}
+  .container{max-width:600px;margin:0 auto;display:grid;gap:16px;}
+  header{display:flex;justify-content:space-between;align-items:center;}
+  h1{margin:0;font-size:1.25rem;font-weight:700;}
+  .badge{padding:4px 10px;border-radius:99px;font-size:0.85rem;background:#eff6ff;color:var(--primary);font-weight:500;}
+  .card{background:var(--card);border-radius:16px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.05);border:1px solid var(--border);}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  .metric{display:flex;flex-direction:column;}
+  .label{font-size:0.85rem;color:var(--sub);margin-bottom:4px;}
+  .value{font-size:2rem;font-weight:700;line-height:1.1;}
+  .progress{height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;margin-top:8px;}
+  .bar{height:100%;background:var(--primary);transition:width .3s;}
+  .bar.p{background:linear-gradient(90deg,#3b82f6,#06b6d4);}
+  .bar.i{background:linear-gradient(90deg,#8b5cf6,#ec4899);}
+  .actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;margin-top:10px;}
+  button{border:1px solid var(--border);background:#fff;padding:12px;border-radius:10px;font-weight:600;color:var(--text);cursor:pointer;font-size:0.9rem;transition:all 0.2s;}
+  button:active{background:#f1f5f9;transform:scale(0.98);}
+  button.primary{background:var(--primary);color:#fff;border:none;}
+  button.danger{color:var(--danger);border-color:#fee2e2;}
+  canvas{width:100%;height:200px;background:#f8fafc;border-radius:8px;border:1px solid var(--border);margin:10px 0;}
+  .adjust{display:flex;justify-content:space-between;background:#f1f5f9;padding:8px;border-radius:8px;font-size:0.85rem;}
+  .adjust div{display:flex;align-items:center;gap:8px;}
+  .btn-sm{width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:6px;background:#fff;}
+  ul#logs{list-style:none;margin:0;padding:0;height:120px;overflow-y:auto;font-size:0.8rem;color:var(--sub);border-top:1px solid var(--border);padding-top:8px;}
+  li{padding:2px 0;border-bottom:1px dashed #f1f5f9;}
+  .stat-row{display:flex;gap:15px;font-size:0.85rem;color:var(--sub);margin-bottom:8px;}
+  .stat-row b{color:var(--text);}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1 data-bind="title">气压寸止</h1>
+      <div style="font-size:0.8rem;color:var(--sub)">Started: <span data-bind="startTime">-</span></div>
+    </div>
+    <div class="badge" data-bind="statusText">Ready</div>
+  </header>
+
+  <div class="card">
+    <div class="grid-2">
+      <div class="metric">
+        <span class="label">当前压力 (Avg: <span data-bind="averagePressure">0</span>)</span>
+        <span class="value" data-bind="currentPressure">0</span>
+        <div class="progress"><div id="pBar" class="bar p" style="width:0%"></div></div>
+      </div>
+      <div class="metric">
+        <span class="label">当前强度 (Tgt: <span data-bind="targetIntensity">0</span>)</span>
+        <span class="value" data-bind="currentIntensity">0</span>
+        <div class="progress"><div id="iBar" class="bar i" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="actions">
+      <button class="primary" data-action="pause"><span data-bind="btnText">暂停</span></button>
+      <button data-action="addIntensity" data-payload='{"delta":10}'>+10 强度</button>
+      <button class="danger" data-action="shockOnce">⚡ 电击</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="stat-row">
+      <span>中间压力: <b data-bind="midPressure">0</b></span>
+      <span>临界压力: <b data-bind="criticalPressure">0</b></span>
+    </div>
+    <canvas id="chart"></canvas>
+    <div class="adjust">
+      <div>
+        <span>中间</span>
+        <button class="btn-sm" data-adjust="mid" data-val="-0.1">-</button>
+        <button class="btn-sm" data-adjust="mid" data-val="0.1">+</button>
+      </div>
+      <div>
+        <span>临界</span>
+        <button class="btn-sm" data-adjust="crit" data-val="-0.1">-</button>
+        <button class="btn-sm" data-adjust="crit" data-val="0.1">+</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="stat-row">
+      <span>电击: <b data-bind="shockCount">0</b></span>
+      <span>时长: <b data-bind="totalStimulationTime">0</b>s</span>
+      <span>Ping: <span data-bind="lastPing">-</span></span>
+    </div>
+    <ul id="logs"></ul>
+  </div>
+</div>
+
+<script>
+(function(){
+  const state={}; const ui={};
+  const $=(s)=>document.querySelectorAll(s);
+  const el=(id)=>document.getElementById(id);
+  
+  function render(){
+    $('[data-bind]').forEach(e=>{
+      const k=e.getAttribute('data-bind');
+      let v = state[k] ?? ui[k] ?? '';
+      if(k==='btnText' && v==='') v='暂停';
+      if(k==='startTime' && v>0) v=new Date(v).toLocaleTimeString();
+      if(e.tagName==='B' || e.classList.contains('value') || k==='averagePressure' || k==='targetIntensity') {
+        const n=Number(v); if(!isNaN(n)) v=n.toFixed(k.includes('Pressure')?1:0);
+      }
+      e.textContent = v;
+    });
+    const cp = Number(state.currentPressure)||0;
+    const crit = Number(state.criticalPressure)||20;
+    const ci = Number(state.currentIntensity)||0;
+    const maxI = Number(state.maxMotorIntensity)||200;
+    if(el('pBar')) el('pBar').style.width = Math.min(100, (cp/crit)*100).toFixed(1)+'%';
+    if(el('iBar')) el('iBar').style.width = Math.min(100, (ci/maxI)*100).toFixed(1)+'%';
+    drawChart();
+  }
+
+  const post = (act, pay) => fetch('/api/games/current/actions', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:act,payload:pay})}).catch(()=>{});
+  $('[data-action]').forEach(b=>b.onclick=()=>post(b.getAttribute('data-action'), JSON.parse(b.getAttribute('data-payload')||'{}')));
+  
+  $('[data-adjust]').forEach(b=>{
+    b.onclick=()=>{
+      const type=b.getAttribute('data-adjust'), val=Number(b.getAttribute('data-val'));
+      const c=Number(state.criticalPressure)||20, m=Number(state.midPressure)||(c*0.9);
+      if(type==='mid') state.midPressure = Math.max(0, Math.min(c-0.1, m+val));
+      else state.criticalPressure = Math.max(m+0.1, Math.min(60, c+val));
+      render();
+      post('setThresholds', {midPressure:state.midPressure, criticalPressure:state.criticalPressure});
+    }
+  });
+
+  let chartXMin=15, chartXMax=25;
+  function drawChart(){
+    const cvs=el('chart'); if(!cvs)return;
+    const ctx=cvs.getContext('2d');
+    const w=cvs.width=cvs.clientWidth*2, h=cvs.height=cvs.clientHeight*2;
+    ctx.scale(2,2); const W=w/2, H=h/2;
+    
+    const pad=20, gw=W-pad*2, gh=H-pad*2;
+    const cp=Number(state.currentPressure)||0, ci=Number(state.currentIntensity)||0;
+    const crit=Number(state.criticalPressure)||20, mid=Number(state.midPressure)||(crit*0.9);
+    const midI=Number(state.midIntensity)||0, maxI=Number(state.maxMotorIntensity)||200;
+    
+    chartXMax = Math.max(chartXMax, crit+5);
+    chartXMin = Math.min(chartXMin, mid-5);
+    const xOf=(p)=>pad + gw * ((p-chartXMin)/Math.max(1e-6, chartXMax-chartXMin));
+    const yOf=(i)=>pad + gh * (1 - i/Math.max(1e-6, Math.max(maxI, ci+10)));
+
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle='#e2e8f0'; ctx.beginPath();
+    ctx.moveTo(pad, pad+gh); ctx.lineTo(pad+gw, pad+gh); 
+    ctx.moveTo(pad, pad); ctx.lineTo(pad, pad+gh);
+    ctx.stroke();
+    
+    const xM=xOf(mid), xC=xOf(crit), yM=yOf(midI), y0=pad+gh;
+    ctx.fillStyle='rgba(59,130,246,0.1)';
+    ctx.beginPath(); ctx.moveTo(xM,y0); ctx.lineTo(xC,y0); ctx.lineTo(xM,yM); ctx.fill();
+    ctx.strokeStyle='#3b82f6'; ctx.beginPath(); ctx.moveTo(xM,y0); ctx.lineTo(xM,yM); ctx.lineTo(xC,y0); ctx.stroke();
+
+    const dot=(x,y,c)=>{ctx.fillStyle=c;ctx.beginPath();ctx.arc(x,y,5,0,7);ctx.fill();}
+    dot(xM, y0, '#3b82f6'); 
+    dot(xC, y0, '#f97316'); 
+    dot(xOf(cp), yOf(ci), '#22c55e'); 
+    
+    ctx.fillStyle='#64748b'; ctx.font='10px sans-serif';
+    ctx.fillText(chartXMin.toFixed(0), pad, H-5);
+    ctx.fillText(chartXMax.toFixed(0), W-20, H-5);
+    
+    ctx.textAlign='right';
+    ctx.fillText(maxI.toFixed(0), pad-4, pad+8);
+    ctx.fillText('0', pad-4, pad+gh);
+    ctx.textAlign='left';
+  }
+
+  const es = new EventSource('/api/games/current/stream');
+  const merge=(t,s)=>Object.assign(t,s||{});
+  es.addEventListener('state',e=>{merge(state,JSON.parse(e.data));render();});
+  es.addEventListener('ui',e=>{merge(ui,JSON.parse(e.data).fields);render();});
+  es.addEventListener('log',e=>{
+    const d=JSON.parse(e.data), li=document.createElement('li');
+    li.textContent = \`[\${new Date(d.ts).toLocaleTimeString()}] \${d.message}\`;
+    li.style.color = d.level==='warn'?'#f59e0b':(d.level==='error'?'#ef4444':'inherit');
+    const ul=el('logs'); ul.prepend(li); if(ul.children.length>20) ul.lastChild.remove();
+  });
+  
+  let drag=null;
+  el('chart').onmousedown=e=>{
+    const r=e.target.getBoundingClientRect(), x=e.clientX-r.left;
+    const xM = (Number(state.midPressure)-chartXMin)/(chartXMax-chartXMin)*r.width;
+    const xC = (Number(state.criticalPressure)-chartXMin)/(chartXMax-chartXMin)*r.width;
+    drag = Math.abs(x-xM)<Math.abs(x-xC)?'mid':'crit';
+  };
+  window.onmousemove=e=>{
+    if(!drag)return;
+    const r=el('chart').getBoundingClientRect(), w=r.width;
+    const p = chartXMin + ((e.clientX-r.left)/w)*(chartXMax-chartXMin);
+    const c=Number(state.criticalPressure)||20, m=Number(state.midPressure);
+    if(drag==='mid') state.midPressure=Math.max(chartXMin, Math.min(c-0.1, p));
+    else state.criticalPressure=Math.max(m+0.1, Math.min(60, p));
+    render();
+  };
+  window.onmouseup=()=>{if(drag){post('setThresholds',{midPressure:state.midPressure,criticalPressure:state.criticalPressure});drag=null;}};
+
+})();
+</script>
+</body>
 </html>`;
   },
 };
