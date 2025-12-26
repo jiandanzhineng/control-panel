@@ -1,8 +1,16 @@
 // 气压寸止玩法：基于气压传感器的寸止训练（嵌入式 HTML + SSE）
 // 参考：demoEmbeddedSse.js 的接口与事件模型；结合 pressure-edging-game.js 的业务逻辑
 
+const STATES = {
+  INITIAL_CALM: 'INITIAL_CALM', // 初始平静期
+  MIDDLE: 'MIDDLE',             // 中期
+  EDGING: 'EDGING',             // 边缘期
+  DELAY: 'DELAY',               // 延迟期
+  SUB_CALM: 'SUB_CALM'          // 后续平静期
+};
+
 const pressureEdging = {
-  title: '气压寸止玩法123版',
+  title: '气压寸止玩法123升级版',
   description: '基于气压传感器(QIYA)的寸止训练，根据压力与时间窗智能调节 TD01 强度，并在超阈值时触发电击。',
 
   // 启动前可配置参数（供前端生成配置界面）
@@ -49,6 +57,11 @@ const pressureEdging = {
     paused: false,
     startTime: 0,                             //ms
     endTime: 0,                               //ms
+    
+    // 状态机核心
+    state: STATES.INITIAL_CALM,
+    stateTimer: 0,                            //ms (用于DELAY状态计时)
+    recordedMidIntensity: 0,                  // 进入MIDDLE状态时记录的强度
 
     // 传感与强度
     currentPressure: 0,                       //kPa
@@ -60,16 +73,9 @@ const pressureEdging = {
     unRandomIntensity: 0,
     targetIntensity: 0,
     currentIntensity: 0,
-    midIntensity: 0,
+    midIntensity: 0,                          // 兼容旧代码或用于UI显示
     lastUpdateTs: 0,                          //ms
     prevPressure: 0,
-
-
-    // 延迟与提升
-    isAtStartIntensity: false,
-    isInDelayPeriod: false,
-    delayStartTime: 0,                        //ms
-    isPressureLow: false,
 
     // 电击
     isShocking: false,
@@ -79,6 +85,7 @@ const pressureEdging = {
 
     // 统计
     totaldeniedTimes:0,
+    edgingCount: 0,
     totalStimulationTime: 0,
   },
 
@@ -91,16 +98,20 @@ const pressureEdging = {
     this._runtime.paused = false;
     this._runtime.startTime = now;
     this._runtime.endTime = now + (this._runtime.config.duration * 60 * 1000);
+    
+    // 状态机初始化
+    this._runtime.state = STATES.INITIAL_CALM;
+    this._runtime.stateTimer = 0;
+    this._runtime.recordedMidIntensity = 0;
+    
     this._runtime.unRandomIntensity = 0;
     this._runtime.targetIntensity = 0;
     this._runtime.currentIntensity = 0;
     this._runtime.midIntensity = 0.5 * this._runtime.config.maxMotorIntensity;
     this._runtime.lastUpdateTs = now;
     this._runtime.prevPressure = 0;
-    this._runtime.isPressureLow = true;
-    this._runtime.isInDelayPeriod = false;  
-    this._runtime.delayStartTime = (-1) * this._runtime.config.lowPressureDelay - 1e-6;
     this._runtime.totaldeniedTimes = 0;
+    this._runtime.edgingCount = 0;
     this._runtime.totalStimulationTime = 0;
 
     // 初始化设备状态
@@ -155,12 +166,13 @@ const pressureEdging = {
           const recent = this._runtime.pressureHistory.slice(-60);
           const sum = recent.reduce((acc, it) => acc + (Number(it.pressure) || 0), 0);
           this._runtime.averagePressure = recent.length ? (sum / recent.length) : p;
+          
+          // 高频触发核心逻辑 (即时响应压力变化)
+          this._calculateStateLogic(deviceManager);
+          this._updateIntensity(deviceManager);
+
           deviceManager.emitState({ currentPressure: p, averagePressure: this._runtime.averagePressure });
         }
-        // let brief = '';
-        // try { brief = JSON.stringify(payload); } catch (_) { brief = String(payload); }
-        // if (brief && brief.length > 200) brief = brief.slice(0, 200) + '…';
-        // deviceManager.log('info', `接收 QIYA 设备 MQTT: ${brief}`, { logicalId: ctx?.logicalId, deviceId: ctx?.deviceId, topic: ctx?.topic });
       });
     } catch (e) {
       deviceManager.log('warn', '注册 QIYA MQTT 监听失败', { error: e?.message || String(e) });
@@ -170,6 +182,7 @@ const pressureEdging = {
     deviceManager.emitState({
       running: true,
       paused: false,
+      state: this._runtime.state,
       startTime: new Date(this._runtime.startTime).toLocaleString(),
       currentPressure: this._runtime.currentPressure,
       currentIntensity: this._runtime.currentIntensity,
@@ -183,128 +196,201 @@ const pressureEdging = {
     deviceManager.emitUi({ fields: { statusText: '准备就绪', btnText: '暂停' } });
   },
 
-  // 主循环：计算目标强度、应用速率限制并下发到 TD01；超压触发电击
+  // 主循环：状态机逻辑
   loop(deviceManager) {
     if (!this._runtime.running) return false;
     if (this._runtime.paused) return true;
     
     const now = Date.now();
-    const dtSec = Math.max(0, (now - this._runtime.lastUpdateTs) / 1000);
-    this._runtime.lastUpdateTs = now;
     
-    /*
-    添加从UI上读取midPressure、criticalPressure的语句
-    this._runtime.config.midPressure = get();
-    this._runtime.config.criticalPressure = get();
-    */
-
-    const pressure = this._runtime.currentPressure;
-    const cfg = this._runtime.config;
-
     // 到时结束
     if (now >= this._runtime.endTime) {
       this.end(deviceManager);
       return false;
     }
 
-    // 逻辑
-    // 低压:当前压力低于临界压力; 超压:当前压力高于临界压力
+    // 1. 计算状态与目标强度 (处理时间依赖和状态跳转)
+    this._calculateStateLogic(deviceManager);
 
-    // 过载触发：立即归零并进入冷却等待回落
-    if (pressure >= cfg.criticalPressure) {
-      if (this._runtime.isInDelayPeriod === false) {
-        this._triggerShock(deviceManager);
-        this._runtime.totaldeniedTimes++;
-        deviceManager.emitUi({ fields: { statusText: `过载，等待压力回落…` } });
-      }
-      this._runtime.isInDelayPeriod = true;
-      this._runtime.isPressureLow = false;
-      this._runtime.delayStartTime = 0;
-      this._runtime.targetIntensity = 0;
-    }
-    // 在冷却期：等待压力回落至 P_mid 后再开始延迟计时
-    else if (this._runtime.isInDelayPeriod) {
-      if (this._runtime.delayStartTime <= 0 && pressure < cfg.midPressure) {
-        this._runtime.delayStartTime = now;
-        this._runtime.isPressureLow = true;
-        this._runtime.targetIntensity = 0;
-        deviceManager.emitUi({ fields: { statusText: `冷却延迟(${cfg.lowPressureDelay}s)…` } });
-      } else if (this._runtime.delayStartTime > 0 && (now - this._runtime.delayStartTime) / 1000 < cfg.lowPressureDelay) {
-        this._runtime.targetIntensity = 0;
-      } else if (this._runtime.delayStartTime > 0) {
-        // 延迟结束，恢复
-        const baseTarget = cfg.maxMotorIntensity * (cfg.criticalPressure - pressure) / Math.max(1e-6, (cfg.criticalPressure - cfg.pressureSensitivity));
-        this._runtime.targetIntensity = baseTarget;
-        this._runtime.unRandomIntensity = baseTarget;
-        this._runtime.isAtStartIntensity = true;
-        this._runtime.isInDelayPeriod = false;
-        deviceManager.emitUi({ fields: { statusText: '强度逐步提升中…' } });
-      } else {
-        this._runtime.targetIntensity = 0;
-      }
-    }
-    // 正常/恢复阶段
-    else{
+    // 2. 执行强度变化 (平滑控制)
+    this._updateIntensity(deviceManager);
 
-      // 若之前处于延迟期，结束延迟期，计算初始强度，发送文本
-      if(this._runtime.isInDelayPeriod === true){       
-        const baseTarget = cfg.maxMotorIntensity * (cfg.criticalPressure - pressure) / Math.max(1e-6, (cfg.criticalPressure-cfg.pressureSensitivity));
-        this._runtime.targetIntensity = baseTarget;
-        this._runtime.unRandomIntensity = baseTarget;
-        this._runtime.isAtStartIntensity = true;
-        deviceManager.log('info', `延迟结束，基础强度: ${baseTarget.toFixed(1)}，开始逐步提升`);
-        deviceManager.emitUi({ fields: { statusText: '强度逐步提升中…' } });
-      }
-              
-      // 低于中间压力，逐步提升目标强度，应用随机扰动，中间强度实时更新为当前强度 
-      else if(pressure <= cfg.midPressure){
+    // 3. 推送状态
+    this._emitFullState(deviceManager);
+
+    return true;
+  },
+
+  // 核心状态计算逻辑 (可高频调用)
+  _calculateStateLogic(deviceManager) {
+    const now = Date.now();
+    // 计算距上次逻辑更新的时间差 (秒)
+    // 注意：如果调用太频繁，dt可能很小，但在累积计算中是正确的
+    const dtSec = Math.max(0, (now - this._runtime.lastUpdateTs) / 1000);
+    this._runtime.lastUpdateTs = now;
+
+    const pressure = this._runtime.currentPressure;
+    const cfg = this._runtime.config;
+    const state = this._runtime.state;
+
+    switch (state) {
+      case STATES.INITIAL_CALM: {
+        // 强度缓慢提升
         const increaseIntensity = dtSec * (cfg.intensityGradualIncrease || 0);
         this._runtime.unRandomIntensity += increaseIntensity;
+        // 随机扰动
         const rnd = 1 + (Math.random() - 0.5) * 2 * (cfg.stimulationRampRandomPercent / 100);
-        this._runtime.targetIntensity = Math.min(Math.max(this._runtime.unRandomIntensity * rnd, 0),cfg.maxMotorIntensity);
+        let target = this._runtime.unRandomIntensity * rnd;
+        target = Math.max(0, Math.min(target, cfg.maxMotorIntensity));
+        this._runtime.targetIntensity = target;
+
+        // 转移: 压力 > 中压 -> 中期
+        if (pressure > cfg.midPressure) {
+            this._runtime.recordedMidIntensity = this._runtime.currentIntensity; 
+            if (this._runtime.recordedMidIntensity < 1) this._runtime.recordedMidIntensity = this._runtime.targetIntensity;
+            if (this._runtime.recordedMidIntensity < 1) this._runtime.recordedMidIntensity = cfg.maxMotorIntensity * 0.5;
+
+            this._runtime.state = STATES.MIDDLE;
+            deviceManager.emitUi({ fields: { statusText: '进入中期刺激' } });
+            deviceManager.log('info', `进入中期，记录基准强度: ${this._runtime.recordedMidIntensity.toFixed(1)}`);
         }
+        break;
+      }
       
-      // 介于中间压力和临界压力之间，
-      // 以上方if最后抓取的midIntensity作为midPressure的压力，
-      // 将目标强度以当前压力进行以点(midPressure,midIntensity)和点(criticalPressure,0)之间连线的线性映射
-      else if(pressure < cfg.criticalPressure){
-        if (this._runtime.prevPressure < cfg.midPressure && pressure >= cfg.midPressure) {
-          this._runtime.midIntensity = this._runtime.currentIntensity;
-        }
-        const intensity = this._runtime.midIntensity * ((cfg.criticalPressure - pressure)||0) / Math.max(0.01,(cfg.criticalPressure-cfg.midPressure));
-        this._runtime.targetIntensity = Math.min(Math.max(intensity, 0), cfg.maxMotorIntensity);
-        }
+      case STATES.SUB_CALM: {
+        // 强度缓慢提升
+        const increaseIntensity = dtSec * (cfg.intensityGradualIncrease || 0);
+        this._runtime.unRandomIntensity += increaseIntensity;
+        // 随机扰动
+        const rnd = 1 + (Math.random() - 0.5) * 2 * (cfg.stimulationRampRandomPercent / 100);
+        let target = this._runtime.unRandomIntensity * rnd;
+        target = Math.max(0, Math.min(target, cfg.maxMotorIntensity));
+        this._runtime.targetIntensity = target;
 
-      //维持非延迟期状态
-      this._runtime.isInDelayPeriod = false;
+        // 转移: 压力 > 中压 -> 中期
+        if (pressure > cfg.midPressure) {
+            this._runtime.recordedMidIntensity = this._runtime.currentIntensity; 
+            this._runtime.state = STATES.MIDDLE;
+            deviceManager.emitUi({ fields: { statusText: '进入中期刺激' } });
+        }
+        break;
+      }
+
+      case STATES.MIDDLE: {
+        // 线性映射
+        this._runtime.midIntensity = this._runtime.recordedMidIntensity;
+        const denominator = Math.max(0.01, cfg.criticalPressure - cfg.midPressure);
+        const factor = (cfg.criticalPressure - pressure) / denominator;
+        const target = this._runtime.recordedMidIntensity * Math.max(0, factor);
+        this._runtime.targetIntensity = Math.max(0, Math.min(target, cfg.maxMotorIntensity));
+        
+        // 转移: 压力 >= 临界 -> 边缘期
+        if (pressure >= cfg.criticalPressure) {
+            this._runtime.state = STATES.EDGING;
+            this._triggerShock(deviceManager);
+            this._runtime.totaldeniedTimes++;
+            this._runtime.edgingCount++;
+            deviceManager.emitUi({ fields: { statusText: '过载！边缘寸止中…' } });
+        }
+        // 转移: 压力 < 中压 -> 后续平静期
+        else if (pressure < cfg.midPressure) {
+             this._runtime.unRandomIntensity = this._runtime.currentIntensity;
+             this._runtime.state = STATES.SUB_CALM;
+             deviceManager.emitUi({ fields: { statusText: '压力回落，进入平静期' } });
+        }
+        break;
+      }
+
+      case STATES.EDGING: {
+        this._runtime.targetIntensity = 0;
+        
+        // 转移: 压力 < 临界 -> 延迟期
+        if (pressure < cfg.criticalPressure) {
+            this._runtime.state = STATES.DELAY;
+            this._runtime.stateTimer = now; 
+            deviceManager.emitUi({ fields: { statusText: `冷却延迟(${cfg.lowPressureDelay}s)…` } });
+        }
+        break;
+      }
+
+      case STATES.DELAY: {
+        this._runtime.targetIntensity = 0;
+
+        // 转移: 压力 >= 临界 -> 回到边缘期
+        if (pressure >= cfg.criticalPressure) {
+             this._runtime.state = STATES.EDGING;
+             deviceManager.emitUi({ fields: { statusText: '过载！边缘寸止中…' } });
+        }
+        // 检查计时器
+        else if (now - this._runtime.stateTimer > cfg.lowPressureDelay * 1000) {
+            if (pressure > cfg.midPressure) {
+                this._runtime.state = STATES.MIDDLE;
+                deviceManager.emitUi({ fields: { statusText: '延迟结束，高压保持' } });
+            } else {
+                const denom = Math.max(1e-6, (cfg.criticalPressure - cfg.pressureSensitivity));
+                const baseTarget = cfg.maxMotorIntensity * (cfg.criticalPressure - pressure) / denom;
+                this._runtime.unRandomIntensity = Math.max(0, baseTarget); 
+                this._runtime.state = STATES.SUB_CALM;
+                deviceManager.emitUi({ fields: { statusText: '延迟结束，重新积累' } });
+            }
+        }
+        break;
+      }
     }
+    
+    // 记录上一帧压力，用于某些微分计算(如有)
+    this._runtime.prevPressure = pressure;
+  },
 
-    // 应用速率限制并下发到 TD01
-    const maxChange = Math.max(0, cfg.stimulationRampRateLimit) * dtSec;
+  // 强度更新逻辑 (可高频调用)
+  _updateIntensity(deviceManager) {
+    const now = Date.now();
+    // 使用单独的时间戳记录强度更新，以获得平滑的电机控制
+    if (!this._runtime.lastIntensityUpdateTs) this._runtime.lastIntensityUpdateTs = now;
+    const dtSec = Math.max(0, (now - this._runtime.lastIntensityUpdateTs) / 1000);
+    this._runtime.lastIntensityUpdateTs = now;
+
+    const cfg = this._runtime.config;
     const cur = this._runtime.currentIntensity;
     const tgt = this._runtime.targetIntensity;
     let next = cur;
-    if (tgt <= cur || this._runtime.isAtStartIntensity) next = tgt; // 延迟期后的初始强度与下降不应受速率限制限制
-    else next = Math.min(cur + maxChange, tgt);
-    this._runtime.isAtStartIntensity = false;
 
-    // 下发到设备
-    try {
-      const rounded = Math.round(next);
-      if (!Number.isNaN(rounded)) {
-        deviceManager.setDeviceProperty('TD_DEVICE', { power: rounded });
-        this._runtime.currentIntensity = rounded;
-      }
-    } catch (e) {
-      deviceManager.log('warn', '设置 TD_DEVICE power 失败', { error: e?.message || String(e) });
+    // 速率控制方案:
+    // 1. 如果 目标 < 当前 (需要降低): 立即降低 (Fast Drop)，保证安全性
+    // 2. 如果 目标 > 当前 (需要升高): 受 Rate Limit 限制 (Slow Rise)
+    
+    if (tgt < cur) {
+        // 立即响应降低 (也可以设一个极快的下降速率，这里选择直接到位)
+        next = tgt; 
+    } else {
+        const maxChange = Math.max(0, cfg.stimulationRampRateLimit) * dtSec;
+        next = Math.min(cur + maxChange, tgt);
     }
 
-    // 统计刺激时间
-    if (this._runtime.currentIntensity > 0) {
-      this._runtime.totalStimulationTime += dtSec;
+    // 只有发生变化或需要刷新时才发送
+    // (为了防止过多重复指令，可以加一个小的阈值判断，或者相信 deviceManager 的去重)
+    const rounded = Math.round(next);
+    if (rounded !== Math.round(cur)) {
+        try {
+            if (!Number.isNaN(rounded)) {
+                deviceManager.setDeviceProperty('TD_DEVICE', { power: rounded });
+                this._runtime.currentIntensity = rounded;
+                // 统计刺激时间
+                if (rounded > 0) {
+                    this._runtime.totalStimulationTime += dtSec;
+                }
+            }
+        } catch (e) {
+            deviceManager.log('warn', '设置 TD_DEVICE power 失败', { error: e?.message || String(e) });
+        }
+    } else {
+        // 即使没有整数变化，也更新浮点数以便累积
+        this._runtime.currentIntensity = next;
     }
+  },
 
-    // 推送状态
+  // 辅助方法：统一推送完整状态
+  _emitFullState(deviceManager) {
     deviceManager.emitState({
       currentPressure: this._runtime.currentPressure,
       currentIntensity: this._runtime.currentIntensity,
@@ -314,10 +400,9 @@ const pressureEdging = {
       midPressure: this._runtime.config.midPressure,
       criticalPressure: this._runtime.config.criticalPressure,
       midIntensity: this._runtime.midIntensity,
+      state: this._runtime.state,
+      edgingCount: this._runtime.edgingCount,
     });
-
-    this._runtime.prevPressure = pressure;
-    return true;
   },
 
   end(deviceManager) {
@@ -503,6 +588,7 @@ const pressureEdging = {
 
   <div class="card">
     <div class="stat-row">
+      <span>寸止: <b data-bind="edgingCount">0</b></span>
       <span>电击: <b data-bind="shockCount">0</b></span>
       <span>时长: <b data-bind="totalStimulationTime">0</b>s</span>
       <span>Ping: <span data-bind="lastPing">-</span></span>
@@ -551,7 +637,7 @@ const pressureEdging = {
     }
   });
 
-  let chartXMin=15, chartXMax=25;
+  let chartXMin=17, chartXMax=24, chartYMax=10;
   function drawChart(){
     const cvs=el('chart'); if(!cvs)return;
     const ctx=cvs.getContext('2d');
@@ -563,10 +649,12 @@ const pressureEdging = {
     const crit=Number(state.criticalPressure)||20, mid=Number(state.midPressure)||(crit*0.9);
     const midI=Number(state.midIntensity)||0, maxI=Number(state.maxMotorIntensity)||200;
     
-    chartXMax = Math.max(chartXMax, crit+5);
-    chartXMin = Math.min(chartXMin, mid-5);
+    chartXMax = Math.max(chartXMax, crit+2);
+    chartXMin = Math.min(chartXMin, mid-2);
+    if(chartYMax < ci + 10) chartYMax = ci + 10;
+
     const xOf=(p)=>pad + gw * ((p-chartXMin)/Math.max(1e-6, chartXMax-chartXMin));
-    const yOf=(i)=>pad + gh * (1 - i/Math.max(1e-6, Math.max(maxI, ci+10)));
+    const yOf=(i)=>pad + gh * (1 - i/Math.max(1e-6, chartYMax));
 
     ctx.clearRect(0,0,W,H);
     ctx.strokeStyle='#e2e8f0'; ctx.beginPath();
@@ -589,7 +677,7 @@ const pressureEdging = {
     ctx.fillText(chartXMax.toFixed(0), W-20, H-5);
     
     ctx.textAlign='right';
-    ctx.fillText(maxI.toFixed(0), pad-4, pad+8);
+    ctx.fillText(chartYMax.toFixed(0), pad-4, pad+8);
     ctx.fillText('0', pad-4, pad+gh);
     ctx.textAlign='left';
   }

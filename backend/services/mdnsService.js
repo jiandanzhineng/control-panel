@@ -15,7 +15,10 @@ function publish() {
   const isWindows = os.platform() === 'win32';
   
   if (isWindows) {
-    const mdnsToolPath = path.resolve(__dirname, '..', 'inner-tools', 'mdns_tool.exe');
+    const isPackaged = !!process.resourcesPath && process.env.NODE_ENV !== 'development';
+    const mdnsToolPath = isPackaged
+      ? path.join(process.resourcesPath, 'inner-tools', 'mdns_tool.exe')
+      : path.resolve(__dirname, '..', 'inner-tools', 'mdns_tool.exe');
     const port = '8080';
     const spawnOpts = { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true };
     logger.debug('Mdns', `Windows mDNS publish - Port: ${port}, Tool: ${mdnsToolPath}`);

@@ -5,6 +5,7 @@ const logger = require('./utils/logger');
 const deviceService = require('./services/deviceService');
 // 引入 MQTT 服务
 const mqttService = require('./services/mqttService');
+const mdnsService = require('./services/mdnsService');
 // 引入日志服务
 const logService = require('./services/logService');
 
@@ -89,6 +90,16 @@ if (require.main === module) {
   logService.cleanOldLogs();
   app.listen(PORT, () => {
     logger.info(`Backend server running at http://localhost:${PORT}`);
+    if (process.platform === 'win32') {
+      try {
+        const res = mdnsService.publish();
+        if (res.running) {
+          logger.info('mDNS service started', { pid: res.pid });
+        }
+      } catch (e) {
+        logger.warn('mDNS service start failed', e?.message || e);
+      }
+    }
   });
 }
 
@@ -106,6 +117,14 @@ process.on('SIGINT', async () => {
     logger.info('MQTT service stopped');
   } catch (error) {
     logger.warn('Error stopping MQTT service', { error: error.message });
+  }
+  if (process.platform === 'win32') {
+    try {
+      mdnsService.unpublish();
+      logger.info('mDNS service unpublished');
+    } catch (error) {
+      logger.warn('Error unpublishing mDNS service', { error: error.message });
+    }
   }
   
   process.exit(0);
