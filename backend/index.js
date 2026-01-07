@@ -72,6 +72,8 @@ app.use('/api/games', require('./routes/games'));
 app.use('/api/games', require('./routes/gameplay'));
 // 日志管理路由
 app.use('/api/logs', require('./routes/logs'));
+// 自动化测试路由
+app.use('/api/test', require('./routes/test'));
 
 // 健康检查与示例接口
 app.get('/api/hello', (req, res) => {

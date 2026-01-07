@@ -41,7 +41,17 @@ const deviceTypeConfig = {
         name: '关闭',
         mqttData: { method: 'update', power: 0 }
       }
-    ]
+    ],
+    test_operations:{
+      start: null,
+      stop: null,
+      loop:[
+        { method: 'update', power: 255 },
+        { method: 'update', power: 0 },
+      ],
+      loop_delay: 2000,
+      display_keys:[]
+    }
   },
   'QIYA': {
     name: '气压传感器',
@@ -57,7 +67,15 @@ const deviceTypeConfig = {
         unit: '°C'
       }
     ],
-    operations: []
+    operations: [],
+    test_operations:{
+      start: { method: 'update', report_delay_ms: 100 },
+      stop: { method: 'update', report_delay_ms: 5000 },
+      loop:[
+      ],
+      loop_delay: 2000,
+
+    }
   },
   'DIANJI': {
     name: '电脉冲设备',
@@ -72,7 +90,17 @@ const deviceTypeConfig = {
         name: '停止',
         mqttData: { method: 'update', shock: 0, voltage: 24 }
       }
-    ]
+    ],
+    test_operations:{
+      start: null,
+      stop: null,
+      loop:[
+        { method: 'update', shock: 1, voltage: 24 },
+        { method: 'update', shock: 0, voltage: 24 },
+      ],
+      loop_delay: 2000,
+      display_keys:[]
+    }
   },
   'ZIDONGSUO': {
     name: '自动锁',

@@ -507,6 +507,10 @@
 
     <el-empty v-else description="请选择一个设备查看详情" style="margin-top: 20px" />
 
+    <div style="margin-top: 30px; text-align: center;">
+      <el-button link type="info" @click="$router.push('/test')" style="opacity: 0.3;">自动化测试</el-button>
+    </div>
+
     <!-- 数据监控弹窗 -->
     <DeviceMonitorModal 
       :visible="monitorModalVisible"
