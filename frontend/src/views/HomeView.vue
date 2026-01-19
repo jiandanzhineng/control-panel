@@ -1,17 +1,5 @@
 <template>
   <div class="home-page">
-    <el-card shadow="never" class="welcome-card">
-      <template #header>
-        <div class="card-header">
-          <el-icon class="header-icon"><Monitor /></el-icon>
-          <span>智能控制系统</span>
-        </div>
-      </template>
-      <div class="welcome-content">
-        <h2>欢迎使用智能控制系统</h2>
-        <p>这是一个简单而强大的设备管理和游戏控制平台</p>
-      </div>
-    </el-card>
 
     <el-row :gutter="20" class="feature-cards">
       <el-col :xs="24" :sm="12" :md="8">
@@ -47,14 +35,18 @@
       <template #header>
         <span>系统信息</span>
       </template>
-      <el-descriptions :column="2" border>
-        <el-descriptions-item label="系统版本">v1.0.0</el-descriptions-item>
-        <el-descriptions-item label="运行状态">
-          <el-tag type="success">正常运行</el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="最后更新">{{ new Date().toLocaleDateString() }}</el-descriptions-item>
+      <el-descriptions :column="1" border class="info-list">
         <el-descriptions-item label="在线设备">
-          <el-tag type="info">0 台</el-tag>
+          <el-tag type="info" effect="plain">0 台</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="淘宝店">
+          <a href="https://shop282688998.taobao.com/" target="_blank" class="link-text">https://shop282688998.taobao.com/</a>
+        </el-descriptions-item>
+        <el-descriptions-item label="文档地址">
+          <a href="http://easysmart.top" target="_blank" class="link-text">easysmart.top</a>
+        </el-descriptions-item>
+        <el-descriptions-item label="交流QQ群">
+          <span class="info-text">970326066</span>
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -74,38 +66,27 @@ import { Monitor, VideoPlay, Connection } from '@element-plus/icons-vue'
   box-sizing: border-box;
 }
 
-.welcome-card {
-  margin-bottom: 20px;
-}
 
-.card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 18px;
-  font-weight: 600;
-}
 
-.header-icon {
-  font-size: 20px;
+.link-text {
   color: #409eff;
+  text-decoration: none;
+  transition: all 0.3s;
 }
 
-.welcome-content {
-  text-align: center;
-  padding: 20px 0;
+.link-text:hover {
+  color: #66b1ff;
+  text-decoration: underline;
 }
 
-.welcome-content h2 {
-  margin: 0 0 10px 0;
-  color: #303133;
-  font-size: 24px;
-}
-
-.welcome-content p {
-  margin: 0;
+.info-text {
+  font-weight: bold;
   color: #606266;
-  font-size: 16px;
+}
+
+.info-list :deep(.el-descriptions__label) {
+  width: 120px;
+  justify-content: flex-end;
 }
 
 .feature-cards {
@@ -156,10 +137,7 @@ import { Monitor, VideoPlay, Connection } from '@element-plus/icons-vue'
     margin: 12px auto;
   }
   
-  .welcome-card {
-    margin-bottom: 16px;
-  }
-  
+
   .feature-cards {
     margin-bottom: 16px;
   }
