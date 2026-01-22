@@ -242,7 +242,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 @media (max-width: 768px) {
   .page { 
     margin: 20px auto; 
-    padding: 0 16px; 
+    padding: 0 16px 200px; 
   }
   
   .card { 
@@ -311,7 +311,7 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
 @media (max-width: 480px) {
   .page { 
     margin: 16px auto; 
-    padding: 0 12px; 
+    padding: 0 12px 200px; 
   }
   
   .card { 
