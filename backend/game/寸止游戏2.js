@@ -10,7 +10,7 @@ const STATES = {
 };
 
 const pressureEdging = {
-  title: '气压寸止玩法123升级版',
+  title: '气压寸止玩法3阶段升级版',
   description: '基于气压传感器(QIYA)的寸止训练，根据压力与时间窗智能调节 TD01 强度，并在超阈值时触发电击。',
 
   // 启动前可配置参数（供前端生成配置界面）
