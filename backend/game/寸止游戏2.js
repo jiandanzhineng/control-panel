@@ -17,7 +17,7 @@ const pressureEdging = {
   parameter: [
     { key: 'duration', type: 'number', name: '游戏时长(分钟)', required: true, default: 20, min: 1, max: 120 },
     { key: 'criticalPressure', type: 'number', name: '临界气压(kPa)', required: true, default: 20, min: 0, max: 60, step: 0.5 },
-    { key: 'maxMotorIntensity', type: 'number', name: 'TD01最大强度(男用td超过50可能会断联，请谨慎设置)', required: true, default: 50, min: 1, max: 255 },
+    { key: 'maxMotorIntensity', type: 'number', name: 'TD01最大强度', required: true, default: 50, min: 1, max: 255 },
     { key: 'lowPressureDelay', type: 'number', name: '低压延迟(秒)', required: true, default: 5, min: 0, max: 120 },
     { key: 'stimulationRampRateLimit', type: 'number', name: '强度递增速率上限(每秒)', required: true, default: 2, min: 1, max: 10 },
     { key: 'pressureSensitivity', type: 'number', name: '压力敏感度系数', required: true, default: 15, min: 0, max: 20, step: 0.1 },

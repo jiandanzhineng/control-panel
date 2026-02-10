@@ -137,7 +137,7 @@
         class="params-form"
       >
         <el-form-item 
-          v-for="p in schemaEntries" 
+          v-for="p in basicSchemaEntries" 
           :key="p.key"
           :label="p.name || p.key"
         >
@@ -189,6 +189,72 @@
             <el-text type="warning" size="small">必填</el-text>
           </div>
         </el-form-item>
+
+        <el-collapse
+          v-if="advancedSchemaEntries.length > 0"
+          v-model="advancedCollapseActive"
+          class="advanced-collapse"
+        >
+          <el-collapse-item name="advanced">
+            <template #title>
+              <span>高级配置（{{ advancedSchemaEntries.length }}项）</span>
+            </template>
+
+            <el-form-item 
+              v-for="p in advancedSchemaEntries" 
+              :key="p.key"
+              :label="p.name || p.key"
+            >
+              <template #label>
+                <div class="param-label">
+                  <span>{{ p.name || p.key }}</span>
+                  <el-tooltip v-if="p.placeholder" :content="p.placeholder" placement="top">
+                    <el-icon><QuestionFilled /></el-icon>
+                  </el-tooltip>
+                </div>
+              </template>
+              
+              <el-input
+                v-if="p.type === 'string'"
+                v-model="parameters[p.key]"
+                :placeholder="p.placeholder || ''"
+              />
+              <el-input-number
+                v-else-if="p.type === 'number'"
+                v-model="parameters[p.key]"
+                :min="p.min"
+                :max="p.max"
+                :style="{ width: isMobile ? '100%' : '200px' }"
+              />
+              <el-select
+                v-else-if="p.type === 'enum'"
+                v-model="parameters[p.key]"
+                placeholder="请选择"
+                :style="{ width: isMobile ? '100%' : '200px' }"
+              >
+                <el-option
+                  v-for="opt in (p.enum || [])"
+                  :key="String(opt)"
+                  :label="String(opt)"
+                  :value="opt"
+                />
+              </el-select>
+              <el-switch
+                v-else-if="p.type === 'boolean'"
+                v-model="parameters[p.key]"
+              />
+              <el-input
+                v-else
+                v-model="parameters[p.key]"
+                :placeholder="p.placeholder || ''"
+              />
+              
+              <div v-if="p.required && (parameters[p.key] === undefined || parameters[p.key] === null || parameters[p.key] === '')" class="param-warning">
+                <el-text type="warning" size="small">必填</el-text>
+              </div>
+            </el-form-item>
+          </el-collapse-item>
+        </el-collapse>
       </el-form>
     </el-card>
 
@@ -369,6 +435,10 @@ const schemaEntries = computed(() => {
   }
   return list;
 });
+
+const basicSchemaEntries = computed(() => schemaEntries.value.filter(p => p.required !== false));
+const advancedSchemaEntries = computed(() => schemaEntries.value.filter(p => p.required === false));
+const advancedCollapseActive = ref<string[]>([]);
 
 const deviceMappings = computed(() => {
   return requiredDevices.value.map(rd => ({
@@ -635,6 +705,10 @@ onUnmounted(() => { window.removeEventListener('resize', onResize); });
   align-items: center;
   gap: 8px;
   font-weight: 600;
+}
+
+.advanced-collapse {
+  margin-top: 8px;
 }
 
 .status-badge {

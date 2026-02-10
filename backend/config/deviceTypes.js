@@ -8,6 +8,7 @@ const deviceTypeMap = {
   'DIANJI': '电脉冲设备',
   'QIYA': '气压传感器',
   'PJ01': '往复电机控制器',
+  'DZC01': '电子秤',
   'other': '其他'
 };
 
@@ -137,6 +138,20 @@ const deviceTypeConfig = {
       },
     ],
     operations: []
+  },
+  'DZC01': {
+    name: '电子秤',
+    monitorData: [
+      { key: 'weight', name: '重量', unit: 'g' },
+    ],
+    operations: [],
+    test_operations: {
+      start: { method: 'update', report_delay_ms: 100 },
+      stop: { method: 'update', report_delay_ms: 5000 },
+      loop: [],
+      loop_delay: 2000,
+      display_keys: ['weight']
+    }
   },
 };
 
