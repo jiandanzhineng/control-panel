@@ -5,6 +5,7 @@ const deviceTypeMap = {
   'QTZ': '测距及脚踏传感器',
   'ZIDONGSUO': '自动锁',
   'TD01': '偏轴电机控制器',
+  'OSR6': 'OSR6控制器',
   'DIANJI': '电脉冲设备',
   'QIYA': '气压传感器',
   'PJ01': '往复电机控制器',
@@ -31,6 +32,31 @@ const deviceTypeConfig = {
   },
   'TD01': {
     name: '偏轴电机控制器',
+    operations: [
+      {
+        key: 'start',
+        name: '启动',
+        mqttData: { method: 'update', power: 255 }
+      },
+      {
+        key: 'stop',
+        name: '关闭',
+        mqttData: { method: 'update', power: 0 }
+      }
+    ],
+    test_operations:{
+      start: null,
+      stop: null,
+      loop:[
+        { method: 'update', power: 255 },
+        { method: 'update', power: 0 },
+      ],
+      loop_delay: 2000,
+      display_keys:[]
+    }
+  },
+  'OSR6': {
+    name: 'OSR6控制器',
     operations: [
       {
         key: 'start',
@@ -164,7 +190,8 @@ const interfaceConfig = {
 
 const typeInterfaceMap = {
   TD01: ['strength'],
-  PJ01: ['strength']
+  PJ01: ['strength'],
+  OSR6: ['strength']
 };
 
 // 获取设备类型显示名称
