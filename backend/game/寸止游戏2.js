@@ -16,6 +16,7 @@ const pressureEdging = {
   // 启动前可配置参数（供前端生成配置界面）
   parameter: [
     { key: 'duration', type: 'number', name: '游戏时长(分钟)', required: true, default: 20, min: 1, max: 120 },
+    { key: 'endCalmLockSeconds', type: 'number', name: '结束前起飞期(秒)', required: false, default: 60, min: 0, max: 600 },
     { key: 'criticalPressure', type: 'number', name: '临界气压(kPa)', required: true, default: 20, min: 0, max: 60, step: 0.5 },
     { key: 'maxMotorIntensity', type: 'number', name: 'TD01最大强度', required: true, default: 50, min: 1, max: 255 },
     { key: 'lowPressureDelay', type: 'number', name: '低压延迟(秒)', required: true, default: 5, min: 0, max: 120 },
@@ -40,6 +41,7 @@ const pressureEdging = {
     // 配置值会在 start 时覆盖
     config: {
       duration: 20,                           //min
+      endCalmLockSeconds: 60,                 //s
       criticalPressure: 20,                   //kPa
       maxMotorIntensity: 200,
       lowPressureDelay: 5,                    //s
@@ -62,6 +64,7 @@ const pressureEdging = {
     state: STATES.INITIAL_CALM,
     stateTimer: 0,                            //ms (用于DELAY状态计时)
     recordedMidIntensity: 0,                  // 进入MIDDLE状态时记录的强度
+    endCalmLocked: false,
 
     // 传感与强度
     currentPressure: 0,                       //kPa
@@ -103,6 +106,7 @@ const pressureEdging = {
     this._runtime.state = STATES.INITIAL_CALM;
     this._runtime.stateTimer = 0;
     this._runtime.recordedMidIntensity = 0;
+    this._runtime.endCalmLocked = false;
     
     this._runtime.unRandomIntensity = 0;
     this._runtime.targetIntensity = 0;
@@ -231,6 +235,20 @@ const pressureEdging = {
 
     const pressure = this._runtime.currentPressure;
     const cfg = this._runtime.config;
+    const remainMs = this._runtime.endTime - now;
+    const takeoffMs = Math.max(0, (Number(cfg.endCalmLockSeconds) || 0) * 1000);
+    const inTakeoff = takeoffMs > 0 && remainMs <= takeoffMs;
+
+    if (inTakeoff) {
+      if (this._runtime.state !== STATES.SUB_CALM) this._runtime.state = STATES.SUB_CALM;
+      if (!this._runtime.endCalmLocked) {
+        this._runtime.endCalmLocked = true;
+        deviceManager.emitUi({ fields: { statusText: '进入结束前起飞期' } });
+      }
+    } else if (this._runtime.endCalmLocked) {
+      this._runtime.endCalmLocked = false;
+    }
+
     const state = this._runtime.state;
 
     switch (state) {
@@ -268,7 +286,7 @@ const pressureEdging = {
         this._runtime.targetIntensity = target;
 
         // 转移: 压力 > 中压 -> 中期
-        if (pressure > cfg.midPressure) {
+        if (!inTakeoff && pressure > cfg.midPressure) {
             this._runtime.recordedMidIntensity = this._runtime.currentIntensity; 
             this._runtime.state = STATES.MIDDLE;
             deviceManager.emitUi({ fields: { statusText: '进入中期刺激' } });
