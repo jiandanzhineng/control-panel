@@ -2,7 +2,7 @@
 
 - 目的：通过统一的“接口”描述设备能力，游戏按接口筛选可用设备。
 - 定义位置：`backend/config/deviceTypes.js`
-  - `interfaceConfig`：接口及其规范（如 `strength` 强度控制，`spec.mqttKey='power'`，`range=[0,255]`）。
+  - `interfaceConfig`：接口及其规范（如 `strength` 强度控制，`spec: [{ mqttKey: 'power', range: [0, 255] }]`）。
   - `typeInterfaceMap`：设备类型实现的接口（如 `TD01` 实现 `strength`）。
 
 常用方法
@@ -17,7 +17,7 @@
 
 - `getTypesByInterface('strength')` → `['TD01']`
 - `hasInterface('TD01','strength')` → `true`
-- `getInterfaceConfig('strength')` → `{ name: '强度控制', spec: { mqttKey: 'power', range: [0, 255] } }`
+- `getInterfaceConfig('strength')` → `{ name: '强度控制', spec: [{ mqttKey: 'power', range: [0, 255] }] }`
 
 扩展
 

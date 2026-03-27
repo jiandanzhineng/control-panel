@@ -10,6 +10,7 @@ const deviceTypeMap = {
   'QIYA': '气压传感器',
   'PJ01': '往复电机控制器',
   'DZC01': '电子秤',
+  'CUNZHI01':'寸止玩法设备',
   'other': '其他'
 };
 
@@ -179,19 +180,71 @@ const deviceTypeConfig = {
       display_keys: ['weight']
     }
   },
+  'CUNZHI01':{
+    name: '寸止玩法设备',
+    monitorData: [
+      {
+        key: 'pressure',
+        name: '气压',
+        unit: 'Pa'
+      }
+    ],
+    operations: [
+      {
+        key: 'start',
+        name: '启动',
+        mqttData: { method: 'update', shock: 1, voltage: 24, power: 255 }
+      },
+      {
+        key: 'stop',
+        name: '停止',
+        mqttData: { method: 'update', shock: 0, voltage: 24, power: 0 }
+      }
+    ],
+    test_operations:{
+      start: null,
+      stop: null,
+      loop:[
+        { method: 'update', shock: 1, voltage: 24, power: 255 },
+        { method: 'update', shock: 0, voltage: 24, power: 0 },
+      ],
+      loop_delay: 2000,
+      display_keys:[]
+    }
+  },
 };
 
 const interfaceConfig = {
   strength: {
     name: '强度控制',
-    spec: { mqttKey: 'power', range: [0, 255] }
+    spec: [
+      { mqttKey: 'power', range: [0, 255] }
+    ]
+  },
+  dianji: {
+    name: '电击控制',
+    spec: [
+      { mqttKey: 'shock', range: [0, 1] },
+      { mqttKey: 'voltage', range: [0, 80] },
+      { mqttKey: 'safe', range: [0, 1] }
+    ]
+  },
+  pressure:{
+    name: '压力上报',
+    spec: [
+      { mqttKey: 'pressure', range: [0, 100] },
+      { mqttKey: 'report_delay_ms', range: [0, 99999] }
+    ]
   }
 };
 
 const typeInterfaceMap = {
   TD01: ['strength'],
   PJ01: ['strength'],
-  OSR6: ['strength']
+  OSR6: ['strength'],
+  CUNZHI01: ['strength', 'pressure', 'dianji'],
+  DIANJI: ['dianji'],
+  QIYA: ['pressure'],
 };
 
 // 获取设备类型显示名称

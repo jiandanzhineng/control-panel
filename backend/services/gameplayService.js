@@ -311,7 +311,15 @@ function makeReverseDeviceMap() {
   const rev = new Map();
   for (const [logicalId, ids] of Object.entries(state.deviceManager.deviceMap || {})) {
     const arr = Array.isArray(ids) ? ids : (ids ? [ids] : []);
-    for (const deviceId of arr) { if (deviceId) rev.set(deviceId, logicalId); }
+    for (const deviceId of arr) {
+      if (!deviceId) continue;
+      let logicalIds = rev.get(deviceId);
+      if (!logicalIds) {
+        logicalIds = new Set();
+        rev.set(deviceId, logicalIds);
+      }
+      logicalIds.add(logicalId);
+    }
   }
   return rev;
 }
@@ -326,17 +334,19 @@ function handleMqttMessage(message) {
     if (!m) return; // 非设备上报主题，忽略
     const deviceId = m[1];
     const reverseMap = makeReverseDeviceMap();
-    const logicalId = reverseMap.get(deviceId);
-    if (!logicalId) return; // 不在当前玩法映射中，忽略
+    const logicalIds = reverseMap.get(deviceId);
+    if (!logicalIds || logicalIds.size === 0) return; // 不在当前玩法映射中，忽略
     // 解析 JSON
     const rawText = typeof message?.text === 'string' ? message.text : (message?.payload ? message.payload.toString('utf8') : '');
     let payloadObj;
     try { payloadObj = JSON.parse(rawText); } catch (_) { return; }
     if (!payloadObj || typeof payloadObj !== 'object' || !('method' in payloadObj)) return; // 无 method 忽略
     // 分发到注册的消息监听器
-    const listeners = state.deviceManager._messageListeners.get(logicalId) || [];
-    for (const fn of listeners) {
-      try { fn(payloadObj, { logicalId, deviceId, topic }); } catch (e) { sendLog('warn', '设备消息监听器执行错误', { logicalId, error: e?.message || String(e) }); }
+    for (const logicalId of logicalIds) {
+      const listeners = state.deviceManager._messageListeners.get(logicalId) || [];
+      for (const fn of listeners) {
+        try { fn(payloadObj, { logicalId, deviceId, topic }); } catch (e) { sendLog('warn', '设备消息监听器执行错误', { logicalId, error: e?.message || String(e) }); }
+      }
     }
   } catch (e) {
     sendLog('error', '设备消息处理失败', { error: e?.message || String(e) });
@@ -358,15 +368,17 @@ function handleDeviceDataChange(evt) {
       changes = arguments[1];
     }
     const reverseMap = makeReverseDeviceMap();
-    const logicalId = reverseMap.get(deviceId);
-    if (!logicalId) return;
-    const propMap = state.deviceManager._propertyListeners.get(logicalId);
-    if (!propMap || !(propMap instanceof Map)) return;
-    for (const [prop, change] of Object.entries(changes || {})) {
-      const listeners = propMap.get(prop) || [];
-      if (!listeners.length) continue;
-      for (const fn of listeners) {
-        try { fn(change?.new, change?.old, { logicalId, deviceId, property: prop }); } catch (e) { sendLog('warn', '属性监听器执行错误', { logicalId, property: prop, error: e?.message || String(e) }); }
+    const logicalIds = reverseMap.get(deviceId);
+    if (!logicalIds || logicalIds.size === 0) return;
+    for (const logicalId of logicalIds) {
+      const propMap = state.deviceManager._propertyListeners.get(logicalId);
+      if (!propMap || !(propMap instanceof Map)) continue;
+      for (const [prop, change] of Object.entries(changes || {})) {
+        const listeners = propMap.get(prop) || [];
+        if (!listeners.length) continue;
+        for (const fn of listeners) {
+          try { fn(change?.new, change?.old, { logicalId, deviceId, property: prop }); } catch (e) { sendLog('warn', '属性监听器执行错误', { logicalId, property: prop, error: e?.message || String(e) }); }
+        }
       }
     }
   } catch (e) {
