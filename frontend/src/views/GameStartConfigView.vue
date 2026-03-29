@@ -470,7 +470,12 @@ function getAvailableDevicesForRole(row: any) {
     filteredDevices = devices.value.filter(device => device.connected && device.type === deviceType);
   }
   filteredDevices.sort((a, b) => Number(b.connected) - Number(a.connected));
-  return filteredDevices.map(device => ({ id: device.id, name: device.name || device.id }));
+  return filteredDevices.map(device => {
+    const devAny = device as any;
+    const shortId = String(device.id).slice(-4);
+    const displayName = devAny.nickname ? `${devAny.nickname}-${shortId}` : (device.name || device.id);
+    return { id: device.id, name: displayName };
+  });
 }
 
 function formatLastPlayed(ts?: number | null) {
@@ -515,7 +520,14 @@ function rdKey(d: { logicalId?: string; name?: string }) {
 function formatMapping(d: { logicalId?: string; name?: string }): string {
   const arr = deviceMapping[rdKey(d)] ?? [];
   if (arr.length === 0) return '未映射';
-  return arr.map(id => getDevice(id)?.name || id).join(', ');
+  return arr.map(id => {
+    const dev = getDevice(id) as any;
+    if (dev) {
+      const shortId = String(dev.id).slice(-4);
+      return dev.nickname ? `${dev.nickname}-${shortId}` : (dev.name || dev.id);
+    }
+    return id;
+  }).join(', ');
 }
 
 function sameTypeDevices(d: { type?: string }) {

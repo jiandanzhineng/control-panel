@@ -11,6 +11,7 @@ const {
 const fileStorage = require('../utils/fileStorage');
 const logger = require('./logService');
 const mqttClient = require('./mqttClientService');
+const nicknameService = require('./nicknameService');
 
 const state = {
   devices: [],
@@ -300,9 +301,11 @@ async function handleDeviceMessage(message) {
 function toApiDevice(device) {
   if (!device) return null;
   const last = device.lastReport ? new Date(device.lastReport).toISOString() : null;
+  const nickname = nicknameService.getNickname(device.id);
   return {
     id: device.id,
     name: device.name,
+    nickname: nickname,
     type: device.type,
     connected: !!device.connected,
     lastReport: last,

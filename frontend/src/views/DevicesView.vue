@@ -62,7 +62,12 @@
           </template>
         </el-table-column>
         
-        <el-table-column prop="id" label="设备ID" min-width="150" />
+        <el-table-column label="设备" min-width="150">
+          <template #default="{ row }">
+            <span v-if="row.nickname">{{ row.nickname }}-{{ String(row.id).slice(-4) }}</span>
+            <span v-else>{{ row.name || row.id }}</span>
+          </template>
+        </el-table-column>
         
         <el-table-column prop="connected" label="状态" width="100">
           <template #default="{ row }">
@@ -149,7 +154,12 @@
                 {{ deviceTypeMap[row.type] || row.type }}
               </template>
             </el-table-column>
-            <el-table-column prop="id" label="设备ID" min-width="150" />
+            <el-table-column label="设备" min-width="150">
+              <template #default="{ row }">
+                <span v-if="row.nickname">{{ row.nickname }}-{{ String(row.id).slice(-4) }}</span>
+                <span v-else>{{ row.name || row.id }}</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="connected" label="状态" width="100">
               <template #default="{ row }">
                 <el-tag :type="row.connected ? 'success' : 'danger'" size="small">
@@ -238,8 +248,11 @@
           
           <div class="device-card-content">
             <div class="device-info-row">
-              <span class="info-label">设备ID:</span>
-              <span class="info-value">{{ device.id }}</span>
+              <span class="info-label">设备:</span>
+              <span class="info-value">
+                <template v-if="device.nickname">{{ device.nickname }}-{{ String(device.id).slice(-4) }}</template>
+                <template v-else>{{ device.name || device.id }}</template>
+              </span>
             </div>
             
             <div class="device-info-row">
@@ -322,8 +335,11 @@
               </div>
               <div class="device-card-content">
                 <div class="device-info-row">
-                  <span class="info-label">设备ID:</span>
-                  <span class="info-value">{{ device.id }}</span>
+                  <span class="info-label">设备:</span>
+                  <span class="info-value">
+                    <template v-if="device.nickname">{{ device.nickname }}-{{ String(device.id).slice(-4) }}</template>
+                    <template v-else>{{ device.name || device.id }}</template>
+                  </span>
                 </div>
                 <div class="device-info-row">
                   <span class="info-label">电量:</span>
@@ -421,6 +437,12 @@
       <el-row :gutter="20">
         <el-col :xs="24" :sm="12" :md="8">
           <el-descriptions :column="1" border>
+            <el-descriptions-item label="设备昵称">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span>{{ selectedDevice.nickname || '未设置' }}</span>
+                <el-button link type="primary" :icon="Edit" @click="editNickname">修改</el-button>
+              </div>
+            </el-descriptions-item>
             <el-descriptions-item label="设备名称">{{ selectedDevice.name }}</el-descriptions-item>
             <el-descriptions-item label="设备ID">{{ selectedDevice.id }}</el-descriptions-item>
             <el-descriptions-item label="设备类型">{{ deviceTypeMap[selectedDevice.type] || selectedDevice.type }}</el-descriptions-item>
@@ -530,6 +552,7 @@ interface DeviceData { [key: string]: any }
 interface Device {
   id: string;
   name: string;
+  nickname?: string;
   type: string;
   connected: boolean;
   lastReport: string | null;
@@ -729,6 +752,36 @@ function cancelEdit() {
   isEditing.value = false;
   editData.value = {};
   originalData.value = {};
+}
+
+async function editNickname() {
+  if (!selectedDevice.value) return;
+  try {
+    const { value } = await ElMessageBox.prompt('请输入设备昵称，留空则清除昵称', '设置昵称', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      inputValue: selectedDevice.value.nickname || '',
+    });
+    
+    const res = await fetch(`/api/devices/${encodeURIComponent(selectedDevice.value.id)}/nickname`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nickname: value })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.message || '设置失败');
+    
+    // 更新本地数据
+    const index = devices.value.findIndex(d => d.id === selectedDevice.value!.id);
+    if (index !== -1) {
+      devices.value[index] = data;
+    }
+    ElMessage.success('昵称设置成功');
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.message || '设置失败');
+    }
+  }
 }
 
 async function saveChanges() {

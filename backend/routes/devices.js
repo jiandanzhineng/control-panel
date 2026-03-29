@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const deviceService = require('../services/deviceService');
+const nicknameService = require('../services/nicknameService');
 const { sendError } = require('../utils/http');
 const logger = require('../utils/logger');
 
@@ -51,6 +52,23 @@ router.patch('/:id', (req, res) => {
     res.json(deviceService.toApiDevice(dev));
   } catch (e) {
     sendError(res, 'DEVICE_UPDATE_FAILED', e.message || String(e), 500);
+  }
+});
+
+// 设置设备昵称
+router.post('/:id/nickname', (req, res) => {
+  try {
+    const id = req.params.id;
+    const { nickname } = req.body;
+    
+    // 我们允许给还未连接的设备设置昵称，但为了保持一致性，最好确认设备存在
+    const dev = deviceService.getDeviceById(id);
+    if (!dev) return sendError(res, 'DEVICE_NOT_FOUND', '设备不存在', 404);
+    
+    nicknameService.setNickname(id, nickname);
+    res.json(deviceService.toApiDevice(dev));
+  } catch (e) {
+    sendError(res, 'SET_NICKNAME_FAILED', e.message || String(e), 500);
   }
 });
 
