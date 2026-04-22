@@ -185,9 +185,14 @@ const deviceTypeConfig = {
     monitorData: [
       {
         key: 'pressure',
-        name: '气压',
-        unit: 'Pa'
-      }
+        name: '阔约压力',
+        unit: 'kPa'
+      },
+      {
+        key: 'pressure1',
+        name: '踮脚压力1',
+        unit: 'kPa'
+      },
     ],
     operations: [
       {

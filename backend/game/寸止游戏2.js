@@ -17,8 +17,8 @@ const pressureEdging = {
   parameter: [
     { key: 'duration', type: 'number', name: '游戏时长(分钟)', required: true, default: 20, min: 1, max: 120 },
     { key: 'endCalmLockSeconds', type: 'number', name: '结束前起飞期(秒)', required: false, default: 60, min: 0, max: 600 },
-    { key: 'criticalPressure', type: 'number', name: '临界气压(kPa)', required: true, default: 20, min: 0, max: 60, step: 0.5 },
-    { key: 'maxMotorIntensity', type: 'number', name: 'TD01最大强度', required: true, default: 50, min: 1, max: 255 },
+    { key: 'criticalPressure', type: 'number', name: '临界气压(kPa)', required: true, default: 20, min: 0, max: 200, step: 0.5 },
+    { key: 'maxMotorIntensity', type: 'number', name: 'TD01最大强度', required: true, default: 255, min: 1, max: 255 },
     { key: 'lowPressureDelay', type: 'number', name: '低压延迟(秒)', required: true, default: 5, min: 0, max: 120 },
     { key: 'stimulationRampRateLimit', type: 'number', name: '强度递增速率上限(每秒)', required: true, default: 2, min: 1, max: 10 },
     { key: 'pressureSensitivity', type: 'number', name: '压力敏感度系数', required: true, default: 15, min: 0, max: 20, step: 0.1 },
@@ -26,7 +26,7 @@ const pressureEdging = {
     { key: 'intensityGradualIncrease', type: 'number', name: '延迟后逐步提升(每秒)', required: false, default: 2, min: 0, max: 20, step: 0.5 },
     { key: 'shockIntensity', type: 'number', name: '电击强度(V)', required: false, default: 20, min: 10, max: 100 },
     { key: 'shockDuration', type: 'number', name: '电击持续(秒)', required: false, default: 3, min: 0.5, max: 50, step: 0.1 },
-    { key: 'midPressure', type: 'number', name: '中间(兴奋)压力', required: false, default: 19.2, min: 0, max: 24, step: 0.1 },
+    { key: 'midPressure', type: 'number', name: '中间(兴奋)压力(kPa)', required: true, default: 19.2, min: 0, max: 120, step: 0.1 },
   ],
 
   requiredDevices: [
@@ -649,7 +649,7 @@ const pressureEdging = {
       const type=b.getAttribute('data-adjust'), val=Number(b.getAttribute('data-val'));
       const c=Number(state.criticalPressure)||20, m=Number(state.midPressure)||(c*0.9);
       if(type==='mid') state.midPressure = Math.max(0, Math.min(c-0.1, m+val));
-      else state.criticalPressure = Math.max(m+0.1, Math.min(60, c+val));
+      else state.criticalPressure = Math.max(m+0.1, c+val);
       render();
       post('setThresholds', {midPressure:state.midPressure, criticalPressure:state.criticalPressure});
     }
@@ -724,7 +724,7 @@ const pressureEdging = {
     const p = chartXMin + ((e.clientX-r.left)/w)*(chartXMax-chartXMin);
     const c=Number(state.criticalPressure)||20, m=Number(state.midPressure);
     if(drag==='mid') state.midPressure=Math.max(chartXMin, Math.min(c-0.1, p));
-    else state.criticalPressure=Math.max(m+0.1, Math.min(60, p));
+    else state.criticalPressure=Math.max(m+0.1, p);
     render();
   };
   window.onmouseup=()=>{if(drag){post('setThresholds',{midPressure:state.midPressure,criticalPressure:state.criticalPressure});drag=null;}};
