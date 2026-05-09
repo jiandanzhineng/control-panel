@@ -804,6 +804,22 @@ async function saveChanges() {
       cancelEdit();
       return;
     }
+    if (isSafeModeDisabled(updateData.safe)) {
+      try {
+        await ElMessageBox.confirm(
+          '关闭安全模式需要您自己承担全部风险，是否确认？',
+          '确认关闭安全模式',
+          {
+            confirmButtonText: '确认',
+            cancelButtonText: '取消',
+            type: 'warning',
+          }
+        );
+      } catch (error) {
+        if (error === 'cancel' || error === 'close') return;
+        throw error;
+      }
+    }
     const topic = `/drecv/${selectedDevice.value.id}`;
     const ok = await publishMessage(topic, updateData);
     if (!ok) throw new Error('消息下发失败');
@@ -823,6 +839,10 @@ async function saveChanges() {
   } catch (e: any) {
     ElMessage.error(e?.message || '保存失败');
   }
+}
+
+function isSafeModeDisabled(value: any) {
+  return value === 0 || (typeof value === 'string' && value.trim() === '0');
 }
 
 async function publishMessage(topic: string, message: any) {
