@@ -12,6 +12,7 @@ const fileStorage = require('../utils/fileStorage');
 const logger = require('./logService');
 const mqttClient = require('./mqttClientService');
 const nicknameService = require('./nicknameService');
+const firmwareOtaService = require('./firmwareOtaService');
 
 const state = {
   devices: [],
@@ -273,6 +274,8 @@ async function handleDeviceMessage(message) {
       const updateData = { ...payloadObj };
       delete updateData.method; // 移除 method 字段
       updateDeviceData(deviceId, updateData);
+    } else if (payloadObj.method === 'ota_status') {
+      firmwareOtaService.recordOtaStatus(deviceId, payloadObj);
     } else if (payloadObj.method === 'update') {
       // 对于 update 消息：仅按 key/value 更新对应属性
       const { key, value } = payloadObj || {};

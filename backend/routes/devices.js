@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const deviceService = require('../services/deviceService');
 const nicknameService = require('../services/nicknameService');
+const firmwareOtaService = require('../services/firmwareOtaService');
 const { sendError } = require('../utils/http');
 const logger = require('../utils/logger');
 
@@ -69,6 +70,83 @@ router.post('/:id/nickname', (req, res) => {
     res.json(deviceService.toApiDevice(dev));
   } catch (e) {
     sendError(res, 'SET_NICKNAME_FAILED', e.message || String(e), 500);
+  }
+});
+
+// 获取设备可用的最新 OTA 固件信息
+router.get('/:id/firmware/latest', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const device = deviceService.getDeviceById(id);
+    if (!device) return sendError(res, 'DEVICE_NOT_FOUND', '设备不存在', 404);
+
+    const result = await firmwareOtaService.getLatestFirmwareForDevice(device);
+    res.json(result);
+  } catch (e) {
+    sendError(res, e.code || 'FIRMWARE_LATEST_FAILED', e.message || String(e), e.status || 500);
+  }
+});
+
+// 查询设备 OTA 状态
+router.get('/:id/firmware/status', (req, res) => {
+  try {
+    const id = req.params.id;
+    const device = deviceService.getDeviceById(id);
+    if (!device) return sendError(res, 'DEVICE_NOT_FOUND', '设备不存在', 404);
+
+    res.json(firmwareOtaService.getOtaStatus(id));
+  } catch (e) {
+    sendError(res, 'FIRMWARE_STATUS_FAILED', e.message || String(e), 500);
+  }
+});
+
+// 下发更新到最新版本的 OTA 指令
+router.post('/:id/firmware/update-latest', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const device = deviceService.getDeviceById(id);
+    if (!device) return sendError(res, 'DEVICE_NOT_FOUND', '设备不存在', 404);
+
+    const result = await firmwareOtaService.updateDeviceToLatest(device, {
+      force: !!req.body?.force,
+    });
+    res.json(result);
+  } catch (e) {
+    sendError(res, e.code || 'FIRMWARE_UPDATE_FAILED', e.message || String(e), e.status || 500);
+  }
+});
+
+// 设备 OTA 状态流
+router.get('/:id/firmware/status-stream', (req, res) => {
+  const id = req.params.id;
+
+  try {
+    const device = deviceService.getDeviceById(id);
+    if (!device) return sendError(res, 'DEVICE_NOT_FOUND', '设备不存在', 404);
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Cache-Control'
+    });
+
+    const writeStatus = (status) => {
+      res.write(`event: status\n`);
+      res.write(`data: ${JSON.stringify(status)}\n\n`);
+    };
+
+    writeStatus(firmwareOtaService.getOtaStatus(id));
+    const unsubscribe = firmwareOtaService.onOtaStatus(id, writeStatus);
+
+    const cleanup = () => {
+      unsubscribe();
+    };
+    req.on('close', cleanup);
+    req.on('error', cleanup);
+  } catch (e) {
+    sendError(res, 'FIRMWARE_STATUS_STREAM_FAILED', e.message || String(e), 500);
   }
 });
 

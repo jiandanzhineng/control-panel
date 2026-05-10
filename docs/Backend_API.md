@@ -74,6 +74,16 @@ mDNS 管理（/api/mdns）
 - POST `/api/devices/:id/operations/:operationKey`  
   执行设备操作  
   Body: `{ params?: object }`
+- GET `/api/devices/:id/firmware/latest`
+  查询该设备类型可用的最新 OTA 应用固件。服务端会从 `https://firmware.undersilicon.cn/firmware/latest/version.json` 拉取清单并追加随机 query 防缓存，只返回 `kind=app` 镜像信息
+- POST `/api/devices/:id/firmware/update-latest`
+  下发更新到最新版本的 OTA 指令。设备必须在线且设备类型存在 app 固件
+  Body: `{ force?: boolean }`
+  MQTT 下发：Topic `/drecv/{mac}`，Payload `{ "method": "ota_update", "url": "https://firmware.undersilicon.cn/{object_key}" }`
+- GET `/api/devices/:id/firmware/status`
+  获取该设备最近一次 OTA 状态，状态来自设备 `/dpub/{mac}` 上报的 `ota_status`
+- GET `/api/devices/:id/firmware/status-stream`（SSE）
+  持续推送 OTA 状态。事件名 `status`，状态值包括 `requested/start/downloading/success/failed`
 - GET `/api/devices/:id/monitor-data`  
   获取最新监控快照
 - GET `/api/devices/:id/monitor-stream`（SSE）  
@@ -175,4 +185,3 @@ mDNS 管理（/api/mdns）
 备注
 - 多处接口使用 SSE，请在客户端正确处理断线重连与解析
 - 未特别说明的错误以标准 HTTP 状态码表示（404/400/500 等）
-

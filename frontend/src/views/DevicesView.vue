@@ -147,6 +147,8 @@
           <el-table 
             :data="offlineDevices" 
             style="width: 100%"
+            highlight-current-row
+            @current-change="handleCurrentChange"
             empty-text="暂无离线设备"
           >
             <el-table-column prop="type" label="类型" width="120">
@@ -446,6 +448,12 @@
             <el-descriptions-item label="设备名称">{{ selectedDevice.name }}</el-descriptions-item>
             <el-descriptions-item label="设备ID">{{ selectedDevice.id }}</el-descriptions-item>
             <el-descriptions-item label="设备类型">{{ deviceTypeMap[selectedDevice.type] || selectedDevice.type }}</el-descriptions-item>
+            <el-descriptions-item label="固件版本">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span>{{ currentFirmwareVersion }}</span>
+                <el-button link type="primary" @click="showFirmwareDialog = true">固件升级</el-button>
+              </div>
+            </el-descriptions-item>
             <el-descriptions-item label="连接状态">
               <el-tag :type="selectedDevice.connected ? 'success' : 'danger'" size="small">
                 {{ selectedDevice.connected ? '在线' : '离线' }}
@@ -462,30 +470,32 @@
         
         <el-col :xs="24" :sm="12" :md="16" v-if="selectedDevice.data && Object.keys(selectedDevice.data).length > 0">
           <h4>设备数据</h4>
-          <el-form label-width="100px" v-if="!isEditing">
-            <el-form-item v-for="(value, key) in selectedDevice.data" :key="key" :label="key">
-              <span>{{ value }}</span>
-            </el-form-item>
-          </el-form>
-          
-          <el-form label-width="100px" v-else>
-            <el-form-item v-for="(value, key) in selectedDevice.data" :key="key" :label="key">
-              <el-input-number 
-                v-if="getInputType(value) === 'number'" 
-                v-model="editData[key]"
-                style="width: 200px"
-              />
-              <el-switch 
-                v-else-if="getInputType(value) === 'checkbox'" 
-                v-model="editData[key]"
-              />
-              <el-input 
-                v-else 
-                v-model="editData[key]"
-                style="width: 200px"
-              />
-            </el-form-item>
-          </el-form>
+          <el-descriptions border size="small" :column="2" class="device-data-table">
+            <el-descriptions-item v-for="(value, key) in selectedDevice.data" :key="key" :label="key">
+              <template v-if="!isEditing">
+                {{ value }}
+              </template>
+              <template v-else>
+                <el-input-number 
+                  v-if="getInputType(value) === 'number'" 
+                  v-model="editData[key]"
+                  size="small"
+                  style="width: 100%; max-width: 200px;"
+                />
+                <el-switch 
+                  v-else-if="getInputType(value) === 'checkbox'" 
+                  v-model="editData[key]"
+                  size="small"
+                />
+                <el-input 
+                  v-else 
+                  v-model="editData[key]"
+                  size="small"
+                  style="width: 100%; max-width: 200px;"
+                />
+              </template>
+            </el-descriptions-item>
+          </el-descriptions>
         </el-col>
 
         <!-- 设备操作 -->
@@ -533,6 +543,78 @@
       <el-button link type="info" @click="$router.push('/test')" style="opacity: 0.3;">自动化测试</el-button>
     </div>
 
+    <!-- 固件升级弹窗 -->
+    <el-dialog
+      v-model="showFirmwareDialog"
+      title="固件升级"
+      width="400px"
+    >
+      <div class="firmware-panel" v-loading="firmwareLoading">
+        <div class="section-title-row" style="margin-bottom: 12px;">
+          <span>OTA 状态</span>
+          <el-tag :type="getOtaStatusTagType(otaStatus?.status)" size="small">
+            {{ getOtaStatusLabel(otaStatus?.status) }}
+          </el-tag>
+        </div>
+
+        <el-alert
+          v-if="firmwareError"
+          :title="firmwareError"
+          type="error"
+          :closable="false"
+          show-icon
+          class="firmware-alert"
+        />
+
+        <template v-else>
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item label="当前版本">
+              {{ currentFirmwareVersion }}
+            </el-descriptions-item>
+            <el-descriptions-item label="最新版本">
+              {{ firmwareInfo?.latestVersion || '-' }}
+            </el-descriptions-item>
+            <el-descriptions-item label="固件支持">
+              <el-tag :type="firmwareInfo?.supported ? 'success' : 'info'" size="small">
+                {{ firmwareInfo?.supported ? '支持' : '不支持' }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="固件文件">
+              <span class="firmware-filename">{{ firmwareInfo?.firmware?.filename || '-' }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="文件大小">
+              {{ formatBytes(firmwareInfo?.firmware?.sizeBytes) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="SHA256">
+              {{ formatShortHash(firmwareInfo?.firmware?.sha256) }}
+            </el-descriptions-item>
+          </el-descriptions>
+
+          <el-progress
+            v-if="showOtaProgress"
+            :percentage="otaProgressPercentage"
+            :status="getOtaProgressStatus(otaStatus?.status)"
+            class="firmware-progress"
+          />
+
+          <div class="firmware-status-message">
+            {{ otaStatus?.msg || firmwareSummaryText }}
+          </div>
+
+          <el-button
+            type="primary"
+            :icon="Refresh"
+            :loading="firmwareUpdating"
+            :disabled="!canUpdateFirmware"
+            @click="updateFirmwareLatest"
+            class="firmware-update-button"
+          >
+            {{ firmwareActionText }}
+          </el-button>
+        </template>
+      </div>
+    </el-dialog>
+
     <!-- 数据监控弹窗 -->
     <DeviceMonitorModal 
       :visible="monitorModalVisible"
@@ -559,6 +641,35 @@ interface Device {
   data: DeviceData;
 }
 
+interface FirmwareInfo {
+  supported: boolean;
+  currentVersion: string | null;
+  latestVersion: string | null;
+  updateAvailable: boolean;
+  manifestGeneratedAt: string | null;
+  commit: string | null;
+  firmware: null | {
+    device: string;
+    kind: string;
+    filename: string;
+    objectKey: string;
+    url: string;
+    sizeBytes: number;
+    sha256: string;
+  };
+}
+
+interface OtaStatus {
+  deviceId: string;
+  status: string;
+  progress: number | null;
+  msg: string;
+  updatedAt: string | null;
+  firmwareVersion: string | null;
+  filename: string | null;
+  url: string | null;
+}
+
 const devices = ref<Device[]>([]);
 const deviceTypeMap = ref<Record<string, string>>({});
 const deviceTypeConfigs = ref<Record<string, any>>({});
@@ -575,10 +686,19 @@ const operationLoading = ref<Record<string, boolean>>({});
 const monitorData = ref<Record<string, any>>({});
 const monitorConnected = ref(false);
 const monitorEventSource = ref<EventSource | null>(null);
+const firmwareInfo = ref<FirmwareInfo | null>(null);
+const firmwareLoading = ref(false);
+const firmwareUpdating = ref(false);
+const firmwareError = ref('');
+const otaStatus = ref<OtaStatus | null>(null);
+const otaStatusEventSource = ref<EventSource | null>(null);
 
 // 监控弹窗相关
 const monitorModalVisible = ref(false);
 const monitorDevice = ref<Device | null>(null);
+
+// 固件升级弹窗相关
+const showFirmwareDialog = ref(false);
 
 const selectedDevice = computed<Device | null>(() => {
   return devices.value.find(d => d.id === selectedDeviceId.value) || null;
@@ -603,6 +723,48 @@ const deviceMonitorConfig = computed(() => {
   return config?.monitorData || {};
 });
 
+const currentFirmwareVersion = computed(() => {
+  return selectedDevice.value?.data?.ver || firmwareInfo.value?.currentVersion || '未知';
+});
+
+const otaProgressPercentage = computed(() => {
+  if (typeof otaStatus.value?.progress === 'number') return otaStatus.value.progress;
+  return ['requested', 'start'].includes(otaStatus.value?.status || '') ? 0 : 0;
+});
+
+const showOtaProgress = computed(() => {
+  return ['requested', 'start', 'downloading', 'success', 'failed'].includes(otaStatus.value?.status || '');
+});
+
+const isFirmwareBusy = computed(() => {
+  return ['requested', 'start', 'downloading'].includes(otaStatus.value?.status || '');
+});
+
+const canUpdateFirmware = computed(() => {
+  return !!selectedDevice.value?.connected
+    && !!firmwareInfo.value?.supported
+    && !!firmwareInfo.value?.updateAvailable
+    && !firmwareLoading.value
+    && !firmwareUpdating.value
+    && !isFirmwareBusy.value;
+});
+
+const firmwareActionText = computed(() => {
+  if (!selectedDevice.value?.connected) return '设备离线';
+  if (firmwareLoading.value) return '检查中';
+  if (!firmwareInfo.value?.supported) return '暂无固件';
+  if (!firmwareInfo.value?.updateAvailable) return '已是最新';
+  if (isFirmwareBusy.value) return '升级中';
+  return '更新到最新版本';
+});
+
+const firmwareSummaryText = computed(() => {
+  if (!firmwareInfo.value) return '正在检查固件版本';
+  if (!firmwareInfo.value.supported) return '该设备类型没有可用 OTA 应用固件';
+  if (firmwareInfo.value.updateAvailable) return `可更新到 ${firmwareInfo.value.latestVersion}`;
+  return '当前设备固件已是最新版本';
+});
+
 // 编辑状态
 const isEditing = ref(false);
 const editData = ref<DeviceData>({});
@@ -615,6 +777,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   closeMonitorConnection();
+  closeOtaStatusConnection();
   stopAutoRefresh();
 });
 
@@ -653,6 +816,7 @@ async function refreshDevices() {
     if (!exists) {
       selectedDeviceId.value = '';
       closeMonitorConnection();
+      closeOtaStatusConnection();
     }
   }
 }
@@ -676,7 +840,18 @@ watch(autoRefreshEnabled, (enabled) => {
   else stopAutoRefresh();
 });
 
+watch(selectedDeviceId, (deviceId) => {
+  showFirmwareDialog.value = false;
+  closeOtaStatusConnection();
+  firmwareInfo.value = null;
+  firmwareError.value = '';
+  otaStatus.value = null;
 
+  if (deviceId) {
+    loadFirmwareInfo(deviceId);
+    setupOtaStatusConnection(deviceId);
+  }
+});
 
 function handleCurrentChange(currentRow: Device | null) {
   // 仅在明确选中新的行时才切换设备与监控连接
@@ -875,6 +1050,142 @@ async function executeOperation(operation: any) {
   } finally {
     operationLoading.value[operationKey] = false;
   }
+}
+
+async function loadFirmwareInfo(deviceId: string) {
+  firmwareLoading.value = true;
+  firmwareError.value = '';
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/firmware/latest`);
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || '固件信息获取失败');
+    if (selectedDeviceId.value === deviceId) {
+      firmwareInfo.value = data;
+    }
+  } catch (error: any) {
+    if (selectedDeviceId.value === deviceId) {
+      firmwareError.value = error?.message || '固件信息获取失败';
+    }
+  } finally {
+    if (selectedDeviceId.value === deviceId) {
+      firmwareLoading.value = false;
+    }
+  }
+}
+
+function setupOtaStatusConnection(deviceId: string) {
+  closeOtaStatusConnection();
+  try {
+    const eventSource = new EventSource(`/api/devices/${encodeURIComponent(deviceId)}/firmware/status-stream`);
+
+    const handleStatus = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.deviceId === selectedDeviceId.value) {
+          otaStatus.value = data;
+        }
+      } catch (error) {
+        console.error('解析 OTA 状态失败:', error);
+      }
+    };
+
+    eventSource.addEventListener('status', handleStatus);
+    eventSource.onmessage = handleStatus;
+    eventSource.onerror = () => {
+      if (otaStatus.value?.status && !['success', 'failed'].includes(otaStatus.value.status)) {
+        otaStatus.value = {
+          ...otaStatus.value,
+          msg: 'OTA 状态连接已断开，正在等待浏览器重连',
+        };
+      }
+    };
+
+    otaStatusEventSource.value = eventSource;
+  } catch (error) {
+    console.error('建立 OTA 状态连接失败:', error);
+  }
+}
+
+function closeOtaStatusConnection() {
+  if (otaStatusEventSource.value) {
+    otaStatusEventSource.value.close();
+    otaStatusEventSource.value = null;
+  }
+}
+
+async function updateFirmwareLatest() {
+  if (!selectedDevice.value || !firmwareInfo.value) return;
+
+  try {
+    await ElMessageBox.confirm(
+      `确认将 ${selectedDevice.value.name || selectedDevice.value.id} 更新到 ${firmwareInfo.value.latestVersion}？升级完成后设备会自动重启。`,
+      '确认固件升级',
+      {
+        confirmButtonText: '开始升级',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    );
+
+    firmwareUpdating.value = true;
+    const res = await fetch(`/api/devices/${encodeURIComponent(selectedDevice.value.id)}/firmware/update-latest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || 'OTA 指令下发失败');
+
+    if (data.status) otaStatus.value = data.status;
+    ElMessage.success('OTA 指令已下发');
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error?.message || 'OTA 指令下发失败');
+    }
+  } finally {
+    firmwareUpdating.value = false;
+  }
+}
+
+function formatBytes(value: any) {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes <= 0) return '-';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+}
+
+function formatShortHash(value: any) {
+  if (!value) return '-';
+  const text = String(value);
+  return text.length > 12 ? `${text.slice(0, 12)}...` : text;
+}
+
+function getOtaStatusLabel(status?: string) {
+  const labels: Record<string, string> = {
+    idle: '空闲',
+    requested: '已下发',
+    start: '开始',
+    downloading: '下载中',
+    success: '成功',
+    failed: '失败',
+    unknown: '未知',
+  };
+  return labels[status || 'idle'] || status || '空闲';
+}
+
+function getOtaStatusTagType(status?: string): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
+  if (status === 'success') return 'success';
+  if (status === 'failed') return 'danger';
+  if (status === 'requested' || status === 'start' || status === 'downloading') return 'warning';
+  return 'info';
+}
+
+function getOtaProgressStatus(status?: string): 'success' | 'exception' | 'warning' | undefined {
+  if (status === 'success') return 'success';
+  if (status === 'failed') return 'exception';
+  if (status === 'requested' || status === 'start') return 'warning';
+  return undefined;
 }
 
 function getInputType(value: any): 'number' | 'checkbox' | 'text' {
@@ -1095,6 +1406,45 @@ async function executeDeviceOperation(device: Device, operation: any) {
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.section-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.section-title-row h4 {
+  margin: 0 0 12px;
+}
+
+.firmware-panel {
+  min-height: 280px;
+}
+
+.firmware-alert {
+  margin-bottom: 12px;
+}
+
+.firmware-filename {
+  word-break: break-all;
+}
+
+.firmware-progress {
+  margin-top: 14px;
+}
+
+.firmware-status-message {
+  color: #606266;
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 20px;
+  margin: 10px 0;
+}
+
+.firmware-update-button {
+  width: 100%;
 }
 
 .table-actions {
