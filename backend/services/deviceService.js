@@ -342,6 +342,13 @@ function notifyDeviceUpdate(id, patch = {}) {
   mqttClient.publish(topic, payload);
 }
 
+function publishDeviceAction(id, action, payload = {}) {
+  const topic = `/drecv/${id}`;
+  const message = { method: 'action', action, ...payload };
+  mqttClient.publish(topic, message);
+  return { ok: true, topic, message };
+}
+
 function deleteDeviceById(id) {
   const before = state.devices.length;
   removeDevice(id);
@@ -476,6 +483,7 @@ module.exports = {
   getDeviceForApi,
   updateDeviceMeta,
   notifyDeviceUpdate,
+  publishDeviceAction,
   deleteDeviceById,
   clearDevices,
   getDeviceTypesForApi,

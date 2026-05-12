@@ -1,7 +1,7 @@
 const mqttClient = require('./mqttClientService');
 const logService = require('./logService');
 
-const FIRMWARE_BASE_URL = (process.env.FIRMWARE_BASE_URL || 'https://firmware.undersilicon.cn').replace(/\/+$/, '');
+const FIRMWARE_BASE_URL = (process.env.FIRMWARE_BASE_URL || 'http://firmware.undersilicon.cn').replace(/\/+$/, '');
 const MANIFEST_URL = `${FIRMWARE_BASE_URL}/firmware/latest/version.json`;
 
 const otaStatusMap = new Map();
@@ -82,6 +82,15 @@ function findAppFirmware(manifest, deviceType) {
 
 async function getLatestFirmwareForDevice(device) {
   const manifest = await fetchLatestManifest();
+  return getLatestFirmwareFromManifest(device, manifest);
+}
+
+async function getLatestFirmwareForDevices(devices = []) {
+  const manifest = await fetchLatestManifest();
+  return devices.map((device) => getLatestFirmwareFromManifest(device, manifest));
+}
+
+function getLatestFirmwareFromManifest(device, manifest) {
   const currentVersion = getCurrentVersion(device);
   const firmwareEntry = findAppFirmware(manifest, device.type);
   const firmware = toFirmwareInfo(firmwareEntry);
@@ -142,7 +151,123 @@ async function updateDeviceToLatest(device, options = {}) {
     throw createServiceError('DEVICE_OFFLINE', '设备离线，无法下发 OTA 指令', 409);
   }
 
-  const latest = await getLatestFirmwareForDevice(device);
+  const manifest = await fetchLatestManifest();
+  return updateDeviceToLatestFromManifest(device, manifest, options);
+}
+
+async function updateDevicesToLatest(devices = [], options = {}) {
+  const manifest = await fetchLatestManifest();
+  const results = devices.map((device) => {
+    try {
+      const result = updateDeviceToLatestFromManifest(device, manifest, options);
+      return {
+        deviceId: device.id,
+        ok: true,
+        skipped: false,
+        failed: false,
+        status: result.status,
+        firmware: result.firmware,
+        topic: result.topic,
+        message: result.message,
+      };
+    } catch (error) {
+      return {
+        deviceId: device.id,
+        ok: false,
+        skipped: isSkippableUpdateError(error),
+        failed: !isSkippableUpdateError(error),
+        error: {
+          code: error.code || 'FIRMWARE_UPDATE_FAILED',
+          message: error.message || String(error),
+          status: error.status || 500,
+        },
+      };
+    }
+  });
+
+  return {
+    ok: true,
+    requestedCount: results.filter((item) => item.ok).length,
+    skippedCount: results.filter((item) => item.skipped).length,
+    failedCount: results.filter((item) => item.failed).length,
+    results,
+  };
+}
+
+async function blinkLatestDevices(devices = [], publisher) {
+  const manifest = await fetchLatestManifest();
+  const results = devices.map((device) => {
+    const latest = getLatestFirmwareFromManifest(device, manifest);
+
+    if (!device.connected) {
+      return makeBlinkSkippedResult(device.id, 'DEVICE_OFFLINE', '设备离线，无法下发指示灯闪烁');
+    }
+    if (!latest.supported) {
+      return makeBlinkSkippedResult(device.id, 'FIRMWARE_NOT_SUPPORTED', `设备类型 ${device.type} 暂无 OTA 应用固件`);
+    }
+    if (!latest.currentVersion) {
+      return makeBlinkSkippedResult(device.id, 'FIRMWARE_VERSION_UNKNOWN', '当前固件版本未知，无法确认是否最新');
+    }
+    if (latest.updateAvailable) {
+      return makeBlinkSkippedResult(device.id, 'FIRMWARE_UPDATE_AVAILABLE', '当前设备不是最新固件版本');
+    }
+
+    try {
+      const publishResult = publisher(device.id, 'blink');
+      return {
+        deviceId: device.id,
+        ok: true,
+        skipped: false,
+        failed: false,
+        firmware: latest,
+        topic: publishResult?.topic || `/drecv/${device.id}`,
+        message: publishResult?.message || { method: 'action', action: 'blink' },
+      };
+    } catch (error) {
+      return {
+        deviceId: device.id,
+        ok: false,
+        skipped: false,
+        failed: true,
+        firmware: latest,
+        error: {
+          code: 'DEVICE_ACTION_PUBLISH_FAILED',
+          message: error?.message || '指示灯闪烁指令下发失败',
+          status: 500,
+        },
+      };
+    }
+  });
+
+  return {
+    ok: true,
+    requestedCount: results.filter((item) => item.ok).length,
+    skippedCount: results.filter((item) => item.skipped).length,
+    failedCount: results.filter((item) => item.failed).length,
+    results,
+  };
+}
+
+function makeBlinkSkippedResult(deviceId, code, message) {
+  return {
+    deviceId,
+    ok: false,
+    skipped: true,
+    failed: false,
+    error: {
+      code,
+      message,
+      status: 409,
+    },
+  };
+}
+
+function updateDeviceToLatestFromManifest(device, manifest, options = {}) {
+  if (!device.connected) {
+    throw createServiceError('DEVICE_OFFLINE', '设备离线，无法下发 OTA 指令', 409);
+  }
+
+  const latest = getLatestFirmwareFromManifest(device, manifest);
   if (!latest.supported || !latest.firmware) {
     throw createServiceError('FIRMWARE_NOT_SUPPORTED', `设备类型 ${device.type} 暂无 OTA 应用固件`, 404);
   }
@@ -180,6 +305,10 @@ async function updateDeviceToLatest(device, options = {}) {
     firmware: latest.firmware,
     status,
   };
+}
+
+function isSkippableUpdateError(error) {
+  return ['DEVICE_OFFLINE', 'FIRMWARE_NOT_SUPPORTED', 'ALREADY_LATEST'].includes(error?.code);
 }
 
 function recordOtaStatus(deviceId, payload = {}, context = {}) {
@@ -265,7 +394,10 @@ function resetForTests() {
 
 module.exports = {
   getLatestFirmwareForDevice,
+  getLatestFirmwareForDevices,
   updateDeviceToLatest,
+  updateDevicesToLatest,
+  blinkLatestDevices,
   recordOtaStatus,
   getOtaStatus,
   onOtaStatus,

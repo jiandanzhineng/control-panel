@@ -33,15 +33,25 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="150" align="center">
+        <el-table-column label="操作" width="240" align="center">
           <template #default="{ row }">
-            <el-button 
-              type="primary" 
-              size="small" 
-              @click="restartTest(row)"
-            >
-              重新开始
-            </el-button>
+            <div class="action-buttons">
+              <el-button
+                type="primary"
+                size="small"
+                @click="restartTest(row)"
+              >
+                重新开始
+              </el-button>
+              <el-button
+                type="success"
+                size="small"
+                :loading="blinkLoading[row.id]"
+                @click="blinkDevice(row)"
+              >
+                指示灯闪烁
+              </el-button>
+            </div>
           </template>
         </el-table-column>
       </el-table>
@@ -64,6 +74,7 @@ const devices = ref<Device[]>([]);
 const deviceTypeMap = ref<Record<string, string>>({});
 const deviceTypeConfigs = ref<Record<string, any>>({});
 const eventSource = ref<EventSource | null>(null);
+const blinkLoading = ref<Record<string, boolean>>({});
 
 const onlineDevices = computed(() => devices.value.filter(d => d.connected));
 
@@ -150,6 +161,27 @@ async function restartTest(device: Device) {
   }
 }
 
+async function blinkDevice(device: Device) {
+  blinkLoading.value[device.id] = true;
+  try {
+    const res = await fetch('/api/mqtt-client/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        topic: `/drecv/${device.id}`,
+        message: { method: 'action', action: 'blink' },
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || '下发失败');
+    ElMessage.success('已下发闪烁指令');
+  } catch (error: any) {
+    ElMessage.error(error?.message || '下发失败');
+  } finally {
+    blinkLoading.value[device.id] = false;
+  }
+}
+
 // 辅助函数
 function hasMonitorData(type: string) {
   const config = deviceTypeConfigs.value[type];
@@ -210,5 +242,12 @@ function getMonitorColor(config: any, val: any) {
 .no-data {
   color: #909399;
   font-size: 12px;
+}
+
+.action-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 </style>

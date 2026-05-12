@@ -8,11 +8,13 @@ import GameCurrentView from '../views/GameCurrentView.vue';
 import GameStartConfigView from '../views/GameStartConfigView.vue';
 import LogManagement from '../views/LogManagement.vue';
 import AutoTest from '../views/AutoTest.vue';
+import FirmwareBatchUpgrade from '../views/FirmwareBatchUpgrade.vue';
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/home' },
   { path: '/home', name: 'home', component: HomeView, meta: { title: '首页' } },
   { path: '/devices', name: 'devices', component: DevicesView, meta: { title: '设备管理' } },
+  { path: '/devices/firmware-batch', name: 'firmware_batch', component: FirmwareBatchUpgrade, meta: { title: '批量固件升级' } },
   { path: '/test', name: 'test', component: AutoTest, meta: { title: '自动化测试' } },
   { path: '/games', name: 'games', component: GameListView, meta: { title: '游戏管理' } },
   { path: '/games/current', name: 'game_current', component: GameCurrentView, meta: { title: '当前游戏' } },

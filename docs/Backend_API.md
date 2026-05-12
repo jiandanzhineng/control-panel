@@ -75,15 +75,23 @@ mDNS 管理（/api/mdns）
   执行设备操作  
   Body: `{ params?: object }`
 - GET `/api/devices/:id/firmware/latest`
-  查询该设备类型可用的最新 OTA 应用固件。服务端会从 `https://firmware.undersilicon.cn/firmware/latest/version.json` 拉取清单并追加随机 query 防缓存，只返回 `kind=app` 镜像信息
+  查询该设备类型可用的最新 OTA 应用固件。服务端会从 `http://firmware.undersilicon.cn/firmware/latest/version.json` 拉取清单并追加随机 query 防缓存，只返回 `kind=app` 镜像信息
 - POST `/api/devices/:id/firmware/update-latest`
   下发更新到最新版本的 OTA 指令。设备必须在线且设备类型存在 app 固件
   Body: `{ force?: boolean }`
-  MQTT 下发：Topic `/drecv/{mac}`，Payload `{ "method": "ota_update", "url": "https://firmware.undersilicon.cn/{object_key}" }`
+  MQTT 下发：Topic `/drecv/{mac}`，Payload `{ "method": "ota_update", "url": "http://firmware.undersilicon.cn/{object_key}" }`
 - GET `/api/devices/:id/firmware/status`
   获取该设备最近一次 OTA 状态，状态来自设备 `/dpub/{mac}` 上报的 `ota_status`
 - GET `/api/devices/:id/firmware/status-stream`（SSE）
   持续推送 OTA 状态。事件名 `status`，状态值包括 `requested/start/downloading/success/failed`
+- GET `/api/devices/firmware/batch?scope=online`
+  批量查询设备最新固件信息和最近 OTA 状态。`scope=online` 只返回在线设备，`scope=all` 返回全部设备
+- POST `/api/devices/firmware/batch/update-latest`
+  批量下发更新到最新版本的 OTA 指令。Body: `{ deviceIds: string[], force?: boolean }`。单台失败不会中断其他设备，响应按设备返回 `ok/skipped/failed/error`
+- POST `/api/devices/firmware/batch/blink-latest`
+  对在线且确认已是最新固件版本的设备批量下发指示灯闪烁动作。MQTT 下发：Topic `/drecv/{mac}`，Payload `{ "method": "action", "action": "blink" }`
+- GET `/api/devices/firmware/batch/status-stream?ids=id1,id2`
+  批量订阅 OTA 状态。事件名 `status`，每条事件为单台设备的 OTA 状态
 - GET `/api/devices/:id/monitor-data`  
   获取最新监控快照
 - GET `/api/devices/:id/monitor-stream`（SSE）  

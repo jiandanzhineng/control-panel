@@ -17,6 +17,13 @@
           >
             {{ loading ? '刷新中...' : '刷新列表' }}
           </el-button>
+          <el-button
+            type="success"
+            :icon="Upload"
+            @click="$router.push('/devices/firmware-batch')"
+          >
+            批量升级
+          </el-button>
           <el-button 
             type="danger" 
             :icon="Delete"
@@ -598,7 +605,7 @@
           />
 
           <div class="firmware-status-message">
-            {{ otaStatus?.msg || firmwareSummaryText }}
+            {{ firmwareStatusMessage }}
           </div>
 
           <el-button
@@ -627,7 +634,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { Refresh, Delete, Edit, Check, Close, ArrowDown } from '@element-plus/icons-vue'
+import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload } from '@element-plus/icons-vue'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
 
 interface DeviceData { [key: string]: any }
@@ -692,6 +699,8 @@ const firmwareUpdating = ref(false);
 const firmwareError = ref('');
 const otaStatus = ref<OtaStatus | null>(null);
 const otaStatusEventSource = ref<EventSource | null>(null);
+const otaStatusNow = ref(Date.now());
+const otaStatusTimer = ref<number | null>(null);
 
 // 监控弹窗相关
 const monitorModalVisible = ref(false);
@@ -708,6 +717,7 @@ const disconnectedCount = computed(() => devices.value.filter(d => !d.connected)
 const onlineDevices = computed(() => devices.value.filter(d => d.connected));
 const offlineDevices = computed(() => devices.value.filter(d => !d.connected));
 const offlineCollapseActive = ref<string[]>([]);
+const OTA_PROGRESS_TIMEOUT_MS = 20000;
 
 // 当前设备的操作配置
 const deviceOperations = computed(() => {
@@ -737,7 +747,7 @@ const showOtaProgress = computed(() => {
 });
 
 const isFirmwareBusy = computed(() => {
-  return ['requested', 'start', 'downloading'].includes(otaStatus.value?.status || '');
+  return isActiveOtaStatus(otaStatus.value);
 });
 
 const canUpdateFirmware = computed(() => {
@@ -755,14 +765,21 @@ const firmwareActionText = computed(() => {
   if (!firmwareInfo.value?.supported) return '暂无固件';
   if (!firmwareInfo.value?.updateAvailable) return '已是最新';
   if (isFirmwareBusy.value) return '升级中';
+  if (isTimedOutOtaStatus(otaStatus.value)) return '重新开始升级';
   return '更新到最新版本';
 });
 
 const firmwareSummaryText = computed(() => {
+  if (isTimedOutOtaStatus(otaStatus.value)) return '20秒内未收到升级进度，可重新开始升级';
   if (!firmwareInfo.value) return '正在检查固件版本';
   if (!firmwareInfo.value.supported) return '该设备类型没有可用 OTA 应用固件';
   if (firmwareInfo.value.updateAvailable) return `可更新到 ${firmwareInfo.value.latestVersion}`;
   return '当前设备固件已是最新版本';
+});
+
+const firmwareStatusMessage = computed(() => {
+  if (isTimedOutOtaStatus(otaStatus.value)) return '20秒内未收到升级进度，可重新开始升级';
+  return otaStatus.value?.msg || firmwareSummaryText.value;
 });
 
 // 编辑状态
@@ -773,12 +790,14 @@ const originalData = ref<DeviceData>({});
 onMounted(async () => {
   await init();
   if (autoRefreshEnabled.value) startAutoRefresh();
+  startOtaStatusTimer();
 });
 
 onUnmounted(() => {
   closeMonitorConnection();
   closeOtaStatusConnection();
   stopAutoRefresh();
+  stopOtaStatusTimer();
 });
 
 async function init() {
@@ -832,6 +851,20 @@ function stopAutoRefresh() {
   if (autoRefreshTimer.value) {
     clearInterval(autoRefreshTimer.value);
     autoRefreshTimer.value = null;
+  }
+}
+
+function startOtaStatusTimer() {
+  stopOtaStatusTimer();
+  otaStatusTimer.value = window.setInterval(() => {
+    otaStatusNow.value = Date.now();
+  }, 1000);
+}
+
+function stopOtaStatusTimer() {
+  if (otaStatusTimer.value) {
+    clearInterval(otaStatusTimer.value);
+    otaStatusTimer.value = null;
   }
 }
 
@@ -1186,6 +1219,22 @@ function getOtaProgressStatus(status?: string): 'success' | 'exception' | 'warni
   if (status === 'failed') return 'exception';
   if (status === 'requested' || status === 'start') return 'warning';
   return undefined;
+}
+
+function isOtaProgressStatus(status?: string) {
+  return ['requested', 'start', 'downloading'].includes(status || '');
+}
+
+function isTimedOutOtaStatus(status: OtaStatus | null | undefined) {
+  if (!status || !isOtaProgressStatus(status.status)) return false;
+  if (!status.updatedAt) return true;
+  const updatedAt = new Date(status.updatedAt).getTime();
+  if (!Number.isFinite(updatedAt)) return true;
+  return otaStatusNow.value - updatedAt > OTA_PROGRESS_TIMEOUT_MS;
+}
+
+function isActiveOtaStatus(status: OtaStatus | null | undefined) {
+  return !!status && isOtaProgressStatus(status.status) && !isTimedOutOtaStatus(status);
 }
 
 function getInputType(value: any): 'number' | 'checkbox' | 'text' {

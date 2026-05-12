@@ -26,6 +26,138 @@ router.delete('/all', (req, res) => {
   }
 });
 
+function getBatchFirmwareDevices(scope = 'online') {
+  const rows = deviceService.listDevicesForApi();
+  if (scope === 'all') return rows;
+  return rows.filter((device) => device.connected);
+}
+
+// 批量查询设备固件信息
+router.get('/firmware/batch', async (req, res) => {
+  try {
+    const scope = req.query.scope === 'all' ? 'all' : 'online';
+    const devices = getBatchFirmwareDevices(scope);
+    const firmwareList = await firmwareOtaService.getLatestFirmwareForDevices(devices);
+
+    res.json({
+      scope,
+      checkedAt: new Date().toISOString(),
+      total: devices.length,
+      devices: devices.map((device, index) => ({
+        device,
+        firmware: firmwareList[index],
+        status: firmwareOtaService.getOtaStatus(device.id),
+      })),
+    });
+  } catch (e) {
+    sendError(res, e.code || 'FIRMWARE_BATCH_FAILED', e.message || String(e), e.status || 500);
+  }
+});
+
+// 批量下发更新到最新版本的 OTA 指令
+router.post('/firmware/batch/update-latest', async (req, res) => {
+  try {
+    const deviceIds = Array.isArray(req.body?.deviceIds) ? req.body.deviceIds : [];
+    const uniqueIds = [...new Set(deviceIds.map((id) => String(id || '').trim()).filter(Boolean))];
+
+    if (uniqueIds.length === 0) {
+      return sendError(res, 'DEVICE_IDS_REQUIRED', '请提供需要升级的设备列表', 400);
+    }
+
+    const devices = [];
+    const missing = [];
+    for (const id of uniqueIds) {
+      const device = deviceService.getDeviceById(id);
+      if (device) devices.push(device);
+      else missing.push(id);
+    }
+
+    const result = await firmwareOtaService.updateDevicesToLatest(devices, {
+      force: !!req.body?.force,
+    });
+
+    const missingResults = missing.map((id) => ({
+      deviceId: id,
+      ok: false,
+      skipped: false,
+      failed: true,
+      error: {
+        code: 'DEVICE_NOT_FOUND',
+        message: '设备不存在',
+        status: 404,
+      },
+    }));
+
+    res.json({
+      ...result,
+      results: [...result.results, ...missingResults],
+      missing: missingResults,
+      failedCount: result.failedCount + missing.length,
+    });
+  } catch (e) {
+    sendError(res, e.code || 'FIRMWARE_BATCH_UPDATE_FAILED', e.message || String(e), e.status || 500);
+  }
+});
+
+// 对已是最新固件版本的在线设备下发指示灯闪烁动作
+router.post('/firmware/batch/blink-latest', async (req, res) => {
+  try {
+    const devices = getBatchFirmwareDevices('online');
+    const result = await firmwareOtaService.blinkLatestDevices(
+      devices,
+      (deviceId, action) => deviceService.publishDeviceAction(deviceId, action)
+    );
+
+    res.json(result);
+  } catch (e) {
+    sendError(res, e.code || 'FIRMWARE_BATCH_BLINK_FAILED', e.message || String(e), e.status || 500);
+  }
+});
+
+// 批量设备 OTA 状态流
+router.get('/firmware/batch/status-stream', (req, res) => {
+  try {
+    const ids = String(req.query.ids || '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean);
+    const uniqueIds = [...new Set(ids)];
+
+    if (uniqueIds.length === 0) {
+      return sendError(res, 'DEVICE_IDS_REQUIRED', '请提供需要订阅的设备列表', 400);
+    }
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Cache-Control'
+    });
+
+    const writeStatus = (status) => {
+      res.write(`event: status\n`);
+      res.write(`data: ${JSON.stringify(status)}\n\n`);
+    };
+
+    const unsubscribes = [];
+    for (const id of uniqueIds) {
+      const device = deviceService.getDeviceById(id);
+      if (!device) continue;
+      writeStatus(firmwareOtaService.getOtaStatus(id));
+      unsubscribes.push(firmwareOtaService.onOtaStatus(id, writeStatus));
+    }
+
+    const cleanup = () => {
+      for (const unsubscribe of unsubscribes) unsubscribe();
+    };
+    req.on('close', cleanup);
+    req.on('error', cleanup);
+  } catch (e) {
+    sendError(res, 'FIRMWARE_BATCH_STATUS_STREAM_FAILED', e.message || String(e), 500);
+  }
+});
+
 // 查询设备详情
 router.get('/:id', (req, res) => {
   try {
