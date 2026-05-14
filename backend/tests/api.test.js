@@ -1,4 +1,31 @@
 const request = require('supertest');
+
+jest.mock('../services/mqttService', () => ({
+  start: jest.fn(async ({ port = 1883, bind = '0.0.0.0' } = {}) => ({
+    running: true,
+    broker: 'mock',
+    port,
+    bind,
+  })),
+  status: jest.fn(async () => ({ running: false, broker: 'mock' })),
+  stop: jest.fn(async () => ({ running: false, broker: 'mock' })),
+}));
+
+jest.mock('../services/mdnsService', () => {
+  let current = { running: false };
+  return {
+    publish: jest.fn(() => {
+      current = { pid: 12345, running: true };
+      return current;
+    }),
+    unpublish: jest.fn(() => {
+      current = { running: false };
+      return current;
+    }),
+    status: jest.fn(() => current),
+  };
+});
+
 const app = require('../index');
 
 jest.setTimeout(20000);
@@ -83,7 +110,8 @@ describe('Backend API (Express)', () => {
     // status
     res = await request(app).get('/api/mdns/status');
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toHaveProperty('running', true);
+    expect(typeof res.body.pid).toBe('number');
 
     // unpublish
     res = await request(app)

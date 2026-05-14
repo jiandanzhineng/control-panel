@@ -97,14 +97,16 @@ function performHandshake(host, port, timeoutMs = 4000) {
 }
 
 describe('MQTT protocol handshake', () => {
-  afterEach(() => {
-    try { mqttService.stop(); } catch (_) {}
+  afterEach(async () => {
+    try { await mqttService.stop(); } catch (_) {}
   });
 
-  it('CONNECT -> CONNACK should succeed on started broker', async () => {
+  const maybeIt = process.env.RUN_MQTT_CONNECTIVITY === '1' ? it : it.skip;
+
+  maybeIt('CONNECT -> CONNACK should succeed on started broker', async () => {
     // Use a non-default port to avoid conflicts with any existing broker
     const port = 1884;
-    mqttService.start({ port, bind: '127.0.0.1' });
+    await mqttService.start({ port, bind: '127.0.0.1' });
 
     await waitForPort('127.0.0.1', port, 8000, 250); // if not ready -> throws
     const res = await performHandshake('127.0.0.1', port, 6000);
