@@ -65,7 +65,7 @@ app.use('/api/mqtt-client', require('./routes/mqttClient'));
 // 设备管理路由
 app.use('/api/devices', require('./routes/devices'));
 app.use('/api/device-types', require('./routes/deviceTypes'));
-app.use('/api/device-interfaces', require('./routes/deviceInterfaces'));
+app.use('/api/device-capabilities', require('./routes/deviceCapabilities'));
 // 游戏管理路由
 app.use('/api/games', require('./routes/games'));
 // 游戏玩法路由

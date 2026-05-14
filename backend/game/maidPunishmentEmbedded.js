@@ -19,10 +19,10 @@ const game = {
   ],
 
   requiredDevices: [
-    { logicalId: 'auto_lock', name: '自动锁', type: 'ZIDONGSUO', required: false },
-    { logicalId: 'shock_device', name: '电击设备', type: 'DIANJI', required: true },
-    { logicalId: 'qtz_sensor', name: 'QTZ激光测距+脚踏', type: 'QTZ', required: true },
-    { logicalId: 'td01_device', name: 'TD01设备', interface: 'strength', required: false },
+    { logicalId: 'auto_lock', name: '自动锁', capabilities: ['lock'], required: false },
+    { logicalId: 'shock_device', name: '电击设备', capabilities: ['shock'], required: true },
+    { logicalId: 'qtz_sensor', name: 'QTZ激光测距+脚踏', capabilities: ['distance', 'buttonInput'], required: true },
+    { logicalId: 'td01_device', name: 'TD01设备', capabilities: ['strength'], required: false },
   ],
 
   // 运行时状态
@@ -127,7 +127,7 @@ const game = {
         const now = Date.now();
         if (now - (this._rt.lastTd01IncreaseTs || 0) >= 5000) {
           this._rt.td01Intensity = Math.min(this._rt.td01Intensity + (this._cfg.td01IntensityIncrease || 50), 255);
-          dm.setDeviceProperty('td01_device', { power: this._rt.td01Intensity });
+          dm.setStrength('td01_device', this._rt.td01Intensity);
           this._rt.lastTd01IncreaseTs = now;
           dm.emitState({ td01Active: true, td01Intensity: this._rt.td01Intensity });
         }
@@ -205,14 +205,14 @@ const game = {
     const voltage = this._calcShockVoltage();
     this._rt.isShocking = true;
     this._rt.shockCount += 1;
-    dm.setDeviceProperty('shock_device', { voltage, shock: 1 });
+    dm.startShock('shock_device', { voltage });
     dm.emitState({ isShocking: true, shockCount: this._rt.shockCount, voltage });
     dm.emitUi({ fields: { statusText: `电击中(${voltage}V)` } });
   },
 
   _stopShock(dm) {
     if (!this._rt.isShocking) return;
-    dm.setDeviceProperty('shock_device', { shock: 0 });
+    dm.stopShock('shock_device');
     this._rt.isShocking = false;
     dm.emitState({ isShocking: false });
     dm.emitUi({ fields: { statusText: '运行中' } });
@@ -223,13 +223,13 @@ const game = {
     this._rt.td01Active = true;
     this._rt.td01Intensity = 10;
     this._rt.lastTd01IncreaseTs = Date.now();
-    dm.setDeviceProperty('td01_device', { power: this._rt.td01Intensity });
+    dm.setStrength('td01_device', this._rt.td01Intensity);
     dm.emitState({ td01Active: true, td01Intensity: this._rt.td01Intensity });
     // 可选：启动时电击概率
     const prob = Math.max(0, Math.min(100, Number(this._cfg.td01ShockProbability) || 0));
     if (prob > 0 && (Math.random() * 100) < prob) {
       const v = this._calcShockVoltage();
-      dm.setDeviceProperty('shock_device', { voltage: v, shock: 1 });
+      dm.startShock('shock_device', { voltage: v });
       this._rt.isShocking = true;
       this._rt.shockCount += 1;
       dm.emitState({ isShocking: true, shockCount: this._rt.shockCount, voltage: v });
@@ -238,7 +238,7 @@ const game = {
 
   _stopTd01(dm) {
     if (!this._rt.td01Active) return;
-    dm.setDeviceProperty('td01_device', { power: 0 });
+    dm.setStrength('td01_device', 0);
     this._rt.td01Active = false;
     this._rt.td01Intensity = 0;
     dm.emitState({ td01Active: false, td01Intensity: 0 });
@@ -247,7 +247,7 @@ const game = {
   _resetTd01(dm) { this._stopTd01(dm); this._rt.lastNoShockTs = Date.now(); },
 
   _setLock(dm, isOpen) {
-    dm.setDeviceProperty('auto_lock', { open: isOpen ? 1 : 0 });
+    dm.setLockOpen('auto_lock', isOpen);
     this._rt.isLocked = !isOpen;
     dm.emitState({ isLocked: this._rt.isLocked });
     dm.emitUi({ fields: { lockedText: isOpen ? '已解锁' : '已加锁' } });

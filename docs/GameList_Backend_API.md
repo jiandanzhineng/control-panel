@@ -34,7 +34,7 @@
   - `status`: string（`stopped | running | finished | idle | error`；默认 `idle`）
   - `arguments`: string（可选启动参数；可空）
   - `configPath`: string（玩法 JS 文件相对路径，如 `backend/game/foo.js`）
-  - `requiredDevices`: array（如 `{ logicalId, required, name }`；可空）
+  - `requiredDevices`: array（如 `{ logicalId, capabilities, required, name }`；可空）
   - `version`: string（可空）
   - `author`: string（可空）
   - `createdAt`: number（ms 时间戳；上传/首次发现时间）

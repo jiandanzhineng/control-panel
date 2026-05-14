@@ -29,11 +29,6 @@ router.get('/:type/config', (req, res) => {
   try {
     const { type } = req.params;
     const config = deviceService.getDeviceTypeConfigForApi(type);
-    
-    if (!config) {
-      return sendError(res, 'DEVICE_TYPE_NOT_FOUND', '设备类型不存在', 404);
-    }
-    
     res.json(config);
   } catch (e) {
     sendError(res, 'DEVICE_TYPE_CONFIG_FAILED', e.message || String(e), 500);

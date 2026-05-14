@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const logService = require('./logService');
-const { hasInterface } = require('../config/deviceTypes');
+const { hasCapabilities } = require('../config/deviceTypes');
 const mqttClient = require('./mqttClientService');
 const deviceService = require('./deviceService');
 
@@ -46,29 +46,48 @@ const state = {
       this._propertyListeners.set(logicalId, propMap);
       sendLog('info', '已注册设备属性监听', { logicalId, property, count: arr.length });
     },
-    setDeviceProperty(logicalId, properties) {
+    invoke(logicalId, actionPath, input = {}) {
       const ids = this.deviceMap[logicalId];
       const arr = Array.isArray(ids) ? ids : (ids ? [ids] : []);
-      if (!arr.length) return sendLog('warn', '设备未映射，忽略属性设置', { logicalId });
+      if (!arr.length) {
+        sendLog('warn', '设备未映射，忽略能力调用', { logicalId, actionPath });
+        return [];
+      }
+      const [capabilityKey, actionName] = String(actionPath || '').split('.');
+      if (!capabilityKey || !actionName) {
+        const err = new Error(`能力动作格式无效: ${actionPath}`);
+        err.code = 'CAPABILITY_ACTION_PATH_INVALID';
+        throw err;
+      }
+      const results = [];
       for (const deviceId of arr) {
-        try { deviceService.notifyDeviceUpdate(deviceId, properties || {}); } catch (e) { sendLog('error', '下发设备属性失败', { logicalId, deviceId, error: e?.message || String(e) }); }
+        try {
+          const result = deviceService.invokeDeviceCapability(deviceId, capabilityKey, actionName, input || {});
+          results.push(result);
+          sendLog('debug', '设备能力调用已下发', { logicalId, deviceId, actionPath, input });
+        } catch (e) {
+          sendLog('error', '设备能力调用失败', { logicalId, deviceId, actionPath, error: e?.message || String(e) });
+        }
       }
+      return results;
     },
-    sendDeviceMqttMessage(logicalId, message) {
-      const ids = this.deviceMap[logicalId];
-      const arr = Array.isArray(ids) ? ids : (ids ? [ids] : []);
-      if (!arr.length) return sendLog('warn', '设备未映射，忽略发送MQTT', { logicalId });
-      for (const deviceId of arr) {
-        try { mqttClient.publish(`/drecv/${deviceId}`, message || {}); sendLog('debug', '发送设备MQTT消息', { logicalId, deviceId, message }); } catch (e) { sendLog('error', '发送设备MQTT消息失败', { logicalId, deviceId, error: e?.message || String(e) }); }
-      }
+    setStrength(logicalId, value) {
+      return this.invoke(logicalId, 'strength.set', { value });
     },
-    sendMqttMessage(topic, message) {
-      try {
-        mqttClient.publish(topic, message);
-        sendLog('debug', '发送MQTT消息', { topic });
-      } catch (e) {
-        sendLog('error', '发送MQTT消息失败', { topic, error: e?.message || String(e) });
-      }
+    setReportDelay(logicalId, ms) {
+      return this.invoke(logicalId, 'reporting.setReportDelay', { ms });
+    },
+    configureDistance(logicalId, options = {}) {
+      return this.invoke(logicalId, 'distance.configure', options || {});
+    },
+    startShock(logicalId, options = {}) {
+      return this.invoke(logicalId, 'shock.start', options || {});
+    },
+    stopShock(logicalId) {
+      return this.invoke(logicalId, 'shock.stop', {});
+    },
+    setLockOpen(logicalId, open) {
+      return this.invoke(logicalId, 'lock.setOpen', { open: !!open });
     },
     getDeviceProperty(logicalId, property) {
       const ids = this.deviceMap[logicalId];
@@ -219,7 +238,28 @@ function validateGameplay(gameplay) {
       throw err;
     }
   }
-  if (!Array.isArray(gameplay.requiredDevices)) gameplay.requiredDevices = [];
+  if (!Array.isArray(gameplay.requiredDevices)) {
+    const err = new Error('玩法 requiredDevices 必须是数组');
+    err.code = 'GAMEPLAY_REQUIRED_DEVICE_INVALID';
+    throw err;
+  }
+  for (const item of gameplay.requiredDevices) {
+    if (!item || typeof item !== 'object' || typeof item.logicalId !== 'string' || !item.logicalId) {
+      const err = new Error('玩法 requiredDevices 项必须包含 logicalId');
+      err.code = 'GAMEPLAY_REQUIRED_DEVICE_INVALID';
+      throw err;
+    }
+    if (!Array.isArray(item.capabilities) || item.capabilities.length === 0) {
+      const err = new Error(`玩法 requiredDevices.${item.logicalId} 必须声明 capabilities`);
+      err.code = 'GAMEPLAY_REQUIRED_DEVICE_INVALID';
+      throw err;
+    }
+    if (!item.capabilities.every((capability) => typeof capability === 'string' && capability.length > 0)) {
+      const err = new Error(`玩法 requiredDevices.${item.logicalId} capabilities 必须是字符串数组`);
+      err.code = 'GAMEPLAY_REQUIRED_DEVICE_INVALID';
+      throw err;
+    }
+  }
 }
 
 // ===== 获取玩法元信息（不启动游戏） =====
@@ -279,7 +319,8 @@ function validateDeviceDependencies() {
   const gp = state.currentGameplay;
   if (!gp) return;
   for (const item of gp.requiredDevices) {
-    const { logicalId, required, interface: iface } = item || {};
+    const { logicalId, required } = item || {};
+    const capabilities = normalizeRequiredCapabilities(item);
     const ids = state.deviceManager.deviceMap[logicalId];
     const arr = Array.isArray(ids) ? ids : (ids ? [ids] : []);
     if (required && arr.length === 0) {
@@ -296,14 +337,21 @@ function validateDeviceDependencies() {
         sendLog('error', err.message, { logicalId, deviceId });
         throw err;
       }
-      if (iface && typeof dev?.type === 'string' && !hasInterface(dev.type, iface)) {
-        const err = new Error(`必需设备接口不匹配: ${logicalId}`);
-        err.code = 'DEVICE_INTERFACE_MISMATCH';
-        sendLog('error', err.message, { logicalId, deviceId, interface: iface, type: dev.type });
+      if (capabilities.length && typeof dev?.type === 'string' && !hasCapabilities(dev.type, capabilities)) {
+        const err = new Error(`必需设备能力不匹配: ${logicalId}`);
+        err.code = 'DEVICE_CAPABILITY_MISMATCH';
+        sendLog('error', err.message, { logicalId, deviceId, capabilities, type: dev.type });
         throw err;
       }
     }
   }
+}
+
+function normalizeRequiredCapabilities(item = {}) {
+  if (Array.isArray(item.capabilities)) {
+    return item.capabilities.filter((x) => typeof x === 'string' && x.length > 0);
+  }
+  return [];
 }
 
 // ===== MQTT 与设备属性监听 =====
@@ -423,8 +471,15 @@ function startGameplay(config, deviceMapping = {}, parameters = {}) {
   state.deviceManager.log = (level, msg, extra) => sendLog(level, msg, extra);
 
   // 应用映射与依赖验证
-  applyDeviceMapping(deviceMapping);
-  validateDeviceDependencies();
+  try {
+    applyDeviceMapping(deviceMapping);
+    validateDeviceDependencies();
+  } catch (e) {
+    state.currentGameplay = null;
+    state.gameplaySourcePath = null;
+    state.deviceManager.deviceMap = {};
+    throw e;
+  }
 
   // 确保稳定监听器已注册（只注册一次）
   ensureStableHandlers();

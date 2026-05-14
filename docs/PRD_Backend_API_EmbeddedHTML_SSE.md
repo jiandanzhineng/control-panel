@@ -35,7 +35,7 @@
 
 ## 数据与事件模型
 - 玩法导出（最小约定，与 `gameplayService.validateGameplay` 对齐）：
-  - 字段：`title: string`、`description: string`、`requiredDevices: Array<{ logicalId, required?, name? }>`
+  - 字段：`title: string`、`description: string`、`requiredDevices: Array<{ logicalId, capabilities: string[], required?, name? }>`
   - 方法：`start(deviceManager, parameters)`、`loop(deviceManager)`；可选：`end(deviceManager)`、`updateParameters(parameters)`。
   - 新增（页面）：`html: string` 或 `getHtml(): string`。
 - SSE 事件：
@@ -56,8 +56,8 @@
   - 内部验证：
     - 若已有运行中玩法 → 409 + `GAME_ALREADY_RUNNING`（来源：`GAMEPLAY_ALREADY_RUNNING`）。
     - 文件不存在/路径无效 → 404/500 + `GAMEPLAY_FILE_NOT_FOUND`。
-    - 玩法导出缺失字段/方法 → 500 + `GAMEPLAY_MISSING_FIELD|METHOD|INVALID_EXPORT`。
-    - 必需设备未映射/离线 → 400/500 + `DEVICE_MAPPING_MISSING|DEVICE_OFFLINE`。
+    - 玩法导出缺失字段/方法或设备需求格式错误 → 500 + `GAMEPLAY_MISSING_FIELD|METHOD|INVALID_EXPORT|GAMEPLAY_REQUIRED_DEVICE_INVALID`。
+    - 必需设备未映射/离线或能力不匹配 → 400/500 + `DEVICE_MAPPING_MISSING|DEVICE_OFFLINE|DEVICE_CAPABILITY_MISMATCH`。
     - `start` 执行失败 → 500 + `GAMEPLAY_START_FAILED`。
 - 成功响应 `200`：`{ ok: true, result: { title, startTime }, status }`
 
@@ -108,7 +108,7 @@
 - `data-action="name"`：点击触发 `POST /actions`，可结合 `data-payload`（JSON）。
 
 ## 错误码约定
-- 启动/停止/状态：`GAME_ALREADY_RUNNING`、`GAMEPLAY_FILE_NOT_FOUND`、`GAMEPLAY_MISSING_FIELD|METHOD|INVALID_EXPORT`、`DEVICE_MAPPING_MISSING`、`DEVICE_OFFLINE`、`GAMEPLAY_START_FAILED`、`GAME_STOP_FAILED`、`GAME_STATUS_FAILED`
+- 启动/停止/状态：`GAME_ALREADY_RUNNING`、`GAMEPLAY_FILE_NOT_FOUND`、`GAMEPLAY_MISSING_FIELD|METHOD|INVALID_EXPORT`、`GAMEPLAY_REQUIRED_DEVICE_INVALID`、`DEVICE_MAPPING_MISSING`、`DEVICE_OFFLINE`、`DEVICE_CAPABILITY_MISMATCH`、`GAMEPLAY_START_FAILED`、`GAME_STOP_FAILED`、`GAME_STATUS_FAILED`
 - SSE/H TML：`NO_GAME_RUNNING`、`GAMEPLAY_HTML_NOT_AVAILABLE`、`GAME_NOT_CURRENT`
 - 动作：`GAMEPLAY_ACTION_NOT_SUPPORTED`
 

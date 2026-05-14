@@ -19,19 +19,21 @@
 ## 用户故事
 - 作为玩法开发者，我可以导出一个包含 `title/description/requiredDevices/start/loop` 的对象或类，系统能加载、校验并运行它。
 - 作为玩家，我可以在 UI 中映射玩法所需的设备，并在玩法运行时看到设备消息与日志；必要时可一键停止玩法。
-- 作为玩法逻辑，我可以通过注入的 `deviceManager` 操作设备属性、监听设备消息/属性变化；通过 `log` 输出结构化日志。
+- 作为玩法逻辑，我可以通过注入的 `deviceManager` 按设备能力调用语义动作、监听设备消息/属性变化；通过 `log` 输出结构化日志。
 
 ## 功能需求
 - 玩法文件加载
   - 支持读取本地 JS 文件内容。
   - 兼容 ESModule 导出与 CommonJS：将 `export default`/`export {}` 转换为 `module.exports` 后在隔离环境执行。
   - 若导出为类，需实例化；若为对象，直接使用。
-  - 运行前校验：必须包含 `title/description/requiredDevices/start/loop`；`start/loop` 必须为函数。
+  - 运行前校验：必须包含 `title/description/requiredDevices/start/loop`；`requiredDevices` 必须是数组；`start/loop` 必须为函数。
 - 设备映射与依赖验证
   - 用户提供 `deviceMapping: { logicalId: deviceId }`。
   - `applyDeviceMapping` 将映射写入 `deviceManager.deviceMap`，记录成功/失败日志。
   - `validateDeviceDependencies` 遍历 `currentGameplay.requiredDevices`：
+    - 玩法必须通过 `capabilities: string[]` 声明所需设备能力。
     - 必需项（`required: true`）必须已映射且设备 `connected === true`。
+    - 已映射设备必须同时满足该逻辑设备声明的全部能力。
     - 不满足时抛错并记录错误日志。
 - MQTT 消息监听与处理
   - 通过 mqttClientService.js 注册监听。
@@ -43,10 +45,14 @@
   - 通过DeviceManager对象提供设备相关操作功能
   - deviceID不在设备列表中忽略。
 - 支持注册属性监听：`listenDeviceProperty(logicalId, property, callback)`，当属性值由旧值变为新值时触发。
-- 设备属性操作
-  - `setDeviceProperty(logicalId, properties)`：向 `/drecv/{deviceId}` 发送 `method: 'update'` 的合并属性。
-  - `sendDeviceMqttMessage(logicalId, message)`/`sendMqttMessage(topic, message)`：封装发送与日志。
-  - `getDeviceProperty(logicalId, property)`：从 deviceService.js 读取。
+- 设备能力操作
+  - `invoke(logicalId, actionPath, input)`：按 `capability.action` 调用能力，例如 `strength.set`。
+  - `setStrength(logicalId, value)`：设置强度。
+  - `setReportDelay(logicalId, ms)`：设置设备上报频率。
+  - `configureDistance(logicalId, options)`：配置距离检测能力。
+  - `startShock(logicalId, options)` / `stopShock(logicalId)`：控制电击能力。
+  - `setLockOpen(logicalId, open)`：控制锁开合。
+  - `getDeviceProperty(logicalId, property)`：从 deviceService.js 读取设备上报状态。
 - 玩法生命周期
   - `startGameplay(config, deviceMapping, parameters)`：
     - 检查是否已有运行中玩法；注入 `log` 接口。
@@ -74,14 +80,18 @@
   - `deviceManager`：
     - `listenDeviceMessages(logicalId, callback)`
     - `listenDeviceProperty(logicalId, property, callback)`
-    - `setDeviceProperty(logicalId, properties)`
-    - `sendDeviceMqttMessage(logicalId, message)`
+    - `invoke(logicalId, actionPath, input)`
+    - `setStrength(logicalId, value)`
+    - `setReportDelay(logicalId, ms)`
+    - `configureDistance(logicalId, options)`
+    - `startShock(logicalId, options)` / `stopShock(logicalId)`
+    - `setLockOpen(logicalId, open)`
     - `getDeviceProperty(logicalId, property)`
 
 - 玩法对象/类约定
   - 字段：`title: string`、`description: string`、`requiredDevices: Array`。
   - 方法：`start(deviceManager, parameters)`、`loop(deviceManager)`、可选 `end(deviceManager)`、可选 `updateParameters(parameters)`。
-  - `requiredDevices` 项示例：`{ logicalId: 'sensor1', name: '压力传感器', required: true }`。
+  - `requiredDevices` 项示例：`{ logicalId: 'sensor1', name: '压力传感器', capabilities: ['pressure', 'reporting'], required: true }`。
 
 - 设备对象（抽象）
   - 最小字段：`id: string`、`name: string`、`type: string`、`status: 'online'|'offline'`、`connected: boolean`、`data: Record<string, any>`。

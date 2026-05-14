@@ -7,7 +7,7 @@
 ## 单文件打包（HTML在JS内部）
 - 存放位置：`backend/game/<name>.js`（沿用现有扫描规则）。
 - 模块导出（最小约定）：
-  - 字段：`title`（string）、`description`（string）、`requiredDevices`（Array<{logicalId, required?, name?}>）
+  - 字段：`title`（string）、`description`（string）、`requiredDevices`（Array<{logicalId, capabilities, required?, name?}>）
   - 方法：`start(deviceManager, parameters)`、`loop(deviceManager)`；可选：`end(deviceManager)`、`updateParameters(parameters)`。
   - 新增：`html`（string）或 `getHtml(): string`，用于返回完整 HTML 页面文本。
 - 说明：不再单独提供 `ui.json`；UI 结构与样式由嵌入式 HTML 自主管理。
@@ -44,7 +44,7 @@
 module.exports = {
   title: '示例联动游戏',
   description: 'HTML内嵌 + SSE 刷新',
-  requiredDevices: [ { logicalId: 'lamp-1', required: false } ],
+  requiredDevices: [ { logicalId: 'lamp-1', capabilities: ['strength'], required: false } ],
   html: `<!doctype html>
 <html><head><meta charset="utf-8"><title>Demo Game</title>
 <style>[data-hide="true"]{display:none}</style></head>

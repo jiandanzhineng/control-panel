@@ -10,10 +10,10 @@ const demo = {
   ],
   requiredDevices: [
     // 示例：非必需设备（无需映射即可运行）
-    { logicalId: 'TD_DEVICE', name: '振动器', type: 'TD01', required: false },
+    { logicalId: 'TD_DEVICE', name: '振动器', capabilities: ['strength'], required: false },
     // 新增：QTZ 设备（测距及脚踏传感器），用于监听按钮属性变化
-    { logicalId: 'QTZ_DEVICE', name: '测距及脚踏传感器', type: 'QTZ', required: true },
-    { logicalId: 'STRENGTH_DEVICE', name: '强度接口设备', interface: 'strength', required: false },
+    { logicalId: 'QTZ_DEVICE', name: '测距及脚踏传感器', capabilities: ['distance', 'buttonInput'], required: true },
+    { logicalId: 'STRENGTH_DEVICE', name: '强度接口设备', capabilities: ['strength'], required: false },
   ],
 
   // 运行时内部状态（不持久化，由玩法自行维护）
@@ -35,11 +35,11 @@ const demo = {
     try {
       deviceManager.listenDeviceProperty('QTZ_DEVICE', 'button0', (newVal, oldVal, ctx) => {
         deviceManager.log('info', 'QTZ button0 属性变化 从'+oldVal+'到'+newVal, { new: newVal, old: oldVal, logicalId: ctx?.logicalId, deviceId: ctx?.deviceId });
-        deviceManager.setDeviceProperty('TD_DEVICE', {'power':50});
+        deviceManager.setStrength('TD_DEVICE', 50);
       });
       deviceManager.listenDeviceProperty('QTZ_DEVICE', 'button1', (newVal, oldVal, ctx) => {
         deviceManager.log('info', 'QTZ button1 属性变化 从'+oldVal+'到'+newVal, { new: newVal, old: oldVal, logicalId: ctx?.logicalId, deviceId: ctx?.deviceId });
-        deviceManager.setDeviceProperty('TD_DEVICE', {'power':150});
+        deviceManager.setStrength('TD_DEVICE', 150);
       });
       deviceManager.log('debug', '已注册 QTZ 设备属性监听', { logicalId: 'QTZ_DEVICE', properties: ['button0', 'button1'] });
     } catch (e) {

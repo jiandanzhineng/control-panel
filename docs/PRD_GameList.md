@@ -109,7 +109,7 @@
   "status": "stopped | running | finished | idle | error",
   "arguments": "可选启动参数",
   "configPath": "外部玩法文件路径",
-  "requiredDevices": [{ "logicalId": "shock_device", "required": true, "name": "电击设备" }],
+  "requiredDevices": [{ "logicalId": "shock_device", "capabilities": ["shock"], "required": true, "name": "电击设备" }],
   "version": "1.0.0",
   "author": "作者",
   "createdAt": 1730000000000,

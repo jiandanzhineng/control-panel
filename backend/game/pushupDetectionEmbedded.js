@@ -25,11 +25,11 @@ const game = {
   ],
 
   requiredDevices: [
-    { logicalId: 'distance_sensor', name: 'QTZ距离传感器', type: 'QTZ', required: true },
-    { logicalId: 'auto_lock', name: '自动锁', type: 'ZIDONGSUO', required: false },
-    { logicalId: 'shock_device', name: '电击设备', type: 'DIANJI', required: false },
-    { logicalId: 'vibrator_device', name: '跳蛋设备', interface: 'strength', required: false },
-    { logicalId: 'pj01_device', name: '捶背控制器', type: 'PJ01', required: false },
+    { logicalId: 'distance_sensor', name: 'QTZ距离传感器', capabilities: ['distance', 'buttonInput'], required: true },
+    { logicalId: 'auto_lock', name: '自动锁', capabilities: ['lock'], required: false },
+    { logicalId: 'shock_device', name: '电击设备', capabilities: ['shock'], required: false },
+    { logicalId: 'vibrator_device', name: '跳蛋设备', capabilities: ['strength'], required: false },
+    { logicalId: 'pj01_device', name: '捶背控制器', capabilities: ['strength'], required: false },
   ],
 
   // 运行时状态
@@ -113,10 +113,10 @@ const game = {
     deviceManager.emitUi({ fields: { statusText: '准备就绪', btnText: '暂停' } });
 
     // 设置 QTZ 阈值与上报延迟（cm->mm）
-    deviceManager.setDeviceProperty('distance_sensor', {
-      low_band: Math.round(r.downThresholdCm * 10),
-      high_band: Math.round(r.upThresholdCm * 10),
-      report_delay_ms: 500,
+    deviceManager.configureDistance('distance_sensor', {
+      lowBand: Math.round(r.downThresholdCm * 10),
+      highBand: Math.round(r.upThresholdCm * 10),
+      reportDelayMs: 500,
     });
 
     // 监听 QTZ 事件（低/高阈值触发）
@@ -204,10 +204,10 @@ const game = {
     this._timers.pj01Timer = null;
 
     // 设备复位
-    deviceManager.setDeviceProperty('shock_device', { shock: 0 });
-    deviceManager.setDeviceProperty('vibrator_device', { power: 0 });
-    deviceManager.setDeviceProperty('pj01_device', { power: 0 });
-    deviceManager.setDeviceProperty('distance_sensor', { report_delay_ms: 10000 });
+    deviceManager.stopShock('shock_device');
+    deviceManager.setStrength('vibrator_device', 0);
+    deviceManager.setStrength('pj01_device', 0);
+    deviceManager.configureDistance('distance_sensor', { reportDelayMs: 10000 });
     this._setLock(deviceManager, true);
 
     deviceManager.emitUi({ fields: { statusText: '训练结束', btnText: '暂停' } });
@@ -259,7 +259,7 @@ const game = {
     r.rewardCount += 1;
     try { deviceManager.emitState({ rewardCount: r.rewardCount, vibratorOn: r.vibratorOn }); } catch(_) {}
     deviceManager.log('warn', `奖励干扰 开始 强度=${r.vibratorIntensity} 时长=${r.vibratorDurationSec}s`);
-    deviceManager.setDeviceProperty('vibrator_device', { power: r.vibratorIntensity });
+    deviceManager.setStrength('vibrator_device', r.vibratorIntensity);
     this._timers.vibratorTimer = setTimeout(() => {
       this._stopVibrator(deviceManager);
     }, Math.max(1, r.vibratorDurationSec) * 1000);
@@ -269,7 +269,7 @@ const game = {
     const r = this._runtime;
     if (!r.vibratorOn) return;
     r.vibratorOn = false;
-    deviceManager.setDeviceProperty('vibrator_device', { power: 0 });
+    deviceManager.setStrength('vibrator_device', 0);
     try { if (this._timers.vibratorTimer) clearTimeout(this._timers.vibratorTimer); } catch (_) {}
     this._timers.vibratorTimer = null;
     deviceManager.log('info', '奖励干扰停止');
@@ -292,7 +292,7 @@ const game = {
     r.lastActionTs = Date.now();
     try { deviceManager.emitState({ shocking: true, lastActionTs: r.lastActionTs }); } catch(_) {}
     deviceManager.log('error', `惩罚 电压=${intensity.toFixed(1)}V 时长=${duration.toFixed(1)}s`);
-    deviceManager.setDeviceProperty('shock_device', { voltage: Math.round(intensity), shock: 1 });
+    deviceManager.startShock('shock_device', { voltage: Math.round(intensity) });
     this._timers.shockTimer = setTimeout(() => { this._stopShock(deviceManager); }, Math.round(duration * 1000));
     this._startPJ01(deviceManager);
   },
@@ -301,7 +301,7 @@ const game = {
     const r = this._runtime;
     if (r.pj01On) return;
     r.pj01On = true;
-    deviceManager.setDeviceProperty('pj01_device', { power: 255 });
+    deviceManager.setStrength('pj01_device', 255);
     this._timers.pj01Timer = setTimeout(() => {
       this._stopPJ01(deviceManager);
     }, Math.max(1, r.pj01DurationSec) * 1000);
@@ -312,7 +312,7 @@ const game = {
     const r = this._runtime;
     if (!r.pj01On) return;
     r.pj01On = false;
-    deviceManager.setDeviceProperty('pj01_device', { power: 0 });
+    deviceManager.setStrength('pj01_device', 0);
     try { if (this._timers.pj01Timer) clearTimeout(this._timers.pj01Timer); } catch (_) {}
     this._timers.pj01Timer = null;
     deviceManager.emitState({ pj01On: r.pj01On });
@@ -323,7 +323,7 @@ const game = {
     if (!r.shocking) return;
     r.shocking = false;
     try { deviceManager.emitState({ shocking: false }); } catch(_) {}
-    deviceManager.setDeviceProperty('shock_device', { shock: 0 });
+    deviceManager.stopShock('shock_device');
     try { if (this._timers.shockTimer) clearTimeout(this._timers.shockTimer); } catch (_) {}
     this._timers.shockTimer = null;
     deviceManager.log('info', '惩罚停止');
@@ -331,7 +331,7 @@ const game = {
 
   _setLock(deviceManager, open) {
     // open=true 解锁；false 锁定
-    deviceManager.setDeviceProperty('auto_lock', { open: open ? 1 : 0 });
+    deviceManager.setLockOpen('auto_lock', open);
     this._runtime.isLocked = !open;
     deviceManager.emitState({ isLocked: this._runtime.isLocked });
   },

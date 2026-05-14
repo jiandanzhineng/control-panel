@@ -1,13 +1,13 @@
 // 后端设备存储与状态管理（去除 Pinia，保留原功能）
-const { 
-  deviceTypeMap, 
-  getDeviceTypeName, 
-  getDeviceOperations, 
-  getDeviceMonitorData, 
-  hasMonitorData, 
+const {
+  deviceTypeMap,
+  getDeviceTypeName,
+  getDeviceMonitorData,
+  hasMonitorData,
   hasOperations,
   getDeviceTypeConfig 
 } = require('../config/deviceTypes');
+const deviceRegistry = require('../devices/registry');
 const fileStorage = require('../utils/fileStorage');
 const logger = require('./logService');
 const mqttClient = require('./mqttClientService');
@@ -254,7 +254,7 @@ async function handleDeviceMessage(message) {
     if (!device) {
       // 设备不存在，自动添加（仅在 report 消息时添加）
       if (payloadObj.method === 'report') {
-        const devType = payloadObj.device_type || 'other';
+        const devType = payloadObj.device_type || 'base';
         const deviceData = {
           id: deviceId,
           name: `${getDeviceTypeName(devType)}-${String(deviceId).slice(-4)}`,
@@ -349,6 +349,12 @@ function publishDeviceAction(id, action, payload = {}) {
   return { ok: true, topic, message };
 }
 
+function publishDeviceMessage(id, message = {}) {
+  const topic = `/drecv/${id}`;
+  mqttClient.publish(topic, message || {});
+  return { ok: true, topic, message };
+}
+
 function deleteDeviceById(id) {
   const before = state.devices.length;
   removeDevice(id);
@@ -377,22 +383,8 @@ function executeDeviceOperation(deviceId, operationKey, params = {}) {
     throw error;
   }
 
-  logger.info('Device', '设备信息');
-
-  const operations = getDeviceOperations(device.type);
-  logger.info('Device', '设备类型支持的操作');
-
-  const operation = operations.find(op => op.key === operationKey);
-  
-  if (!operation) {
-    logger.error('Device', '设备操作失败：操作不存在');
-    const error = new Error(`操作不存在: ${operationKey}`);
-    error.code = 'OPERATION_NOT_FOUND';
-    throw error;
-  }
-
-  // 合并操作数据和参数
-  const mqttData = { ...operation.mqttData, ...params };
+  const deviceType = deviceRegistry.getDeviceType(device.type);
+  const mqttData = deviceType.invokeOperation(device, operationKey, params);
   const topic = `/drecv/${deviceId}`;
   
   logger.info('Device', '准备发送MQTT消息');
@@ -408,6 +400,18 @@ function executeDeviceOperation(deviceId, operationKey, params = {}) {
     wrappedError.originalError = error;
     throw wrappedError;
   }
+}
+
+function invokeDeviceCapability(deviceId, capabilityKey, actionName, input = {}) {
+  const device = getDeviceById(deviceId);
+  if (!device) {
+    const error = new Error('设备不存在');
+    error.code = 'DEVICE_NOT_FOUND';
+    throw error;
+  }
+  const deviceType = deviceRegistry.getDeviceType(device.type);
+  const message = deviceType.invokeCapability(device, capabilityKey, actionName, input || {});
+  return publishDeviceMessage(deviceId, message);
 }
 
 // 获取设备当前监控数据
@@ -452,6 +456,11 @@ function deviceHasOperations(deviceId) {
   return device ? hasOperations(device.type) : false;
 }
 
+function deviceHasCapabilities(deviceId, capabilities = []) {
+  const device = getDeviceById(deviceId);
+  return device ? deviceRegistry.hasCapabilities(device.type, capabilities) : false;
+}
+
 module.exports = {
   // 状态与快照
   state,
@@ -484,13 +493,16 @@ module.exports = {
   updateDeviceMeta,
   notifyDeviceUpdate,
   publishDeviceAction,
+  publishDeviceMessage,
   deleteDeviceById,
   clearDevices,
   getDeviceTypesForApi,
   // 设备操作和监控数据相关
   executeDeviceOperation,
+  invokeDeviceCapability,
   getDeviceMonitorDataForApi,
   getDeviceTypeConfigForApi,
   deviceHasMonitorData,
   deviceHasOperations,
+  deviceHasCapabilities,
 }

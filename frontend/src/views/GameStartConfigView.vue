@@ -63,8 +63,7 @@
                 <strong>{{ row.roleName }}</strong>
                 <div class="role-description">{{ row.roleDescription }}</div>
                 <div class="role-description">
-                  <span v-if="row.deviceInterface">接口：{{ row.deviceInterface }}</span>
-                  <span v-else-if="row.deviceType">类型：{{ typeName(row.deviceType) }}</span>
+                  <span v-if="row.capabilities && row.capabilities.length">能力：{{ row.capabilities.join(', ') }}</span>
                 </div>
               </div>
             </template>
@@ -368,7 +367,7 @@ interface GameItem {
   status?: string;
   arguments?: string;
   configPath?: string;
-  requiredDevices?: Array<{ logicalId?: string; name?: string; type?: string; interface?: string; required?: boolean; description?: string }>;
+  requiredDevices?: Array<{ logicalId?: string; name?: string; capabilities?: string[]; required?: boolean; description?: string }>;
   version?: string;
   author?: string;
   createdAt?: number;
@@ -386,8 +385,7 @@ const gameId = computed(() => String(route.params.id || ''));
 
 const game = ref<GameItem | null>(null);
 const devices = ref<DeviceItem[]>([]);
-const deviceTypeMap = ref<Record<string, string>>({});
-const typeInterfaceMap = ref<Record<string, string[]>>({});
+const typeCapabilityMap = ref<Record<string, string[]>>({});
 const loadingAll = ref(false);
 const error = ref('');
 
@@ -447,28 +445,28 @@ const deviceMappings = computed(() => {
     deviceIds: deviceMapping[rdKey(rd)] || [],
     logicalId: rd.logicalId,
     required: rd.required,
-    deviceType: rd.type,
-    deviceInterface: (rd as any).interface
+    capabilities: rdCapabilities(rd)
   }));
 });
 
 
-function typeSupportsInterface(type?: string, iface?: string) {
-  if (!iface) return true;
+function rdCapabilities(rd: any): string[] {
+  if (Array.isArray(rd?.capabilities)) return rd.capabilities.filter((x: any) => typeof x === 'string' && x.length > 0);
+  return [];
+}
+
+function typeSupportsCapabilities(type?: string, capabilities?: string[]) {
+  const required = Array.isArray(capabilities) ? capabilities : [];
   if (!type) return false;
-  const list = typeInterfaceMap.value[type] || [];
-  return list.includes(iface);
+  const list = typeCapabilityMap.value[type] || [];
+  return required.every(cap => list.includes(cap));
 }
 
 function getAvailableDevicesForRole(row: any) {
-  const deviceType = row.deviceType;
-  const deviceInterface = row.deviceInterface;
-  let filteredDevices = devices.value;
-  if (deviceInterface) {
-    filteredDevices = devices.value.filter(device => device.connected && typeSupportsInterface(device.type, deviceInterface));
-  } else if (deviceType) {
-    filteredDevices = devices.value.filter(device => device.connected && device.type === deviceType);
-  }
+  const capabilities = Array.isArray(row.capabilities) ? row.capabilities : [];
+  const filteredDevices = capabilities.length
+    ? devices.value.filter(device => device.connected && typeSupportsCapabilities(device.type, capabilities))
+    : devices.value.filter(device => device.connected);
   filteredDevices.sort((a, b) => Number(b.connected) - Number(a.connected));
   return filteredDevices.map(device => {
     const devAny = device as any;
@@ -487,30 +485,35 @@ function safeStringify(obj: any) {
   try { return JSON.stringify(obj, null, 2); } catch { return String(obj); }
 }
 
-function typeName(t?: string) {
-  if (!t) return '-';
-  const map = deviceTypeMap.value;
-  return map[t] ?? t;
+function apiErrorMessage(data: any, fallback: string) {
+  return data?.error?.message || data?.message || fallback;
 }
+
 function getDevice(id?: string) { return devices.value.find(d => d.id === id) || null; }
+
+function buildDefaultParameters(meta: any) {
+  const defaults: Record<string, any> = {};
+  if (meta?.parameterSchema && typeof meta.parameterSchema === 'object' && !Array.isArray(meta.parameterSchema)) {
+    for (const [key, item] of Object.entries(meta.parameterSchema as Record<string, any>)) {
+      if (item && Object.prototype.hasOwnProperty.call(item, 'default')) {
+        defaults[key] = item.default;
+      }
+    }
+  } else if (Array.isArray(meta?.parameter)) {
+    for (const item of meta.parameter) {
+      if (item?.key && Object.prototype.hasOwnProperty.call(item, 'default')) {
+        defaults[item.key] = item.default;
+      }
+    }
+  }
+  return defaults;
+}
 
 function updateMapping(row: any) {
   const key = rdKey({ logicalId: row.logicalId, name: row.roleName });
   if (key) {
     deviceMapping[key] = Array.isArray(row.deviceIds) ? row.deviceIds.slice() : [];
   }
-}
-
-function getDeviceStatusType(deviceId: string): string {
-  const device = getDevice(deviceId);
-  if (!device) return 'danger';
-  return device.connected ? 'success' : 'warning';
-}
-
-function getDeviceStatus(deviceId: string): string {
-  const device = getDevice(deviceId);
-  if (!device) return '设备不存在';
-  return device.connected ? '在线' : '离线';
 }
 
 function rdKey(d: { logicalId?: string; name?: string }) {
@@ -530,24 +533,15 @@ function formatMapping(d: { logicalId?: string; name?: string }): string {
   }).join(', ');
 }
 
-function sameTypeDevices(d: { type?: string }) {
-  const t = d?.type;
-  const list = devices.value.filter(dev => !t || dev.type === t);
-  // 在线优先
-  list.sort((a, b) => Number(b.connected) - Number(a.connected));
-  return list;
-}
-
 async function loadAll() {
   loadingAll.value = true;
   error.value = '';
   try {
-    const [gRes, metaRes, dRes, tRes, iRes, cfgRes] = await Promise.all([
+    const [gRes, metaRes, dRes, iRes, cfgRes] = await Promise.all([
       fetch(`/api/games/${encodeURIComponent(gameId.value)}`),
       fetch(`/api/games/${encodeURIComponent(gameId.value)}/meta`),
       fetch('/api/devices'),
-      fetch('/api/device-types'),
-      fetch('/api/device-interfaces'),
+      fetch('/api/device-capabilities'),
       fetch(`/api/games/${encodeURIComponent(gameId.value)}/config`),
     ]);
     const g = await gRes.json();
@@ -561,26 +555,19 @@ async function loadAll() {
     const devs = await dRes.json();
     if (!dRes.ok) throw new Error(devs?.message || '获取设备列表失败');
     devices.value = Array.isArray(devs) ? devs : [];
-    const types = await tRes.json();
-    if (!tRes.ok) throw new Error(types?.message || '获取设备类型失败');
-    deviceTypeMap.value = types || {};
-    const iface = await iRes.json();
-    if (!iRes.ok) throw new Error(iface?.message || '获取设备接口失败');
-    typeInterfaceMap.value = (iface?.typeInterfaceMap) || {};
-    const defaults = (meta && typeof meta.parameter === 'object') ? meta.parameter : {};
+    const capabilityData = await iRes.json();
+    if (!iRes.ok) throw new Error(capabilityData?.message || '获取设备能力失败');
+    typeCapabilityMap.value = (capabilityData?.typeCapabilityMap) || {};
+    const defaults = buildDefaultParameters(meta);
     for (const k of Object.keys(parameters)) delete (parameters as any)[k];
-    Object.assign(parameters, (saved && typeof saved === 'object') ? saved : defaults);
-    // 初始化映射默认值：按类型筛选并默认选择第一项（在线优先）
+    Object.assign(parameters, (saved && typeof saved === 'object' && !Array.isArray(saved)) ? saved : defaults);
+    // 初始化映射默认值：按能力筛选并默认选择第一项（在线优先）
     for (const rd of requiredDevices.value) {
       const key = rdKey(rd);
       if (!key) continue;
       let candidates: DeviceItem[] = [];
-      const ifaceName = (rd as any).interface as string | undefined;
-      if (ifaceName) {
-        candidates = devices.value.filter(d => d.connected && typeSupportsInterface(d.type, ifaceName));
-      } else {
-        candidates = devices.value.filter(d => d.connected && (!rd.type || d.type === rd.type));
-      }
+      const capabilities = rdCapabilities(rd);
+      candidates = devices.value.filter(d => d.connected && typeSupportsCapabilities(d.type, capabilities));
       const candidate = candidates.find(d => d.connected) || undefined;
       deviceMapping[key] = candidate ? [candidate.id] : [];
     }
@@ -605,9 +592,8 @@ function recomputeBlocking() {
     for (const id of ids) {
       const dev = getDevice(id);
       if (!dev || !dev.connected) items.push(`设备离线或不存在: ${key}`);
-      if (rd.type && dev && dev.type !== rd.type) items.push(`类型不匹配(${key}): 期望 ${typeName(rd.type)} 实际 ${typeName(dev?.type)}`);
-      const ifaceName = (rd as any).interface as string | undefined;
-      if (ifaceName && dev && !typeSupportsInterface(dev.type, ifaceName)) items.push(`接口不匹配(${key}): 需 ${ifaceName}`);
+      const capabilities = rdCapabilities(rd);
+      if (capabilities.length && dev && !typeSupportsCapabilities(dev.type, capabilities)) items.push(`能力不匹配(${key}): 需 ${capabilities.join(', ')}`);
     }
   }
   // 参数校验（若有）
@@ -676,7 +662,7 @@ async function start(force: boolean) {
       throw new Error('已有玩法运行中，请先停止再启动');
     }
     if (!res.ok || (data && data.error)) {
-      throw new Error(data?.message || '启动失败');
+      throw new Error(apiErrorMessage(data, '启动失败'));
     }
     // 启动成功，跳转到当前运行页面
     router.push({ name: 'game_current' });

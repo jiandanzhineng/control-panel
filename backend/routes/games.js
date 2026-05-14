@@ -18,6 +18,15 @@ router.get('/', (req, res) => {
   }
 });
 
+// 1.1) 查询玩法运行状态（需放在 /:id 前，避免被识别为游戏 id）
+router.get('/status', (req, res) => {
+  try {
+    res.json(gameplayService.status());
+  } catch (e) {
+    sendError(res, 'GAME_STATUS_FAILED', e?.message || String(e), 500);
+  }
+});
+
 // 2) 查询单个游戏
 router.get('/:id', (req, res) => {
   try {
@@ -121,15 +130,6 @@ router.post('/stop-current', (req, res) => {
     res.json({ ok: true, result, status: gameplayService.status() });
   } catch (e) {
     sendError(res, 'GAME_STOP_FAILED', e?.message || String(e), 500);
-  }
-});
-
-// 8) 查询玩法运行状态
-router.get('/status', (req, res) => {
-  try {
-    res.json(gameplayService.status());
-  } catch (e) {
-    sendError(res, 'GAME_STATUS_FAILED', e?.message || String(e), 500);
   }
 });
 

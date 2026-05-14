@@ -12,9 +12,9 @@ const pelvicTraining = {
   ],
 
   requiredDevices: [
-    { logicalId: 'QIYA_DEVICE', name: '气压传感器', type: 'QIYA', required: true },
-    { logicalId: 'DIANJI_DEVICE', name: '电击设备', type: 'DIANJI', required: false },
-    { logicalId: 'ZIDONGSUO_DEVICE', name: '自动锁', type: 'ZIDONGSUO', required: false },
+    { logicalId: 'QIYA_DEVICE', name: '气压传感器', capabilities: ['pressure', 'reporting'], required: true },
+    { logicalId: 'DIANJI_DEVICE', name: '电击设备', capabilities: ['shock'], required: false },
+    { logicalId: 'ZIDONGSUO_DEVICE', name: '自动锁', capabilities: ['lock'], required: false },
   ],
 
   _runtime: {
@@ -56,9 +56,9 @@ const pelvicTraining = {
     this._runtime.phaseStartTs = now;
     this._runtime.successCount = 0;
     this._runtime.shockCount = 0;
-    try { deviceManager.setDeviceProperty('QIYA_DEVICE', { report_delay_ms: 100 }); } catch(_) {}
-    try { deviceManager.setDeviceProperty('ZIDONGSUO_DEVICE', { open: 0 }); } catch(_) {}
-    try { deviceManager.setDeviceProperty('DIANJI_DEVICE', { voltage: this._runtime.config.shockIntensity, shock: 0 }); } catch(_) {}
+    try { deviceManager.setReportDelay('QIYA_DEVICE', 100); } catch(_) {}
+    try { deviceManager.setLockOpen('ZIDONGSUO_DEVICE', false); } catch(_) {}
+    try { deviceManager.stopShock('DIANJI_DEVICE'); } catch(_) {}
     try {
       deviceManager.listenDeviceProperty('QIYA_DEVICE', 'pressure', (newVal) => {
         const p = Number(newVal) || 0;
@@ -158,9 +158,9 @@ const pelvicTraining = {
   },
 
   end(deviceManager) {
-    try { deviceManager.setDeviceProperty('DIANJI_DEVICE', { shock: 0 }); } catch(_) {}
-    try { deviceManager.setDeviceProperty('ZIDONGSUO_DEVICE', { open: 1 }); } catch(_) {}
-    try { deviceManager.setDeviceProperty('QIYA_DEVICE', { report_delay_ms: 5000 }); } catch(_) {}
+    try { deviceManager.stopShock('DIANJI_DEVICE'); } catch(_) {}
+    try { deviceManager.setLockOpen('ZIDONGSUO_DEVICE', true); } catch(_) {}
+    try { deviceManager.setReportDelay('QIYA_DEVICE', 5000); } catch(_) {}
     this._runtime.running = false;
     this._runtime.paused = false;
     if (this._runtime.shockTimer) { clearTimeout(this._runtime.shockTimer); this._runtime.shockTimer = null; }
@@ -204,10 +204,10 @@ const pelvicTraining = {
     try {
       this._runtime.isShocking = true;
       this._runtime.shockCount += 1;
-      deviceManager.setDeviceProperty('DIANJI_DEVICE', { voltage: cfg.shockIntensity, shock: 1 });
+      deviceManager.startShock('DIANJI_DEVICE', { voltage: cfg.shockIntensity });
       if (this._runtime.shockTimer) clearTimeout(this._runtime.shockTimer);
       this._runtime.shockTimer = setTimeout(() => {
-        try { deviceManager.setDeviceProperty('DIANJI_DEVICE', { shock: 0 }); } catch(_) {}
+        try { deviceManager.stopShock('DIANJI_DEVICE'); } catch(_) {}
         this._runtime.isShocking = false;
       }, Math.max(100, cfg.shockDuration * 1000));
     } catch(_) {

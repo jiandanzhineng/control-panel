@@ -20,10 +20,10 @@ const pressureEdging = {
   ],
 
   requiredDevices: [
-    { logicalId: 'QIYA_DEVICE', name: '气压传感器', type: 'QIYA', required: true },
-    { logicalId: 'TD_DEVICE', name: '偏轴电机控制器', interface: 'strength', required: true },
-    { logicalId: 'DIANJI_DEVICE', name: '电击设备', type: 'DIANJI', required: false },
-    { logicalId: 'ZIDONGSUO_DEVICE', name: '自动锁', type: 'ZIDONGSUO', required: false },
+    { logicalId: 'QIYA_DEVICE', name: '气压传感器', capabilities: ['pressure', 'reporting'], required: true },
+    { logicalId: 'TD_DEVICE', name: '偏轴电机控制器', capabilities: ['strength'], required: true },
+    { logicalId: 'DIANJI_DEVICE', name: '电击设备', capabilities: ['shock'], required: false },
+    { logicalId: 'ZIDONGSUO_DEVICE', name: '自动锁', capabilities: ['lock'], required: false },
   ],
 
   // 玩法运行态（非持久）
@@ -89,13 +89,13 @@ const pressureEdging = {
     // 初始化设备状态
     try {
       // 加快气压上报以提升响应
-      deviceManager.setDeviceProperty('QIYA_DEVICE', { report_delay_ms: 100 });
+      deviceManager.setReportDelay('QIYA_DEVICE', 100);
       // 电机归零
-      deviceManager.setDeviceProperty('TD_DEVICE', { power: 0 });
+      deviceManager.setStrength('TD_DEVICE', 0);
       // 自动锁（若存在）上锁
-      deviceManager.setDeviceProperty('ZIDONGSUO_DEVICE', { open: 0 });
+      deviceManager.setLockOpen('ZIDONGSUO_DEVICE', false);
       // 电击设备预设电压
-      deviceManager.setDeviceProperty('DIANJI_DEVICE', { voltage: this._runtime.config.shockIntensity, shock: 0 });
+      deviceManager.stopShock('DIANJI_DEVICE');
     } catch (e) {
       deviceManager.log('warn', '初始化设备状态失败', { error: e?.message || String(e) });
     }
@@ -236,7 +236,7 @@ const pressureEdging = {
     try {
       const rounded = Math.round(next);
       if (!Number.isNaN(rounded)) {
-        deviceManager.setDeviceProperty('TD_DEVICE', { power: rounded });
+        deviceManager.setStrength('TD_DEVICE', rounded);
         this._runtime.currentIntensity = rounded;
       }
     } catch (e) {
@@ -262,11 +262,11 @@ const pressureEdging = {
 
   end(deviceManager) {
     // 结束前复位设备
-    try { deviceManager.setDeviceProperty('TD_DEVICE', { power: 0 }); } catch(_) {}
-    try { deviceManager.setDeviceProperty('DIANJI_DEVICE', { shock: 0 }); } catch(_) {}
-    try { deviceManager.setDeviceProperty('ZIDONGSUO_DEVICE', { open: 1 }); } catch(_) {}
+    try { deviceManager.setStrength('TD_DEVICE', 0); } catch(_) {}
+    try { deviceManager.stopShock('DIANJI_DEVICE'); } catch(_) {}
+    try { deviceManager.setLockOpen('ZIDONGSUO_DEVICE', true); } catch(_) {}
     // 恢复气压上报速率
-    try { deviceManager.setDeviceProperty('QIYA_DEVICE', { report_delay_ms: 5000 }); } catch(_) {}
+    try { deviceManager.setReportDelay('QIYA_DEVICE', 5000); } catch(_) {}
 
     // 关闭内部状态
     this._runtime.running = false;
@@ -328,10 +328,10 @@ const pressureEdging = {
       this._runtime.lastShockTime = Date.now();
       this._runtime.shockCount += 1;
       deviceManager.log('warn', `触发电击 — ${cfg.shockIntensity}V / ${cfg.shockDuration}s`);
-      deviceManager.setDeviceProperty('DIANJI_DEVICE', { voltage: cfg.shockIntensity, shock: 1 });
+      deviceManager.startShock('DIANJI_DEVICE', { voltage: cfg.shockIntensity });
       if (this._runtime.shockTimer) clearTimeout(this._runtime.shockTimer);
       this._runtime.shockTimer = setTimeout(() => {
-        try { deviceManager.setDeviceProperty('DIANJI_DEVICE', { shock: 0 }); } catch(_) {}
+        try { deviceManager.stopShock('DIANJI_DEVICE'); } catch(_) {}
         this._runtime.isShocking = false;
         deviceManager.log('info', '电击结束');
       }, Math.max(100, cfg.shockDuration * 1000));

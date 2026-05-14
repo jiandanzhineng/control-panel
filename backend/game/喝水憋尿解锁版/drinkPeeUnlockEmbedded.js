@@ -16,12 +16,12 @@ const drinkPeeUnlock = {
     { key: 'vibeDuration', type: 'number', name: '振动时长(秒)', required: false, default: 3, min: 0.1, max: 60, step: 0.1 },
   ],
   requiredDevices: [
-    { logicalId: 'SCALE_DEVICE', name: '电子秤', type: 'DZC01', required: true },
-    { logicalId: 'QIYA_DEVICE', name: '气压传感器', type: 'QIYA', required: false },
-    { logicalId: 'QTZ_DEVICE', name: '踮脚感受器', type: 'QTZ', required: false },
-    { logicalId: 'DIANJI_DEVICE', name: '电击设备', type: 'DIANJI', required: false },
-    { logicalId: 'VIBE_DEVICE', name: '振动设备', interface: 'strength', required: false },
-    { logicalId: 'ZIDONGSUO_DEVICE', name: '自动锁', type: 'ZIDONGSUO', required: false },
+    { logicalId: 'SCALE_DEVICE', name: '电子秤', capabilities: ['weight', 'reporting'], required: true },
+    { logicalId: 'QIYA_DEVICE', name: '气压传感器', capabilities: ['pressure', 'reporting'], required: false },
+    { logicalId: 'QTZ_DEVICE', name: '踮脚感受器', capabilities: ['buttonInput'], required: false },
+    { logicalId: 'DIANJI_DEVICE', name: '电击设备', capabilities: ['shock'], required: false },
+    { logicalId: 'VIBE_DEVICE', name: '振动设备', capabilities: ['strength'], required: false },
+    { logicalId: 'ZIDONGSUO_DEVICE', name: '自动锁', capabilities: ['lock'], required: false },
   ],
   _runtime: {
     config: {
@@ -109,10 +109,10 @@ const drinkPeeUnlock = {
     if (rt.vibeTimer) clearTimeout(rt.vibeTimer);
     rt.vibeTimer = null;
 
-    try { deviceManager.setDeviceProperty('SCALE_DEVICE', { report_delay_ms: 1000 }); } catch (_) {}
-    try { deviceManager.setDeviceProperty('ZIDONGSUO_DEVICE', { open: 0 }); } catch (_) {}
-    try { deviceManager.setDeviceProperty('DIANJI_DEVICE', { shock: 0, voltage: rt.config.shockIntensity }); } catch (_) {}
-    try { deviceManager.setDeviceProperty('VIBE_DEVICE', { power: 0 }); } catch (_) {}
+    try { deviceManager.setReportDelay('SCALE_DEVICE', 1000); } catch (_) {}
+    try { deviceManager.setLockOpen('ZIDONGSUO_DEVICE', false); } catch (_) {}
+    try { deviceManager.stopShock('DIANJI_DEVICE'); } catch (_) {}
+    try { deviceManager.setStrength('VIBE_DEVICE', 0); } catch (_) {}
 
     this._registerListeners(deviceManager);
 
@@ -190,10 +190,10 @@ const drinkPeeUnlock = {
     if (rt.vibeTimer) clearTimeout(rt.vibeTimer);
     rt.vibeTimer = null;
 
-    try { deviceManager.setDeviceProperty('VIBE_DEVICE', { power: 0 }); } catch (_) {}
-    try { deviceManager.setDeviceProperty('DIANJI_DEVICE', { shock: 0 }); } catch (_) {}
-    try { deviceManager.setDeviceProperty('ZIDONGSUO_DEVICE', { open: 1 }); } catch (_) {}
-    try { deviceManager.setDeviceProperty('SCALE_DEVICE', { report_delay_ms: 5000 }); } catch (_) {}
+    try { deviceManager.setStrength('VIBE_DEVICE', 0); } catch (_) {}
+    try { deviceManager.stopShock('DIANJI_DEVICE'); } catch (_) {}
+    try { deviceManager.setLockOpen('ZIDONGSUO_DEVICE', true); } catch (_) {}
+    try { deviceManager.setReportDelay('SCALE_DEVICE', 5000); } catch (_) {}
 
     deviceManager.emitUi({ fields: { statusText: '已结束' } });
     deviceManager.emitState({ running: false, state: 'End', ...this._snapshotState() });
@@ -376,7 +376,7 @@ const drinkPeeUnlock = {
     const shockDurationMs = Math.max(100, (Number(rt.config.shockDuration) || 0) * 1000);
     const voltage = Number(rt.config.shockIntensity) || 0;
 
-    try { deviceManager.setDeviceProperty('DIANJI_DEVICE', { voltage, shock: 1 }); } catch (_) {}
+    try { deviceManager.startShock('DIANJI_DEVICE', { voltage }); } catch (_) {}
     rt.shockCount += 1;
     deviceManager.emitUi({ fields: { statusText: `惩罚：${rt.lastPunishReason}` } });
     deviceManager.emitState(this._snapshotState());
@@ -384,7 +384,7 @@ const drinkPeeUnlock = {
 
     if (rt.shockTimer) clearTimeout(rt.shockTimer);
     rt.shockTimer = setTimeout(() => {
-      try { deviceManager.setDeviceProperty('DIANJI_DEVICE', { shock: 0 }); } catch (_) {}
+      try { deviceManager.stopShock('DIANJI_DEVICE'); } catch (_) {}
       this._enterCooldown(deviceManager);
     }, shockDurationMs);
 
@@ -406,8 +406,8 @@ const drinkPeeUnlock = {
     rt.state = 'Unlocked';
     rt.lastPunishReason = String(reason || '已解锁');
     this._stopVibe(deviceManager);
-    try { deviceManager.setDeviceProperty('DIANJI_DEVICE', { shock: 0 }); } catch (_) {}
-    try { deviceManager.setDeviceProperty('ZIDONGSUO_DEVICE', { open: 1 }); } catch (_) {}
+    try { deviceManager.stopShock('DIANJI_DEVICE'); } catch (_) {}
+    try { deviceManager.setLockOpen('ZIDONGSUO_DEVICE', true); } catch (_) {}
     deviceManager.emitUi({ fields: { statusText: `已解锁：${rt.lastPunishReason}` } });
     deviceManager.emitState(this._snapshotState());
     deviceManager.log('info', `解锁成功: ${rt.lastPunishReason}`);
@@ -421,7 +421,7 @@ const drinkPeeUnlock = {
     const power = Math.round((intensity / 100) * 255);
     const durationMs = Math.max(100, (Number(rt.config.vibeDuration) || 0) * 1000);
 
-    try { deviceManager.setDeviceProperty('VIBE_DEVICE', { power }); } catch (_) {}
+    try { deviceManager.setStrength('VIBE_DEVICE', power); } catch (_) {}
     deviceManager.emitState({ vibeActive: true, vibePower: power });
 
     if (rt.vibeTimer) clearTimeout(rt.vibeTimer);
@@ -432,13 +432,13 @@ const drinkPeeUnlock = {
   _stopVibe(deviceManager) {
     const rt = this._runtime;
     if (!rt.vibeActive) {
-      try { deviceManager.setDeviceProperty('VIBE_DEVICE', { power: 0 }); } catch (_) {}
+      try { deviceManager.setStrength('VIBE_DEVICE', 0); } catch (_) {}
       return;
     }
     rt.vibeActive = false;
     if (rt.vibeTimer) clearTimeout(rt.vibeTimer);
     rt.vibeTimer = null;
-    try { deviceManager.setDeviceProperty('VIBE_DEVICE', { power: 0 }); } catch (_) {}
+    try { deviceManager.setStrength('VIBE_DEVICE', 0); } catch (_) {}
     deviceManager.emitState({ vibeActive: false, vibePower: 0 });
   },
 

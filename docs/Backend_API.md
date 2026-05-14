@@ -20,7 +20,7 @@ SSE 使用说明
 - 网络信息（/api/network）
 - mDNS 管理（/api/mdns）
 - 设备管理与监控（/api/devices）
-- 设备类型与接口（/api/device-types, /api/device-interfaces）
+- 设备类型与能力（/api/device-types, /api/device-capabilities）
 - 游戏资源与运行（/api/games，含运行期流）
 - 日志系统（/api/logs）
 - 测试平台（/api/test）
@@ -97,16 +97,16 @@ mDNS 管理（/api/mdns）
 - GET `/api/devices/:id/monitor-stream`（SSE）  
   持续推送监控更新。进入流式模式时将设备 `report_delay_ms` 调整为 250ms，断开后恢复为 5000ms
 
-设备类型与接口  
-实现参考： [deviceTypes.js](file:///e:/develop/control-panel/backend/routes/deviceTypes.js)、[deviceInterfaces.js](file:///e:/develop/control-panel/backend/routes/deviceInterfaces.js)
+设备类型与能力
+实现参考： [deviceTypes.js](file:///e:/develop/control-panel/backend/routes/deviceTypes.js)、[deviceCapabilities.js](file:///e:/develop/control-panel/backend/routes/deviceCapabilities.js)
 - GET `/api/device-types/`  
   返回设备类型映射
 - GET `/api/device-types/configs`  
   返回所有类型配置
 - GET `/api/device-types/:type/config`  
-  返回指定类型配置（不存在返回 404）
-- GET `/api/device-interfaces/`  
-  返回 `{ interfaces, interfaceConfig, typeInterfaceMap }`
+  返回指定类型配置；未知类型返回无能力的基础配置
+- GET `/api/device-capabilities/`
+  返回 `{ capabilities, capabilityConfig, typeCapabilityMap }`
 
 游戏资源与运行（/api/games）  
 实现参考： [games.js](file:///e:/develop/control-panel/backend/routes/games.js)、[gameplay.js](file:///e:/develop/control-panel/backend/routes/gameplay.js)
