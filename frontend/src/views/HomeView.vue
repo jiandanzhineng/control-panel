@@ -49,6 +49,33 @@
         <el-descriptions-item label="当前版本">
           <el-tag type="success" effect="plain">v{{ frontendVersion }}</el-tag>
         </el-descriptions-item>
+        <el-descriptions-item label="更新渠道">
+          <div class="update-channel">
+            <el-tag :type="updateChannelTagType" effect="plain">{{ updateChannelText }}</el-tag>
+            <el-switch
+              v-model="receiveTestUpdates"
+              :loading="updateSettingsLoading"
+              :disabled="!hasUpdateApi"
+              active-text="测试版"
+              inactive-text="正式版"
+              inline-prompt
+              @change="saveUpdateSettings"
+            />
+          </div>
+        </el-descriptions-item>
+        <el-descriptions-item label="应用更新">
+          <div class="update-actions">
+            <el-button
+              size="small"
+              :loading="checkingUpdates"
+              :disabled="!hasUpdateApi"
+              @click="checkForUpdates"
+            >
+              检查更新
+            </el-button>
+            <span v-if="updateMessage" :class="updateMessageClass">{{ updateMessage }}</span>
+          </div>
+        </el-descriptions-item>
         <el-descriptions-item label="淘宝店">
           <a href="http://guijizhixia.taobao.com/" target="_blank" class="link-text">guijizhixia.taobao.com</a>
         </el-descriptions-item>
@@ -65,12 +92,95 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { computed, ref, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Monitor, VideoPlay, Connection, InfoFilled } from '@element-plus/icons-vue'
 import packageInfo from '../../package.json'
 
 const frontendVersion = packageInfo.version
 const onlineCount = ref(0)
+const receiveTestUpdates = ref(false)
+const updateChannel = ref<UpdateChannel>('stable')
+const updateSettingsLoading = ref(false)
+const checkingUpdates = ref(false)
+const updateMessage = ref('')
+const updateMessageType = ref<'info' | 'success' | 'error'>('info')
+
+const hasUpdateApi = computed(() => !!window.updateApi)
+const updateChannelText = computed(() => updateChannel.value === 'test' ? '测试版' : '正式版')
+const updateChannelTagType = computed(() => updateChannel.value === 'test' ? 'warning' : 'success')
+const updateMessageClass = computed(() => ({
+  'update-message': true,
+  'update-message-error': updateMessageType.value === 'error',
+  'update-message-success': updateMessageType.value === 'success',
+}))
+
+function applyUpdateStatus(status: UpdateStatus) {
+  receiveTestUpdates.value = !!status.settings.receiveTestUpdates
+  updateChannel.value = status.channel
+}
+
+async function loadUpdateSettings() {
+  if (!window.updateApi) return
+  updateSettingsLoading.value = true
+  try {
+    const status = await window.updateApi.getSettings()
+    applyUpdateStatus(status)
+  } catch (error: any) {
+    updateMessageType.value = 'error'
+    updateMessage.value = error?.message || '更新设置读取失败'
+  } finally {
+    updateSettingsLoading.value = false
+  }
+}
+
+async function saveUpdateSettings() {
+  if (!window.updateApi) return
+  updateSettingsLoading.value = true
+  updateMessage.value = ''
+  try {
+    const status = await window.updateApi.setSettings({
+      receiveTestUpdates: receiveTestUpdates.value,
+    })
+    applyUpdateStatus(status)
+    updateMessageType.value = 'success'
+    updateMessage.value = `已切换到${updateChannelText.value}`
+  } catch (error: any) {
+    receiveTestUpdates.value = !receiveTestUpdates.value
+    updateMessageType.value = 'error'
+    updateMessage.value = error?.message || '更新设置保存失败'
+    ElMessage.error(updateMessage.value)
+  } finally {
+    updateSettingsLoading.value = false
+  }
+}
+
+async function checkForUpdates() {
+  if (!window.updateApi) return
+  checkingUpdates.value = true
+  updateMessage.value = ''
+  try {
+    const status = await window.updateApi.checkForUpdates()
+    applyUpdateStatus(status)
+    if (status.error) {
+      updateMessageType.value = 'error'
+      updateMessage.value = status.error
+      return
+    }
+    if (status.skipped) {
+      updateMessageType.value = 'info'
+      updateMessage.value = '开发环境不可用'
+      return
+    }
+    updateMessageType.value = 'success'
+    updateMessage.value = '已开始检查'
+  } catch (error: any) {
+    updateMessageType.value = 'error'
+    updateMessage.value = error?.message || '检查更新失败'
+  } finally {
+    checkingUpdates.value = false
+  }
+}
 
 onMounted(async () => {
   try {
@@ -80,6 +190,8 @@ onMounted(async () => {
       onlineCount.value = list.filter((d: any) => d.connected).length
     }
   } catch {}
+
+  await loadUpdateSettings()
 })
 </script>
 
@@ -171,6 +283,32 @@ onMounted(async () => {
 .info-text {
   font-weight: 600;
   color: #303133;
+}
+
+.update-channel,
+.update-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 24px;
+}
+
+.update-message {
+  font-size: 12px;
+  color: #606266;
+}
+
+.update-message-success {
+  color: #16a34a;
+}
+
+.update-message-error {
+  color: #e11d48;
+}
+
+.update-channel :deep(.el-switch) {
+  min-width: 88px;
 }
 
 .info-list :deep(.el-descriptions__label) {

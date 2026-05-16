@@ -1,5 +1,5 @@
 const path = require('path');
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
@@ -8,6 +8,106 @@ const fs = require('fs');
 let server;
 let frontendServer;
 let mainWindow;
+let updateInitialized = false;
+
+const UPDATE_FEEDS = {
+  stable: 'http://firmware.undersilicon.cn/control-panel/stable/',
+  test: 'http://firmware.undersilicon.cn/control-panel/test/',
+};
+
+function getUpdateSettingsPath() {
+  return path.join(app.getPath('userData'), 'update-settings.json');
+}
+
+function getDefaultUpdateSettings() {
+  let receiveTestUpdates = false;
+  try {
+    receiveTestUpdates = app.getVersion().includes('-');
+  } catch {}
+  return { receiveTestUpdates };
+}
+
+function normalizeUpdateSettings(settings = {}, defaults = getDefaultUpdateSettings()) {
+  return {
+    receiveTestUpdates:
+      settings.receiveTestUpdates == null
+        ? !!defaults.receiveTestUpdates
+        : !!settings.receiveTestUpdates,
+  };
+}
+
+function readUpdateSettings() {
+  try {
+    const raw = fs.readFileSync(getUpdateSettingsPath(), 'utf-8');
+    return normalizeUpdateSettings(JSON.parse(raw));
+  } catch {
+    return getDefaultUpdateSettings();
+  }
+}
+
+function writeUpdateSettings(settings) {
+  const normalized = normalizeUpdateSettings(settings);
+  fs.mkdirSync(path.dirname(getUpdateSettingsPath()), { recursive: true });
+  fs.writeFileSync(
+    getUpdateSettingsPath(),
+    JSON.stringify(normalized, null, 2) + '\n',
+    'utf-8',
+  );
+  return normalized;
+}
+
+function getUpdateChannel(settings = readUpdateSettings()) {
+  return settings.receiveTestUpdates ? 'test' : 'stable';
+}
+
+function getUpdateStatus(settings = readUpdateSettings()) {
+  const channel = getUpdateChannel(settings);
+  return {
+    settings,
+    channel,
+    feedUrl: UPDATE_FEEDS[channel],
+  };
+}
+
+function configureAutoUpdate(settings = readUpdateSettings()) {
+  if (!app.isPackaged) return getUpdateStatus(settings);
+
+  const status = getUpdateStatus(settings);
+  autoUpdater.allowPrerelease = status.channel === 'test';
+  try {
+    autoUpdater.setFeedURL({ provider: 'generic', url: status.feedUrl });
+  } catch (error) {
+    console.error('[electron] Failed to set update feed URL:', error);
+  }
+  return status;
+}
+
+function registerUpdateIpcHandlers() {
+  ipcMain.handle('update:get-settings', () => getUpdateStatus());
+
+  ipcMain.handle('update:set-settings', (_event, settings = {}) => {
+    const saved = writeUpdateSettings(settings);
+    return configureAutoUpdate(saved);
+  });
+
+  ipcMain.handle('update:check', async () => {
+    if (!app.isPackaged) {
+      return { skipped: true, reason: 'not-packaged', ...getUpdateStatus() };
+    }
+
+    const status = configureAutoUpdate();
+    try {
+      const result = await autoUpdater.checkForUpdatesAndNotify();
+      return { skipped: false, result: !!result, ...status };
+    } catch (error) {
+      return {
+        skipped: false,
+        error: error?.message || String(error),
+        ...status,
+      };
+    }
+  });
+}
 
 // 获取资源路径，兼容开发和打包环境
 function getResourcePath(relativePath) {
@@ -52,7 +152,13 @@ function createWindow() {
 function initAutoUpdate() {
   if (!app.isPackaged) return;
 
-  try { autoUpdater.setFeedURL({ provider: 'generic', url: 'https://update.ezsapi.top/control-panel/' }); } catch {}
+  if (updateInitialized) {
+    configureAutoUpdate();
+    return;
+  }
+  updateInitialized = true;
+
+  configureAutoUpdate();
 
   autoUpdater.on('update-available', () => {});
 
@@ -160,6 +266,7 @@ function startBackendThenWindow() {
 }
 
 app.whenReady().then(() => {
+  registerUpdateIpcHandlers();
   startBackendThenWindow();
   initAutoUpdate();
 });
