@@ -90,6 +90,26 @@ NSIS 配置：
 
 `build:installer` 显式带 `--publish=never`，不会自动发布。
 
+GitHub Actions 按 tag 区分发布渠道：
+
+- 正式版 tag：`v1.0.28`，发布到 GitHub Release，并上传更新文件到 OSS `stable/` 目录。
+- 测试版 tag：`v1.0.28-beta.1`，发布为 GitHub prerelease，并上传更新文件到 OSS `test/` 目录。
+
+上传到 OSS 的自动更新文件包括：
+
+- `dist/*.exe`
+- `dist/*.blockmap`
+- `dist/latest.yml`
+- `dist/control-panel-*.zip`
+
+源码压缩包随每次 tag 发布生成：
+
+- 正式版：`control-panel-stable.zip`，上传到 `control-panel/stable/`。
+- 测试版：`control-panel-test.zip`，上传到 `control-panel/test/`。
+- 压缩包顶层目录固定为 `control-panel-main/`，用于兼容 `sh/run_control_panel.sh` 的命令行部署流程。
+
+OSS 上传依赖仓库 secrets：`OSS_ENDPOINT`、`OSS_BUCKET`、`OSS_ACCESS_KEY_ID`、`OSS_ACCESS_KEY_SECRET`、`OSS_PREFIX`。当前控制面板更新目录建议将 `OSS_PREFIX` 配置为 `control-panel`。
+
 ## 打包后运行模型
 
 打包应用启动后：

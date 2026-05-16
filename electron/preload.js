@@ -1,4 +1,12 @@
+const { ipcRenderer } = require('electron');
+
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
+
+window.updateApi = {
+  getSettings: () => ipcRenderer.invoke('update:get-settings'),
+  setSettings: (settings) => ipcRenderer.invoke('update:set-settings', settings),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+};
 
 // 重写 fetch，将相对路径 /api/* 指向本机后端
 const origFetch = window.fetch.bind(window);

@@ -16,12 +16,57 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
       
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '22.5.1'
         cache: 'npm'
+
+    - name: Resolve release channel
+      id: release_channel
+      shell: powershell
+      run: |
+        $refName = "${{ github.ref_name }}"
+        $isTaggedRelease = "${{ startsWith(github.ref, 'refs/tags/') }}" -eq "true"
+        $isPrerelease = $false
+        if ($isTaggedRelease -and $refName -match "-") {
+          $isPrerelease = $true
+        }
+
+        $channel = "stable"
+        if ($isPrerelease) {
+          $channel = "test"
+        }
+
+        "channel=$channel" >> $env:GITHUB_OUTPUT
+        "prerelease=$($isPrerelease.ToString().ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+        Write-Host "Release channel: $channel"
+        Write-Host "Prerelease: $isPrerelease"
+
+    - name: Validate release source branch
+      if: startsWith(github.ref, 'refs/tags/')
+      shell: powershell
+      run: |
+        $channel = "${{ steps.release_channel.outputs.channel }}"
+        $sha = (git rev-parse HEAD).Trim()
+        $tagName = "${{ github.ref_name }}"
+        $requiredBranchName = if ($channel -eq "stable") { "main" } else { "develop" }
+        $requiredBranch = "origin/$requiredBranchName"
+
+        git fetch --no-tags --force origin "${requiredBranchName}:refs/remotes/origin/${requiredBranchName}"
+        if ($LASTEXITCODE -ne 0) {
+          throw "Failed to fetch $requiredBranch for release source validation"
+        }
+
+        git merge-base --is-ancestor $sha $requiredBranch
+        if ($LASTEXITCODE -ne 0) {
+          throw "Release tag $tagName ($sha) must point to a commit reachable from $requiredBranch for $channel releases"
+        }
+
+        Write-Host "Release tag $tagName is reachable from $requiredBranch"
         
     - name: Install dependencies
       run: |
@@ -39,21 +84,139 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Normalize update manifest
+      shell: powershell
+      run: |
+        if (Test-Path "dist/latest.yml") {
+          Write-Host "dist/latest.yml already exists"
+          exit 0
+        }
+
+        $manifest = Get-ChildItem -Path "dist" -File -Filter "*.yml" |
+          Where-Object { $_.Name -notlike "builder-*" } |
+          Select-Object -First 1
+        if ($manifest) {
+          Copy-Item $manifest.FullName "dist/latest.yml" -Force
+          Write-Host "Copied $($manifest.Name) to latest.yml"
+          exit 0
+        }
+
+        throw "No Electron update manifest found in dist"
+
+    - name: Create source archive
+      if: startsWith(github.ref, 'refs/tags/')
+      shell: powershell
+      run: |
+        $channel = "${{ steps.release_channel.outputs.channel }}"
+        $archiveName = "control-panel-$channel.zip"
+        $archivePath = "dist/$archiveName"
+
+        New-Item -ItemType Directory -Force -Path "dist" | Out-Null
+        if (Test-Path $archivePath) {
+          Remove-Item $archivePath -Force
+        }
+
+        git archive --format=zip --output=$archivePath --prefix="control-panel-main/" HEAD
+        if ($LASTEXITCODE -ne 0) {
+          throw "Failed to create source archive"
+        }
+
+        Write-Host "Created $archivePath"
+
     - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
         files: |
           ./dist/*.exe
           ./dist/*.blockmap
           ./dist/latest.yml
+          ./dist/control-panel-*.zip
         name: Release ${{ github.ref_name }}
         tag_name: ${{ github.ref_name }}
         draft: false
-        prerelease: false
+        prerelease: ${{ steps.release_channel.outputs.prerelease }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Upload update files to Aliyun OSS
+      if: startsWith(github.ref, 'refs/tags/')
+      env:
+        OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+        OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
+        OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+        OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+        OSS_PREFIX: ${{ secrets.OSS_PREFIX }}
+        RELEASE_CHANNEL: ${{ steps.release_channel.outputs.channel }}
+      shell: powershell
+      run: |
+        $required = @(
+          "OSS_ENDPOINT",
+          "OSS_BUCKET",
+          "OSS_ACCESS_KEY_ID",
+          "OSS_ACCESS_KEY_SECRET",
+          "OSS_PREFIX"
+        )
+
+        $missing = @()
+        foreach ($name in $required) {
+          if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+            $missing += $name
+          }
+        }
+
+        if ($missing.Count -gt 0) {
+          foreach ($name in $missing) {
+            Write-Host "::warning::$name is not configured; skipping Aliyun OSS upload"
+          }
+          exit 0
+        }
+
+        $files = Get-ChildItem -Path "dist" -File |
+          Where-Object { $_.Name -like "*.exe" -or $_.Name -like "*.blockmap" -or $_.Name -eq "latest.yml" -or $_.Name -like "control-panel-*.zip" }
+
+        if (-not $files) {
+          throw "No update files found in dist"
+        }
+
+        python -m pip install --upgrade pip
+        python -m pip install oss2
+
+        $uploadScript = @'
+        import os
+        from pathlib import Path
+        import oss2
+
+        endpoint = os.environ["OSS_ENDPOINT"]
+        bucket_name = os.environ["OSS_BUCKET"]
+        access_key_id = os.environ["OSS_ACCESS_KEY_ID"]
+        access_key_secret = os.environ["OSS_ACCESS_KEY_SECRET"]
+        prefix = os.environ["OSS_PREFIX"].strip("/")
+        channel = os.environ["RELEASE_CHANNEL"].strip("/") or "stable"
+
+        auth = oss2.Auth(access_key_id, access_key_secret)
+        bucket = oss2.Bucket(auth, endpoint, bucket_name)
+
+        object_prefix = f"{prefix}/{channel}" if prefix else channel
+        files = sorted(
+            path for path in Path("dist").iterdir()
+            if path.is_file() and (
+                path.suffix == ".exe"
+                or path.name.endswith(".blockmap")
+                or path.name == "latest.yml"
+                or (path.suffix == ".zip" and path.name.startswith("control-panel-"))
+            )
+        )
+
+        for path in files:
+            object_key = f"{object_prefix}/{path.name}"
+            print(f"Uploading {path} to oss://{bucket_name}/{object_key}")
+            bucket.put_object_from_file(object_key, str(path))
+        '@
+        $uploadScript | python -
+
     - name: Push to stable branch
+      if: startsWith(github.ref, 'refs/tags/') && steps.release_channel.outputs.channel == 'stable'
       uses: ad-m/github-push-action@master
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}

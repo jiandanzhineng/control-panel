@@ -61,7 +61,10 @@ process.env.BACKEND_DATA_DIR = path.join(app.getPath('userData'), 'data')
 
 打包环境下会启用 `electron-updater`：
 
-- Feed URL：`https://update.ezsapi.top/control-panel/`
+- 正式版 Feed URL：`http://firmware.undersilicon.cn/control-panel/stable/`
+- 测试版 Feed URL：`http://firmware.undersilicon.cn/control-panel/test/`
+- 首页系统信息中可以切换是否接收测试版更新。
+- 更新设置保存到 Electron `userData/update-settings.json`。
 - 下载完成后弹窗询问是否重启安装。
 - 开发环境不检查更新。
 
