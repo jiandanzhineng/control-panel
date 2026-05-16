@@ -103,6 +103,28 @@ jobs:
 
         throw "No Electron update manifest found in dist"
 
+    - name: Create fixed installer zip
+      if: startsWith(github.ref, 'refs/tags/')
+      shell: powershell
+      run: |
+        $installers = @(Get-ChildItem -Path "dist" -File -Filter "UnderSilicon-Setup-*.exe")
+        if ($installers.Count -eq 0) {
+          throw "No UnderSilicon installer found in dist"
+        }
+        if ($installers.Count -gt 1) {
+          $names = ($installers | ForEach-Object { $_.Name }) -join ", "
+          throw "Expected exactly one UnderSilicon installer in dist, found: $names"
+        }
+
+        $zipPath = "dist/UnderSilicon.zip"
+        if (Test-Path $zipPath) {
+          Remove-Item $zipPath -Force
+        }
+
+        $installerPath = Join-Path "dist" $installers[0].Name
+        Compress-Archive -Path $installerPath -DestinationPath $zipPath -Force
+        Write-Host "Created $zipPath containing $($installers[0].Name)"
+
     - name: Create source archive
       if: startsWith(github.ref, 'refs/tags/')
       shell: powershell
@@ -131,6 +153,7 @@ jobs:
           ./dist/*.exe
           ./dist/*.blockmap
           ./dist/latest.yml
+          ./dist/UnderSilicon.zip
           ./dist/control-panel-*.zip
         name: Release ${{ github.ref_name }}
         tag_name: ${{ github.ref_name }}
@@ -173,7 +196,7 @@ jobs:
         }
 
         $files = Get-ChildItem -Path "dist" -File |
-          Where-Object { $_.Name -like "*.exe" -or $_.Name -like "*.blockmap" -or $_.Name -eq "latest.yml" -or $_.Name -like "control-panel-*.zip" }
+          Where-Object { $_.Name -like "*.exe" -or $_.Name -like "*.blockmap" -or $_.Name -eq "latest.yml" -or $_.Name -eq "UnderSilicon.zip" -or $_.Name -like "control-panel-*.zip" }
 
         if (-not $files) {
           throw "No update files found in dist"
@@ -204,6 +227,7 @@ jobs:
                 path.suffix == ".exe"
                 or path.name.endswith(".blockmap")
                 or path.name == "latest.yml"
+                or path.name == "UnderSilicon.zip"
                 or (path.suffix == ".zip" and path.name.startswith("control-panel-"))
             )
         )

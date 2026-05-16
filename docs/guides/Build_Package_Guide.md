@@ -100,7 +100,15 @@ GitHub Actions 按 tag 区分发布渠道：
 - `dist/*.exe`
 - `dist/*.blockmap`
 - `dist/latest.yml`
+- `dist/UnderSilicon.zip`
 - `dist/control-panel-*.zip`
+
+固定名称安装包压缩包：
+
+- `UnderSilicon.zip` 内只包含当前版本安装包，例如 `UnderSilicon-Setup-1.0.28.exe`。
+- 正式版固定下载地址：`https://ezs-firmware.oss-cn-shanghai.aliyuncs.com/control-panel/stable/UnderSilicon.zip`。
+- 测试版固定下载地址：`https://ezs-firmware.oss-cn-shanghai.aliyuncs.com/control-panel/test/UnderSilicon.zip`。
+- `latest.yml` 仍指向版本化 exe，固定 zip 只作为人工下载入口，不替代自动更新文件。
 
 源码压缩包随每次 tag 发布生成：
 

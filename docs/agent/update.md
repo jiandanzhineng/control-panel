@@ -17,5 +17,8 @@
 7. GitHub Actions 会自动构建发布文件并上传到 OSS。
    - 测试版更新文件上传到 control-panel/test/。
    - 正式版更新文件上传到 control-panel/stable/。
+   - 正式版和测试版都会额外生成固定名称安装包压缩包 UnderSilicon.zip，里面包含当前版本的 UnderSilicon-Setup-<version>.exe。
+   - 正式版固定安装包下载地址为 https://ezs-firmware.oss-cn-shanghai.aliyuncs.com/control-panel/stable/UnderSilicon.zip。
+   - 测试版固定安装包下载地址为 https://ezs-firmware.oss-cn-shanghai.aliyuncs.com/control-panel/test/UnderSilicon.zip。
    - 每次发布都会额外生成源码压缩包 control-panel-test.zip 或 control-panel-stable.zip。
    - sh/run_control_panel.sh 默认下载 http://firmware.undersilicon.cn/control-panel/stable/control-panel-stable.zip。
