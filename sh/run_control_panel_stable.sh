@@ -16,7 +16,7 @@ WORK_DIR="${INSTALL_PARENT}/control-panel-main"
 
 # 安装基础依赖（Termux），在非 Termux 环境下跳过
 if command -v pkg >/dev/null 2>&1; then
-  pkg install -y nodejs mosquitto unzip
+  pkg install -y nodejs-lts mosquitto unzip
 fi
 
 # 下载文件，优先使用 wget，缺失则使用 curl
