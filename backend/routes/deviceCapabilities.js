@@ -1,18 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const { sendError } = require('../utils/http');
-const {
-  capabilityConfig,
-  typeCapabilityMap,
-  getAllCapabilities,
-} = require('../config/deviceTypes');
+const { getAllCapabilities, getTypeCapabilities } = require('../config/deviceTypes');
+const { getAllCapabilityDefinitions } = require('../devices/capabilities');
+const registry = require('../devices/registry');
 
 router.get('/', (req, res) => {
   try {
     res.json({
       capabilities: getAllCapabilities(),
-      capabilityConfig,
-      typeCapabilityMap,
+      capabilityConfig: getAllCapabilityDefinitions(),
+      typeCapabilityMap: registry.getTypeCapabilityMap(),
     });
   } catch (e) {
     sendError(res, 'DEVICE_CAPABILITIES_FAILED', e.message || String(e), 500);

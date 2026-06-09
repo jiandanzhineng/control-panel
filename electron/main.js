@@ -207,6 +207,14 @@ function startFrontendServer(callback) {
       '^/': '/api/'  // 将剩余路径重新添加/api前缀
     }
   }));
+
+  // 游戏静态/第三方代理/Bridge 脚本 转发到后端（保持原路径），使游戏 iframe 与控制台同源
+  const backendTarget = process.env.BACKEND_URL || 'http://127.0.0.1:5278';
+  frontendApp.use('/games', createProxyMiddleware({ target: backendTarget, changeOrigin: true }));
+  frontendApp.use('/bridge-api', createProxyMiddleware({ target: backendTarget, changeOrigin: true }));
+  // Bridge WebSocket 转发
+  const bridgeWsProxy = createProxyMiddleware({ target: backendTarget, changeOrigin: true, ws: true });
+  frontendApp.use('/bridge', bridgeWsProxy);
   
   frontendApp.use(express.static(distPath));
   frontendApp.get('/*path', (req, res) => {
@@ -218,6 +226,12 @@ function startFrontendServer(callback) {
     process.env.FRONTEND_URL = `http://127.0.0.1:${FRONTEND_PORT}`;
     console.log(`[electron] frontend server started: ${process.env.FRONTEND_URL}`);
     callback();
+  });
+  // 将 /bridge 的 WebSocket 升级请求转发到后端
+  frontendServer.on('upgrade', (req, socket, head) => {
+    if (req.url && req.url.startsWith('/bridge')) {
+      bridgeWsProxy.upgrade(req, socket, head);
+    }
   });
 }
 

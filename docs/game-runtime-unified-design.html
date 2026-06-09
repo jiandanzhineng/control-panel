@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>统一游戏运行时方案设计</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f1117; color: #e2e8f0; line-height: 1.7; }
+.c { max-width: 1000px; margin: 0 auto; padding: 40px 24px; }
+h1 { font-size: 1.8rem; font-weight: 700; color: #f7fafc; margin-bottom: 6px; }
+h2 { font-size: 1.25rem; font-weight: 600; color: #90cdf4; margin: 36px 0 12px; padding-left: 12px; border-left: 3px solid #4299e1; }
+h3 { font-size: 0.95rem; font-weight: 600; color: #68d391; margin: 20px 0 8px; }
+p, li { color: #a0aec0; margin-bottom: 8px; font-size: 0.9rem; }
+.sub { color: #718096; font-size: 0.88rem; margin-bottom: 28px; }
+pre { background: #1a202c; border: 1px solid #2d3748; border-radius: 8px; padding: 14px; overflow-x: auto; font-size: 0.78rem; line-height: 1.7; margin: 10px 0; }
+code { font-family: "JetBrains Mono", "Fira Code", monospace; }
+pre code { color: #e2e8f0; }
+.kw { color: #9f7aea; } .fn { color: #63b3ed; } .str { color: #68d391; }
+.cmt { color: #4a5568; font-style: italic; } .num { color: #f6ad55; } .type { color: #ed8936; }
+.s { background: #1a202c; border: 1px solid #2d3748; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+.g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.card { background: #171923; border: 1px solid #2d3748; border-radius: 8px; padding: 14px; }
+.card b { font-size: 0.82rem; color: #90cdf4; display: block; margin-bottom: 6px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin: 10px 0; }
+th { background: #2d3748; color: #90cdf4; padding: 6px 10px; text-align: left; }
+td { padding: 6px 10px; border-bottom: 1px solid #2d3748; color: #a0aec0; }
+.note { background: #2a4365; border-left: 3px solid #4299e1; border-radius: 0 6px 6px 0; padding: 8px 12px; margin: 10px 0; font-size: 0.84rem; color: #90cdf4; }
+.warn { background: #744210; border-left: 3px solid #f6ad55; border-radius: 0 6px 6px 0; padding: 8px 12px; margin: 10px 0; font-size: 0.84rem; color: #fbd38d; }
+.tag { display: inline-block; background: #2d3748; color: #a0aec0; border-radius: 4px; padding: 1px 6px; font-size: 0.72rem; margin: 2px; }
+.tag-b { background: #2a4365; color: #90cdf4; }
+.tag-g { background: #1c4532; color: #68d391; }
+.tag-o { background: #7b341e; color: #fbd38d; }
+ul { padding-left: 20px; }
+.divider { height: 1px; background: #2d3748; margin: 28px 0; }
+</style>
+</head>
+<body>
+<div class="c">
+
+<h1>统一游戏运行时方案设计</h1>
+<p class="sub">游戏 = 网页 · 前台运行 · 通过 Bridge 控制设备 · PC 和 Android 统一</p>
+
+<h2>1. 核心理念</h2>
+<div class="s">
+<p><b>游戏就是一个网页。</b>逻辑和 UI 都在同一个 HTML/JS 中，通过统一的 <code>DeviceAPI</code> Bridge 操作设备。不需要独立 JS 引擎（QuickJS），不需要逻辑/UI 分离。</p>
+<div class="g2">
+<div class="card">
+<b>开发者体验</b>
+<p>写游戏 = 写网页。用任何前端技术栈（原生 JS / Vue / React），标准调试工具，热更新。</p>
+</div>
+<div class="card">
+<b>运行模型</b>
+<p>前台运行。WebView 前台执行稳定不中断。配合屏幕常亮 + 保活提示。</p>
+</div>
+</div>
+</div>
+
+<h2>2. 架构总览</h2>
+<div class="s">
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│  <span class="kw">Game Page</span> (HTML + JS + CSS)                                │
+│  逻辑 + UI 一体，通过 DeviceAPI Bridge 控制设备              │
+│  window.DeviceAPI.device('motor').invoke('strength','set',…) │
+└────────────────────────────┬────────────────────────────────┘
+                             │  Bridge 调用
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│  <span class="fn">Host Runtime</span> (宿主层)                                       │
+│  PC: Node.js 后端 (WebSocket)                               │
+│  Android: Dart 层 (JavaScriptChannel)                       │
+│                                                             │
+│  职责: Bridge 请求路由 → 设备抽象层 → 状态推送回网页         │
+└────────────────────────────┬────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│  <span class="fn">Device Abstraction Layer</span>                                    │
+│  Capability 契约 → DeviceType 实现 → Transport 下发          │
+│  ┌────────┐  ┌────────┐  ┌────────────┐                    │
+│  │<span class="tag-b"> MQTT </span>  │  │<span class="tag-g"> BLE  </span>  │  │<span class="tag-o"> Future </span>  │                    │
+│  └────────┘  └────────┘  └────────────┘                    │
+└─────────────────────────────────────────────────────────────┘</code></pre>
+</div>
+
+<h2>3. DeviceAPI Bridge</h2>
+<div class="s">
+<p>注入到每个游戏网页中的统一 API。PC 端和 Android 端接口完全相同。</p>
+<pre><code>window.DeviceAPI = {
+
+  <span class="cmt">// 获取设备代理</span>
+  device(logicalId) {
+    <span class="kw">return</span> {
+      invoke(capability, action, params),  <span class="cmt">// 调用设备能力方法（走 Capability 路由，有校验）</span>
+      writeProps(props),                     <span class="cmt">// 直接写属性字典（跳过能力层）</span>
+      sendMessage(msg),                    <span class="cmt">// 直接发消息给设备（跳过能力层）</span>
+      on(capability, event, callback),     <span class="cmt">// 监听能力事件（由能力的 events 定义）</span>
+      off(capability, event, callback),    <span class="cmt">// 取消能力事件监听</span>
+      onProperty(property, callback),      <span class="cmt">// 监听底层属性变化（低层接口）</span>
+      offProperty(property, callback),     <span class="cmt">// 取消属性监听</span>
+      onMessage(callback),                 <span class="cmt">// 监听设备原始消息（低层接口）</span>
+      offMessage(callback),                <span class="cmt">// 取消原始消息监听</span>
+      async read(property),                 <span class="cmt">// 读属性缓存值（异步，返回数组，顺序同 deviceMap）</span>
+      isMapped(),                          <span class="cmt">// 该逻辑设备是否已映射到物理设备 (bool)</span>
+    };
+  },
+
+  <span class="cmt">// 列出已连接设备及其能力</span>
+  getDevices(),  <span class="cmt">// → [{id, type, capabilities, connected}]</span>
+
+  <span class="cmt">// 当前会话的逻辑→物理映射（同 deviceMap，方法形式便于运行时查询）</span>
+  getDeviceMap(),  <span class="cmt">// → {logicalId: physicalId[]}  固定为数组，未映射则为 []</span>
+
+  <span class="cmt">// 写一条日志，回传宿主统一聚合（落 logService / 控制台）</span>
+  log(level, message, meta),  <span class="cmt">// level: 'debug'|'info'|'warn'|'error'</span>
+
+  <span class="cmt">// 监听宿主推送的系统日志（设备离线警告等）</span>
+  onSystemLog(callback),     <span class="cmt">// callback({level, message, meta})</span>
+  offSystemLog(callback),
+
+  <span class="cmt">// 游戏元信息（由宿主在加载时注入）</span>
+  params,        <span class="cmt">// 用户启动时配置的参数</span>
+  deviceMap,     <span class="cmt">// {logicalId: physicalId[]} 一个逻辑设备可映射多个物理设备，恒为数组</span>
+  ready,         <span class="cmt">// Promise，Bridge 就绪后 resolve。游戏应 await DeviceAPI.ready 后再操作设备</span>
+};</code></pre>
+<div class="note"><b>writeProps vs invoke：</b><code>invoke</code> 走 Capability 路由（有校验、映射）；<code>writeProps</code> 直接把属性字典发给设备（跳过能力层）；<code>sendMessage</code> 直接给设备发消息（跳过能力层）。</div>
+<div class="note"><b>on(capability, event, cb)：</b>监听能力定义的事件。能力内部封装了底层属性变化和设备消息的监听逻辑，游戏只需关心能力级事件，不用关心底层属性名或消息格式。不同设备底层实现可能不同，能力层屏蔽差异。</div>
+<div class="note"><b>onProperty / onMessage：</b>低层接口，直接监听底层属性变化或设备原始消息。适合调试或能力体系未覆盖的场景。推荐优先使用 <code>on(capability, event)</code>。</div>
+<div class="note"><b>属性缓存：</b>宿主为每个物理设备维护一份属性快照，设备上报时实时更新（MQTT: <code>report</code>/<code>update</code> 消息；BLE: 属性特征通知）。<code>read(property)</code> 是<b>异步方法</b>（返回 Promise），从宿主缓存读取，返回<b>数组</b>——顺序与 <code>deviceMap</code> 中物理 ID 顺序一致。属性更新同时触发 <code>onProperty</code> 回调和相关能力事件。</div>
+<div class="note"><b>deviceMap 恒为数组：</b><code>deviceMap</code> 和 <code>getDeviceMap()</code> 的值<b>固定是 <code>physicalId[]</code></b>（一个逻辑设备可对应多个物理设备），未映射时为空数组 <code>[]</code>，不会出现单值或 undefined。<code>device(id).isMapped()</code> 等价于「该逻辑设备的数组非空」。</div>
+<div class="note"><b>多物理设备语义：</b>当一个逻辑设备映射多个物理设备时：<b>下行广播</b>——<code>invoke</code>/<code>writeProps</code>/<code>sendMessage</code> 对所有映射物理设备执行同一操作；<b>上行逐设备触发</b>——<code>on(capability, event)</code> 回调中 <code>data</code> 包含触发源物理设备 ID（<code>data.physicalId</code>）及该设备的属性，每个物理设备独立触发、不合并。</div>
+<div class="note"><b>ready：</b>Bridge 注入脚本保证在页面 DOM 可用前完成，但 WebSocket 连接（PC 端）或 JavaScriptChannel 注册（Android 端）需要时间。游戏在 <code>await DeviceAPI.ready</code> 之后再调用设备 API，确保通道就绪。</div>
+<div class="note"><b>设备离线处理：</b><code>invoke</code>/<code>writeProps</code>/<code>sendMessage</code> 调用时若设备离线，宿主不抛错，而是通过 <code>systemLog</code> 推送一条 <code>warn</code> 级别日志（「设备 X 可能离线」），游戏可通过 <code>onSystemLog</code> 监听。</div>
+
+<h3>使用示例</h3>
+<pre><code><span class="cmt">// 通过能力调用（推荐，有校验）</span>
+DeviceAPI.device(<span class="str">'motor'</span>).invoke(<span class="str">'strength'</span>, <span class="str">'set'</span>, { value: <span class="num">128</span> });
+DeviceAPI.device(<span class="str">'punish'</span>).invoke(<span class="str">'shock'</span>, <span class="str">'start'</span>, { voltage: <span class="num">30</span> });
+
+<span class="cmt">// 直接写属性（跳过能力层）</span>
+DeviceAPI.device(<span class="str">'motor'</span>).writeProps({ power: <span class="num">128</span> });
+
+<span class="cmt">// 直接发消息给设备（跳过能力层）</span>
+DeviceAPI.device(<span class="str">'motor'</span>).sendMessage({ method: <span class="str">'action'</span>, action: <span class="str">'blink'</span> });
+
+<span class="cmt">// 监听能力事件（能力封装底层属性/消息差异）</span>
+DeviceAPI.device(<span class="str">'sensor'</span>).on(<span class="str">'sphincterPressure'</span>, <span class="str">'pressureChange'</span>, (data) => {
+  updateGauge(data.props.pressure);
+  <span class="kw">if</span> (data.props.pressure > threshold)
+    DeviceAPI.device(<span class="str">'punish'</span>).invoke(<span class="str">'shock'</span>, <span class="str">'start'</span>, { voltage: <span class="num">30</span> });
+});
+
+<span class="cmt">// 监听按钮事件（底层是设备消息，能力封装为统一事件）</span>
+DeviceAPI.device(<span class="str">'qtz'</span>).on(<span class="str">'buttonInput'</span>, <span class="str">'pushDown'</span>, () => {
+  onPushDown();
+});
+
+<span class="cmt">// 读取当前值（异步，返回数组，顺序同 deviceMap 中物理 ID）</span>
+<span class="kw">const</span> pressures = <span class="kw">await</span> DeviceAPI.device(<span class="str">'sensor'</span>).read(<span class="str">'pressure'</span>);  <span class="cmt">// → [72] 或 [72, 68]（多物理设备时）</span>
+
+<span class="cmt">// 可选设备：未映射则跳过相关逻辑</span>
+<span class="kw">if</span> (DeviceAPI.device(<span class="str">'punish'</span>).isMapped())
+  DeviceAPI.device(<span class="str">'punish'</span>).invoke(<span class="str">'shock'</span>, <span class="str">'start'</span>, { voltage: <span class="num">30</span> });
+
+<span class="cmt">// 回传日志到宿主统一聚合</span>
+DeviceAPI.log(<span class="str">'info'</span>, <span class="str">'进入惩罚阶段'</span>, { count: <span class="num">3</span> });
+
+<span class="cmt">// 低层接口：直接监听底层属性变化</span>
+DeviceAPI.device(<span class="str">'sensor'</span>).onProperty(<span class="str">'pressure'</span>, (value, oldValue) => {
+  console.log(<span class="str">'pressure:'</span>, oldValue, <span class="str">'→'</span>, value);
+});
+
+<span class="cmt">// 低层接口：直接监听设备原始消息</span>
+DeviceAPI.device(<span class="str">'qtz'</span>).onMessage((msg) => {
+  console.log(<span class="str">'raw message:'</span>, msg);
+});</code></pre>
+</div>
+
+<h2>4. 游戏页面结构</h2>
+<div class="s">
+<pre><code>games/
+├── pressure-edging/
+│   ├── index.html        <span class="cmt">// 游戏主页面（逻辑+UI+内联元数据，单文件即可运行）</span>
+│   ├── style.css         <span class="cmt">// 样式（可选）</span>
+│   └── game.js           <span class="cmt">// 逻辑（可选，也可内联）</span>
+└── maid-punishment/
+    └── index.html        <span class="cmt">// 元数据内联其中</span></code></pre>
+
+<h3>元数据（内联在 index.html 中）</h3>
+<p>元数据全部内联在 index.html 里，<b>不使用独立 manifest.json</b>。游戏始终是单文件自包含的，既能经宿主启动，也能直接打开运行：</p>
+<pre><code>&lt;!-- index.html 的 &lt;head&gt; 中 --&gt;
+&lt;<span class="kw">script</span> type=<span class="str">"application/json"</span> id=<span class="str">"game-manifest"</span>&gt;
+{
+  <span class="str">"id"</span>: <span class="str">"pressure-edging"</span>,
+  <span class="str">"title"</span>: <span class="str">"压力寸止"</span>,
+  <span class="str">"description"</span>: <span class="str">"通过压力传感器控制强度，超阈值惩罚"</span>,
+  <span class="str">"version"</span>: <span class="str">"1.0.0"</span>,
+  <span class="str">"devices"</span>: [
+    { <span class="str">"id"</span>: <span class="str">"sensor"</span>,  <span class="str">"capabilities"</span>: [<span class="str">"sphincterPressure"</span>, <span class="str">"reporting"</span>], <span class="str">"required"</span>: <span class="kw">true</span> },
+    { <span class="str">"id"</span>: <span class="str">"motor"</span>,   <span class="str">"capabilities"</span>: [<span class="str">"strength"</span>],              <span class="str">"required"</span>: <span class="kw">true</span> },
+    { <span class="str">"id"</span>: <span class="str">"punish"</span>,  <span class="str">"capabilities"</span>: [<span class="str">"shock"</span>],                 <span class="str">"required"</span>: <span class="kw">false</span> }
+  ],
+  <span class="str">"params"</span>: [
+    { <span class="str">"key"</span>: <span class="str">"duration"</span>,  <span class="str">"type"</span>: <span class="str">"number"</span>, <span class="str">"default"</span>: <span class="num">300</span>, <span class="str">"label"</span>: <span class="str">"时长(s)"</span> },
+    { <span class="str">"key"</span>: <span class="str">"threshold"</span>, <span class="str">"type"</span>: <span class="str">"number"</span>, <span class="str">"default"</span>: <span class="num">80</span>,  <span class="str">"label"</span>: <span class="str">"压力阈值"</span> }
+  ]
+}
+&lt;/<span class="kw">script</span>&gt;</code></pre>
+<div class="note">游戏页面用 <code>document.getElementById('game-manifest')</code> 读取自身元数据；宿主在扫描/启动游戏时抓取 index.html、解析同一个 <code>&lt;script id="game-manifest"&gt;</code> 内联块。只有这一处来源，不存在副本，无需同步。</div>
+
+<h3>两种入口的运行差异</h3>
+<table>
+<tr><th></th><th>经宿主启动</th><th>直接打开网页（脱离宿主）</th></tr>
+<tr><td><b>设备校验</b></td><td>宿主按 devices 校验能力，required 缺失则拦截</td><td>无宿主拦截；页面用 <code>isMapped()</code> 自检，缺 required 设备时自行降级/提示</td></tr>
+<tr><td><b>deviceMap</b></td><td>用户在宿主 UI 选定，注入 <code>DeviceAPI.deviceMap</code>（恒为 <code>physicalId[]</code>）</td><td>Bridge 按 devices 的 capabilities <b>自动匹配在线设备</b>填入数组；可选设备匹配不到则为 <code>[]</code></td></tr>
+<tr><td><b>params</b></td><td>用户在宿主参数 UI 填写后注入</td><td>页面读内联块的 <code>default</code> 值作为 <code>DeviceAPI.params</code></td></tr>
+</table>
+<div class="note"><b>页面侧写法不变：</b>无论哪种入口，游戏代码都只读 <code>DeviceAPI.params</code> 和 <code>DeviceAPI.deviceMap</code>、并用 <code>device(id).isMapped()</code> 判断可选设备。降级逻辑由 Bridge/宿主统一兜底，游戏页面无需区分自己跑在哪种入口下。</div>
+</div>
+
+<h2>5. 设备抽象层</h2>
+<div class="s">
+<p><b>核心设计：能力和操作都是"方法"，最底层调用两个原语完成设备交互。</b></p>
+<table>
+<tr><th>层</th><th>职责</th><th>输出</th></tr>
+<tr><td><b>Capability（能力）</b></td><td>通用标准方法，跨设备复用</td><td>调用底层原语</td></tr>
+<tr><td><b>Operation（操作）</b></td><td>设备自带方法，可调用能力或原语</td><td>调用底层原语</td></tr>
+<tr><td><b>Transport</b></td><td>底层原语的具体实现</td><td>MQTT publish / BLE write</td></tr>
+</table>
+
+<h3>5.1 底层原语</h3>
+<p>所有方法最终调用两个原语：</p>
+<table>
+<tr><th>原语</th><th>MQTT</th><th>BLE</th></tr>
+<tr><td><code>ctx.writeProps(props)</code></td><td>自动附加 <code>method:'update'</code>，publish <code>{method:'update', ...props}</code> 到 <code>/drecv/{id}</code></td><td>逐属性写 GATT 特征值（通过用户描述定位 UUID）</td></tr>
+<tr><td><code>ctx.sendMessage(msg)</code></td><td>消息对象作为 JSON publish 到 <code>/drecv/{id}</code>（msg 自带 method 字段）</td><td>UTF-8 JSON 写入命令通道 <code>0xFF03</code>（上限 256 字节）</td></tr>
+</table>
+
+<h3>5.1.1 属性缓存与上行更新</h3>
+<p>宿主为每个物理设备维护一份<b>属性快照</b>（key-value 字典），设备上报时实时合并更新：</p>
+<table>
+<tr><th>Transport</th><th>更新来源</th></tr>
+<tr><td>MQTT</td><td><code>/dpub/{id}</code> 收到的 <code>method:'report'</code>（整体合并）和 <code>method:'update'</code>（单属性或整体合并）消息</td></tr>
+<tr><td>BLE</td><td>属性特征的通知（notify），属性值变化时自动推送</td></tr>
+</table>
+<p><b>属性更新时触发事件链：</b></p>
+<pre><code>设备上报 → 宿主更新属性快照
+  ├─ 触发 propertyChange 推送（低层，供 onProperty 使用）
+  └─ 检查能力 events 的 watch/trigger → 满足则触发 capabilityEvent 推送（供 on 使用）</code></pre>
+<p>游戏侧 <code>read(property)</code> 异步从宿主缓存读取（返回 Promise），不发起设备查询。返回数组，顺序与 <code>deviceMap</code> 物理 ID 一致。</p>
+
+<h3>5.2 Capability — 能力方法定义</h3>
+<p>能力 = 通用的、标准化的方法。每个 action 内部直接调用底层原语：</p>
+<pre><code><span class="kw">export const</span> shock = {
+  key: <span class="str">'shock'</span>,
+  actions: {
+    start: (ctx, params) => ctx.writeProps({ e_vol: params.voltage, e_en: <span class="num">1</span> }),
+    stop:  (ctx) => ctx.writeProps({ e_en: <span class="num">0</span> }),
+  },
+  events: {}, <span class="cmt">// shock 无上行事件</span>
+};
+
+<span class="kw">export const</span> strength = {
+  key: <span class="str">'strength'</span>,
+  actions: {
+    set: (ctx, params) => ctx.writeProps({ power: params.value }),
+  },
+};
+
+<span class="kw">export const</span> sphincterPressure = {
+  key: <span class="str">'sphincterPressure'</span>,
+  actions: {}, <span class="cmt">// 纯上行能力，无下行动作</span>
+  events: {
+    pressureChange: {
+      watch: [{ type: <span class="str">'prop'</span>, key: <span class="str">'pressure'</span> }],
+      trigger: (data) => <span class="kw">true</span>,
+    },
+  },
+};
+
+<span class="kw">export const</span> buttonInput = {
+  key: <span class="str">'buttonInput'</span>,
+  actions: {},
+  events: {
+    pressed: {
+      watch: [{ type: <span class="str">'msg'</span>, match: { method: <span class="str">'action'</span>, action: <span class="str">'key_clicked'</span> } }],
+      trigger: (data) => <span class="kw">true</span>,
+    },
+    pushDown: {
+      watch: [{ type: <span class="str">'msg'</span>, match: { method: <span class="str">'low'</span> } }],
+      trigger: (data) => <span class="kw">true</span>,
+    },
+    pushUp: {
+      watch: [{ type: <span class="str">'msg'</span>, match: { method: <span class="str">'high'</span> } }],
+      trigger: (data) => <span class="kw">true</span>,
+    },
+  },
+};
+
+<span class="kw">export const</span> distance = {
+  key: <span class="str">'distance'</span>,
+  actions: {
+    configure: (ctx, params) => ctx.writeProps({
+      low_band: params.lowBand, high_band: params.highBand, report_delay_ms: params.reportDelayMs
+    }),
+  },
+  events: {
+    enterLow: {
+      watch: [{ type: <span class="str">'msg'</span>, match: { method: <span class="str">'low'</span> } }],
+      trigger: (data) => <span class="kw">true</span>,
+    },
+    enterHigh: {
+      watch: [{ type: <span class="str">'msg'</span>, match: { method: <span class="str">'high'</span> } }],
+      trigger: (data) => <span class="kw">true</span>,
+    },
+  },
+};</code></pre>
+<div class="note"><b>事件 trigger 参数 data：</b><code>data.props</code>（设备属性快照）、<code>data.changed</code>（变化属性 key）、<code>data.msg</code>（收到的消息对象）。watch 支持混合监听属性和消息。</div>
+
+<h3>5.3 DeviceType — 设备类型声明</h3>
+<pre><code><span class="cmt">// 标准设备：声明能力列表，用能力默认实现</span>
+{ type: <span class="str">'DIANJI'</span>,   capabilities: [<span class="str">'shock'</span>] }
+{ type: <span class="str">'CUNZHI01'</span>, capabilities: [<span class="str">'sphincterPressure'</span>, <span class="str">'tiptoePressure'</span>, <span class="str">'strength'</span>, <span class="str">'shock'</span>, <span class="str">'reporting'</span>] }
+
+<span class="cmt">// 特殊设备：覆写某个能力的 action 或 event 的底层映射</span>
+{ type: <span class="str">'SPECIAL'</span>, capabilities: {
+    shock: {
+      actions: {
+        start: (ctx, params) => ctx.writeProps({ shock_v: params.voltage * <span class="num">10</span> }),
+        stop:  (ctx) => ctx.writeProps({ shock_v: <span class="num">0</span> }),
+      },
+    },
+    strength: <span class="str">'strength'</span>,  <span class="cmt">// 字符串 = 用能力默认实现</span>
+}}</code></pre>
+<div class="note"><b>解析优先级：</b>DeviceType 覆写 → Capability 默认实现 → 报错未实现。设备清单详见 <code>docs/device-registry.md</code>。</div>
+
+<h3>5.4 Operation — 设备自带方法</h3>
+<p>操作 = 设备特有的编排方法，通过 invoke 函数实现：</p>
+<pre><code><span class="cmt">// 单能力调用</span>
+{
+  key: <span class="str">'start'</span>, name: <span class="str">'启动'</span>,
+  invoke: (ctx, params) => {
+    ctx.cap(<span class="str">'strength'</span>, <span class="str">'set'</span>, { value: <span class="num">255</span> });
+  }
+}
+
+<span class="cmt">// 多能力编排</span>
+{
+  key: <span class="str">'start'</span>, name: <span class="str">'启动'</span>,
+  invoke: (ctx, params) => {
+    ctx.cap(<span class="str">'shock'</span>,    <span class="str">'start'</span>, { voltage: <span class="num">24</span> });  <span class="cmt">// 立即下发</span>
+    ctx.cap(<span class="str">'strength'</span>, <span class="str">'set'</span>,   { value: <span class="num">255</span> });   <span class="cmt">// 立即下发</span>
+  }
+}
+
+<span class="cmt">// 也可直接调底层原语</span>
+{
+  key: <span class="str">'blink'</span>, name: <span class="str">'闪烁'</span>,
+  invoke: (ctx) => {
+    ctx.sendMessage({ method: <span class="str">'action'</span>, action: <span class="str">'blink'</span> });
+  }
+}</code></pre>
+<p><b>invoke 内 ctx 提供的入口：</b></p>
+<table>
+<tr><th>入口</th><th>作用</th></tr>
+<tr><td><code>ctx.cap(capability, action, params)</code></td><td>调用本设备能力方法（立即下发，复用校验）</td></tr>
+<tr><td><code>ctx.writeProps(props)</code></td><td>直接写属性（立即下发）</td></tr>
+<tr><td><code>ctx.sendMessage(msg)</code></td><td>直接发消息（立即下发）</td></tr>
+</table>
+<div class="note"><b>参数统一为 params</b>（plain object 字典）。每次 ctx.cap() / ctx.writeProps() / ctx.sendMessage() 都立即下发，不做收集合并。方法尽量一次性，复杂场景可多次调用。</div>
+</div>
+
+<h2>6. 两端宿主实现</h2>
+<div class="s">
+<div class="g2">
+<div class="card">
+<b>PC 端 (Node.js 后端)</b>
+<ul>
+<li>客户端：Electron 内嵌 / 普通浏览器，统一走 WebSocket Bridge</li>
+<li>后端：Express（游戏静态服务）+ WebSocket Server</li>
+<li>MqttTransport 对接设备</li>
+</ul>
+</div>
+<div class="card">
+<b>Android 端 (Flutter)</b>
+<ul>
+<li>游戏页面跑在 WebView 中，前台运行</li>
+<li>Bridge 通信: JavaScriptChannel + evaluateJS</li>
+<li>BleTransport 对接设备</li>
+<li>游戏文件从 assets 或远程加载</li>
+</ul>
+</div>
+</div>
+
+<h3>PC 架构：服务器 + 客户端</h3>
+<pre><code>┌─────────────────────┐      ┌─────────────────────┐
+│ <span class="fn">客户端</span> (Electron/浏览器) │      │ <span class="fn">客户端</span> (浏览器)        │
+│ 游戏网页 + DeviceAPI │      │ 游戏网页 + DeviceAPI │
+└──────────┬──────────┘      └──────────┬──────────┘
+           │ WebSocket                   │ WebSocket
+           └──────────────┬──────────────┘
+                          ▼
+            ┌───────────────────────────┐
+            │ <span class="type">Node.js 后端</span>               │
+            │ WebSocket Server          │
+            │ Bridge 路由 → 设备抽象层  │
+            │ MqttTransport → 设备      │
+            └───────────────────────────┘</code></pre>
+<div class="note">PC 端本质是 C/S 架构。后端管设备通信，前端只负责 UI + 通过 WebSocket 调用 DeviceAPI。Electron 和浏览器共用同一套 WebSocket Bridge。</div>
+
+<h3>Bridge 通信协议 (两端统一)</h3>
+<pre><code><span class="cmt">// 网页 → 宿主 (请求)</span>
+{ id: <span class="str">"uuid"</span>, action: <span class="str">"invoke"</span>, deviceId: <span class="str">"motor"</span>, capability: <span class="str">"strength"</span>, actionName: <span class="str">"set"</span>, params: { value: <span class="num">128</span> } }
+{ id: <span class="str">"uuid"</span>, action: <span class="str">"writeProps"</span>, deviceId: <span class="str">"motor"</span>, props: { power: <span class="num">128</span> } }
+{ id: <span class="str">"uuid"</span>, action: <span class="str">"sendMessage"</span>, deviceId: <span class="str">"motor"</span>, msg: { method: <span class="str">"action"</span>, action: <span class="str">"blink"</span> } }
+{ id: <span class="str">"uuid"</span>, action: <span class="str">"read"</span>, deviceId: <span class="str">"sensor"</span>, property: <span class="str">"pressure"</span> }
+{ id: <span class="str">"uuid"</span>, action: <span class="str">"subscribe"</span>, deviceId: <span class="str">"sensor"</span>, capability: <span class="str">"sphincterPressure"</span>, event: <span class="str">"pressureChange"</span> }
+{ id: <span class="str">"uuid"</span>, action: <span class="str">"unsubscribe"</span>, deviceId: <span class="str">"sensor"</span>, capability: <span class="str">"sphincterPressure"</span>, event: <span class="str">"pressureChange"</span> }
+{ id: <span class="str">"uuid"</span>, action: <span class="str">"subscribeProperty"</span>, deviceId: <span class="str">"sensor"</span>, property: <span class="str">"pressure"</span> }
+{ id: <span class="str">"uuid"</span>, action: <span class="str">"unsubscribeProperty"</span>, deviceId: <span class="str">"sensor"</span>, property: <span class="str">"pressure"</span> }
+{ id: <span class="str">"uuid"</span>, action: <span class="str">"subscribeMessages"</span>, deviceId: <span class="str">"qtz"</span> }
+{ id: <span class="str">"uuid"</span>, action: <span class="str">"unsubscribeMessages"</span>, deviceId: <span class="str">"qtz"</span> }
+{ id: <span class="str">"uuid"</span>, action: <span class="str">"getDevices"</span> }
+{ id: <span class="str">"uuid"</span>, action: <span class="str">"getDeviceMap"</span> }
+{ id: <span class="str">"uuid"</span>, action: <span class="str">"log"</span>, level: <span class="str">"info"</span>, message: <span class="str">"..."</span>, meta: {} }   <span class="cmt">// 无需响应</span>
+
+<span class="cmt">// 宿主 → 网页 (响应 + 推送)</span>
+{ id: <span class="str">"uuid"</span>, result: ... }                            <span class="cmt">// 请求响应</span>
+{ id: <span class="str">"uuid"</span>, error: <span class="str">"device not found"</span> }                <span class="cmt">// 错误</span>
+{ event: <span class="str">"capabilityEvent"</span>, deviceId: <span class="str">"sensor"</span>, capability: <span class="str">"sphincterPressure"</span>, eventName: <span class="str">"pressureChange"</span>, data: { props: {...}, changed: <span class="str">"pressure"</span> } }  <span class="cmt">// 能力事件推送</span>
+{ event: <span class="str">"propertyChange"</span>, deviceId: <span class="str">"sensor"</span>, property: <span class="str">"pressure"</span>, value: <span class="num">72</span>, oldValue: <span class="num">68</span> }  <span class="cmt">// 属性变化推送（低层）</span>
+{ event: <span class="str">"deviceMessage"</span>, deviceId: <span class="str">"qtz"</span>, payload: { method: <span class="str">"low"</span> } }  <span class="cmt">// 原始消息推送（低层）</span>
+{ event: <span class="str">"systemLog"</span>, level: <span class="str">"warn"</span>, message: <span class="str">"设备 motor 可能离线"</span>, meta: { deviceId: <span class="str">"motor"</span> } }  <span class="cmt">// 宿主系统日志推送</span></code></pre>
+<div class="note"><b>上行数据来源（两端等价）：</b>PC 端 MqttTransport 订阅 <code>/dpub/{id}</code> 接收属性变化和消息；Android 端 BleTransport 订阅属性特征通知和 <code>0xFF01</code> 消息通知。宿主按能力的 events 定义匹配 watch/trigger，满足条件时推送 <code>capabilityEvent</code> 给网页。</div>
+</div>
+
+<h2>6.5 运行模型：游戏自驱动，无宿主 loop</h2>
+<div class="s">
+<p>游戏逻辑<b>完全在页面 JS 内自驱动</b>。计时、阶段切换、强度递增、惩罚检测等节奏由页面自己的 <code>setInterval</code> / <code>requestAnimationFrame</code> 维护。<b>宿主不提供 <code>loop()</code> 回调</b>——游戏即网页，逻辑与 UI 同处一份 HTML/JS，状态也由页面自身持有，不再经宿主 <code>emitState</code>/<code>emitUi</code> 往返。</p>
+<div class="g2">
+<div class="card">
+<b>宿主只负责</b>
+<p>设备调用路由、能力事件推送（<code>capabilityEvent</code>）、属性变化推送（<code>propertyChange</code>）、原始消息推送（<code>deviceMessage</code>）、日志聚合（<code>DeviceAPI.log</code>）、会话结束安全停机（见 §10）。</p>
+</div>
+<div class="card">
+<b>页面负责</b>
+<p>全部玩法逻辑、计时与状态机、UI 渲染、按用户操作直接调用 <code>DeviceAPI</code>。无需把动作回传宿主再下发。</p>
+</div>
+</div>
+<div class="warn">页面定时器在后台标签/息屏时可能被节流，因此<b>设备安全不能依赖页面逻辑</b>。关键安全（停止电击/强度归零）由宿主的 <code>close</code> 兜底强制保证，见 §10。</div>
+</div>
+
+<h2>7. 能力体系</h2>
+<div class="s">
+<p>完整设备清单与能力总表详见 <code>docs/device-registry.md</code>。以下为能力概览：</p>
+<table>
+<tr><th>Capability</th><th>Actions</th><th>Events</th><th>设备</th></tr>
+<tr><td>strength</td><td>set(value:0-255)</td><td>—</td><td>PJ01, TD01, OSR6, CUNZHI01</td></tr>
+<tr><td>shock</td><td>start(voltage), stop()</td><td>—</td><td>DIANJI, CUNZHI01</td></tr>
+<tr><td>lock</td><td>setOpen(open:bool)</td><td>—</td><td>ZIDONGSUO</td></tr>
+<tr><td>sphincterPressure</td><td>—</td><td>pressureChange</td><td>QIYA, CUNZHI01</td></tr>
+<tr><td>tiptoePressure</td><td>—</td><td>pressureChange</td><td>CUNZHI01</td></tr>
+<tr><td>distance</td><td>configure(lowBand, highBand, reportDelayMs)</td><td>enterLow, enterHigh</td><td>QTZ</td></tr>
+<tr><td>buttonInput</td><td>—</td><td>pressed, pushDown, pushUp</td><td>QTZ</td></tr>
+<tr><td>weight</td><td>—</td><td>weightChange</td><td>DZC01</td></tr>
+<tr><td>reporting</td><td>setReportDelay(ms)</td><td>—</td><td>QIYA, QTZ, DZC01, CUNZHI01</td></tr>
+</table>
+</div>
+
+<h2>8. 游戏开发流程</h2>
+<div class="s">
+<pre><code><span class="cmt">// 1. 创建游戏目录</span>
+games/my-game/
+└── index.html
+
+<span class="cmt">// 2. index.html 的 &lt;head&gt; 内联元数据，声明设备需求和参数</span>
+&lt;script type="application/json" id="game-manifest"&gt;
+{ "id": "my-game", "title": "我的游戏", "devices": [...], "params": [...] }
+&lt;/script&gt;
+
+<span class="cmt">// 3. index.html 中使用 DeviceAPI</span>
+&lt;script&gt;
+  DeviceAPI.device(<span class="str">'sensor'</span>).on(<span class="str">'sphincterPressure'</span>, <span class="str">'pressureChange'</span>, (data) => {
+    <span class="kw">const</span> val = data.props.pressure;
+    document.getElementById(<span class="str">'gauge'</span>).style.width = val + <span class="str">'%'</span>;
+    DeviceAPI.device(<span class="str">'motor'</span>).invoke(<span class="str">'strength'</span>, <span class="str">'set'</span>, { value: val * <span class="num">2</span> });
+  });
+&lt;/script&gt;</code></pre>
+<div class="note">浏览器直接打开即可调试（连 WebSocket 到后端）；部署即放入 app assets 或远程 URL。</div>
+</div>
+
+<h2>9. 共享代码</h2>
+<div class="s">
+<div class="g2">
+<div>
+<h3>两端共享</h3>
+<span class="tag tag-g">游戏页面 (HTML/JS)</span>
+<span class="tag tag-g">内联元数据 (game-manifest)</span>
+<span class="tag tag-g">能力定义 (JSON)</span>
+<span class="tag tag-g">设备类型声明</span>
+<span class="tag tag-g">DeviceAPI Bridge 注入脚本</span>
+</div>
+<div>
+<h3>各端独立</h3>
+<span class="tag tag-b">PC: Express 静态服务</span>
+<span class="tag tag-b">PC: WebSocket Bridge 后端</span>
+<span class="tag tag-b">PC: MqttTransport</span><br>
+<span class="tag tag-o">Android: WebView 容器</span>
+<span class="tag tag-o">Android: Dart Bridge 处理</span>
+<span class="tag tag-o">Android: BleTransport</span>
+</div>
+</div>
+</div>
+
+<h2>10. 前台运行保障</h2>
+<div class="s">
+<table>
+<tr><th>措施</th><th>说明</th></tr>
+<tr><td>屏幕常亮</td><td>游戏运行时 WakeLock，防止息屏</td></tr>
+<tr><td>前台通知</td><td>显示"游戏运行中"持久通知，防止系统回收</td></tr>
+<tr><td>切换提醒</td><td>用户切出时 toast 提示"游戏可能中断"</td></tr>
+<tr><td><b>会话结束安全停机</b></td><td>以下情况触发宿主对该会话所有映射设备调用 <code>close</code> 操作：<b>(1)</b> 游戏主动调用结束；<b>(2)</b> 连接断开超过 180 秒未重连；<b>(3)</b> 下一个游戏启动时（前一个会话的设备自动 close）。不依赖游戏页面执行收尾逻辑——页面崩溃也能保证设备停止。</td></tr>
+<tr><td>BLE 连接保活</td><td>Dart 原生层维持 BLE 连接，不依赖 WebView</td></tr>
+</table>
+<div class="warn">WebView JS 前台执行完全稳定。BLE 连接在 Dart 原生层维护，即使 WebView 偶尔卡顿也不影响连接。</div>
+<div class="note"><b>close 兜底是强制的、放在宿主层。</b>每个设备类型都声明一个 <code>close</code> 操作定义其安全停机指令（电机归零、停止电击、传感器恢复空闲上报频率等）。这是设备安全的最后一道防线，独立于游戏逻辑。</div>
+</div>
+
+</div>
+</body>
+</html>

@@ -342,13 +342,9 @@ router.post('/:id/operations/:operationKey', (req, res) => {
 router.get('/:id/monitor-data', (req, res) => {
   try {
     const id = req.params.id;
-    const data = deviceService.getDeviceMonitorDataForApi(id);
-    
-    if (!data) {
-      return sendError(res, 'DEVICE_NOT_FOUND', '设备不存在', 404);
-    }
-    
-    res.json(data);
+    const device = deviceService.getDeviceById(id);
+    if (!device) return sendError(res, 'DEVICE_NOT_FOUND', '设备不存在', 404);
+    res.json({ deviceId: id, type: device.type, data: device.data || {}, timestamp: device.lastReport ? new Date(device.lastReport).toISOString() : null });
   } catch (e) {
     sendError(res, 'DEVICE_MONITOR_DATA_FAILED', e.message || String(e), 500);
   }
@@ -357,82 +353,42 @@ router.get('/:id/monitor-data', (req, res) => {
 // 获取设备监控数据（SSE模式）
 router.get('/:id/monitor-stream', (req, res) => {
   const deviceId = req.params.id;
-  
+
   try {
-    // 检查设备是否存在
     const device = deviceService.getDeviceById(deviceId);
     if (!device) {
       return sendError(res, 'DEVICE_NOT_FOUND', '设备不存在', 404);
     }
 
-    // 检查设备是否支持监控数据
-    if (!deviceService.deviceHasMonitorData(deviceId)) {
-      return sendError(res, 'DEVICE_NO_MONITOR_DATA', '设备不支持监控数据', 400);
-    }
-
-    // 设置SSE响应头
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
       'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Cache-Control'
     });
 
-    // 发送初始数据
-    const initialData = deviceService.getDeviceMonitorDataForApi(deviceId);
-    if (initialData) {
-      res.write(`event: history\n`);
-      res.write(`data: ${JSON.stringify(initialData)}\n\n`);
-    }
+    const initialData = { deviceId, type: device.type, data: device.data || {} };
+    res.write(`event: history\ndata: ${JSON.stringify(initialData)}\n\n`);
 
-    // 设置设备高频率上报 (250ms)
     deviceService.notifyDeviceUpdate(deviceId, { report_delay_ms: 250 });
-    console.log(`设置设备 ${deviceId} 高频率上报: 250ms`);
 
-    // 注册设备数据变更监听
     const dataChangeHandler = (eventData) => {
-      const { deviceId: changedDeviceId, device, changes } = eventData;
-      if (changedDeviceId === deviceId) {
-        console.log(`SSE推送数据变更: ${deviceId}`, changes);
-        const monitorData = deviceService.getDeviceMonitorDataForApi(deviceId);
-        if (monitorData) {
-          res.write(`event: update\n`);
-          res.write(`data: ${JSON.stringify(monitorData)}\n\n`);
-          console.log(`SSE数据已推送: ${deviceId}`, monitorData);
-        }
-      } else{
-        console.log(`设备与监控设备不符 changedDeviceId:${changedDeviceId} deviceId:${deviceId}`);
+      if (eventData.deviceId === deviceId) {
+        const dev = deviceService.getDeviceById(deviceId);
+        res.write(`event: update\ndata: ${JSON.stringify({ deviceId, data: dev?.data || {} })}\n\n`);
       }
     };
 
-    console.log(`建立SSE连接: ${deviceId}`);
     deviceService.onDeviceDataChange(dataChangeHandler);
 
-    // 连接关闭时清理
-    req.on('close', () => {
-      // 移除监听器
+    const cleanup = () => {
       const handlers = deviceService.state.dataChangeHandlers;
       const index = handlers.indexOf(dataChangeHandler);
-      if (index > -1) {
-        handlers.splice(index, 1);
-      }
-      // 恢复设备正常上报频率 (5000ms)
+      if (index > -1) handlers.splice(index, 1);
       deviceService.notifyDeviceUpdate(deviceId, { report_delay_ms: 5000 });
-      console.log(`恢复设备 ${deviceId} 正常上报频率: 5000ms`);
-    });
-
-    req.on('error', () => {
-      // 移除监听器
-      const handlers = deviceService.state.dataChangeHandlers;
-      const index = handlers.indexOf(dataChangeHandler);
-      if (index > -1) {
-        handlers.splice(index, 1);
-      }
-      // 恢复设备正常上报频率 (5000ms)
-      deviceService.notifyDeviceUpdate(deviceId, { report_delay_ms: 5000 });
-      console.log(`恢复设备 ${deviceId} 正常上报频率: 5000ms`);
-    });
+    };
+    req.on('close', cleanup);
+    req.on('error', cleanup);
 
   } catch (e) {
     sendError(res, 'DEVICE_MONITOR_STREAM_FAILED', e.message || String(e), 500);

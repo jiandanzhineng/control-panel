@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>气压寸止玩法</title>
+<script type="application/json" id="game-manifest">
+{
+  "id": "pressure-edging",
+  "title": "气压寸止玩法",
+  "description": "基于气压传感器(QIYA)的寸止训练，根据压力与时间窗智能调节 TD01 强度，并在超阈值时触发电击。",
+  "version": "2.0.0",
+  "devices": [
+    { "id": "sensor", "capabilities": ["sphincterPressure", "reporting"], "required": true },
+    { "id": "motor", "capabilities": ["strength"], "required": true },
+    { "id": "punish", "capabilities": ["shock"], "required": false },
+    { "id": "lock", "capabilities": ["lock"], "required": false }
+  ],
+  "params": [
+    { "key": "duration", "type": "number", "default": 20, "label": "游戏时长(分钟)" },
+    { "key": "criticalPressure", "type": "number", "default": 20, "label": "临界气压(kPa)" },
+    { "key": "maxMotorIntensity", "type": "number", "default": 50, "label": "TD01最大强度(男用td超过50可能会断联，请谨慎设置)" },
+    { "key": "lowPressureDelay", "type": "number", "default": 5, "label": "低压延迟(秒)" },
+    { "key": "rampRate", "type": "number", "default": 2, "label": "强度递增速率上限(每秒)" },
+    { "key": "sensitivity", "type": "number", "default": 1.0, "label": "压力敏感度系数" },
+    { "key": "randomPercent", "type": "number", "default": 0, "label": "强度随机扰动(%)" },
+    { "key": "gradualIncrease", "type": "number", "default": 2, "label": "延迟后逐步提升(每秒)" },
+    { "key": "shockVoltage", "type": "number", "default": 20, "label": "电击强度(V)" },
+    { "key": "shockDuration", "type": "number", "default": 3, "label": "电击时长(秒)" }
+  ]
+}
+</script>
+<script src="/bridge-api/device-api-bridge.js"></script>
+<style>
+  :root { --bg:#f5f7fa; --bg2:#ffffff; --card:#ffffff; --text:#1f2937; --muted:#64748b; --border:#e5e7eb; --primary:#3b82f6; --accent:#22d3ee; --ok:#16a34a; --warn:#d97706; --danger:#dc2626; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, PingFang SC, Hiragino Sans GB, Microsoft YaHei, sans-serif; color:var(--text); background: var(--bg); }
+  header { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  .title { font-size:20px; margin:0; color:#0f172a; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:999px; background:#f8fafc; color:var(--muted); border:1px solid var(--border); font-size:12px; }
+  .pill.ok { color:var(--ok); }
+  main { margin-top:12px; display:grid; grid-template-columns:1fr; gap:12px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px; box-shadow:0 6px 18px rgba(0,0,0,0.06); }
+  .section-title { margin:0 0 8px; font-size:16px; color:#0f172a; }
+  .stats { display:grid; grid-template-columns:1fr; gap:12px; }
+  @media (min-width: 760px) { .stats { grid-template-columns:1fr 1fr; } }
+  .stat { background:var(--bg2); border:1px solid var(--border); border-radius:12px; padding:12px; }
+  .stat .label { color:var(--muted); font-size:12px; }
+  .stat .value { font-weight:600; font-size:18px; color:#0f172a; }
+  .progress { height:10px; background:#f1f5f9; border:1px solid var(--border); border-radius:10px; overflow:hidden; margin-top:6px; }
+  .bar { height:100%; width:0%; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width .25s ease; }
+  .bar.secondary { background: linear-gradient(90deg, #93c5fd, #a5b4fc); opacity:.55; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  button { padding:10px 14px; border-radius:12px; border:1px solid var(--border); background:#f8fafc; color:#0f172a; cursor:pointer; }
+  button.primary { background: linear-gradient(180deg, #60a5fa, #3b82f6); border-color:#3b82f6; color:#fff; }
+  button.danger { background: linear-gradient(180deg, #f87171, #dc2626); border-color:#dc2626; color:#fff; }
+  .muted { color:var(--muted); }
+  .row { display:flex; align-items:center; gap:8px; }
+  #logs { list-style:none; margin:0; padding:0; max-height:180px; overflow:auto; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  #logs li { padding:6px 8px; border-bottom:1px solid var(--border); color:#334155; }
+  #logs li.l-warn { color:var(--warn); }
+  #logs li.l-error { color:#ef4444; }
+  .hidden { display:none !important; }
+</style>
+</head>
+<body>
+  <header>
+    <h2 class="title">气压寸止玩法</h2>
+    <span class="pill"><span class="muted">开始</span> <span data-bind="startTime">-</span></span>
+    <span class="pill ok"><span class="muted">状态</span> <span data-bind="running">false</span></span>
+  </header>
+  <main>
+    <section class="card">
+      <h3 class="section-title">压力与强度</h3>
+      <div class="stats">
+        <div class="stat">
+          <div class="label">当前压力(kPa)</div>
+          <div class="value"><strong data-bind="currentPressure">0</strong></div>
+          <div class="progress"><div id="pBar" class="bar"></div></div>
+          <div class="label">平均压力(近60点)：<strong data-bind="averagePressure">0</strong></div>
+        </div>
+        <div class="stat">
+          <div class="label">当前强度</div>
+          <div class="value"><strong data-bind="currentIntensity">0</strong></div>
+          <div class="progress"><div id="iBar" class="bar"></div></div>
+          <div class="label">目标强度：<strong data-bind="targetIntensity">0</strong></div>
+          <div class="progress"><div id="tBar" class="bar secondary"></div></div>
+        </div>
+      </div>
+      <p class="warn hidden" data-show="paused">已暂停</p>
+      <div class="actions">
+        <button class="primary" data-action="pause"><span data-bind="btnText">暂停</span></button>
+        <button data-action="addIntensity">目标强度 +10</button>
+        <button class="danger" data-action="shockOnce">手动电击</button>
+      </div>
+    </section>
+    <section class="card">
+      <h3 class="section-title">状态</h3>
+      <div class="row"><span class="muted">状态文本</span> <span data-bind="statusText">-</span></div>
+      <div class="row"><span class="muted">电击次数</span> <strong data-bind="shockCount">0</strong></div>
+      <div class="row"><span class="muted">累计刺激时长</span> <strong data-bind="totalStimulationTime">0</strong> 秒</div>
+    </section>
+    <section class="card">
+      <h3 class="section-title">日志（最近 10 条）</h3>
+      <ul id="logs"></ul>
+    </section>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>

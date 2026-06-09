@@ -6,15 +6,12 @@ const logger = require('../utils/logger');
 
 const backendRoot = path.resolve(__dirname, '..');
 const projectRoot = path.resolve(backendRoot, '..');
-const gameDir = path.resolve(backendRoot, 'game');
+const oldGameDir = path.resolve(backendRoot, 'game');
+const newGameDir = path.resolve(backendRoot, 'games');
 
 function ensureGameDir() {
-  try {
-    if (!fs.existsSync(gameDir)) fs.mkdirSync(gameDir, { recursive: true });
-  } catch (e) {
-    // bubble up
-    throw e;
-  }
+  if (!fs.existsSync(oldGameDir)) fs.mkdirSync(oldGameDir, { recursive: true });
+  if (!fs.existsSync(newGameDir)) fs.mkdirSync(newGameDir, { recursive: true });
 }
 
 function readGames() {
@@ -23,17 +20,11 @@ function readGames() {
   try {
     const arr = JSON.parse(raw);
     return Array.isArray(arr) ? arr : [];
-  } catch (e) {
-    return [];
-  }
+  } catch (_) { return []; }
 }
 
 function writeGames(rows) {
-  try {
-    fileStorage.setItem('games', JSON.stringify(rows || []));
-  } catch (e) {
-    throw e;
-  }
+  fileStorage.setItem('games', JSON.stringify(rows || []));
 }
 
 function stableIdForPath(relPath) {
@@ -41,159 +32,75 @@ function stableIdForPath(relPath) {
   return `game_${h}`;
 }
 
-function extractTitleFromJs(content) {
-  try {
-    const re = /\btitle\b\s*[:=]\s*(["'])(.*?)\1/; // title: "..." or title = '...'
-    const m = content.match(re);
-    if (m && m[2]) return String(m[2]).trim();
-  } catch (_) {}
-  return null;
+function extractManifestFromHtml(htmlContent) {
+  const m = htmlContent.match(/<script[^>]+id\s*=\s*["']game-manifest["'][^>]*>([\s\S]*?)<\/script>/i);
+  if (!m) return null;
+  try { return JSON.parse(m[1]); } catch (_) { return null; }
 }
 
-function toConfigPath(absFilePath) {
-  const relToProject = path.relative(projectRoot, absFilePath);
-  const relNormalized = String(relToProject).replace(/\\/g, '/');
-  return relNormalized.startsWith('backend/game')
-    ? relNormalized
-    : `backend/${relNormalized}`;
-}
-
-function createGameEntryForFile(absFilePath) {
-  const relToBackend = path.relative(backendRoot, absFilePath); // e.g., game/foo.js
-  const configPath = toConfigPath(absFilePath); // e.g., backend/game/foo.js
-  let name = path.basename(absFilePath, path.extname(absFilePath));
-  let description = '';
-  try {
-    const text = fs.readFileSync(absFilePath, 'utf8');
-    const t = extractTitleFromJs(text);
-    if (t) name = t;
-  } catch (e) {
-    // ignore read errors, fall back to filename
-  }
-  const id = stableIdForPath(relToBackend);
-  const now = Date.now();
-  return {
-    id,
-    name,
-    description,
-    status: 'idle',
-    arguments: '',
-    configPath,
-    requiredDevices: [],
-    version: '',
-    author: '',
-    createdAt: now,
-    lastPlayed: null,
-  };
-}
-
-function scanForJsFiles(dir) {
+function scanHtmlGames() {
   const results = [];
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  if (!fs.existsSync(newGameDir)) return results;
+  const entries = fs.readdirSync(newGameDir, { withFileTypes: true });
   for (const ent of entries) {
-    const p = path.join(dir, ent.name);
-    if (ent.isDirectory()) {
-      try {
-        results.push(...scanForJsFiles(p));
-      } catch (e) {
-        logger.warn('Scan subdir failed', { subdir: p, err: e?.message || e });
-      }
-    } else if (ent.isFile()) {
-      if (p.endsWith('.js')) results.push(p);
+    if (!ent.isDirectory()) continue;
+    const indexPath = path.join(newGameDir, ent.name, 'index.html');
+    if (!fs.existsSync(indexPath)) continue;
+    try {
+      const html = fs.readFileSync(indexPath, 'utf8');
+      const manifest = extractManifestFromHtml(html);
+      if (!manifest) continue;
+      const gameId = manifest.id || ent.name;
+      results.push({
+        id: gameId,
+        name: manifest.title || ent.name,
+        description: manifest.description || '',
+        status: 'idle',
+        type: 'html',
+        gamePath: `/games/${ent.name}/index.html`,
+        folder: ent.name,
+        devices: manifest.devices || [],
+        params: manifest.params || [],
+        version: manifest.version || '1.0.0',
+        createdAt: Date.now(),
+        lastPlayed: null,
+      });
+    } catch (e) {
+      logger.warn('Scan HTML game failed', { dir: ent.name, err: e?.message });
     }
   }
   return results;
 }
 
 function listGames() {
-  return readGames();
+  const htmlGames = scanHtmlGames();
+  return htmlGames;
 }
 
 function getGameById(id) {
-  const rows = readGames();
-  return rows.find((g) => g && g.id === id) || null;
+  const games = listGames();
+  return games.find((g) => g.id === id) || null;
 }
 
 function reloadGames() {
   ensureGameDir();
-  const files = scanForJsFiles(gameDir);
-  const rows = files.map((abs) => createGameEntryForFile(abs));
-  writeGames(rows);
-  return { ok: true, count: rows.length };
-}
-
-function saveUploadedJs({ originalName, buffer }) {
-  ensureGameDir();
-  if (!originalName || !/\.js$/i.test(originalName)) {
-    const err = new Error('Only .js files are allowed');
-    err.code = 'GAME_FILE_INVALID';
-    throw err;
-  }
-  const abs = path.resolve(gameDir, originalName);
-  fs.writeFileSync(abs, buffer);
-  // Build game entry from saved file
-  const entry = createGameEntryForFile(abs);
-
-  // Merge into existing list by configPath or name
-  const rows = readGames();
-  const idx = rows.findIndex((g) => g && (g.configPath === entry.configPath || g.name === entry.name));
-  if (idx >= 0) {
-    const prev = rows[idx];
-    const merged = { ...prev, ...entry, id: prev.id, createdAt: prev.createdAt || entry.createdAt };
-    rows[idx] = merged;
-  } else {
-    rows.push(entry);
-  }
-  writeGames(rows);
-  return entry;
-}
-
-function absPathFromConfig(configPath) {
-  const prefix = 'backend/game/';
-  if (!configPath || typeof configPath !== 'string') return null;
-  const normalized = String(configPath).replace(/\\/g, '/');
-  if (!normalized.startsWith(prefix)) return null;
-  const relWithinGame = normalized.slice(prefix.length);
-  const abs = path.resolve(gameDir, relWithinGame);
-  // sanity: ensure inside gameDir
-  const normGame = gameDir.endsWith(path.sep) ? gameDir : gameDir + path.sep;
-  const normAbs = abs.endsWith(path.sep) ? abs : abs;
-  if (!normAbs.startsWith(normGame)) return null;
-  return abs;
+  const games = scanHtmlGames();
+  return { ok: true, count: games.length, games };
 }
 
 function deleteGameById(id, { removeFile } = {}) {
-  const rows = readGames();
-  const idx = rows.findIndex((g) => g && g.id === id);
-  if (idx < 0) return { ok: false, notFound: true };
-  const g = rows[idx];
-  rows.splice(idx, 1);
-  writeGames(rows);
-
-  let removedFile = false;
-  if (removeFile) {
-    try {
-      const abs = absPathFromConfig(g.configPath);
-      if (abs && fs.existsSync(abs)) {
-        fs.unlinkSync(abs);
-        removedFile = true;
-      }
-    } catch (e) {
-      const err = new Error(e?.message || String(e));
-      err.code = 'GAME_DELETE_FAILED';
-      throw err;
+  const game = getGameById(id);
+  if (!game) return { ok: false, notFound: true };
+  if (removeFile && game.folder) {
+    const dir = path.join(newGameDir, game.folder);
+    if (fs.existsSync(dir)) {
+      fs.rmSync(dir, { recursive: true });
     }
   }
-  return { ok: true, removedFile };
+  return { ok: true };
 }
 
 function updateGameById(id, changes = {}) {
-  const rows = readGames();
-  const idx = rows.findIndex((g) => g && g.id === id);
-  if (idx < 0) return { ok: false, notFound: true };
-  const g = rows[idx] || {};
-  rows[idx] = { ...g, ...(changes || {}) };
-  writeGames(rows);
   return { ok: true };
 }
 
@@ -201,8 +108,9 @@ module.exports = {
   listGames,
   getGameById,
   reloadGames,
-  saveUploadedJs,
   deleteGameById,
   ensureGameDir,
   updateGameById,
+  extractManifestFromHtml,
+  scanHtmlGames,
 };

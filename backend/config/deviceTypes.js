@@ -3,7 +3,6 @@ const registry = require('../devices/registry');
 const deviceTypeMap = registry.getDeviceTypeMap();
 const deviceTypeConfig = registry.getAllDeviceTypeConfigs();
 
-const capabilityConfig = registry.getAllCapabilityDefinitions();
 const typeCapabilityMap = registry.getTypeCapabilityMap();
 
 function getDeviceTypeName(type) {
@@ -18,20 +17,12 @@ function isValidDeviceType(type) {
   return registry.isValidDeviceType(type);
 }
 
-function getDeviceMonitorData(type) {
-  return registry.getDeviceMonitorData(type);
-}
-
 function getDeviceOperations(type) {
   return registry.getDeviceOperations(type);
 }
 
-function hasMonitorData(type) {
-  return registry.hasMonitorData(type);
-}
-
 function hasOperations(type) {
-  return registry.hasOperations(type);
+  return getDeviceOperations(type).length > 0;
 }
 
 function getDeviceTypeConfig(type) {
@@ -76,14 +67,10 @@ module.exports = {
   getDeviceTypeName,
   getAllDeviceTypes,
   isValidDeviceType,
-  getDeviceMonitorData,
   getDeviceOperations,
-  hasMonitorData,
   hasOperations,
   getDeviceTypeConfig,
   getAllDeviceTypeConfigs,
-
-  capabilityConfig,
   typeCapabilityMap,
   getCapabilityName,
   getAllCapabilities,

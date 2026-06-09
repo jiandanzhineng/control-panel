@@ -1,297 +1,120 @@
 <template>
-  <div class="game-current-page">
-    <el-card shadow="never" class="game-content-card">
-      <template #header>
-        <div class="game-header">
-          <span>游戏界面</span>
-          <el-button 
-            type="danger" 
-            :icon="Close"
-            :loading="stopping"
-            @click="stopGame"
-          >
-            {{ stopping ? '停止中...' : '停止游戏' }}
-          </el-button>
-        </div>
-      </template>
-      <div ref="containerRef" class="embedded-html"></div>
-      <el-empty 
-        v-if="!loading && !error && empty" 
-        description="暂无运行中的玩法，请先在游戏列表启动"
-        :image-size="120"
-      >
-        <el-button type="primary" @click="$router.push('/games')">
-          前往游戏列表
-        </el-button>
-      </el-empty>
-    </el-card>
+  <div class="game-runtime">
+    <iframe
+      v-if="iframeSrc"
+      :src="iframeSrc"
+      class="game-frame"
+      allow="fullscreen; autoplay; gyroscope; accelerometer"
+      allowfullscreen
+    ></iframe>
+
+    <el-empty
+      v-else
+      class="game-empty"
+      description="未提供游戏配置，请先在游戏列表启动"
+      :image-size="120"
+    >
+      <el-button type="primary" @click="$router.push('/games')">前往游戏列表</el-button>
+    </el-empty>
+
+    <button class="stop-fab" @click="stopGame" title="停止游戏">
+      <el-icon><Close /></el-icon>
+      <span>停止</span>
+    </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { Close } from '@element-plus/icons-vue';
 
+const route = useRoute();
 const router = useRouter();
-const containerRef = ref<HTMLDivElement | null>(null);
-const loading = ref(false);
-const error = ref('');
-const empty = ref(false);
-const stopping = ref(false);
-const stopError = ref('');
+const iframeSrc = ref('');
 
-let cleanupRunner: () => void = () => {};
-let appendedStyles: HTMLStyleElement[] = [];
-let appendedScripts: HTMLScriptElement[] = [];
+function buildSrc(): string {
+  const q = route.query;
+  const externalUrl = String(q.externalUrl || '');
+  const gamePath = String(q.gamePath || '');
+  const deviceMap = String(q.deviceMap || '{}');
+  const params = String(q.params || '{}');
+  const id = String(q.id || '');
 
-onMounted(async () => {
-  await loadHtml();
+  // 基础游戏 URL：
+  // - 外部游戏：后端已返回前缀代理路径 gamePath（/games/proxy/...）
+  // - 本地游戏：优先 gamePath，否则按 id 兜底（后端 gamePath 形如 /games/<folder>/index.html）
+  let base = gamePath;
+  if (!base && id) base = `/games/${encodeURIComponent(id)}/index.html`;
+  if (!base && externalUrl) base = externalUrl;
+  if (!base) return '';
+
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}deviceMap=${encodeURIComponent(deviceMap)}&params=${encodeURIComponent(params)}`;
+}
+
+function stopGame() {
+  // 卸载 iframe → WebSocket 断开 → 后端兜底 close（安全停机）
+  iframeSrc.value = '';
+  router.push('/games');
+}
+
+onMounted(() => {
+  iframeSrc.value = buildSrc();
 });
-
-onBeforeUnmount(() => {
-  cleanup();
-});
-
-async function loadHtml() {
-  loading.value = true;
-  error.value = '';
-  empty.value = false;
-  try {
-    const res = await fetch('/api/games/current/html');
-    const text = await res.text();
-    if (!res.ok) {
-      // 尝试解析后端错误消息
-      try {
-        const json = JSON.parse(text);
-        error.value = json?.message || '页面获取失败';
-      } catch {
-        error.value = '页面获取失败';
-      }
-      clearContainer();
-      empty.value = true;
-      return;
-    }
-    injectHtml(text);
-  } catch (e: any) {
-    error.value = e?.message || '页面获取失败';
-    clearContainer();
-    empty.value = true;
-  } finally {
-    loading.value = false;
-  }
-}
-
-function reloadHtml() { loadHtml(); }
-
-async function stopGame() {
-  stopping.value = true;
-  stopError.value = '';
-  try {
-    const res = await fetch('/api/games/stop-current', { method: 'POST' });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || data.error) {
-      throw new Error(data?.message || '停止游戏失败');
-    }
-    // 停止成功，跳转回游戏列表
-    router.push('/games');
-  } catch (e: any) {
-    stopError.value = e?.message || '停止游戏失败';
-  } finally {
-    stopping.value = false;
-  }
-}
-
-function clearContainer() {
-  const container = containerRef.value;
-  if (container) container.innerHTML = '';
-}
-
-function cleanup() {
-  // 关闭可能的 SSE 连接并清理注入的样式与脚本
-  try { cleanupRunner(); } catch {}
-  cleanupRunner = () => {};
-  appendedStyles.forEach(s => { try { s.remove(); } catch {} });
-  appendedStyles = [];
-  appendedScripts.forEach(s => { try { s.remove(); } catch {} });
-  appendedScripts = [];
-  clearContainer();
-}
-
-function injectHtml(html: string) {
-  cleanup();
-  const container = containerRef.value;
-  if (!container) return;
-
-  // 使用 DOMParser 获取 head/body，分别处理样式与主体内容
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(html, 'text/html');
-
-  // 注入样式（可清理）
-  appendedStyles = [];
-  Array.from(doc.head.querySelectorAll('style')).forEach(styleEl => {
-    const s = document.createElement('style');
-    let css = styleEl.textContent || '';
-    
-    // 简单的 CSS 作用域隔离，防止 body/html 样式污染全局
-    // 将 body, :root, html 选择器替换为 .embedded-html
-    css = css.replace(/(^|[}\s])body\s*\{/g, '$1.embedded-html {');
-    css = css.replace(/(^|[}\s]):root\s*\{/g, '$1.embedded-html {');
-    css = css.replace(/(^|[}\s])html\s*\{/g, '$1.embedded-html {');
-    
-    s.textContent = css;
-    document.head.appendChild(s);
-    appendedStyles.push(s);
-  });
-
-  // 渲染 body 内容到容器
-  container.innerHTML = '';
-  Array.from(doc.body.children).forEach(node => {
-    container.appendChild(node.cloneNode(true));
-  });
-
-  // 收集并执行脚本（来自 head 与 body）
-  const scripts: HTMLScriptElement[] = [
-    ...Array.from(doc.head.querySelectorAll('script')),
-    ...Array.from(doc.body.querySelectorAll('script')),
-  ];
-  executeScripts(scripts);
-}
-
-function executeScripts(scripts: HTMLScriptElement[]) {
-  appendedScripts = [];
-  const originals: { EventSource: typeof EventSource } = { EventSource: window.EventSource };
-  const esList: EventSource[] = [];
-
-  // 包装 EventSource，用于路由离开时关闭连接，避免泄漏
-  try {
-    (window as any).EventSource = function(url: string | URL, config?: EventSourceInit) {
-      const es = new originals.EventSource(url as any, config as any);
-      try { esList.push(es); } catch {}
-      return es;
-    } as any;
-  } catch {}
-
-  for (const s of scripts) {
-    const newScript = document.createElement('script');
-    const src = s.getAttribute('src');
-    if (src) {
-      newScript.src = src;
-      newScript.async = false;
-    } else {
-      newScript.textContent = s.textContent || '';
-    }
-    document.body.appendChild(newScript);
-    appendedScripts.push(newScript);
-  }
-
-  // 还原原始 EventSource，并准备清理函数
-  try { (window as any).EventSource = originals.EventSource; } catch {}
-  cleanupRunner = function() {
-    esList.forEach(es => { try { es.close(); } catch {} });
-  };
-}
 </script>
 
 <style scoped>
-.game-current-page {
-  padding: 8px;
-  width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
-  box-sizing: border-box;
+.game-runtime {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  z-index: 2000;
 }
 
-.game-header {
+.game-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.game-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--el-bg-color);
+}
+
+.stop-fab {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2100;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 24px;
+  background: rgba(220, 38, 38, 0.92);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  -webkit-tap-highlight-color: transparent;
 }
 
-.game-content-card {
-  min-height: 360px;
+.stop-fab:hover {
+  background: rgba(220, 38, 38, 1);
 }
 
-.embedded-html {
-  min-height: 400px;
-  border: 1px solid var(--el-border-color-light);
-  border-radius: var(--el-border-radius-base);
-  overflow: hidden;
-  background: #f8f9fa;
-}
-
-/* 移动端优化 - 消除左边白边 */
-@media (max-width: 768px) {
-  .game-current-page {
-    padding: 0;
-    margin: 0;
-    width: 100%;
-  }
-  
-  .control-card {
-    margin: 0 0 8px 0;
-    border-radius: 0;
-  }
-  
-  .game-content-card {
-    margin: 0;
-    border-radius: 0;
-    min-height: 100vh;
-    border: none;
-  }
-  
-  .control-buttons {
-    flex-direction: column;
-  }
-  
-  .control-buttons .el-button {
-    width: 100%;
-  }
-  
-  .embedded-html {
-    min-height: 100vh;
-    width: 100%;
-    margin: 0;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    box-sizing: border-box;
-  }
-
-  .game-content-card .el-card__body {
-    padding: 0;
-  }
-}
-
-/* 超小屏幕优化 */
-@media (max-width: 480px) {
-  .game-current-page {
-    padding: 0;
-    margin: 0;
-    width: 100%;
-  }
-  
-  .control-card {
-    margin: 0 0 4px 0;
-    border-radius: 0;
-  }
-  
-  .game-content-card {
-    margin: 0;
-    border-radius: 0;
-    min-height: 100vh;
-    border: none;
-  }
-  
-  .embedded-html {
-    min-height: 100vh;
-    width: 100%;
-    margin: 0;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    box-sizing: border-box;
-  }
+.stop-fab:active {
+  transform: scale(0.96);
 }
 </style>

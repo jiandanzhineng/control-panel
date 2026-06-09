@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>女仆偷懒惩罚</title>
+<script type="application/json" id="game-manifest">
+{
+  "id": "maid-punishment",
+  "title": "女仆偷懒惩罚",
+  "description": "保持踮脚站立；任意按钮按下时电击；长期未电击时启动TD01逐步增强；支持自动锁。",
+  "version": "2.0.0",
+  "devices": [
+    { "id": "qtz", "capabilities": ["distance", "buttonInput", "reporting"], "required": true },
+    { "id": "shock", "capabilities": ["shock"], "required": true },
+    { "id": "motor", "capabilities": ["strength"], "required": false },
+    { "id": "lock", "capabilities": ["lock"], "required": false }
+  ],
+  "params": [
+    { "key": "duration", "type": "number", "default": 10, "label": "游戏时长(分钟)" },
+    { "key": "shockIntensity", "type": "number", "default": 24, "label": "电击强度(V)" },
+    { "key": "progressiveIntensity", "type": "boolean", "default": false, "label": "渐进强度" },
+    { "key": "maxIntensityIncrease", "type": "number", "default": 10, "label": "最大增幅" },
+    { "key": "allowUnsafeIntensity", "type": "boolean", "default": false, "label": "允许超过30V" },
+    { "key": "td01DelaySeconds", "type": "number", "default": 5, "label": "TD01延时(秒)" },
+    { "key": "td01IntensityIncrease", "type": "number", "default": 50, "label": "TD01每5秒增幅" },
+    { "key": "manualStart", "type": "boolean", "default": false, "label": "手动开启(等待锁按键)" },
+    { "key": "td01ShockProbability", "type": "number", "default": 0, "label": "TD01启动时电击概率(%)" }
+  ]
+}
+</script>
+<script src="/bridge-api/device-api-bridge.js"></script>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, "Microsoft YaHei", sans-serif; margin: 0; padding: 16px; }
+  header { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eee; color:#333; font-size:12px; }
+  main { margin-top:16px; display:grid; grid-template-columns:1fr; gap:12px; }
+  .card { border:1px solid #ddd; border-radius:8px; padding:12px; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  button { padding:8px 12px; border-radius:6px; border:1px solid #ccc; background:#fafafa; cursor:pointer; }
+  button.primary { background:#2563eb; color:#fff; border-color:#1d4ed8; }
+  .ok { color:#16a34a; }
+  .warn { color:#f59e0b; }
+  .err { color:#dc2626; }
+  #logs { max-height:160px; overflow:auto; margin:0; padding-left:16px; }
+</style>
+</head>
+<body>
+  <header>
+    <h2>女仆偷懒惩罚</h2>
+    <span class="pill">运行中：<span data-bind="running">false</span></span>
+    <span class="pill">开始时间：<span data-bind="startTime">-</span></span>
+    <span class="pill">加锁状态：<span data-bind="isLocked">false</span> <span data-bind="lockedText"></span></span>
+  </header>
+  <main>
+    <section class="card">
+      <h3>进度</h3>
+      <p>剩余秒数：<strong data-bind="remainingSec">-</strong></p>
+      <p class="warn" data-bind="statusText">-</p>
+      <div class="actions">
+        <button class="primary" data-action="pause"><span data-bind="btnText">暂停</span></button>
+        <button data-action="forceStart">强制开始</button>
+        <button data-action="unlock">解锁</button>
+      </div>
+    </section>
+    <section class="card">
+      <h3>传感器与惩罚</h3>
+      <p>按钮1：<strong data-bind="button0Pressed">false</strong>；按钮2：<strong data-bind="button1Pressed">false</strong></p>
+      <p>电击中：<strong data-bind="isShocking">false</strong>；累计电击：<strong data-bind="shockCount">0</strong></p>
+      <p>TD01激活：<strong data-bind="td01Active">false</strong>；强度：<strong data-bind="td01Intensity">0</strong></p>
+    </section>
+    <section class="card">
+      <h3>日志（最近10条）</h3>
+      <ul id="logs"></ul>
+    </section>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>

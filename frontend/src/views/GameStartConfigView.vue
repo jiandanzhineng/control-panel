@@ -278,8 +278,8 @@
         <div class="summary-section">
           <h4>设备映射</h4>
           <ul class="mapping-list">
-            <li v-for="d in requiredDevices" :key="d.logicalId || d.name">
-              {{ d.logicalId || d.name }} → {{ formatMapping(d) }}
+            <li v-for="d in requiredDevices" :key="d.id">
+              {{ d.id }} → {{ formatMapping(d) }}
             </li>
           </ul>
         </div>
@@ -348,6 +348,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { ElMessageBox } from 'element-plus';
 
 import { 
   Setting, 
@@ -360,21 +361,21 @@ import {
   Loading
 } from '@element-plus/icons-vue';
 
+interface GameDevice { id: string; capabilities?: string[]; required?: boolean }
+interface GameParam { key: string; type: string; default?: any; label?: string; min?: number; max?: number; enum?: any[]; required?: boolean }
+
 interface GameItem {
   id: string;
   name: string;
   description?: string;
-  status?: string;
-  arguments?: string;
-  configPath?: string;
-  requiredDevices?: Array<{ logicalId?: string; name?: string; capabilities?: string[]; required?: boolean; description?: string }>;
   version?: string;
-  author?: string;
-  createdAt?: number;
+  gamePath?: string;
+  external?: boolean;
+  externalUrl?: string;
   lastPlayed?: number | null;
-  // 可选扩展：参数元信息
-  parameterSchema?: Record<string, { type: string; required?: boolean; default?: any; enum?: any[]; min?: number; max?: number; name?: string; placeholder?: string }>;
-  parameter?: Array<{ key: string; type: string; required?: boolean; default?: any; enum?: any[]; min?: number; max?: number; name?: string; placeholder?: string }>;
+  // 新 manifest 格式（唯一来源）
+  devices?: GameDevice[];
+  params?: GameParam[];
 }
 
 interface DeviceItem { id: string; name?: string; type?: string; connected: boolean; lastReport?: string | null; data?: Record<string, any> }
@@ -399,39 +400,30 @@ const isMobile = ref(window.innerWidth <= 768);
 function onResize() { isMobile.value = window.innerWidth <= 768; }
 
 const requiredDevices = computed(() => {
-  const arr = (game.value?.requiredDevices || []).filter(Boolean);
+  const arr = (game.value?.devices || []).filter(Boolean);
   return Array.isArray(arr) ? arr : [];
 });
 
 const schemaEntries = computed(() => {
-  const g = game.value;
-  const list: Array<{ key: string; type: string; required?: boolean; default?: any; enum?: any[]; min?: number; max?: number; name?: string; placeholder?: string }> = [];
-  if (g?.parameterSchema && typeof g.parameterSchema === 'object') {
-    for (const [k, v] of Object.entries(g.parameterSchema)) {
-      list.push({ key: k, ...(v as any) });
-    }
-  } else if (Array.isArray(g?.parameter)) {
-    for (const item of g!.parameter!) {
-      if (item && typeof item.key === 'string') list.push(item as any);
-    }
-  }
+  const list = (game.value?.params || []).filter(p => p && typeof p.key === 'string');
   // 初始化默认值（仅第一次）
   for (const p of list) {
     if (parameters[p.key] === undefined && p.default !== undefined) {
       parameters[p.key] = p.default;
     }
   }
-  // 提取括号说明到 tooltip
-  for (const p of list) {
-    const nm = String(p.name ?? p.key ?? '');
+  // 标签来自 manifest 的 label；提取括号说明到 tooltip
+  for (const p of list as any[]) {
+    const nm = String(p.label ?? p.key ?? '');
+    p.name = nm;
     const m = nm.match(/^(.*?)(?:（(.*?)）|\((.*?)\))$/);
     if (m) {
-      p.name = (m[1] ?? '').trim() || p.name;
+      p.name = (m[1] ?? '').trim() || nm;
       const extra = (m[2] ?? m[3] ?? '').trim();
       if (extra && !p.placeholder) p.placeholder = extra;
     }
   }
-  return list;
+  return list as any[];
 });
 
 const basicSchemaEntries = computed(() => schemaEntries.value.filter(p => p.required !== false));
@@ -440,10 +432,10 @@ const advancedCollapseActive = ref<string[]>([]);
 
 const deviceMappings = computed(() => {
   return requiredDevices.value.map(rd => ({
-    roleName: rd.name || rd.logicalId || '未知角色',
-    roleDescription: rd.description || '',
+    roleName: rd.id || '未知角色',
+    roleDescription: '',
     deviceIds: deviceMapping[rdKey(rd)] || [],
-    logicalId: rd.logicalId,
+    logicalId: rd.id,
     required: rd.required,
     capabilities: rdCapabilities(rd)
   }));
@@ -493,14 +485,8 @@ function getDevice(id?: string) { return devices.value.find(d => d.id === id) ||
 
 function buildDefaultParameters(meta: any) {
   const defaults: Record<string, any> = {};
-  if (meta?.parameterSchema && typeof meta.parameterSchema === 'object' && !Array.isArray(meta.parameterSchema)) {
-    for (const [key, item] of Object.entries(meta.parameterSchema as Record<string, any>)) {
-      if (item && Object.prototype.hasOwnProperty.call(item, 'default')) {
-        defaults[key] = item.default;
-      }
-    }
-  } else if (Array.isArray(meta?.parameter)) {
-    for (const item of meta.parameter) {
+  if (Array.isArray(meta?.params)) {
+    for (const item of meta.params) {
       if (item?.key && Object.prototype.hasOwnProperty.call(item, 'default')) {
         defaults[item.key] = item.default;
       }
@@ -510,17 +496,17 @@ function buildDefaultParameters(meta: any) {
 }
 
 function updateMapping(row: any) {
-  const key = rdKey({ logicalId: row.logicalId, name: row.roleName });
+  const key = String(row.logicalId ?? '');
   if (key) {
     deviceMapping[key] = Array.isArray(row.deviceIds) ? row.deviceIds.slice() : [];
   }
 }
 
-function rdKey(d: { logicalId?: string; name?: string }) {
-  return String(d.logicalId ?? d.name ?? '');
+function rdKey(d: { id?: string }) {
+  return String(d.id ?? '');
 }
 
-function formatMapping(d: { logicalId?: string; name?: string }): string {
+function formatMapping(d: { id?: string }): string {
   const arr = deviceMapping[rdKey(d)] ?? [];
   if (arr.length === 0) return '未映射';
   return arr.map(id => {
@@ -533,43 +519,75 @@ function formatMapping(d: { logicalId?: string; name?: string }): string {
   }).join(', ');
 }
 
+function storageKey() {
+  const ext = String(route.query.externalUrl || '');
+  return ext ? `gameConfig:ext:${ext}` : `gameConfig:${gameId.value}`;
+}
+
+function loadSavedConfig(): { deviceMap?: Record<string, string[]>; params?: Record<string, any> } | null {
+  try {
+    const raw = localStorage.getItem(storageKey());
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    return (obj && typeof obj === 'object') ? obj : null;
+  } catch (_) { return null; }
+}
+
+function saveConfig() {
+  try {
+    localStorage.setItem(storageKey(), JSON.stringify({
+      deviceMap: { ...deviceMapping },
+      params: { ...parameters },
+    }));
+  } catch (_) {}
+}
+
 async function loadAll() {
   loadingAll.value = true;
   error.value = '';
   try {
-    const [gRes, metaRes, dRes, iRes, cfgRes] = await Promise.all([
-      fetch(`/api/games/${encodeURIComponent(gameId.value)}`),
-      fetch(`/api/games/${encodeURIComponent(gameId.value)}/meta`),
+    const externalUrl = String(route.query.externalUrl || '');
+    const gameMetaUrl = externalUrl
+      ? `/api/games/external/meta?url=${encodeURIComponent(externalUrl)}`
+      : `/api/games/${encodeURIComponent(gameId.value)}`;
+    const [gRes, dRes, iRes] = await Promise.all([
+      fetch(gameMetaUrl),
       fetch('/api/devices'),
       fetch('/api/device-capabilities'),
-      fetch(`/api/games/${encodeURIComponent(gameId.value)}/config`),
     ]);
     const g = await gRes.json();
-    if (!gRes.ok) throw new Error(g?.message || '获取游戏详情失败');
-    const meta = await metaRes.json().catch(() => ({}));
-    if (!metaRes.ok) {
-      console.warn('获取玩法元信息失败', meta?.message || meta);
-    }
-    game.value = { ...(g || {}), ...(meta || {}) } as any;
-    const saved = await cfgRes.json().catch(() => null);
+    if (!gRes.ok) throw new Error(apiErrorMessage(g, '获取游戏详情失败'));
+    game.value = g as any;
     const devs = await dRes.json();
     if (!dRes.ok) throw new Error(devs?.message || '获取设备列表失败');
     devices.value = Array.isArray(devs) ? devs : [];
     const capabilityData = await iRes.json();
     if (!iRes.ok) throw new Error(capabilityData?.message || '获取设备能力失败');
     typeCapabilityMap.value = (capabilityData?.typeCapabilityMap) || {};
-    const defaults = buildDefaultParameters(meta);
+
+    // 参数：优先 localStorage 回填，否则用 manifest 默认值
+    const saved = loadSavedConfig();
+    const defaults = buildDefaultParameters(g);
     for (const k of Object.keys(parameters)) delete (parameters as any)[k];
-    Object.assign(parameters, (saved && typeof saved === 'object' && !Array.isArray(saved)) ? saved : defaults);
-    // 初始化映射默认值：按能力筛选并默认选择第一项（在线优先）
+    Object.assign(parameters, (saved?.params && typeof saved.params === 'object') ? saved.params : defaults);
+
+    // 设备映射：优先 localStorage 回填（校验在线），否则按能力默认选第一台在线设备
     for (const rd of requiredDevices.value) {
       const key = rdKey(rd);
       if (!key) continue;
-      let candidates: DeviceItem[] = [];
       const capabilities = rdCapabilities(rd);
-      candidates = devices.value.filter(d => d.connected && typeSupportsCapabilities(d.type, capabilities));
-      const candidate = candidates.find(d => d.connected) || undefined;
-      deviceMapping[key] = candidate ? [candidate.id] : [];
+      const savedIds = Array.isArray(saved?.deviceMap?.[key]) ? saved!.deviceMap![key] : null;
+      if (savedIds) {
+        // 仅保留当前在线且能力匹配的设备
+        const valid = savedIds.filter(id => {
+          const dev = getDevice(id);
+          return dev && dev.connected && typeSupportsCapabilities(dev.type, capabilities);
+        });
+        deviceMapping[key] = valid;
+      } else {
+        const candidate = devices.value.find(d => d.connected && typeSupportsCapabilities(d.type, capabilities));
+        deviceMapping[key] = candidate ? [candidate.id] : [];
+      }
     }
   } catch (e: any) {
     error.value = e?.message || '数据加载失败';
@@ -634,14 +652,19 @@ function recomputeBlocking() {
 watch([deviceMapping, parameters, requiredDevices, schemaEntries], () => { recomputeBlocking(); }, { deep: true });
 
 async function resetToDefault() {
-  try {
-    const res = await fetch(`/api/games/${encodeURIComponent(gameId.value)}/config/reset`, { method: 'POST' });
-    const data = await res.json().catch(() => ({}));
-    const def = (data && typeof data.default === 'object') ? data.default : {};
-    for (const k of Object.keys(parameters)) delete (parameters as any)[k];
-    Object.assign(parameters, def);
-    recomputeBlocking();
-  } catch (_) {}
+  // 纯前端：清除该游戏的 localStorage 配置，重置为 manifest 默认
+  try { localStorage.removeItem(storageKey()); } catch (_) {}
+  const defaults = buildDefaultParameters(game.value);
+  for (const k of Object.keys(parameters)) delete (parameters as any)[k];
+  Object.assign(parameters, defaults);
+  for (const rd of requiredDevices.value) {
+    const key = rdKey(rd);
+    if (!key) continue;
+    const capabilities = rdCapabilities(rd);
+    const candidate = devices.value.find(d => d.connected && typeSupportsCapabilities(d.type, capabilities));
+    deviceMapping[key] = candidate ? [candidate.id] : [];
+  }
+  recomputeBlocking();
 }
 
 async function start(force: boolean) {
@@ -650,22 +673,36 @@ async function start(force: boolean) {
     startError.value = '存在阻塞项，请修正后再启动';
     return;
   }
+
+  // 外部网页：启动前安全提示
+  const externalUrl = String(route.query.externalUrl || '') || (game.value as any)?.externalUrl || '';
+  if (externalUrl) {
+    try {
+      await ElMessageBox.confirm(
+        `您即将进入外部网页（${externalUrl}），该页面不受硅基之下控制，请注意安全。`,
+        '外部网页提示',
+        { confirmButtonText: '继续', cancelButtonText: '取消', type: 'warning' }
+      );
+    } catch (_) {
+      return; // 用户取消
+    }
+  }
+
   startBusy.value = true;
   try {
-    const res = await fetch(`/api/games/${encodeURIComponent(gameId.value)}/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceMapping: { ...deviceMapping }, parameters: { ...parameters } }),
+    // 持久化本次配置
+    saveConfig();
+    // 配置经路由 query 注入运行页（deviceMap/params）
+    router.push({
+      name: 'game_current',
+      query: {
+        id: gameId.value,
+        externalUrl: externalUrl || undefined,
+        gamePath: (game.value as any)?.gamePath || undefined,
+        deviceMap: JSON.stringify({ ...deviceMapping }),
+        params: JSON.stringify({ ...parameters }),
+      },
     });
-    const data = await res.json().catch(() => ({}));
-    if (res.status === 409) {
-      throw new Error('已有玩法运行中，请先停止再启动');
-    }
-    if (!res.ok || (data && data.error)) {
-      throw new Error(apiErrorMessage(data, '启动失败'));
-    }
-    // 启动成功，跳转到当前运行页面
-    router.push({ name: 'game_current' });
   } catch (e: any) {
     startError.value = e?.message || '启动失败';
   } finally {

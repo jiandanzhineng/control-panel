@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>喝水/憋尿解锁玩法</title>
+<script type="application/json" id="game-manifest">
+{
+  "id": "drink-pee-unlock",
+  "title": "喝水/憋尿解锁玩法",
+  "description": "称重(DZC01)回调更新 + 状态机：保持提肛与双脚踮脚，同时持续变轻/变重，达成目标或超时自动解锁。",
+  "version": "2.0.0",
+  "devices": [
+    { "id": "scale", "capabilities": ["weight", "reporting"], "required": true },
+    { "id": "sensor", "capabilities": ["sphincterPressure", "reporting"], "required": false },
+    { "id": "qtz", "capabilities": ["buttonInput"], "required": false },
+    { "id": "punish", "capabilities": ["shock"], "required": false },
+    { "id": "vibe", "capabilities": ["strength"], "required": false },
+    { "id": "lock", "capabilities": ["lock"], "required": false }
+  ],
+  "params": [
+    { "key": "mode", "type": "enum", "default": "drink", "enum": ["drink", "pee"], "label": "模式" },
+    { "key": "durationSec", "type": "number", "default": 1800, "label": "时长(秒)" },
+    { "key": "targetWeight", "type": "number", "default": 500, "label": "目标重量变化(g)" },
+    { "key": "changeThreshold", "type": "number", "default": 1, "label": "有效变化阈值(g)" },
+    { "key": "stableWindowSec", "type": "number", "default": 30, "label": "历史窗口(秒)" },
+    { "key": "punishCooldownSec", "type": "number", "default": 10, "label": "惩罚冷却(秒)" },
+    { "key": "shockIntensity", "type": "number", "default": 24, "label": "电击强度(V)" },
+    { "key": "shockDuration", "type": "number", "default": 2, "label": "电击持续(秒)" },
+    { "key": "pressureThreshold", "type": "number", "default": 20, "label": "气压阈值(kPa)" },
+    { "key": "vibeStartProb", "type": "number", "default": 0.05, "label": "振动启动概率(每秒)" },
+    { "key": "vibeIntensity", "type": "number", "default": 255, "label": "振动强度(0-255)" },
+    { "key": "vibeDuration", "type": "number", "default": 3, "label": "振动时长(秒)" }
+  ]
+}
+</script>
+<script src="/bridge-api/device-api-bridge.js"></script>
+<style>
+  :root {
+    --bg: #050505; --panel-bg: rgba(20, 20, 25, 0.9); --panel-border: #333;
+    --primary: #00f0ff; --primary-dim: rgba(0, 240, 255, 0.2); --warn: #ffcc00;
+    --danger: #ff003c; --ok: #00ff9d; --text: #e0e0e0; --text-muted: #666;
+    --font-mono: "Consolas", "Monaco", "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; background: var(--bg); color: var(--text); font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; min-height: 100vh; display: flex; flex-direction: column; }
+  .hud-container { max-width: 1200px; margin: 0 auto; width: 100%; display: grid; grid-template-columns: 1fr; gap: 20px; }
+  .hud-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--panel-border); padding-bottom: 15px; margin-bottom: 10px; flex-wrap: wrap; gap: 10px; }
+  .hud-title { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: 1px; color: var(--primary); text-transform: uppercase; text-shadow: 0 0 10px var(--primary-dim); }
+  .hud-status-bar { display: flex; gap: 15px; }
+  .status-tag { background: var(--panel-border); padding: 4px 12px; border-radius: 4px; font-size: 12px; font-family: var(--font-mono); border: 1px solid #444; }
+  .status-tag b { color: #fff; }
+  .dashboard-grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 20px; }
+  .panel { background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 8px; padding: 20px; position: relative; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+  .panel::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 2px; background: linear-gradient(90deg, transparent, var(--primary), transparent); opacity: 0.5; }
+  .panel-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; display: block; }
+  .panel-hero { grid-column: span 12; display: flex; flex-direction: column; justify-content: center; }
+  .progress-display { position: relative; height: 40px; background: #111; border: 1px solid #333; border-radius: 4px; overflow: hidden; margin: 10px 0; }
+  .progress-fill { height: 100%; background: repeating-linear-gradient(45deg, var(--primary), var(--primary) 10px, var(--primary-dim) 10px, var(--primary-dim) 20px); width: 0%; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 15px var(--primary); }
+  .progress-text { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-weight: bold; text-shadow: 0 1px 2px #000; z-index: 2; mix-blend-mode: exclusion; }
+  .hero-stats { display: flex; justify-content: space-between; margin-top: 10px; font-family: var(--font-mono); font-size: 14px; flex-wrap: wrap; gap: 8px; }
+  .hero-stat-item { color: var(--text-muted); }
+  .hero-stat-item b { color: var(--text); margin-left: 5px; }
+  .panel-metric { grid-column: span 6; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  @media (min-width: 768px) { .panel-metric { grid-column: span 3; } }
+  .metric-value { font-family: var(--font-mono); font-size: 36px; font-weight: 700; color: #fff; text-shadow: 0 0 10px rgba(255,255,255,0.3); }
+  .metric-unit { font-size: 14px; color: var(--text-muted); margin-top: -5px; }
+  .tiptoe-indicator { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 20px; font-weight: bold; background: #111; border-radius: 4px; padding: 10px; }
+  .tiptoe-indicator.ok { color: var(--ok); border: 1px solid var(--ok); box-shadow: inset 0 0 10px var(--ok); }
+  .tiptoe-indicator.warn { color: var(--danger); border: 1px solid var(--danger); box-shadow: inset 0 0 10px var(--danger); animation: pulse 1s infinite; }
+  .panel-terminal { grid-column: span 12; font-family: var(--font-mono); background: #000; border: 1px solid #333; }
+  .terminal-logs { list-style: none; padding: 0; margin: 0; height: 150px; overflow-y: auto; font-size: 12px; }
+  .terminal-logs li { padding: 4px 8px; border-bottom: 1px solid #111; display: flex; gap: 10px; }
+  .terminal-logs li:before { content: '>'; color: var(--text-muted); }
+  .l-info { color: #aaa; } .l-warn { color: var(--warn); } .l-error { color: var(--danger); }
+  .text-danger { color: var(--danger) !important; }
+  @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
+  @media (max-width: 600px) { .hud-header { flex-direction: column; align-items: flex-start; gap: 10px; } .panel-metric { grid-column: span 6; } }
+</style>
+</head>
+<body>
+  <div class="hud-container">
+    <header class="hud-header">
+      <h1 class="hud-title" data-bind="title">喝水/憋尿解锁玩法</h1>
+      <div class="hud-status-bar">
+        <div class="status-tag">状态: <b data-bind="statusText">初始化</b></div>
+        <div class="status-tag">剩余: <b data-bind="remainingSec">-</b>s</div>
+      </div>
+    </header>
+    <main class="dashboard-grid">
+      <div class="panel panel-hero">
+        <span class="panel-label">任务进度 (初始: <span data-bind="initialWeight">-</span>g)</span>
+        <div class="progress-display">
+          <div class="progress-fill" id="progressBar" style="width: 0%"></div>
+          <div class="progress-text"><span data-bind="progress">0</span> / <span data-bind="targetWeight">500</span> g</div>
+        </div>
+        <div class="hero-stats">
+          <div class="hero-stat-item">惩罚次数: <b data-bind="shockCount" class="text-danger">0</b></div>
+          <div class="hero-stat-item">冷却时间: <b data-bind="cooldownRemainingSec">0</b>s</div>
+          <div class="hero-stat-item" style="color:var(--warn);"><b data-bind="lastPunishReason"></b></div>
+        </div>
+      </div>
+      <div class="panel panel-metric">
+        <span class="panel-label">当前重量</span>
+        <div class="metric-value"><span data-bind="weight">-</span></div>
+        <div class="metric-unit">克 (g)</div>
+      </div>
+      <div class="panel panel-metric">
+        <span class="panel-label">气压值</span>
+        <div class="metric-value"><span data-bind="pressure">-</span></div>
+        <div class="metric-unit">kPa</div>
+      </div>
+      <div class="panel panel-metric">
+        <span class="panel-label">踮脚状态</span>
+        <div class="tiptoe-indicator" id="tiptoeVal"><span data-bind="tiptoeOk">检查</span></div>
+      </div>
+      <div class="panel panel-metric">
+        <span class="panel-label">惩罚倒计时</span>
+        <div class="metric-value" style="color:var(--warn);"><span data-bind="punishCountdown">-</span></div>
+        <div class="metric-unit">秒 (s)</div>
+      </div>
+      <div class="panel" style="grid-column: span 12;">
+        <details>
+          <summary style="cursor:pointer; color:var(--primary);">系统指标 &gt;&gt;</summary>
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-top:10px; font-family:var(--font-mono); font-size:12px;">
+            <div>模式: <b data-bind="modeCN">-</b></div>
+            <div>最小重: <b data-bind="weightMin">-</b></div>
+            <div>最大重: <b data-bind="weightMax">-</b></div>
+            <div>最小压: <b data-bind="pressureMin">-</b></div>
+            <div>最大压: <b data-bind="pressureMax">-</b></div>
+            <div>采样数: <b data-bind="weightCount">0</b></div>
+            <div>历史窗口: <b data-bind="stableWindowSec">0</b>s</div>
+            <div>惩罚冷却: <b data-bind="punishCooldownSec">0</b>s</div>
+          </div>
+        </details>
+      </div>
+      <div class="panel panel-terminal">
+        <span class="panel-label">系统日志</span>
+        <ul class="terminal-logs" id="logs"></ul>
+      </div>
+    </main>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>

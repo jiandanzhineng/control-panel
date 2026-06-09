@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>俯卧撑检测训练</title>
+<script type="application/json" id="game-manifest">
+{
+  "id": "pushup-detection",
+  "title": "俯卧撑检测训练",
+  "description": "基于 QTZ 距离阈值检测俯卧撑动作，支持自动锁、电击与跳蛋奖励。",
+  "version": "2.0.0",
+  "devices": [
+    { "id": "qtz", "capabilities": ["distance", "buttonInput", "reporting"], "required": true },
+    { "id": "lock", "capabilities": ["lock"], "required": false },
+    { "id": "shock", "capabilities": ["shock"], "required": false },
+    { "id": "vibrator", "capabilities": ["strength"], "required": false },
+    { "id": "pj01", "capabilities": ["strength"], "required": false }
+  ],
+  "params": [
+    { "key": "duration", "type": "number", "default": 15, "label": "游戏时长(分钟)" },
+    { "key": "targetCount", "type": "number", "default": 30, "label": "目标数量(个)" },
+    { "key": "downThreshold", "type": "number", "default": 15, "label": "下降阈值(cm)" },
+    { "key": "upThreshold", "type": "number", "default": 35, "label": "上升阈值(cm)" },
+    { "key": "idleTimeLimit", "type": "number", "default": 15, "label": "无动作触发惩罚(秒)" },
+    { "key": "shockIntensity", "type": "number", "default": 15, "label": "电击强度(V)" },
+    { "key": "shockDuration", "type": "number", "default": 3, "label": "电击时长(秒)" },
+    { "key": "randomIntensityRange", "type": "number", "default": 10, "label": "强度随机幅度(±)" },
+    { "key": "randomDurationRange", "type": "number", "default": 1, "label": "时长随机幅度(±秒)" },
+    { "key": "rewardTriggerCount", "type": "number", "default": 3, "label": "奖励触发连击数" },
+    { "key": "rewardTriggerProbability", "type": "number", "default": 100, "label": "奖励触发概率(%)" },
+    { "key": "vibratorIntensity", "type": "number", "default": 100, "label": "跳蛋强度" },
+    { "key": "vibratorDuration", "type": "number", "default": 15, "label": "跳蛋时长(秒)" },
+    { "key": "pj01Duration", "type": "number", "default": 5, "label": "捶背时长(秒)" },
+    { "key": "enableVoice", "type": "boolean", "default": true, "label": "启用语音提示" }
+  ]
+}
+</script>
+<script src="/bridge-api/device-api-bridge.js"></script>
+<style>
+  :root { color-scheme: light dark; --primary:#6366f1; --secondary:#10b981; --ok:#16a34a; --warn:#f59e0b; --err:#ef4444; --muted:#64748b; --bg1:#eef2ff; --bg2:#fff7ed; --cardBg:#ffffff; }
+  html, body { height: 100%; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; margin: 0; padding: 16px; box-sizing: border-box; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: linear-gradient(90deg, var(--bg1), var(--bg2)); padding: 12px; border-radius: 12px; flex-wrap: wrap; }
+  .title { display:flex; align-items:center; gap:8px; flex-wrap: wrap; }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 999px; background: #eee; color: #333; font-size: 12px; }
+  main { margin-top: 12px; display: grid; grid-template-columns: 1fr; gap: 12px; }
+  .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  .section-title { margin: 0 0 8px; font-size: 15px; color: var(--muted); }
+  .actions { display: flex; gap: 8px; }
+  button { padding: 10px 14px; border-radius: 8px; border: 1px solid #cbd5e1; background: #f8fafc; cursor: pointer; }
+  button.primary { background: var(--primary); color: white; border-color: #1d4ed8; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; background:#eef2ff; color:#1d4ed8; }
+  .progress { height:10px; background:#e5e7eb; border-radius:6px; overflow:hidden; }
+  .bar { height:100%; width:0; background: linear-gradient(90deg, var(--primary), var(--secondary)); transition: width .3s ease; }
+  .stat { display:flex; gap:8px; align-items:center; }
+  .device-grid { display:grid; grid-template-columns: repeat(2, 1fr); gap:10px; }
+  .device-card { border:1px solid #e5e7eb; border-radius:8px; padding:10px; }
+  .device-card .device-title { font-size:16px; font-weight:600; color:#0f172a; }
+  .device-card .device-value { font-size:14px; }
+  .device-card.warn { border-color: var(--warn); background:#fffbeb; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .chip { display:inline-block; padding:6px 10px; border-radius:999px; background:#eef2ff; color:#1d4ed8; border:1px solid #dbeafe; font-size:13px; }
+  .chip.alt { background:#ecfdf5; color:var(--secondary); border-color:#d1fae5; }
+  .chip .num { font-weight:600; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); }
+  #logs { max-height:180px; overflow:auto; margin:0; padding-left:16px; }
+  #logs li { line-height:1.6; }
+  #logs li.info { color: var(--muted); }
+  #logs li.warn { color: var(--warn); }
+  #logs li.error, #logs li.err { color: var(--err); }
+  @media (max-width: 768px) { body { padding: 0; } .card { border-radius: 0; box-shadow:none; } button { width:100%; } }
+</style>
+</head>
+<body>
+  <header>
+    <div class="title">
+      <h2 style="margin:0;">俯卧撑检测训练</h2>
+      <span class="pill">运行：<span data-bind="running">false</span></span>
+      <span class="pill">开始：<span data-bind="startTime">-</span></span>
+      <span class="pill">剩余：<span data-bind="remainText">-</span></span>
+    </div>
+    <div style="min-width:180px;">
+      <div class="progress"><div id="countBar" class="bar"></div></div>
+      <div style="font-size:12px; color:var(--muted);">完成率 <span data-bind="completionRate">0</span>%</div>
+    </div>
+  </header>
+  <main>
+    <section class="card">
+      <h3 class="section-title">进度</h3>
+      <div class="stat">
+        <div>次数</div>
+        <div><strong data-bind="completedCount">0</strong> / <span data-bind="targetCount">0</span></div>
+        <div class="badge" style="margin-left:auto;">阶段：<span data-bind="phase">-</span></div>
+      </div>
+      <div class="progress" style="margin-top:8px;"><div id="countInlineBar" class="bar"></div></div>
+      <div class="stat"><div>当前距离</div><div><span data-bind="currentDistance">0</span> cm</div></div>
+      <div class="stat warn"><div>无动作</div><div><span data-bind="idleSec">0</span> 秒</div></div>
+      <div class="actions" style="margin-top:8px;">
+        <button class="primary" data-action="pause"><span data-bind="btnText">暂停</span></button>
+      </div>
+    </section>
+    <section class="card">
+      <h3 class="section-title">设备状态</h3>
+      <div class="device-grid">
+        <div class="device-card" data-class="isLocked:warn">
+          <div class="device-title">自动锁</div>
+          <div class="device-value"><span data-bind="isLockedText">锁定</span></div>
+        </div>
+        <div class="device-card" data-class="shocking:warn">
+          <div class="device-title">电击</div>
+          <div class="device-value"><span data-bind="shockingText">空闲</span></div>
+        </div>
+        <div class="device-card" data-class="vibratorOn:warn">
+          <div class="device-title">跳蛋</div>
+          <div class="device-value"><span data-bind="vibratorOnText">待机</span></div>
+        </div>
+        <div class="device-card" data-class="pj01On:warn">
+          <div class="device-title">捶背</div>
+          <div class="device-value"><span data-bind="pj01OnText">关闭</span></div>
+        </div>
+      </div>
+      <div class="chips" style="margin-top:10px;">
+        <span class="chip">惩罚 <span class="num" data-bind="punishmentCount">0</span></span>
+        <span class="chip alt">奖励 <span class="num" data-bind="rewardCount">0</span></span>
+      </div>
+    </section>
+    <section class="card">
+      <h3 class="section-title">日志（最近 10 条）</h3>
+      <ul id="logs"></ul>
+    </section>
+    <section class="card">
+      <h3 class="section-title">提示</h3>
+      <p style="margin:0;"><span data-bind="statusText">-</span></p>
+    </section>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>

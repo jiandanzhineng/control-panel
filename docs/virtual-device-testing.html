@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>虚拟设备测试系统设计</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f1117; color: #e2e8f0; line-height: 1.7; }
+.c { max-width: 1000px; margin: 0 auto; padding: 40px 24px; }
+h1 { font-size: 1.8rem; font-weight: 700; color: #f7fafc; margin-bottom: 6px; }
+h2 { font-size: 1.25rem; font-weight: 600; color: #90cdf4; margin: 36px 0 12px; padding-left: 12px; border-left: 3px solid #4299e1; }
+h3 { font-size: 0.95rem; font-weight: 600; color: #68d391; margin: 20px 0 8px; }
+p, li { color: #a0aec0; margin-bottom: 8px; font-size: 0.9rem; }
+.sub { color: #718096; font-size: 0.88rem; margin-bottom: 28px; }
+pre { background: #1a202c; border: 1px solid #2d3748; border-radius: 8px; padding: 14px; overflow-x: auto; font-size: 0.78rem; line-height: 1.7; margin: 10px 0; }
+code { font-family: "JetBrains Mono", "Fira Code", monospace; }
+pre code { color: #e2e8f0; }
+.kw { color: #9f7aea; } .fn { color: #63b3ed; } .str { color: #68d391; }
+.cmt { color: #4a5568; font-style: italic; } .num { color: #f6ad55; } .type { color: #ed8936; }
+.s { background: #1a202c; border: 1px solid #2d3748; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin: 10px 0; }
+th { background: #2d3748; color: #90cdf4; padding: 6px 10px; text-align: left; }
+td { padding: 6px 10px; border-bottom: 1px solid #2d3748; color: #a0aec0; }
+.note { background: #2a4365; border-left: 3px solid #4299e1; border-radius: 0 6px 6px 0; padding: 8px 12px; margin: 10px 0; font-size: 0.84rem; color: #90cdf4; }
+.warn { background: #744210; border-left: 3px solid #f6ad55; border-radius: 0 6px 6px 0; padding: 8px 12px; margin: 10px 0; font-size: 0.84rem; color: #fbd38d; }
+ul { padding-left: 20px; }
+.divider { height: 1px; background: #2d3748; margin: 28px 0; }
+</style>
+</head>
+<body>
+<div class="c">
+
+<h1>虚拟设备测试系统设计</h1>
+<p class="sub">在后端模拟物理设备行为，支持脚本驱动和 API 控制，游戏开发无需真实硬件</p>
+
+<h2>1. 核心理念</h2>
+<div class="s">
+<p><b>虚拟设备 = 后端注册的模拟设备实例。</b>它截获下行指令（记录游戏发了什么），并按脚本或 API 指令产生上行数据（模拟传感器上报、按钮事件等）。对游戏透明——游戏代码无需区分真实设备和虚拟设备。</p>
+<p><b>注入点：</b>虚拟设备在 <code>deviceService</code> 层面工作，跳过 MQTT/BLE Transport。下行写入被拦截记录而非发送到物理设备；上行数据通过直接调用 <code>deviceService.handleDeviceMessage</code> 注入，走正常的属性缓存 → 事件推送链路。</p>
+</div>
+
+<h2>2. 架构</h2>
+<div class="s">
+<pre><code>┌─────────────────────────────────────────────────────────────┐
+│  <span class="kw">Game Page</span> (通过 DeviceAPI Bridge 调用设备)                     │
+│  对虚拟设备完全透明，代码无需改动                             │
+└────────────────────────────┬────────────────────────────────┘
+                             │  Bridge 调用
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│  <span class="fn">Host Runtime</span> (Node.js 后端)                                  │
+│                                                             │
+│  deviceService.invokeDeviceCapability(virtualId, ...)        │
+│       ↓ 检测到虚拟设备                                       │
+│       ├─ 记录指令到 commandLog[]                             │
+│       └─ 不走 MQTT publish（拦截）                           │
+│                                                             │
+│  virtualDeviceService (新模块)                               │
+│       ├─ 管理虚拟设备实例                                    │
+│       ├─ 执行脚本 timeline / 响应 API 调用                   │
+│       └─ 注入上行数据 → deviceService.handleDeviceMessage    │
+└─────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│  <span class="fn">REST API</span> (外部控制入口)                                      │
+│  /api/virtual-devices — 创建/删除/查询虚拟设备               │
+│  /api/virtual-devices/:id/properties — 设置属性（模拟上报）  │
+│  /api/virtual-devices/:id/emit — 发送消息事件                │
+│  /api/virtual-devices/:id/commands — 查询下行指令记录        │
+│  /api/virtual-devices/:id/timeline — 加载/启停脚本           │
+└─────────────────────────────────────────────────────────────┘</code></pre>
+</div>
+
+<h2>3. REST API</h2>
+<div class="s">
+<h3>3.1 虚拟设备管理</h3>
+<pre><code><span class="cmt">// 创建虚拟设备</span>
+POST /api/virtual-devices
+{ <span class="str">"id"</span>: <span class="str">"vdev_qiya_1"</span>, <span class="str">"type"</span>: <span class="str">"QIYA"</span>, <span class="str">"properties"</span>: { <span class="str">"pressure"</span>: <span class="num">5.0</span>, <span class="str">"temperature"</span>: <span class="num">25.0</span> } }
+
+<span class="cmt">// 列出所有虚拟设备</span>
+GET /api/virtual-devices
+<span class="cmt">// → [{ id, type, properties, connected: true, isVirtual: true }]</span>
+
+<span class="cmt">// 删除虚拟设备</span>
+DELETE /api/virtual-devices/:id
+
+<span class="cmt">// 批量创建（快速搭建测试场景）</span>
+POST /api/virtual-devices/batch
+{ <span class="str">"devices"</span>: [
+  { <span class="str">"id"</span>: <span class="str">"v_sensor"</span>, <span class="str">"type"</span>: <span class="str">"QIYA"</span> },
+  { <span class="str">"id"</span>: <span class="str">"v_motor"</span>, <span class="str">"type"</span>: <span class="str">"TD01"</span> },
+  { <span class="str">"id"</span>: <span class="str">"v_shock"</span>, <span class="str">"type"</span>: <span class="str">"DIANJI"</span> }
+] }</code></pre>
+
+<h3>3.2 属性控制（模拟设备上报）</h3>
+<pre><code><span class="cmt">// 设置属性（等价于设备通过 MQTT 上报 method:'update'）</span>
+PUT /api/virtual-devices/:id/properties
+{ <span class="str">"pressure"</span>: <span class="num">72.5</span>, <span class="str">"temperature"</span>: <span class="num">26.1</span> }
+
+<span class="cmt">// 读取当前属性快照</span>
+GET /api/virtual-devices/:id/properties
+<span class="cmt">// → { pressure: 72.5, temperature: 26.1, report_delay_ms: 5000 }</span></code></pre>
+
+<h3>3.3 消息事件发送（模拟设备发出消息）</h3>
+<pre><code><span class="cmt">// 发送消息（等价于设备 publish 到 /dpub/{id}）</span>
+POST /api/virtual-devices/:id/emit
+{ <span class="str">"method"</span>: <span class="str">"low"</span> }
+
+<span class="cmt">// 模拟 QTZ 按钮按下</span>
+POST /api/virtual-devices/:id/emit
+{ <span class="str">"method"</span>: <span class="str">"action"</span>, <span class="str">"action"</span>: <span class="str">"key_clicked"</span> }
+
+<span class="cmt">// 模拟 ZIDONGSUO 紧急开锁事件</span>
+POST /api/virtual-devices/:id/emit
+{ <span class="str">"method"</span>: <span class="str">"action"</span>, <span class="str">"action"</span>: <span class="str">"emergency_open"</span> }</code></pre>
+
+<h3>3.4 下行指令查询</h3>
+<pre><code><span class="cmt">// 查看游戏对该虚拟设备发了什么指令</span>
+GET /api/virtual-devices/:id/commands
+<span class="cmt">// → [</span>
+<span class="cmt">//   { ts: 1717000000, action: "invoke", capability: "strength", actionName: "set", params: { value: 128 } },</span>
+<span class="cmt">//   { ts: 1717000100, action: "writeProps", props: { power: 200 } },</span>
+<span class="cmt">// ]</span>
+
+<span class="cmt">// 清空指令记录</span>
+DELETE /api/virtual-devices/:id/commands</code></pre>
+
+<h3>3.5 Timeline 脚本控制</h3>
+<pre><code><span class="cmt">// 加载并启动 timeline 脚本</span>
+POST /api/virtual-devices/:id/timeline
+{ <span class="str">"timeline"</span>: [...], <span class="str">"loop"</span>: <span class="kw">false</span> }
+
+<span class="cmt">// 停止正在执行的 timeline</span>
+DELETE /api/virtual-devices/:id/timeline
+
+<span class="cmt">// 查询 timeline 执行状态</span>
+GET /api/virtual-devices/:id/timeline
+<span class="cmt">// → { running: true, currentStep: 3, totalSteps: 10, elapsed: 5200 }</span></code></pre>
+</div>
+
+<h2>4. Timeline 脚本格式</h2>
+<div class="s">
+<p>Timeline 是一个步骤数组，每步定义延迟和动作。用于模拟设备随时间变化的行为序列。</p>
+<pre><code>{
+  <span class="str">"timeline"</span>: [
+    { <span class="str">"delay"</span>: <span class="num">0</span>,    <span class="str">"set"</span>: { <span class="str">"pressure"</span>: <span class="num">5.0</span> } },
+    { <span class="str">"delay"</span>: <span class="num">2000</span>, <span class="str">"set"</span>: { <span class="str">"pressure"</span>: <span class="num">30.0</span> } },
+    { <span class="str">"delay"</span>: <span class="num">1000</span>, <span class="str">"set"</span>: { <span class="str">"pressure"</span>: <span class="num">60.0</span> } },
+    { <span class="str">"delay"</span>: <span class="num">500</span>,  <span class="str">"set"</span>: { <span class="str">"pressure"</span>: <span class="num">85.0</span> } },
+    { <span class="str">"delay"</span>: <span class="num">2000</span>, <span class="str">"set"</span>: { <span class="str">"pressure"</span>: <span class="num">20.0</span> } },
+    { <span class="str">"delay"</span>: <span class="num">3000</span>, <span class="str">"emit"</span>: { <span class="str">"method"</span>: <span class="str">"action"</span>, <span class="str">"action"</span>: <span class="str">"key_clicked"</span> } }
+  ],
+  <span class="str">"loop"</span>: <span class="kw">true</span>
+}</code></pre>
+<table>
+<tr><th>字段</th><th>说明</th></tr>
+<tr><td><code>delay</code></td><td>距上一步的延迟(ms)。支持随机范围 <code>[1000, 3000]</code></td></tr>
+<tr><td><code>set</code></td><td>设置属性（触发属性缓存更新 + onProperty 回调）</td></tr>
+<tr><td><code>emit</code></td><td>发送消息（触发 onMessage 回调和能力事件匹配）</td></tr>
+<tr><td><code>loop</code></td><td>执行完毕后是否循环</td></tr>
+</table>
+</div>
+
+<h2>5. 虚拟设备定义（基于固件）</h2>
+<div class="s">
+<p>每种虚拟设备的属性、范围、默认值、消息事件均从固件源码提取。</p>
+
+<h3>5.1 PJ01 — 往复电机控制器</h3>
+<table>
+<tr><th>属性</th><th>类型</th><th>范围</th><th>默认</th><th>R/W</th><th>说明</th></tr>
+<tr><td>power</td><td>int</td><td>0-255</td><td>0</td><td>R/W</td><td>PWM强度</td></tr>
+<tr><td>sleep_time</td><td>int</td><td>—</td><td>7200</td><td>R/W</td><td>休眠时间(s)</td></tr>
+</table>
+<p><b>无电池、无按钮、无消息事件。</b></p>
+
+<h3>5.2 TD01 — 偏轴电机控制器</h3>
+<table>
+<tr><th>属性</th><th>类型</th><th>范围</th><th>默认</th><th>R/W</th><th>说明</th></tr>
+<tr><td>power</td><td>int</td><td>0-255</td><td>0</td><td>R/W</td><td>PWM强度，渐变800ms</td></tr>
+<tr><td>sleep_time</td><td>int</td><td>—</td><td>7200</td><td>R/W</td><td>休眠时间(s)</td></tr>
+<tr><td>battery</td><td>int</td><td>0-100</td><td>100</td><td>R</td><td>电池百分比</td></tr>
+</table>
+<p><b>消息事件：</b><code>{ method:"action", action:"key_boot_clicked" }</code> — 开机键单击</p>
+
+<h3>5.3 QIYA — 气压传感器</h3>
+<table>
+<tr><th>属性</th><th>类型</th><th>范围</th><th>默认</th><th>R/W</th><th>说明</th></tr>
+<tr><td>pressure</td><td>float</td><td>~0-55</td><td>5.0</td><td>R</td><td>气压(kPa)</td></tr>
+<tr><td>temperature</td><td>float</td><td>—</td><td>25.0</td><td>R</td><td>温度(°C)</td></tr>
+<tr><td>report_delay_ms</td><td>int</td><td>100-99999</td><td>5000</td><td>R/W</td><td>上报间隔</td></tr>
+<tr><td>sleep_time</td><td>int</td><td>—</td><td>7200</td><td>R/W</td><td>休眠时间(s)</td></tr>
+<tr><td>battery</td><td>int</td><td>0-100</td><td>100</td><td>R</td><td>电池百分比</td></tr>
+</table>
+<p><b>自动上报：</b>虚拟设备每 report_delay_ms 注入一次当前 pressure+temperature。无消息事件。</p>
+
+<h3>5.4 DIANJI — 电脉冲设备</h3>
+<table>
+<tr><th>属性</th><th>类型</th><th>范围</th><th>默认</th><th>R/W</th><th>说明</th></tr>
+<tr><td>voltage</td><td>int</td><td>0-80</td><td>0</td><td>R/W</td><td>升压目标电压(V)。safe=1时上限36V</td></tr>
+<tr><td>shock</td><td>int</td><td>0-1</td><td>0</td><td>R/W</td><td>放电开关。1=放电中</td></tr>
+<tr><td>delay</td><td>int</td><td>20-1000</td><td>30</td><td>R/W</td><td>放电脉冲间隔(ms)</td></tr>
+<tr><td>safe</td><td>int</td><td>0-1</td><td>1</td><td>R/W</td><td>安全模式(限压36V)，NVS持久化</td></tr>
+<tr><td>sleep_time</td><td>int</td><td>—</td><td>7200</td><td>R/W</td><td>休眠时间(s)</td></tr>
+<tr><td>battery</td><td>int</td><td>0-100</td><td>100</td><td>R</td><td>电池百分比</td></tr>
+</table>
+<p><b>动作消息：</b><code>{ method:"dian", time:3000, voltage:30 }</code> — 定时电击(time ms后自动停止，固件内部将shock归零)</p>
+<p><b>虚拟行为：</b>收到 <code>dian</code> 动作时，设置 shock=1+voltage，延迟 time ms后自动设 shock=0。</p>
+
+<h3>5.5 ZIDONGSUO — 自动锁</h3>
+<table>
+<tr><th>属性</th><th>类型</th><th>范围</th><th>默认</th><th>R/W</th><th>说明</th></tr>
+<tr><td>open</td><td>int</td><td>0-1</td><td>1</td><td>R/W</td><td>1=开锁(0°)，0=上锁(180°)</td></tr>
+<tr><td>sleep_time</td><td>int</td><td>—</td><td>7200</td><td>R/W</td><td>休眠时间(s)</td></tr>
+<tr><td>battery</td><td>int</td><td>0-100</td><td>100</td><td>R</td><td>电池百分比</td></tr>
+</table>
+<p><b>消息事件：</b></p>
+<ul>
+<li><code>{ method:"action", action:"key_clicked" }</code> — 按钮单击</li>
+<li><code>{ method:"action", action:"emergency_open" }</code> — 紧急开锁（低电量或长按60s触发）</li>
+</ul>
+<p><b>虚拟行为：</b>电池低于20%连续3次检测后自动触发 emergency_open 事件并设 open=1。</p>
+
+<h3>5.6 QTZ — 测距及脚踏传感器</h3>
+<table>
+<tr><th>属性</th><th>类型</th><th>范围</th><th>默认</th><th>R/W</th><th>说明</th></tr>
+<tr><td>distance</td><td>float</td><td>0-765 mm</td><td>100</td><td>R</td><td>VL6180X测距(mm)，3x缩放</td></tr>
+<tr><td>low_band</td><td>int</td><td>0-999999</td><td>60</td><td>R/W</td><td>低阈值(mm)，NVS持久化</td></tr>
+<tr><td>high_band</td><td>int</td><td>0-999999</td><td>150</td><td>R/W</td><td>高阈值(mm)，NVS持久化</td></tr>
+<tr><td>report_delay_ms</td><td>int</td><td>100-99999</td><td>10000</td><td>R/W</td><td>上报间隔(ms)</td></tr>
+<tr><td>button0</td><td>int</td><td>0-1</td><td>0</td><td>R</td><td>脚踏1状态</td></tr>
+<tr><td>button1</td><td>int</td><td>0-1</td><td>0</td><td>R</td><td>脚踏2状态</td></tr>
+<tr><td>sleep_time</td><td>int</td><td>—</td><td>7200</td><td>R/W</td><td>休眠时间(s)</td></tr>
+<tr><td>battery</td><td>int</td><td>0-100</td><td>100</td><td>R</td><td>电池百分比</td></tr>
+</table>
+<p><b>消息事件（距离阈值触发）：</b></p>
+<ul>
+<li><code>{ method:"low" }</code> — distance 从高于 low_band 降至低于 low_band 时触发（带10mm回差）</li>
+<li><code>{ method:"high" }</code> — distance 从低于 high_band 升至高于 high_band 时触发（带10mm回差）</li>
+</ul>
+<p><b>虚拟行为：</b>当通过 API 或 timeline 设置 distance 时，虚拟设备自动执行阈值判断逻辑：若 distance 从 ≥low_band 变为 &lt;low_band，自动 emit <code>{method:"low"}</code>；若从 ≤high_band 变为 &gt;high_band，自动 emit <code>{method:"high"}</code>。回差 10mm。</p>
+<p><b>按钮：</b>button0/button1 属性直接通过 API 设置为 0/1 即可模拟按下/释放。</p>
+
+<h3>5.7 DZC01 — 电子秤</h3>
+<table>
+<tr><th>属性</th><th>类型</th><th>范围</th><th>默认</th><th>R/W</th><th>说明</th></tr>
+<tr><td>weight</td><td>int</td><td>0-5000</td><td>0</td><td>R</td><td>重量(g)</td></tr>
+<tr><td>report_delay_ms</td><td>int</td><td>100-5000</td><td>5000</td><td>R/W</td><td>上报间隔(ms)</td></tr>
+<tr><td>display_mode</td><td>int</td><td>0-2</td><td>1</td><td>R/W</td><td>显示模式</td></tr>
+<tr><td>display_on</td><td>int</td><td>0-1</td><td>1</td><td>R/W</td><td>屏幕开关</td></tr>
+<tr><td>display_contrast</td><td>int</td><td>0-255</td><td>255</td><td>R/W</td><td>屏幕对比度</td></tr>
+<tr><td>line1_text</td><td>string</td><td>max 8字符</td><td>""</td><td>R/W</td><td>屏幕第一行文字</td></tr>
+<tr><td>line2_text</td><td>string</td><td>max 8字符</td><td>""</td><td>R/W</td><td>屏幕第二行文字</td></tr>
+<tr><td>button2</td><td>int</td><td>0-1</td><td>0</td><td>R</td><td>按键状态(按下/释放)</td></tr>
+<tr><td>sleep_time</td><td>int</td><td>—</td><td>7200</td><td>R/W</td><td>休眠时间(s)</td></tr>
+<tr><td>battery</td><td>int</td><td>0-100</td><td>100</td><td>R</td><td>电池百分比</td></tr>
+</table>
+<p><b>自动上报：</b>每 report_delay_ms 注入当前 weight。无消息事件。</p>
+<p><b>按钮：</b>button2 通过 API 设置 0/1 模拟。</p>
+
+<h3>5.8 CUNZHI01 — 寸止玩法设备</h3>
+<table>
+<tr><th>属性</th><th>类型</th><th>范围</th><th>默认</th><th>R/W</th><th>说明</th></tr>
+<tr><td>power</td><td>int</td><td>0-255</td><td>0</td><td>R/W</td><td>电机PWM强度</td></tr>
+<tr><td>voltage</td><td>int</td><td>0-75</td><td>0</td><td>R/W</td><td>升压电压(V)。safe=1时限36V</td></tr>
+<tr><td>shock</td><td>int</td><td>0-1</td><td>0</td><td>R/W</td><td>放电开关</td></tr>
+<tr><td>delay</td><td>int</td><td>20-1000</td><td>30</td><td>R/W</td><td>放电脉冲间隔(ms)</td></tr>
+<tr><td>safe</td><td>int</td><td>0-1</td><td>1</td><td>R/W</td><td>安全模式，NVS持久化</td></tr>
+<tr><td>pressure</td><td>float</td><td>—</td><td>0</td><td>R</td><td>压力通道1(ADC CH2)</td></tr>
+<tr><td>pressure1</td><td>float</td><td>—</td><td>0</td><td>R</td><td>压力通道2(ADC CH3)</td></tr>
+<tr><td>report_delay_ms</td><td>int</td><td>100-10000</td><td>5000</td><td>R/W</td><td>上报间隔(ms)</td></tr>
+<tr><td>sleep_time</td><td>int</td><td>—</td><td>7200</td><td>R/W</td><td>休眠时间(s)</td></tr>
+<tr><td>battery</td><td>int</td><td>0-100</td><td>100</td><td>R</td><td>电池百分比</td></tr>
+</table>
+<p><b>自动上报：</b>每 report_delay_ms 注入 pressure + pressure1。</p>
+<p><b>无消息事件。</b>无动作处理。</p>
+<div class="note"><b>game_* 属性（12个）：</b>game_mode, game_duration, game_fly_dur, game_e_vol, game_e_dur, game_p1_thresh, game_p2_thresh, game_m_dur, game_m_power, game_m_step, game_cooldown, game_kegel_t。这些用于设备端内置游戏，虚拟设备不需要模拟其行为，仅保留属性读写。</div>
+</div>
+
+<h2>6. 使用示例</h2>
+<div class="s">
+<h3>场景：测试压力寸止游戏</h3>
+<pre><code><span class="cmt">// 1. 创建虚拟设备</span>
+POST /api/virtual-devices/batch
+{
+  <span class="str">"devices"</span>: [
+    { <span class="str">"id"</span>: <span class="str">"v_sensor"</span>, <span class="str">"type"</span>: <span class="str">"QIYA"</span>, <span class="str">"properties"</span>: { <span class="str">"pressure"</span>: <span class="num">5.0</span>, <span class="str">"report_delay_ms"</span>: <span class="num">500</span> } },
+    { <span class="str">"id"</span>: <span class="str">"v_motor"</span>, <span class="str">"type"</span>: <span class="str">"TD01"</span> },
+    { <span class="str">"id"</span>: <span class="str">"v_shock"</span>, <span class="str">"type"</span>: <span class="str">"DIANJI"</span> }
+  ]
+}
+
+<span class="cmt">// 2. 启动游戏，deviceMap 映射到虚拟设备</span>
+<span class="cmt">// 3. 加载 timeline 模拟压力变化</span>
+POST /api/virtual-devices/v_sensor/timeline
+{
+  <span class="str">"timeline"</span>: [
+    { <span class="str">"delay"</span>: <span class="num">0</span>,    <span class="str">"set"</span>: { <span class="str">"pressure"</span>: <span class="num">5.0</span> } },
+    { <span class="str">"delay"</span>: <span class="num">3000</span>, <span class="str">"set"</span>: { <span class="str">"pressure"</span>: <span class="num">40.0</span> } },
+    { <span class="str">"delay"</span>: <span class="num">2000</span>, <span class="str">"set"</span>: { <span class="str">"pressure"</span>: <span class="num">75.0</span> } },
+    { <span class="str">"delay"</span>: <span class="num">1000</span>, <span class="str">"set"</span>: { <span class="str">"pressure"</span>: <span class="num">90.0</span> } },
+    { <span class="str">"delay"</span>: <span class="num">2000</span>, <span class="str">"set"</span>: { <span class="str">"pressure"</span>: <span class="num">15.0</span> } }
+  ],
+  <span class="str">"loop"</span>: <span class="kw">true</span>
+}
+
+<span class="cmt">// 4. 查看游戏对 motor 发了什么指令</span>
+GET /api/virtual-devices/v_motor/commands
+<span class="cmt">// → [{ ts:..., capability:"strength", actionName:"set", params:{value:128} }, ...]</span>
+
+<span class="cmt">// 5. 查看游戏是否触发了电击</span>
+GET /api/virtual-devices/v_shock/commands
+<span class="cmt">// → [{ ts:..., capability:"shock", actionName:"start", params:{voltage:20} }, ...]</span></code></pre>
+
+<h3>场景：AI 自动化测试</h3>
+<pre><code><span class="cmt">// AI 通过 API 实时控制虚拟设备，观察游戏响应</span>
+<span class="cmt">// 1. AI 读取游戏 manifest 的设备需求</span>
+<span class="cmt">// 2. AI 创建对应虚拟设备</span>
+<span class="cmt">// 3. AI 按测试用例逐步设置属性/发送事件</span>
+<span class="cmt">// 4. AI 读取 commands 验证游戏行为是否符合预期</span>
+PUT /api/virtual-devices/v_sensor/properties { <span class="str">"pressure"</span>: <span class="num">95.0</span> }
+<span class="cmt">// 等待 1s</span>
+GET /api/virtual-devices/v_shock/commands
+<span class="cmt">// 验证：游戏应在压力超阈值时触发电击</span></code></pre>
+</div>
+
+<h2>7. 实现要点</h2>
+<div class="s">
+<ul>
+<li><b>虚拟设备标记：</b>device 对象添加 <code>isVirtual: true</code> 字段。deviceService 在 publish 前检查此标记，虚拟设备跳过 MQTT publish，改为记录到 commandLog。</li>
+<li><b>上行注入：</b>调用 <code>deviceService.handleDeviceMessage({ topic: '/dpub/{id}', payload: JSON })</code>，走正常的属性更新和事件推送链路。</li>
+<li><b>自动上报：</b>虚拟设备创建时按 report_delay_ms 启动 setInterval，定时注入当前属性。report_delay_ms 被修改时重置 interval。</li>
+<li><b>阈值逻辑（QTZ）：</b>virtualDeviceService 内部维护 low_state_flag/high_state_flag，当 distance 属性变化时执行与固件相同的阈值判断+回差逻辑，自动 emit low/high 消息。</li>
+<li><b>定时电击（DIANJI）：</b>收到 <code>method:"dian"</code> 消息时启动 setTimeout，延迟后自动设 shock=0。</li>
+<li><b>commandLog 上限：</b>每设备最多保留最近 1000 条指令，FIFO 淘汰。</li>
+</ul>
+</div>
+
+</div>
+</body>
+</html>

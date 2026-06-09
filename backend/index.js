@@ -1,22 +1,20 @@
 const express = require('express');
 const cors = require('cors');
+const http = require('http');
+const path = require('path');
 const logger = require('./utils/logger');
-// 引入设备服务（原 deviceStore 重构后）
 const deviceService = require('./services/deviceService');
-// 引入 MQTT 服务
 const mqttService = require('./services/mqttService');
 const mdnsService = require('./services/mdnsService');
-// 引入日志服务
 const logService = require('./services/logService');
+const bridgeService = require('./services/bridgeService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// CORS：允许所有来源（用于桌面壳/不同源访问）
 app.use(cors());
 app.use(express.json());
 
-// 请求日志（简易版）：方法、路径、耗时
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
@@ -26,78 +24,68 @@ app.use((req, res, next) => {
   next();
 });
 
-// 先初始化 MQTT 客户端单例（自动连接）
 try {
   const mqttClient = require('./services/mqttClientService');
   mqttClient.init();
-  // 注册设备消息处理器
   mqttClient.onMessage(deviceService.handleDeviceMessage);
 } catch (e) {
   logger.warn('MQTT client init failed', e?.message || e);
 }
 
-// 初始化设备列表（加载持久化数据并启动离线检查循环）
 deviceService.initDeviceList();
 
-// 自动启动 MQTT 服务（mosquitto broker 或 EMQX）
 (async () => {
   try {
     const result = await mqttService.start();
     if (result.running) {
-      logger.info('MQTT service started successfully', { 
-        broker: result.broker,
-        pid: result.pid, 
-        port: result.port || 1883 
+      logger.info('MQTT service started successfully', {
+        broker: result.broker, pid: result.pid, port: result.port || 1883,
       });
     }
   } catch (error) {
-    logger.warn('Failed to start MQTT service, continuing without it', { 
-      error: error.message 
-    });
+    logger.warn('Failed to start MQTT service, continuing without it', { error: error.message });
   }
 })();
 
-// 路由：将实现与接口分离
+// Static: bridge script and game files
+app.use('/bridge-api', express.static(path.join(__dirname, 'public')));
+// 第三方游戏前缀反向代理（须在静态 /games 之前，避免被 static 捕获）
+app.use('/games/proxy', require('./routes/gameProxy'));
+app.use('/games', express.static(path.join(__dirname, 'games')));
+
+// Routes
 app.use('/api/mqtt', require('./routes/mqtt'));
 app.use('/api/network', require('./routes/network'));
 app.use('/api/mdns', require('./routes/mdns'));
 app.use('/api/mqtt-client', require('./routes/mqttClient'));
-// 设备管理路由
 app.use('/api/devices', require('./routes/devices'));
 app.use('/api/device-types', require('./routes/deviceTypes'));
 app.use('/api/device-capabilities', require('./routes/deviceCapabilities'));
-// 游戏管理路由
 app.use('/api/games', require('./routes/games'));
-// 游戏玩法路由
 app.use('/api/games', require('./routes/gameplay'));
-// 日志管理路由
 app.use('/api/logs', require('./routes/logs'));
-// 自动化测试路由
 app.use('/api/test', require('./routes/test'));
+app.use('/api/virtual-devices', require('./routes/virtualDevices'));
 
-// 健康检查与示例接口
-app.get('/api/hello', (req, res) => {
-  res.json({ message: 'Hello from Express backend!' });
-});
+app.get('/api/hello', (req, res) => { res.json({ message: 'Hello from Express backend!' }); });
 app.get('/api', (req, res) => { res.send('Backend is running'); });
 
-// 全局错误兜底日志（保持响应由各路由处理）
 app.use((err, req, res, next) => {
   logger.error('Unhandled error:', err?.message || err);
   next(err);
 });
 
-// 测试时仅导出 app，不启动监听；直接运行该文件时才监听
+const server = http.createServer(app);
+bridgeService.init(server);
+
 if (require.main === module) {
   logService.cleanOldLogs();
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     logger.info(`Backend server running at http://localhost:${PORT}`);
     if (process.platform === 'win32') {
       try {
         const res = mdnsService.publish();
-        if (res.running) {
-          logger.info('mDNS service started', { pid: res.pid });
-        }
+        if (res.running) logger.info('mDNS service started', { pid: res.pid });
       } catch (e) {
         logger.warn('mDNS service start failed', e?.message || e);
       }
@@ -105,30 +93,15 @@ if (require.main === module) {
   });
 }
 
-// 进程退出清理设备服务定时器
-// 进程退出时的清理工作
 process.on('SIGINT', async () => {
   logger.info('Received SIGINT, cleaning up...');
-  
-  // 清理设备服务
   deviceService.cleanup();
-  
-  // 停止 MQTT 服务
   try {
     await mqttService.stop();
-    logger.info('MQTT service stopped');
-  } catch (error) {
-    logger.warn('Error stopping MQTT service', { error: error.message });
-  }
+  } catch (_) {}
   if (process.platform === 'win32') {
-    try {
-      mdnsService.unpublish();
-      logger.info('mDNS service unpublished');
-    } catch (error) {
-      logger.warn('Error unpublishing mDNS service', { error: error.message });
-    }
+    try { mdnsService.unpublish(); } catch (_) {}
   }
-  
   process.exit(0);
 });
 

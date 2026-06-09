@@ -21,7 +21,22 @@ export default defineConfig(({ command }) => {
         '/api': {
           target: apiProxyTarget,
           changeOrigin: true,
-        }
+        },
+        // 游戏静态文件 / 第三方代理 / Bridge 脚本 / Bridge WebSocket
+        // 全部代理到后端，使游戏 iframe 与控制台同源（WS Origin 校验通过）
+        '/games': {
+          target: apiProxyTarget,
+          changeOrigin: true,
+        },
+        '/bridge-api': {
+          target: apiProxyTarget,
+          changeOrigin: true,
+        },
+        '/bridge': {
+          target: apiProxyTarget,
+          changeOrigin: true,
+          ws: true,
+        },
       }
     },
   }

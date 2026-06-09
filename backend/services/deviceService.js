@@ -2,10 +2,8 @@
 const {
   deviceTypeMap,
   getDeviceTypeName,
-  getDeviceMonitorData,
-  hasMonitorData,
   hasOperations,
-  getDeviceTypeConfig 
+  getDeviceTypeConfig
 } = require('../config/deviceTypes');
 const deviceRegistry = require('../devices/registry');
 const fileStorage = require('../utils/fileStorage');
@@ -201,6 +199,17 @@ function onDeviceDataChange(handler) {
   }
 }
 
+// 原始消息监听（供 Bridge 等订阅，覆盖真实 MQTT 与虚拟设备注入两条来源）
+const rawMessageHandlers = [];
+function onDeviceRawMessage(handler) {
+  if (typeof handler === 'function') rawMessageHandlers.push(handler);
+}
+function emitRawMessage(deviceId, payload) {
+  for (const h of rawMessageHandlers) {
+    try { h({ deviceId, payload }); } catch (_) {}
+  }
+}
+
 function emitDeviceDataChange(device, changes, prevData, nextData) {
   for (const fn of state.dataChangeHandlers) {
     try {
@@ -296,6 +305,8 @@ async function handleDeviceMessage(message) {
       }
       saveDevices();
     }
+    // 向原始消息订阅者广播（Bridge 用于 onMessage / 消息类能力事件）
+    emitRawMessage(deviceId, payloadObj);
   } catch (error) {
     logger.error('Device', '处理设备消息失败');
   }
@@ -372,32 +383,26 @@ function getDeviceTypesForApi() {
 }
 
 // ====== 设备操作相关功能 ======
-function executeDeviceOperation(deviceId, operationKey, params = {}) {
-  logger.info('Device', '开始执行设备操作');
+function devicePublishFn(deviceId, message) {
+  const topic = `/drecv/${deviceId}`;
+  mqttClient.publish(topic, message);
+  return { ok: true, topic, message };
+}
 
+function executeDeviceOperation(deviceId, operationKey, params = {}) {
   const device = getDeviceById(deviceId);
   if (!device) {
-    logger.error('Device', '设备操作失败：设备不存在');
     const error = new Error('设备不存在');
     error.code = 'DEVICE_NOT_FOUND';
     throw error;
   }
-
   const deviceType = deviceRegistry.getDeviceType(device.type);
-  const mqttData = deviceType.invokeOperation(device, operationKey, params);
-  const topic = `/drecv/${deviceId}`;
-  
-  logger.info('Device', '准备发送MQTT消息');
-  
   try {
-    mqttClient.publish(topic, mqttData);
-    logger.info('Device', '设备操作执行成功');
+    deviceType.invokeOperation(deviceId, operationKey, params, devicePublishFn);
     return { success: true, message: '操作执行成功' };
   } catch (error) {
-    logger.error('Device', '设备操作执行失败：MQTT发布失败');
     const wrappedError = new Error(`操作执行失败: ${error.message}`);
-    wrappedError.code = 'MQTT_PUBLISH_FAILED';
-    wrappedError.originalError = error;
+    wrappedError.code = error.code || 'OPERATION_FAILED';
     throw wrappedError;
   }
 }
@@ -410,47 +415,24 @@ function invokeDeviceCapability(deviceId, capabilityKey, actionName, input = {})
     throw error;
   }
   const deviceType = deviceRegistry.getDeviceType(device.type);
-  const message = deviceType.invokeCapability(device, capabilityKey, actionName, input || {});
-  return publishDeviceMessage(deviceId, message);
+  deviceType.invokeCapability(deviceId, capabilityKey, actionName, input || {}, devicePublishFn);
+  return { ok: true };
 }
 
-// 获取设备当前监控数据
-function getDeviceMonitorDataForApi(deviceId) {
+function invokeDeviceClose(deviceId) {
   const device = getDeviceById(deviceId);
-  if (!device) {
-    return null;
-  }
-
-  const monitorDataDef = getDeviceMonitorData(device.type);
-  const result = {
-    deviceId: device.id,
-    type: device.type,
-    data: {},
-    timestamp: device.lastReport ? new Date(device.lastReport).toISOString() : null
-  };
-
-  // 根据监控数据定义提取相应的数据
-  monitorDataDef.forEach(def => {
-    if (device.data && device.data.hasOwnProperty(def.key)) {
-      result.data[def.key] = device.data[def.key];
-    }
-  });
-
-  return result;
+  if (!device) return;
+  const deviceType = deviceRegistry.getDeviceType(device.type);
+  try {
+    deviceType.invokeClose(deviceId, devicePublishFn);
+  } catch (_) {}
 }
 
-// 获取设备类型配置（包含操作和监控数据定义）
+// 获取设备类型配置
 function getDeviceTypeConfigForApi(type) {
   return getDeviceTypeConfig(type);
 }
 
-// 检查设备是否支持监控数据
-function deviceHasMonitorData(deviceId) {
-  const device = getDeviceById(deviceId);
-  return device ? hasMonitorData(device.type) : false;
-}
-
-// 检查设备是否支持操作
 function deviceHasOperations(deviceId) {
   const device = getDeviceById(deviceId);
   return device ? hasOperations(device.type) : false;
@@ -484,6 +466,7 @@ module.exports = {
   cleanup,
   // 数据变更回调
   onDeviceDataChange,
+  onDeviceRawMessage,
   // 新增：MQTT消息处理
   handleDeviceMessage,
   // API 适配器与业务方法
@@ -500,9 +483,9 @@ module.exports = {
   // 设备操作和监控数据相关
   executeDeviceOperation,
   invokeDeviceCapability,
-  getDeviceMonitorDataForApi,
+  invokeDeviceClose,
+  devicePublishFn,
   getDeviceTypeConfigForApi,
-  deviceHasMonitorData,
   deviceHasOperations,
   deviceHasCapabilities,
 }
