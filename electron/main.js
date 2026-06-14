@@ -1,5 +1,5 @@
 const path = require('path');
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
@@ -109,6 +109,15 @@ function registerUpdateIpcHandlers() {
   });
 }
 
+// 判断两个 URL 是否同源（用于区分应用内导航与外部链接）
+function isSameOrigin(a, b) {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
 // 获取资源路径，兼容开发和打包环境
 function getResourcePath(relativePath) {
   if (app.isPackaged) {
@@ -127,6 +136,24 @@ function createWindow() {
     },
   });
   mainWindow = win;
+
+  // 外部链接（target="_blank" 或 window.open）使用系统默认浏览器打开，而非 Electron 新窗口
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) {
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    return { action: 'allow' };
+  });
+
+  // 拦截当前页面内导航到外部地址的情况，改用系统浏览器
+  win.webContents.on('will-navigate', (event, url) => {
+    const currentUrl = win.webContents.getURL();
+    if (/^https?:\/\//i.test(url) && !isSameOrigin(url, currentUrl)) {
+      event.preventDefault();
+      shell.openExternal(url);
+    }
+  });
 
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   const frontendUrl = process.env.FRONTEND_URL;
@@ -208,12 +235,29 @@ function startFrontendServer(callback) {
     }
   }));
 
-  // 游戏静态/第三方代理/Bridge 脚本 转发到后端（保持原路径），使游戏 iframe 与控制台同源
+  // 游戏静态/第三方代理/Bridge 脚本 转发到后端（保持原路径），使游戏 iframe 与控制台同源。
+  // 注意：http-proxy-middleware v3 在 app.use('/前缀', ...) 时会被 Express 剥掉挂载前缀，
+  // 转发到后端的 req.url 不含该前缀，因此必须用 pathRewrite 把前缀补回，否则后端 404。
   const backendTarget = process.env.BACKEND_URL || 'http://127.0.0.1:5278';
-  frontendApp.use('/games', createProxyMiddleware({ target: backendTarget, changeOrigin: true }));
-  frontendApp.use('/bridge-api', createProxyMiddleware({ target: backendTarget, changeOrigin: true }));
-  // Bridge WebSocket 转发
-  const bridgeWsProxy = createProxyMiddleware({ target: backendTarget, changeOrigin: true, ws: true });
+  frontendApp.use('/games', createProxyMiddleware({
+    target: backendTarget,
+    changeOrigin: true,
+    pathRewrite: { '^/': '/games/' },
+  }));
+  frontendApp.use('/bridge-api', createProxyMiddleware({
+    target: backendTarget,
+    changeOrigin: true,
+    pathRewrite: { '^/': '/bridge-api/' },
+  }));
+  // Bridge WebSocket 转发。
+  // WS 升级请求走下方 frontendServer.on('upgrade') 直接调用 .upgrade()，
+  // 此时 req.url 是未被 Express 剥离的完整 /bridge/... 路径，故不能加 pathRewrite，
+  // 否则会变成 /bridge/bridge/...。
+  const bridgeWsProxy = createProxyMiddleware({
+    target: backendTarget,
+    changeOrigin: true,
+    ws: true,
+  });
   frontendApp.use('/bridge', bridgeWsProxy);
   
   frontendApp.use(express.static(distPath));

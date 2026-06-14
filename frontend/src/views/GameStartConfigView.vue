@@ -348,6 +348,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { track } from '../analytics';
 import { ElMessageBox } from 'element-plus';
 
 import { 
@@ -690,6 +691,10 @@ async function start(force: boolean) {
 
   startBusy.value = true;
   try {
+    track('game_start', {
+      game_id: gameId.value || externalUrl || 'unknown',
+      device_count: Object.keys(deviceMapping).length,
+    });
     // 持久化本次配置
     saveConfig();
     // 配置经路由 query 注入运行页（deviceMap/params）

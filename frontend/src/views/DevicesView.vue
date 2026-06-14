@@ -636,6 +636,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload } from '@element-plus/icons-vue'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
+import { track } from '../analytics'
 
 interface DeviceData { [key: string]: any }
 interface Device {
@@ -714,6 +715,8 @@ const selectedDevice = computed<Device | null>(() => {
 });
 const connectedCount = computed(() => devices.value.filter(d => d.connected).length);
 const disconnectedCount = computed(() => devices.value.filter(d => !d.connected).length);
+// 已上报 device_connect 的在线设备 id 集合，用于检测离线→在线边沿
+let connectedDeviceIds = new Set<string>();
 const onlineDevices = computed(() => devices.value.filter(d => d.connected));
 const offlineDevices = computed(() => devices.value.filter(d => !d.connected));
 const offlineCollapseActive = ref<string[]>([]);
@@ -828,6 +831,13 @@ async function refreshDevices() {
   const res = await fetch('/api/devices');
   if (!res.ok) throw new Error('设备列表获取失败');
   const list: Device[] = await res.json();
+  // 检测离线→在线的边沿，仅对新上线设备上报 device_connect（避免轮询重复上报）
+  for (const d of list) {
+    if (d.connected && !connectedDeviceIds.has(d.id)) {
+      track('device_connect', { device_type: d.type });
+    }
+  }
+  connectedDeviceIds = new Set(list.filter(d => d.connected).map(d => d.id));
   devices.value = list;
   // 刷新后保留原选中设备；若设备已不存在则清空并关闭监控
   if (selectedDeviceId.value) {

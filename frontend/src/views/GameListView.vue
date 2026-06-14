@@ -60,6 +60,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { track } from '../analytics';
 
 interface RequiredDevice { logicalId?: string; required?: boolean; name?: string }
 interface GameItem {
@@ -145,6 +146,7 @@ async function onFileSelected(ev: Event) {
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data?.message || '上传失败');
     updated.value.upload = true;
+    track('game_upload');
     await loadGames();
   } catch (e: any) {
     error.value = e?.message || '上传失败';
@@ -170,6 +172,7 @@ async function stopCurrent() {
       return;
     }
     if (!res.ok || data.error) throw new Error(data?.message || '停止失败');
+    track('game_stop');
     await loadGames();
   } catch (e: any) {
     error.value = e?.message || '停止失败';
@@ -185,6 +188,7 @@ async function deleteGame(g: GameItem) {
     const res = await fetch(`/api/games/${encodeURIComponent(g.id)}`, { method: 'DELETE' });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data?.message || '删除失败');
+    track('game_delete', { game_id: g.id });
     games.value = games.value.filter(x => x.id !== g.id);
   } catch (e: any) {
     alert(e?.message || '删除失败');

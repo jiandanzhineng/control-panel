@@ -27,6 +27,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { track } from '../analytics';
 import { Close } from '@element-plus/icons-vue';
 
 const route = useRoute();
@@ -55,6 +56,7 @@ function buildSrc(): string {
 
 function stopGame() {
   // 卸载 iframe → WebSocket 断开 → 后端兜底 close（安全停机）
+  track('game_stop', { game_id: String(route.query.id || 'unknown') });
   iframeSrc.value = '';
   router.push('/games');
 }

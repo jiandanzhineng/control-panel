@@ -198,6 +198,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Back, Refresh, Sunny, Upload } from '@element-plus/icons-vue';
+import { track } from '../analytics';
 
 interface Device {
   id: string;
@@ -382,6 +383,7 @@ async function startBatchUpgrade() {
     );
 
     await updateDevices(targets.map((row) => row.device.id));
+    track('firmware_upgrade', { batch_count: targets.length });
   } catch (error: any) {
     if (error !== 'cancel' && error !== 'close') {
       ElMessage.error(error?.message || '批量升级失败');
