@@ -6,11 +6,9 @@ const logger = require('../utils/logger');
 
 const backendRoot = path.resolve(__dirname, '..');
 const projectRoot = path.resolve(backendRoot, '..');
-const oldGameDir = path.resolve(backendRoot, 'game');
 const newGameDir = path.resolve(backendRoot, 'games');
 
 function ensureGameDir() {
-  if (!fs.existsSync(oldGameDir)) fs.mkdirSync(oldGameDir, { recursive: true });
   if (!fs.existsSync(newGameDir)) fs.mkdirSync(newGameDir, { recursive: true });
 }
 

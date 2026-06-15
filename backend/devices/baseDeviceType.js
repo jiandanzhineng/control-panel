@@ -1,4 +1,5 @@
 const { getCapabilityDefinition } = require('./capabilities');
+const { getMonitorSpec } = require('./monitorSpec');
 
 class BaseDeviceType {
   constructor({ type, name, capabilities = {}, operations = [], close = null }) {
@@ -49,6 +50,46 @@ class BaseDeviceType {
     if (override?.events) return override.events;
     const cap = getCapabilityDefinition(capabilityKey);
     return cap?.events || {};
+  }
+
+  // 解析单个能力的有效定义（合并 override 与中心化控制协议定义）
+  resolveCapability(capabilityKey) {
+    const override = this.capabilityOverrides[capabilityKey] || {};
+    const base = getCapabilityDefinition(capabilityKey) || { key: capabilityKey, name: capabilityKey };
+    return {
+      key: capabilityKey,
+      name: override.name || base.name || capabilityKey,
+      actions: override.actions || base.actions || {},
+    };
+  }
+
+  // 聚合本设备所有能力对应的监控字段（数据源：monitorSpec 展示元数据，按 key 去重）
+  getMonitorData() {
+    const rows = [];
+    const seen = new Set();
+    for (const key of this.capabilityKeys) {
+      for (const item of getMonitorSpec(key)) {
+        if (!item?.key || seen.has(item.key)) continue;
+        rows.push(item);
+        seen.add(item.key);
+      }
+    }
+    return rows;
+  }
+
+  // 对外暴露的能力配置（不含内部实现细节，如 events.watch/trigger）
+  getCapabilityConfig() {
+    const result = {};
+    for (const key of this.capabilityKeys) {
+      const cap = this.resolveCapability(key);
+      result[key] = {
+        key: cap.key,
+        name: cap.name,
+        actions: cap.actions,
+        monitorData: getMonitorSpec(key),
+      };
+    }
+    return result;
   }
 
   createContext(deviceId, publishFn) {
@@ -128,9 +169,10 @@ class BaseDeviceType {
 
   toConfig() {
     return {
-      type: this.type,
       name: this.name,
       capabilities: this.getCapabilityKeys(),
+      capabilityConfig: this.getCapabilityConfig(),
+      monitorData: this.getMonitorData(),
       operations: this.getPublicOperations(),
     };
   }

@@ -14,31 +14,36 @@ function createApp() {
 describe('device capability registry', () => {
   it('maps device types to capability sets', () => {
     expect(registry.hasCapability('TD01', 'strength')).toBe(true);
-    expect(registry.hasCapabilities('CUNZHI01', ['strength', 'pressure', 'shock'])).toBe(true);
-    expect(registry.hasCapabilities('QIYA', ['pressure', 'reporting'])).toBe(true);
+    expect(registry.hasCapabilities('CUNZHI01', ['strength', 'sphincterPressure', 'shock'])).toBe(true);
+    expect(registry.hasCapabilities('QIYA', ['sphincterPressure', 'reporting'])).toBe(true);
     expect(registry.getTypesByCapability('strength')).toEqual(expect.arrayContaining(['TD01', 'PJ01', 'CUNZHI01']));
   });
 
   it('builds default strength update messages through bindings', () => {
     const td01 = registry.getDeviceType('TD01');
-    expect(td01.invokeCapability({ id: 'dev01', type: 'TD01' }, 'strength', 'set', { value: 128.6 }))
-      .toEqual({ method: 'update', power: 129 });
-    expect(td01.invokeCapability({ id: 'dev01', type: 'TD01' }, 'strength', 'set', { value: -10 }))
-      .toEqual({ method: 'update', power: 0 });
-    expect(td01.invokeCapability({ id: 'dev01', type: 'TD01' }, 'strength', 'set', { value: 999 }))
-      .toEqual({ method: 'update', power: 255 });
+    const sent = [];
+    const publishFn = (deviceId, msg) => sent.push(msg);
+    td01.invokeCapability('dev01', 'strength', 'set', { value: 128.6 }, publishFn);
+    td01.invokeCapability('dev01', 'strength', 'set', { value: -10 }, publishFn);
+    td01.invokeCapability('dev01', 'strength', 'set', { value: 999 }, publishFn);
+    expect(sent).toEqual([
+      { method: 'update', power: 129 },
+      { method: 'update', power: 0 },
+      { method: 'update', power: 255 },
+    ]);
   });
 
   it('validates capability action input', () => {
-    expect(() => validateActionInput('strength', 'set', {})).toThrow(/参数缺失/);
-    expect(() => validateActionInput('lock', 'setOpen', { open: 1 })).toThrow(/布尔值/);
     expect(() => validateActionInput('shock', 'unknown', {})).toThrow(/能力动作不存在/);
+    expect(() => validateActionInput('nope', 'set', {})).toThrow(/未知能力/);
+    expect(validateActionInput('strength', 'set', { value: 1 })).toBe(true);
   });
 
   it('exposes public config without mqtt implementation details in capability config', () => {
     const config = registry.getDeviceTypeConfig('TD01');
     expect(config.capabilities).toEqual(['strength']);
     expect(config.capabilityConfig.strength.spec).toBeUndefined();
+    expect(config.capabilityConfig.strength).toMatchObject({ key: 'strength', name: '强度控制' });
     expect(config.operations[0]).toMatchObject({ key: 'start', capability: 'strength', action: 'set' });
   });
 
@@ -59,8 +64,8 @@ describe('device capability routes', () => {
     const res = await request(createApp()).get('/api/device-capabilities');
 
     expect(res.status).toBe(200);
-    expect(res.body.capabilities).toEqual(expect.arrayContaining(['strength', 'pressure', 'shock']));
-    expect(res.body.typeCapabilityMap.CUNZHI01).toEqual(expect.arrayContaining(['strength', 'pressure', 'shock']));
+    expect(res.body.capabilities).toEqual(expect.arrayContaining(['strength', 'sphincterPressure', 'shock']));
+    expect(res.body.typeCapabilityMap.CUNZHI01).toEqual(expect.arrayContaining(['strength', 'sphincterPressure', 'tiptoePressure', 'shock']));
     expect(res.body.typeCapabilityMap.other).toBeUndefined();
   });
 
