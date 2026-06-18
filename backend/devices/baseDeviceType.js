@@ -167,6 +167,40 @@ class BaseDeviceType {
     }));
   }
 
+  // 聚合本设备所有能力的测试段（start/loop/stop），用于自动化测试平台
+  getTestPlan() {
+    const start = [];
+    const loop = [];
+    const stop = [];
+    let loopDelay = null;
+
+    for (const key of this.capabilityKeys) {
+      const cap = getCapabilityDefinition(key);
+      const test = cap && cap.test;
+      if (!test) continue;
+
+      if (typeof test.start === 'function') start.push(test.start);
+      if (Array.isArray(test.loop)) {
+        for (const step of test.loop) {
+          if (typeof step === 'function') loop.push(step);
+        }
+      }
+      if (typeof test.stop === 'function') stop.push(test.stop);
+      if (typeof test.loopDelay === 'number') {
+        loopDelay = loopDelay === null ? test.loopDelay : Math.min(loopDelay, test.loopDelay);
+      }
+    }
+
+    return { start, loop, stop, loopDelay: loopDelay === null ? 2000 : loopDelay };
+  }
+
+  // 执行单个测试步骤：用 context 调用测试函数（与 invokeCapability 复用同一机制）
+  runTestStep(deviceId, fn, publishFn) {
+    if (typeof fn !== 'function') return null;
+    const ctx = this.createContext(deviceId, publishFn);
+    return fn(ctx);
+  }
+
   toConfig() {
     return {
       name: this.name,

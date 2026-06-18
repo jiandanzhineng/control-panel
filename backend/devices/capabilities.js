@@ -6,6 +6,14 @@ const shock = {
     stop: (ctx) => ctx.writeProps({ shock: 0 }),
   },
   events: {},
+  test: {
+    start: null,
+    loop: [
+      (ctx) => ctx.writeProps({ shock: 1, voltage: 24 }),
+      (ctx) => ctx.writeProps({ shock: 0, voltage: 24 }),
+    ],
+    stop: (ctx) => ctx.writeProps({ shock: 0, voltage: 0 }),
+  },
 };
 
 const strength = {
@@ -15,6 +23,14 @@ const strength = {
     set: (ctx, params) => ctx.writeProps({ power: Math.round(Math.max(0, Math.min(255, Number(params.value) || 0))) }),
   },
   events: {},
+  test: {
+    start: null,
+    loop: [
+      (ctx) => ctx.writeProps({ power: 255 }),
+      (ctx) => ctx.writeProps({ power: 0 }),
+    ],
+    stop: (ctx) => ctx.writeProps({ power: 0 }),
+  },
 };
 
 const lock = {
@@ -24,6 +40,14 @@ const lock = {
     setOpen: (ctx, params) => ctx.writeProps({ open: params.open ? 1 : 0 }),
   },
   events: {},
+  test: {
+    start: null,
+    loop: [
+      (ctx) => ctx.writeProps({ open: 0 }),
+      (ctx) => ctx.writeProps({ open: 1 }),
+    ],
+    stop: (ctx) => ctx.writeProps({ open: 1 }),
+  },
 };
 
 const sphincterPressure = {
@@ -113,6 +137,11 @@ const reporting = {
     setReportDelay: (ctx, params) => ctx.writeProps({ report_delay_ms: Math.round(Math.max(0, Math.min(99999, Number(params.ms) || 0))) }),
   },
   events: {},
+  test: {
+    start: (ctx) => ctx.writeProps({ report_delay_ms: 100 }),
+    loop: [],
+    stop: (ctx) => ctx.writeProps({ report_delay_ms: 5000 }),
+  },
 };
 
 const capabilityDefinitions = {

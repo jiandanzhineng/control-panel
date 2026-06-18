@@ -229,7 +229,7 @@ OTA 状态值包括：`idle`、`requested`、`start`、`downloading`、`success`
 实现：[test.js](../../backend/routes/test.js)、[testService.js](../../backend/services/testService.js)
 
 - `POST /api/test/start`
-  - 开启测试平台，对当前在线设备按设备类型 `test_operations` 启动测试，并每秒检查新上线设备。
+  - 开启测试平台，对当前在线设备按设备能力的 `test` 计划启动测试，并每秒检查新上线设备。
 - `POST /api/test/stop`
   - 停止测试平台，并对设备下发 stop 配置。
 - `POST /api/test/device/:id/start`

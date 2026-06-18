@@ -1,5 +1,6 @@
 const mqttClient = require('./mqttClientService');
 const deviceService = require('./deviceService');
+const deviceRegistry = require('../devices/registry');
 const { getDeviceTypeConfig } = require('../config/deviceTypes');
 const logger = require('./logService');
 
@@ -84,50 +85,45 @@ function startTest(deviceId) {
     return;
   }
 
-  const config = getDeviceTypeConfig(device.type);
-  if (!config || !config.test_operations) {
-    logger.info('TestService', `设备 ${deviceId} (${device.type}) 无测试配置`);
-    // 即使没有配置，也标记为已测试，避免重复检查
+  const deviceType = deviceRegistry.getDeviceType(device.type);
+  const plan = deviceType.getTestPlan();
+
+  const hasStart = plan.start.length > 0;
+  const hasLoop = plan.loop.length > 0;
+  const hasStop = plan.stop.length > 0;
+
+  if (!hasStart && !hasLoop && !hasStop) {
+    logger.info('TestService', `设备 ${deviceId} (${device.type}) 无可测试能力`);
+    // 即使没有可测试能力，也标记为已测试，避免重复检查
     activeTests.set(deviceId, { intervalId: null });
     return;
   }
-
-  const testOps = config.test_operations;
 
   // 停止之前的测试（如果有）
   stopTest(deviceId, false); // false 表示不发送 stop 消息，仅清理定时器
 
   logger.info('TestService', `开始测试设备 ${deviceId}`);
 
-  // 1. 发送 Start 消息
-  if (testOps.start) {
-    const topic = `/drecv/${deviceId}`;
-    // 如果定义了 delay，这里简化处理直接发送，或按需增加延时逻辑
-    // 根据需求：点击后发送一遍
-    safePublish(topic, testOps.start);
-  }
+  // 1. 发送 Start 步骤（各能力的 start，发一次）
+  plan.start.forEach((fn) => safeRunStep(deviceType, deviceId, fn));
 
-  // 2. 启动 Loop
-  if (testOps.loop && Array.isArray(testOps.loop) && testOps.loop.length > 0) {
-    const loopDelay = testOps.loop_delay || 2000;
+  // 2. 启动 Loop（各能力的 loop 步骤展平后轮流循环下发）
+  if (hasLoop) {
+    const loopDelay = plan.loopDelay || 2000;
     let loopIndex = 0;
 
     const intervalId = setInterval(() => {
       // 检查设备是否还在线/存在
       const currentDevice = deviceService.getDeviceById(deviceId);
       if (!currentDevice || !currentDevice.connected) {
-        // 设备离线，暂停发送但不停止测试状态（等待重连），或者直接停止？
-        // 简单起见，继续尝试发送，MQTT 客户端会处理离线
+        // 设备离线，暂停发送但保留测试状态（等待重连）
         return;
       }
 
-      const msg = testOps.loop[loopIndex];
-      if (msg) {
-        const topic = `/drecv/${deviceId}`;
-        safePublish(topic, msg);
-      }
+      const fn = plan.loop[loopIndex];
+      safeRunStep(deviceType, deviceId, fn);
 
-      loopIndex = (loopIndex + 1) % testOps.loop.length;
+      loopIndex = (loopIndex + 1) % plan.loop.length;
     }, loopDelay);
 
     activeTests.set(deviceId, { intervalId });
@@ -155,10 +151,10 @@ function stopTest(deviceId, sendStopMsg = true) {
   if (sendStopMsg) {
     const device = deviceService.getDeviceById(deviceId);
     if (device) {
-      const config = getDeviceTypeConfig(device.type);
-      if (config && config.test_operations && config.test_operations.stop) {
-        const topic = `/drecv/${deviceId}`;
-        safePublish(topic, config.test_operations.stop);
+      const deviceType = deviceRegistry.getDeviceType(device.type);
+      const plan = deviceType.getTestPlan();
+      if (plan.stop.length > 0) {
+        plan.stop.forEach((fn) => safeRunStep(deviceType, deviceId, fn));
         logger.info('TestService', `停止测试设备 ${deviceId}，发送 Stop 消息`);
       }
     }
@@ -166,17 +162,22 @@ function stopTest(deviceId, sendStopMsg = true) {
 }
 
 /**
- * 安全发布 MQTT 消息
+ * 本地下发函数：直接发布到设备接收主题
  */
-function safePublish(topic, payload) {
+function devicePublishFn(deviceId, message) {
+  const topic = `/drecv/${deviceId}`;
+  mqttClient.publish(topic, message);
+  return { ok: true, topic, message };
+}
+
+/**
+ * 安全执行单个测试步骤（通过设备能力 context 下发）
+ */
+function safeRunStep(deviceType, deviceId, fn) {
   try {
-    // 过滤掉 report_delay_ms 等非 MQTT 字段，或者保留？
-    // 需求中 deviceTypes.js 的例子：start: { method: 'update', report_delay_ms: 100 }
-    // 这里的 report_delay_ms 可能是给设备用的，也可能是测试逻辑用的。
-    // 假设是发给设备的 payload 的一部分。
-    mqttClient.publish(topic, payload);
+    deviceType.runTestStep(deviceId, fn, devicePublishFn);
   } catch (err) {
-    logger.error('TestService', `MQTT 发布失败: ${err.message}`);
+    logger.error('TestService', `测试步骤执行失败: ${err.message}`);
   }
 }
 
