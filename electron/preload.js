@@ -8,6 +8,11 @@ window.updateApi = {
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
 };
 
+window.pluginApi = {
+  getRuntimeInfo: (pluginId) => ipcRenderer.invoke('plugin:get-runtime-info', pluginId),
+  stopCurrent: () => ipcRenderer.invoke('plugin:stop-current'),
+};
+
 // 重写 fetch，将相对路径 /api/* 指向本机后端
 const origFetch = window.fetch.bind(window);
 window.fetch = (input, init) => {

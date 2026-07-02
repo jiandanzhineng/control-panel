@@ -45,7 +45,17 @@
             <el-icon><Present /></el-icon>
             <template #title>当前游戏</template>
           </el-menu-item>
-          
+
+          <el-menu-item index="/plugins">
+            <el-icon><Operation /></el-icon>
+            <template #title>插件</template>
+          </el-menu-item>
+
+          <el-menu-item index="/browser">
+            <el-icon><Compass /></el-icon>
+            <template #title>浏览器</template>
+          </el-menu-item>
+
           <el-menu-item index="/network">
             <el-icon><Connection /></el-icon>
             <template #title>网络设置</template>
@@ -96,7 +106,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Present, Menu, Document } from '@element-plus/icons-vue'
+import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Present, Menu, Document, Compass, Operation } from '@element-plus/icons-vue'
 
 const isCollapsed = ref(false)
 const isMobile = ref(false)

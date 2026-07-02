@@ -12,6 +12,8 @@
     "build:frontend": "npm --prefix frontend run build",
     "electron:prod": "electron electron/main.js",
     "electron:dev": "set VITE_DEV_SERVER_URL=http://localhost:5173 && electron electron/main.js",
+    "electron:debug": "set VITE_DEV_SERVER_URL=http://localhost:5173 && electron electron/main.js --remote-debugging-port=9222",
+    "electron:debug:prod": "electron electron/main.js --remote-debugging-port=9222",
     "build": "npm run build:frontend && electron-builder --dir",
     "build:win": "npm run build:frontend && electron-builder --win --dir",
     "build:installer": "npm run build:frontend && electron-builder --win nsis --x64 --publish=never"
@@ -46,6 +48,13 @@
       {
         "from": "backend/inner-tools",
         "to": "inner-tools",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "backend/plugins",
+        "to": "plugins",
         "filter": [
           "**/*"
         ]

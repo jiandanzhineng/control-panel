@@ -62,6 +62,7 @@ app.use('/api/devices', require('./routes/devices'));
 app.use('/api/device-types', require('./routes/deviceTypes'));
 app.use('/api/device-capabilities', require('./routes/deviceCapabilities'));
 app.use('/api/games', require('./routes/games'));
+app.use('/api/plugins', require('./routes/plugins'));
 app.use('/api/logs', require('./routes/logs'));
 app.use('/api/test', require('./routes/test'));
 app.use('/api/virtual-devices', require('./routes/virtualDevices'));
@@ -104,4 +105,9 @@ process.on('SIGINT', async () => {
   process.exit(0);
 });
 
+// 默认导出仍是 express app（supertest、api.test.js 依赖此）。
+// 额外挂上 server：它是 http.createServer(app) 且已 bridgeService.init(server) 挂好 /bridge WS。
+// electron 场景必须 listen 这个 server（而非对 app 重新 listen），否则新建的 server 不带 WS，
+// 导致 /bridge 握手 404、插件设备连不上。
 module.exports = app;
+module.exports.server = server;

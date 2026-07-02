@@ -14,7 +14,14 @@ export default defineConfig(({ command }) => {
     define: {
       __APP_VERSION__: JSON.stringify(pkg.version),
     },
-    plugins: [vue()],
+    plugins: [vue({
+      template: {
+        compilerOptions: {
+          // <webview> 是 Electron 自定义元素，让 Vue 编译器放行而非当组件解析
+          isCustomElement: (tag) => tag === 'webview',
+        },
+      },
+    })],
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src'),

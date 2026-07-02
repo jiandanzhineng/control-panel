@@ -6,6 +6,10 @@ import DevicesView from '../views/DevicesView.vue';
 import GameListView from '../views/GameListView.vue';
 import GameCurrentView from '../views/GameCurrentView.vue';
 import GameStartConfigView from '../views/GameStartConfigView.vue';
+import BrowserView from '../views/BrowserView.vue';
+import PluginListView from '../views/PluginListView.vue';
+import PluginConfigView from '../views/PluginConfigView.vue';
+import PluginRunView from '../views/PluginRunView.vue';
 import LogManagement from '../views/LogManagement.vue';
 import AutoTest from '../views/AutoTest.vue';
 import FirmwareBatchUpgrade from '../views/FirmwareBatchUpgrade.vue';
@@ -19,6 +23,10 @@ const routes: RouteRecordRaw[] = [
   { path: '/games', name: 'games', component: GameListView, meta: { title: '游戏管理' } },
   { path: '/games/current', name: 'game_current', component: GameCurrentView, meta: { title: '当前游戏' } },
   { path: '/games/:id/config', name: 'game_config', component: GameStartConfigView, meta: { title: '游戏配置' } },
+  { path: '/plugins', name: 'plugins', component: PluginListView, meta: { title: '插件' } },
+  { path: '/plugins/:id/config', name: 'plugin_config', component: PluginConfigView, meta: { title: '插件配置' } },
+  { path: '/plugins/:id/run', name: 'plugin_run', component: PluginRunView, meta: { title: '插件运行' } },
+  { path: '/browser', name: 'browser', component: BrowserView, meta: { title: '浏览器' } },
   { path: '/network', name: 'network', component: ServicesView, meta: { title: '网络设置' } },
   { path: '/logs', name: 'logs', component: LogManagement, meta: { title: '日志管理' } },
   // 保留旧路径的重定向

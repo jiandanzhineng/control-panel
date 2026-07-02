@@ -6,11 +6,16 @@ const logger = require('../utils/logger');
 // 收到前台请求时还原目标 URL，转发到第三方并原样返回。
 // 轻量版：处理同域相对资源即可，不改写绝对 URL / cookie。
 router.use('/', async (req, res) => {
-  // req.path 形如 /example.com/path/file.js
+  // req.path 形如 /<proto>/example.com/path/file.js 或（旧格式）/example.com/path/file.js
   const rest = req.path.replace(/^\/+/, '');
-  const slash = rest.indexOf('/');
-  const host = slash >= 0 ? rest.slice(0, slash) : rest;
-  const pathPart = slash >= 0 ? rest.slice(slash) : '/';
+  const segs = rest.split('/');
+  // 首段是协议则取出，否则默认 https（向后兼容旧格式）
+  let proto = 'https';
+  if (segs[0] === 'http' || segs[0] === 'https') {
+    proto = segs.shift();
+  }
+  const host = segs.shift() || '';
+  const pathPart = segs.length ? '/' + segs.join('/') : '/';
   if (!host) {
     res.status(400).send('Bad proxy target');
     return;
@@ -21,7 +26,7 @@ router.use('/', async (req, res) => {
   incoming.delete('deviceMap');
   incoming.delete('params');
   const qs = incoming.toString();
-  const target = `https://${host}${pathPart}${qs ? '?' + qs : ''}`;
+  const target = `${proto}://${host}${pathPart}${qs ? '?' + qs : ''}`;
 
   try {
     const upstream = await fetch(target, {

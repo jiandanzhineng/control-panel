@@ -7,6 +7,9 @@ const virtualDeviceService = require('./virtualDeviceService');
 
 let wss = null;
 const sessions = new Map();
+let activeSession = null;
+let pendingDisconnect = null;
+const DISCONNECT_GRACE_MS = 60000;
 
 function generateId() {
   return require('crypto').randomUUID();
@@ -22,6 +25,9 @@ class GameSession {
     this.propertySubscriptions = new Map();
     this.messageSubscriptions = new Set();
     this.active = true;
+    this.pendingCloseTimer = null;
+    this.lastShockAt = 0;
+    this.shockCount = 0;
   }
 
   send(data) {
@@ -38,6 +44,10 @@ class GameSession {
 
   destroy() {
     this.active = false;
+    if (this.pendingCloseTimer) {
+      clearTimeout(this.pendingCloseTimer);
+      this.pendingCloseTimer = null;
+    }
     this.subscriptions.clear();
     this.propertySubscriptions.clear();
     this.messageSubscriptions.clear();
@@ -75,12 +85,29 @@ function init(server) {
       try { msg = JSON.parse(raw.toString()); } catch (_) { return; }
       if (!msg || !msg.action) return;
 
+      if (msg.action === 'exitCurrent') {
+        resetActiveSession('explicit-exit');
+        ws.send(JSON.stringify({ id: msg.id, result: { ok: true } }));
+        return;
+      }
+
       if (!session && msg.action === 'init') {
-        session = new GameSession(ws, {
+        const config = {
           deviceMap: msg.deviceMap || {},
           params: msg.params || {},
+        };
+        if (pendingDisconnect && activeSession === pendingDisconnect && isSameSessionConfig(pendingDisconnect, config)) {
+          removeSession(pendingDisconnect);
+        } else {
+          replaceActiveSession();
+        }
+        session = new GameSession(ws, {
+          deviceMap: config.deviceMap,
+          params: config.params,
         });
         sessions.set(session.id, session);
+        activeSession = session;
+        pendingDisconnect = null;
         session.send({ id: msg.id, result: { sessionId: session.id, ready: true } });
         return;
       }
@@ -95,8 +122,7 @@ function init(server) {
 
     ws.on('close', () => {
       if (session) {
-        closeSession(session);
-        sessions.delete(session.id);
+        scheduleGracefulClose(session);
       }
     });
   });
@@ -118,12 +144,24 @@ function handleMessage(session, msg) {
           session.send({ id, result: null });
           return;
         }
-        for (const physId of physIds) {
-          if (virtualDeviceService.isVirtualDevice(physId)) {
-            virtualDeviceService.interceptCommand(physId, { action: 'invoke', capability: msg.capability, actionName: msg.actionName, params: msg.params || {} });
-          } else {
-            deviceService.invokeDeviceCapability(physId, msg.capability, msg.actionName, msg.params || {});
+        if (msg.capability === 'shock' && msg.actionName === 'start') {
+          const gate = checkShockSafetyGate(session);
+          if (!gate.ok) {
+            emitSystemLog(session, 'warn', gate.message);
+            session.send({ id, result: { ok: false, skipped: true, reason: gate.reason } });
+            return;
           }
+          session.lastShockAt = Date.now();
+          session.shockCount += 1;
+        }
+        for (const physId of physIds) {
+          const safeParams = sanitizeCapabilityInput(msg.capability, msg.actionName, msg.params || {});
+          if (virtualDeviceService.isVirtualDevice(physId)) {
+            virtualDeviceService.interceptCommand(physId, { action: 'invoke', capability: msg.capability, actionName: msg.actionName, params: safeParams });
+          } else {
+            deviceService.invokeDeviceCapability(physId, msg.capability, msg.actionName, safeParams);
+          }
+          scheduleShockAutoStop(session, physId, msg.capability, msg.actionName);
         }
         session.send({ id, result: { ok: true } });
         break;
@@ -353,16 +391,152 @@ function buildReverseMap(deviceMap) {
   return rev;
 }
 
-function closeSession(session) {
-  const allPhysIds = new Set();
-  for (const ids of Object.values(session.deviceMap || {})) {
-    const arr = Array.isArray(ids) ? ids : (ids ? [ids] : []);
-    arr.forEach((id) => allPhysIds.add(id));
+function replaceActiveSession() {
+  if (!activeSession) return;
+  resetSessionDevices(activeSession);
+  try {
+    if (activeSession.ws && activeSession.ws.readyState === 1) {
+      activeSession.ws.close(4000, 'Replaced by a new play session');
+    }
+  } catch (_) {}
+  removeSession(activeSession);
+}
+
+function isSameSessionConfig(session, config) {
+  try {
+    return JSON.stringify(session.deviceMap || {}) === JSON.stringify(config.deviceMap || {})
+      && JSON.stringify(session.params || {}) === JSON.stringify(config.params || {});
+  } catch (_) {
+    return false;
   }
-  for (const physId of allPhysIds) {
-    deviceService.invokeDeviceClose(physId);
-  }
+}
+
+function resetActiveSession(reason) {
+  if (!activeSession) return;
+  const session = activeSession;
+  resetSessionDevices(session);
+  try {
+    if (session.ws && session.ws.readyState === 1) {
+      session.ws.close(1000, reason || 'exit');
+    }
+  } catch (_) {}
+  removeSession(session);
+}
+
+function scheduleGracefulClose(session) {
+  if (!session.active) return;
+  pendingDisconnect = session;
+  if (session.pendingCloseTimer) clearTimeout(session.pendingCloseTimer);
+  session.pendingCloseTimer = setTimeout(() => {
+    if (!session.active) return;
+    resetSessionDevices(session);
+    removeSession(session);
+  }, DISCONNECT_GRACE_MS);
+}
+
+function removeSession(session) {
+  if (!session) return;
   session.destroy();
+  sessions.delete(session.id);
+  if (activeSession === session) activeSession = null;
+  if (pendingDisconnect === session) pendingDisconnect = null;
+}
+
+function resetSessionDevices(session) {
+  const logicalEntries = Object.entries(session.deviceMap || {});
+  for (const [logicalId, ids] of logicalEntries) {
+    const arr = Array.isArray(ids) ? ids : (ids ? [ids] : []);
+    for (const physId of arr) {
+      resetPhysicalDevice(session, logicalId, physId);
+    }
+  }
+}
+
+function resetPhysicalDevice(session, logicalId, physId) {
+  const manifestCapabilities = [];
+  if (logicalId === 'shock') manifestCapabilities.push('shock');
+  if (logicalId === 'vibrator') manifestCapabilities.push('strength');
+
+  const device = deviceService.getDeviceById(physId);
+  const caps = device ? deviceRegistry.getDeviceCapabilities(device.type) : manifestCapabilities;
+  const resetCaps = new Set([
+    ...manifestCapabilities,
+    ...(Array.isArray(caps) ? caps : []),
+  ]);
+
+  try {
+    if (resetCaps.has('shock')) {
+      if (virtualDeviceService.isVirtualDevice(physId)) {
+        virtualDeviceService.interceptCommand(physId, { action: 'invoke', capability: 'shock', actionName: 'stop', params: {} });
+      } else {
+        deviceService.invokeDeviceCapability(physId, 'shock', 'stop', {});
+      }
+    }
+  } catch (error) {
+    emitSystemLog(session, 'warn', `复位电击设备失败: ${logicalId}`, { physId, error: error?.message || String(error) });
+  }
+
+  try {
+    if (resetCaps.has('strength')) {
+      if (virtualDeviceService.isVirtualDevice(physId)) {
+        virtualDeviceService.interceptCommand(physId, { action: 'invoke', capability: 'strength', actionName: 'stop', params: {} });
+      } else {
+        deviceService.invokeDeviceCapability(physId, 'strength', 'stop', {});
+      }
+    }
+  } catch (error) {
+    emitSystemLog(session, 'warn', `复位强度设备失败: ${logicalId}`, { physId, error: error?.message || String(error) });
+  }
+}
+
+function closeSession(session) {
+  resetSessionDevices(session);
+  removeSession(session);
+}
+
+function sanitizeCapabilityInput(capability, actionName, params = {}) {
+  if (capability === 'shock' && actionName === 'start') {
+    return {
+      ...params,
+      voltage: Math.min(100, Math.max(0, Number(params.voltage) || 0)),
+    };
+  }
+  if (capability === 'strength' && actionName === 'set') {
+    return {
+      ...params,
+      value: Math.min(255, Math.max(0, Number(params.value) || 0)),
+    };
+  }
+  return params;
+}
+
+function checkShockSafetyGate(session) {
+  const params = session.params || {};
+  const now = Date.now();
+  const cooldownMs = Math.max(500, Number(params.cooldownMs) || 0);
+  const maxShocks = Number(params.maxShocks);
+  if (Number.isFinite(maxShocks) && maxShocks > 0 && session.shockCount >= maxShocks) {
+    return { ok: false, reason: 'maxShocks', message: '电击触发已达到当前会话上限' };
+  }
+  if (cooldownMs > 0 && now - session.lastShockAt < cooldownMs) {
+    return { ok: false, reason: 'cooldown', message: '电击触发处于冷却期' };
+  }
+  return { ok: true };
+}
+
+function scheduleShockAutoStop(session, physId, capability, actionName) {
+  if (capability !== 'shock' || actionName !== 'start') return;
+  const duration = Math.min(10, Math.max(1, Number(session.params?.shockDuration) || 10));
+  setTimeout(() => {
+    if (!session.active) return;
+    try {
+      if (virtualDeviceService.isVirtualDevice(physId)) {
+        virtualDeviceService.interceptCommand(physId, { action: 'invoke', capability: 'shock', actionName: 'stop', params: {} });
+      } else {
+        deviceService.invokeDeviceCapability(physId, 'shock', 'stop', {});
+      }
+    } catch (_) {}
+  }, duration * 1000);
 }
 
 function emitSystemLog(session, level, message, meta) {
@@ -373,4 +547,9 @@ function getActiveSessions() {
   return Array.from(sessions.values()).filter((s) => s.active);
 }
 
-module.exports = { init, getActiveSessions, closeSession };
+function exitCurrent() {
+  resetActiveSession('explicit-exit');
+  return { ok: true };
+}
+
+module.exports = { init, getActiveSessions, closeSession, exitCurrent, resetActiveSession };

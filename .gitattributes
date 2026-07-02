@@ -1,0 +1,25 @@
+# 统一换行符为 LF，对齐 Linux
+* text=auto eol=lf
+
+# 明确二进制文件不做换行符转换
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.icns binary
+*.bmp  binary
+*.svg  text eol=lf
+*.pdf  binary
+*.zip  binary
+*.gz   binary
+*.7z   binary
+*.exe  binary
+*.dll  binary
+*.node binary
+*.wasm binary
+*.font  binary
+*.ttf  binary
+*.otf  binary
+*.woff binary
+*.woff2 binary

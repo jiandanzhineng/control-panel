@@ -25,7 +25,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { track } from '../analytics';
 import { Close } from '@element-plus/icons-vue';
@@ -33,6 +33,7 @@ import { Close } from '@element-plus/icons-vue';
 const route = useRoute();
 const router = useRouter();
 const iframeSrc = ref('');
+let stopped = false;
 
 function buildSrc(): string {
   const q = route.query;
@@ -54,15 +55,27 @@ function buildSrc(): string {
   return `${base}${sep}deviceMap=${encodeURIComponent(deviceMap)}&params=${encodeURIComponent(params)}`;
 }
 
-function stopGame() {
-  // 卸载 iframe → WebSocket 断开 → 后端兜底 close（安全停机）
+async function stopCurrentBridge() {
+  if (stopped) return;
+  stopped = true;
+  try {
+    await fetch('/api/games/stop-current', { method: 'POST' });
+  } catch (_) {}
+}
+
+async function stopGame() {
   track('game_stop', { game_id: String(route.query.id || 'unknown') });
+  await stopCurrentBridge();
   iframeSrc.value = '';
   router.push('/games');
 }
 
 onMounted(() => {
   iframeSrc.value = buildSrc();
+});
+
+onBeforeUnmount(() => {
+  stopCurrentBridge();
 });
 </script>
 

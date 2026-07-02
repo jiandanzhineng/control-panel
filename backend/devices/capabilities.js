@@ -21,6 +21,7 @@ const strength = {
   name: '强度控制',
   actions: {
     set: (ctx, params) => ctx.writeProps({ power: Math.round(Math.max(0, Math.min(255, Number(params.value) || 0))) }),
+    stop: (ctx) => ctx.writeProps({ power: 0 }),
   },
   events: {},
   test: {

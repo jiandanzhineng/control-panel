@@ -4,6 +4,7 @@ const { autoUpdater } = require('electron-updater');
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const fs = require('fs');
+const { fileURLToPath, pathToFileURL } = require('url');
 
 let server;
 let frontendServer;
@@ -109,6 +110,29 @@ function registerUpdateIpcHandlers() {
   });
 }
 
+function registerPluginIpcHandlers() {
+  ipcMain.handle('plugin:get-runtime-info', (_event, pluginId) => {
+    const pluginService = getPluginService();
+    const plugin = pluginService.getPluginById(pluginId);
+    if (!plugin) {
+      const error = new Error('插件不存在');
+      error.code = 'PLUGIN_NOT_FOUND';
+      throw error;
+    }
+    return {
+      id: plugin.id,
+      homeUrl: plugin.homeUrl,
+      matchUrls: plugin.matchUrls || [],
+      detectorPath: plugin.detectorPath,
+      detectorUrl: pathToFileURL(plugin.detectorPath).toString(),
+      activePluginPath: pluginService.getActivePluginPath(),
+      bridgeUrl: pluginService.getBridgeUrl(),
+    };
+  });
+
+  ipcMain.handle('plugin:stop-current', () => stopActiveBridgeSession());
+}
+
 // 判断两个 URL 是否同源（用于区分应用内导航与外部链接）
 function isSameOrigin(a, b) {
   try {
@@ -126,6 +150,53 @@ function getResourcePath(relativePath) {
   return path.join(__dirname, '..', relativePath);
 }
 
+function getAppRoot() {
+  return app.isPackaged ? app.getAppPath() : path.join(__dirname, '..');
+}
+
+function getBackendModule(modulePath) {
+  return require(path.join(getAppRoot(), 'backend', modulePath));
+}
+
+function normalizePreloadPath(value) {
+  if (!value || typeof value !== 'string') return '';
+  try {
+    if (value.startsWith('file:')) return path.resolve(fileURLToPath(value));
+  } catch {}
+  return path.resolve(value);
+}
+
+function urlMatchesPattern(url, pattern) {
+  if (!url || !pattern) return false;
+  const escaped = String(pattern)
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*');
+  return new RegExp(`^${escaped}$`, 'i').test(url);
+}
+
+function pluginMatchesUrl(plugin, url) {
+  const patterns = Array.isArray(plugin?.matchUrls) ? plugin.matchUrls : [];
+  if (patterns.some((pattern) => urlMatchesPattern(url, pattern))) return true;
+  return !!plugin?.homeUrl && urlMatchesPattern(url, plugin.homeUrl);
+}
+
+function getPluginService() {
+  return getBackendModule(path.join('services', 'pluginService.js'));
+}
+
+function getBridgeService() {
+  return getBackendModule(path.join('services', 'bridgeService.js'));
+}
+
+function stopActiveBridgeSession() {
+  try {
+    return getBridgeService().exitCurrent();
+  } catch (error) {
+    console.error('[electron] Failed to stop active bridge session:', error);
+    return { ok: false, error: error?.message || String(error) };
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
@@ -133,6 +204,7 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: false,
+      webviewTag: true,
     },
   });
   mainWindow = win;
@@ -174,6 +246,65 @@ function createWindow() {
       win.loadURL('data:text/html,<h1>Frontend files not found</h1>');
     }
   }
+}
+
+// 内置浏览器 <webview> 的导航与安全处理。
+// - webview 内部浏览全部放行（不像顶层窗口那样把外链踢到系统浏览器）。
+// - 收紧 webview 安全：去掉 preload、关 nodeIntegration、开 contextIsolation，
+//   避免被浏览的任意外站获得壳的能力。
+function setupWebviewHandling() {
+  app.on('web-contents-created', (_e, contents) => {
+    const pendingPluginWebviews = new Map();
+
+    if (contents.getType && contents.getType() === 'webview') {
+      // webview 内的弹窗/新窗口：留在 webview 内导航，不踢系统浏览器。
+      contents.setWindowOpenHandler(({ url }) => {
+        if (/^https?:\/\//i.test(url)) {
+          try { contents.loadURL(url); } catch {}
+        }
+        return { action: 'deny' };
+      });
+      // webview 内浏览全部放行（这才是"内置浏览器"该有的行为）。
+    }
+
+    // 附加 webview 前收紧其 webPreferences。
+    contents.on('will-attach-webview', (_evt, webPreferences, params) => {
+      const requestedPreload = normalizePreloadPath(webPreferences.preload || webPreferences.preloadURL || params?.preload || '');
+      const src = String(params?.src || '');
+      let pluginForWebview = null;
+
+      if (requestedPreload) {
+        try {
+          pluginForWebview = getPluginService()
+            .listPlugins()
+            .find((plugin) => path.resolve(plugin.detectorPath) === requestedPreload && pluginMatchesUrl(plugin, src));
+        } catch (error) {
+          console.error('[electron] Plugin preload validation failed:', error);
+        }
+      }
+
+      delete webPreferences.preload;
+      delete webPreferences.preloadURL;
+      webPreferences.nodeIntegration = false;
+      webPreferences.contextIsolation = true;
+      webPreferences.sandbox = true;
+
+      if (pluginForWebview) {
+        webPreferences.preload = pluginForWebview.detectorPath;
+        webPreferences.sandbox = false;
+        pendingPluginWebviews.set(contents.id, pluginForWebview.id);
+      }
+    });
+
+    contents.on('did-attach-webview', (_evt, webviewContents) => {
+      const pluginId = pendingPluginWebviews.get(contents.id);
+      pendingPluginWebviews.delete(contents.id);
+      if (!pluginId || !webviewContents) return;
+      webviewContents.once('destroyed', () => {
+        stopActiveBridgeSession();
+      });
+    });
+  });
 }
 
 function initAutoUpdate() {
@@ -285,6 +416,7 @@ function startBackendThenWindow() {
     const backendPath = path.join(appPath, 'backend', 'index.js');
     const userDataDir = app.getPath('userData');
     process.env.BACKEND_DATA_DIR = path.join(userDataDir, 'data');
+    process.env.ACTIVE_PLUGIN_PATH = path.join(process.env.BACKEND_DATA_DIR, 'active-plugin.json');
     
     console.log(`[electron] Backend path: ${backendPath}`);
     
@@ -298,7 +430,10 @@ function startBackendThenWindow() {
     logService.cleanOldLogs();
     const expressApp = require(backendPath);
     const BACKEND_PORT = 5278;
-    server = expressApp.listen(BACKEND_PORT, () => {
+    // 必须 listen 后端导出的 server（已挂 /bridge WS），不能对 app 重新 listen——
+    // 否则会新建一个不带 WS 的 server，插件 bridge 握手 404。回退到 app 仅为兼容旧导出。
+    const backendServer = expressApp.server || expressApp;
+    server = backendServer.listen(BACKEND_PORT, () => {
       process.env.BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
       console.log(`[electron] backend started: ${process.env.BACKEND_URL}`);
       
@@ -325,6 +460,8 @@ function startBackendThenWindow() {
 
 app.whenReady().then(() => {
   registerUpdateIpcHandlers();
+  registerPluginIpcHandlers();
+  setupWebviewHandling();
   startBackendThenWindow();
   initAutoUpdate();
 });

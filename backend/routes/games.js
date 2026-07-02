@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { sendError } = require('../utils/http');
 const gameService = require('../services/gameService');
+const bridgeService = require('../services/bridgeService');
 
 // 抓取第三方游戏网页，解析内联 game-manifest，返回与本地游戏一致的结构
 // 必须在 /:id 之前注册，避免被参数路由捕获
@@ -28,8 +29,9 @@ router.get('/external/meta', async (req, res) => {
       version: manifest.version || '1.0.0',
       devices: manifest.devices || [],
       params: manifest.params || [],
-      // 前缀式代理路径，前端据此拼 iframe src（同源化）
-      gamePath: `/games/proxy/${u.host}${u.pathname}${u.search}`,
+      // 前缀式代理路径，前端据此拼 iframe src（同源化）。
+      // 含协议段 <http|https>，使本机/局域网 http 游戏站也能被代理。
+      gamePath: `/games/proxy/${u.protocol.replace(':', '')}/${u.host}${u.pathname}${u.search}`,
       externalUrl: resp.url || url,
       external: true,
     });
@@ -91,7 +93,11 @@ router.post('/:id/start', (req, res) => {
 });
 
 router.post('/stop-current', (req, res) => {
-  res.json({ ok: true });
+  try {
+    res.json(bridgeService.exitCurrent());
+  } catch (e) {
+    sendError(res, 'GAME_STOP_FAILED', e?.message || String(e), 500);
+  }
 });
 
 router.post('/reload', (req, res) => {

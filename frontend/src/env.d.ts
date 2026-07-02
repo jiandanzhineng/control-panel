@@ -28,4 +28,16 @@ interface Window {
     setSettings: (settings: UpdateSettings) => Promise<UpdateStatus>;
     checkForUpdates: () => Promise<UpdateStatus>;
   };
+  pluginApi?: {
+    getRuntimeInfo: (pluginId: string) => Promise<{
+      id: string;
+      homeUrl: string;
+      matchUrls: string[];
+      detectorPath: string;
+      detectorUrl: string;
+      activePluginPath: string;
+      bridgeUrl: string;
+    }>;
+    stopCurrent: () => Promise<{ ok: boolean; error?: string }>;
+  };
 }
