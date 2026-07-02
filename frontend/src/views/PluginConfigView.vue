@@ -286,9 +286,14 @@ async function start(force: boolean) {
   const target = plugin.value?.homeUrl || '';
   try {
     await ElMessageBox.confirm(
-      `即将打开外部网页（${target}）并注入本地检测脚本。检测到答错时会按当前配置控制设备。`,
+      `即将进入外部网站${target ? `（${target}）` : ''}并注入本地检测脚本，插件可能根据页面情况对已连接设备发起控制行为（存在异常或意外触发的风险）。<br/><br/>请确认设备已正确佩戴、参数配置无误，并在可随时中断的环境下使用。是否继续？`,
       '插件启动确认',
-      { confirmButtonText: '继续', cancelButtonText: '取消', type: 'warning' },
+      {
+        confirmButtonText: '继续',
+        cancelButtonText: '取消',
+        type: 'warning',
+        dangerouslyUseHTMLString: true,
+      },
     );
   } catch (_) {
     return;

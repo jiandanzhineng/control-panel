@@ -34,18 +34,10 @@
       "label": "电击时长(秒)"
     },
     {
-      "key": "cooldownMs",
-      "type": "number",
-      "default": 3000,
-      "min": 500,
-      "label": "答题冷却(毫秒)"
-    },
-    {
-      "key": "maxShocks",
-      "type": "number",
-      "default": 50,
-      "min": 1,
-      "label": "单次上限(次)"
+      "key": "punishForgotten",
+      "type": "boolean",
+      "default": false,
+      "label": "对“没想起来”也惩罚"
     }
   ]
 }

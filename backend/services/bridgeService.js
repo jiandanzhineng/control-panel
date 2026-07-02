@@ -28,6 +28,8 @@ class GameSession {
     this.pendingCloseTimer = null;
     this.lastShockAt = 0;
     this.shockCount = 0;
+    this.shockStopTimer = null;
+    this.shockStopTargets = new Set();
   }
 
   send(data) {
@@ -47,6 +49,10 @@ class GameSession {
     if (this.pendingCloseTimer) {
       clearTimeout(this.pendingCloseTimer);
       this.pendingCloseTimer = null;
+    }
+    if (this.shockStopTimer) {
+      clearTimeout(this.shockStopTimer);
+      this.shockStopTimer = null;
     }
     this.subscriptions.clear();
     this.propertySubscriptions.clear();
@@ -151,6 +157,7 @@ function handleMessage(session, msg) {
             session.send({ id, result: { ok: false, skipped: true, reason: gate.reason } });
             return;
           }
+          // 无上限、无冷却：仅记录用于展示/日志，不参与拦截。
           session.lastShockAt = Date.now();
           session.shockCount += 1;
         }
@@ -510,32 +517,39 @@ function sanitizeCapabilityInput(capability, actionName, params = {}) {
   return params;
 }
 
-function checkShockSafetyGate(session) {
-  const params = session.params || {};
-  const now = Date.now();
-  const cooldownMs = Math.max(500, Number(params.cooldownMs) || 0);
-  const maxShocks = Number(params.maxShocks);
-  if (Number.isFinite(maxShocks) && maxShocks > 0 && session.shockCount >= maxShocks) {
-    return { ok: false, reason: 'maxShocks', message: '电击触发已达到当前会话上限' };
-  }
-  if (cooldownMs > 0 && now - session.lastShockAt < cooldownMs) {
-    return { ok: false, reason: 'cooldown', message: '电击触发处于冷却期' };
-  }
+// 电击触发已改为无次数上限、无冷却延时。连续触发时以“最新一次触发”
+// 为准重新计算结束时间（见 scheduleShockAutoStop 的重排逻辑），因此这里
+// 不再做任何拦截，恒定放行。保留函数便于将来需要时再加安全阀。
+function checkShockSafetyGate() {
   return { ok: true };
 }
 
+// 单会话只维护一个自动停止定时器。每次 start 都取消上一个定时器并按
+// 最新触发时间重新排期，使得连续触发时电击结束时间 = 最后一次触发 + 时长，
+// 而不会被更早那次触发的定时器提前 stop 打断。
 function scheduleShockAutoStop(session, physId, capability, actionName) {
   if (capability !== 'shock' || actionName !== 'start') return;
   const duration = Math.min(10, Math.max(1, Number(session.params?.shockDuration) || 10));
-  setTimeout(() => {
+  if (session.shockStopTimer) {
+    clearTimeout(session.shockStopTimer);
+    session.shockStopTimer = null;
+  }
+  session.shockStopTargets = session.shockStopTargets || new Set();
+  session.shockStopTargets.add(physId);
+  session.shockStopTimer = setTimeout(() => {
+    session.shockStopTimer = null;
     if (!session.active) return;
-    try {
-      if (virtualDeviceService.isVirtualDevice(physId)) {
-        virtualDeviceService.interceptCommand(physId, { action: 'invoke', capability: 'shock', actionName: 'stop', params: {} });
-      } else {
-        deviceService.invokeDeviceCapability(physId, 'shock', 'stop', {});
-      }
-    } catch (_) {}
+    const targets = Array.from(session.shockStopTargets || []);
+    session.shockStopTargets = new Set();
+    for (const target of targets) {
+      try {
+        if (virtualDeviceService.isVirtualDevice(target)) {
+          virtualDeviceService.interceptCommand(target, { action: 'invoke', capability: 'shock', actionName: 'stop', params: {} });
+        } else {
+          deviceService.invokeDeviceCapability(target, 'shock', 'stop', {});
+        }
+      } catch (_) {}
+    }
   }, duration * 1000);
 }
 
