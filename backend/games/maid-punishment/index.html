@@ -11,7 +11,8 @@
   "description": "保持踮脚站立；任意按钮按下时电击；长期未电击时启动TD01逐步增强；支持自动锁。",
   "version": "2.0.0",
   "devices": [
-    { "id": "qtz", "capabilities": ["distance", "buttonInput", "reporting"], "required": true },
+    { "id": "qtz", "capabilities": ["distance", "buttonInput", "reporting"], "required": false },
+    { "id": "tiptoeSensor", "capabilities": ["tiptoePressure", "reporting"], "required": false },
     { "id": "shock", "capabilities": ["shock"], "required": true },
     { "id": "motor", "capabilities": ["strength"], "required": false },
     { "id": "lock", "capabilities": ["lock"], "required": false }
@@ -25,7 +26,9 @@
     { "key": "td01DelaySeconds", "type": "number", "default": 5, "label": "TD01延时(秒)" },
     { "key": "td01IntensityIncrease", "type": "number", "default": 50, "label": "TD01每5秒增幅" },
     { "key": "manualStart", "type": "boolean", "default": false, "label": "手动开启(等待锁按键)" },
-    { "key": "td01ShockProbability", "type": "number", "default": 0, "label": "TD01启动时电击概率(%)" }
+    { "key": "td01ShockProbability", "type": "number", "default": 0, "label": "TD01启动时电击概率(%)" },
+    { "key": "tiptoePressureThreshold", "type": "number", "default": 100, "label": "踮脚压力阈值(高于即视为踩住)" },
+    { "key": "tiptoeDebounceMs", "type": "number", "default": 300, "label": "压力防抖时长(毫秒)" }
   ]
 }
 </script>
@@ -67,6 +70,7 @@
     <section class="card">
       <h3>传感器与惩罚</h3>
       <p>按钮1：<strong data-bind="button0Pressed">false</strong>；按钮2：<strong data-bind="button1Pressed">false</strong></p>
+      <p data-show="hasPressure">踮脚压力：<strong data-bind="pressure1">-</strong>；压力违规：<strong data-bind="pressureViolated">false</strong></p>
       <p>电击中：<strong data-bind="isShocking">false</strong>；累计电击：<strong data-bind="shockCount">0</strong></p>
       <p>TD01激活：<strong data-bind="td01Active">false</strong>；强度：<strong data-bind="td01Intensity">0</strong></p>
     </section>
