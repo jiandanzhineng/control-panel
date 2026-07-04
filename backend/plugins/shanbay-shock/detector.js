@@ -87,12 +87,12 @@
     updateFloatingUI();
   }).catch(() => {});
 
-  // 判定完全依赖点击委托（用户点了哪个选项按钮），这是唯一权威来源。
+  // 判定完全依赖用户选择的当前选项按钮（点击或数字键快捷键），这是唯一权威来源。
   // 已移除 fetch/XHR/DOM 文本扫描：它们对整段响应/DOM 做子串匹配，
   // 会把"下一题数据/释义文本"里的关键词误判成答错，导致答对也电击。
   onDomReady(() => {
     injectFloatingUI();
-    installClickObserver();
+    installChoiceObservers();
     updateFloatingUI();
   });
 
@@ -213,6 +213,11 @@
     };
   }
 
+  function installChoiceObservers() {
+    installClickObserver();
+    installKeyboardObserver();
+  }
+
   function installClickObserver() {
     document.addEventListener('click', (event) => {
       const target = event.target;
@@ -221,11 +226,85 @@
       const option = target.closest('[class*="index_option"]');
       const button = option || target.closest('button, [role="button"]');
       if (!button) return;
-      const text = ((button.innerText || button.getAttribute('aria-label') || '') + '').trim().replace(/\s+/g, ' ');
+      const text = choiceText(button);
       if (!text) return;
       const signal = classifyChoice(text);
       if (signal) onSignal(signal, 'click', text);
     }, true);
+  }
+
+  function installKeyboardObserver() {
+    document.addEventListener('keydown', (event) => {
+      if (!event || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.defaultPrevented || isEditableTarget(event.target)) return;
+
+      const index = choiceIndexFromKeyboardEvent(event);
+      if (index < 0) return;
+
+      const choices = getCurrentChoiceOptions();
+      const choice = choices[index];
+      if (!choice) return;
+
+      const text = choiceText(choice);
+      const signal = classifyChoice(text);
+      if (signal) onSignal(signal, 'keyboard', text);
+    }, true);
+  }
+
+  function choiceIndexFromKeyboardEvent(event) {
+    const key = String(event.key || '');
+    if (/^[1-9]$/.test(key)) return Number(key) - 1;
+    const code = String(event.code || '');
+    const match = code.match(/^(?:Digit|Numpad)([1-9])$/);
+    return match ? Number(match[1]) - 1 : -1;
+  }
+
+  function getCurrentChoiceOptions() {
+    const primary = queryAll('[class*="index_option"]');
+    const candidates = primary.length ? primary : queryAll('button, [role="button"]');
+    const choices = [];
+    for (const candidate of candidates) {
+      if (!candidate || choices.includes(candidate)) continue;
+      if (!isVisibleElement(candidate)) continue;
+      const text = choiceText(candidate);
+      if (!text || !classifyChoice(text)) continue;
+      choices.push(candidate);
+    }
+    return choices;
+  }
+
+  function queryAll(selector) {
+    try {
+      return Array.prototype.slice.call(document.querySelectorAll(selector));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function choiceText(element) {
+    if (!element) return '';
+    const text = element.innerText || element.textContent || (element.getAttribute && element.getAttribute('aria-label')) || '';
+    return String(text).trim().replace(/\s+/g, ' ');
+  }
+
+  function isEditableTarget(target) {
+    if (!target) return false;
+    if (target.isContentEditable) return true;
+    const tag = String(target.tagName || '').toUpperCase();
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  }
+
+  function isVisibleElement(element) {
+    if (!element) return false;
+    if (element.hidden) return false;
+    if (element.getAttribute && element.getAttribute('aria-hidden') === 'true') return false;
+    if (typeof window.getComputedStyle === 'function') {
+      const style = window.getComputedStyle(element);
+      if (style && (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0')) {
+        return false;
+      }
+    }
+    return true;
   }
 
   // 把选项按钮文案映射为答题结果。语义（基于扇贝网页版真实按钮）：
