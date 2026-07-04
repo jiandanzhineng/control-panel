@@ -1,23 +1,28 @@
 <template>
-  <div class="game-start-config-page">
+  <div class="play-config-page">
     <el-card shadow="never" class="config-header-card">
       <template #header>
         <div class="card-header">
           <el-icon><Setting /></el-icon>
           <span>启动前配置</span>
+          <el-tag class="carrier-type-tag" size="small" :type="carrierType === 'game' ? 'primary' : 'success'">
+            {{ carrierType === 'game' ? '游戏' : '插件' }}
+          </el-tag>
         </div>
       </template>
-      <div class="game-overview">
-        <div class="game-basic-info">
-          <h2 class="game-title">{{ game?.name || '未知玩法' }}</h2>
-          <p v-if="game?.description" class="game-description">{{ game?.description }}</p>
-          <div class="game-meta">
-            <el-tag size="small" type="info">
-              版本：{{ game?.version || '-' }}
-            </el-tag>
-            <el-tag size="small" type="success">
-              最后游玩：{{ formatLastPlayed(game?.lastPlayed) }}
-            </el-tag>
+      <div class="play-overview">
+        <div class="play-basic-info">
+          <h2 class="play-title">{{ title }}</h2>
+          <p v-if="play?.description" class="play-description">{{ play?.description }}</p>
+          <div class="play-meta">
+            <template v-if="carrierType === 'plugin'">
+              <el-tag size="small" type="info">{{ hostOf(play?.homeUrl) || '未配置目标站点' }}</el-tag>
+              <el-tag size="small">版本：{{ play?.version || '-' }}</el-tag>
+            </template>
+            <template v-else>
+              <el-tag size="small" type="info">版本：{{ play?.version || '-' }}</el-tag>
+              <el-tag size="small" type="success">最后游玩：{{ formatLastPlayed(play?.lastPlayed) }}</el-tag>
+            </template>
           </div>
         </div>
         <div class="loading-status">
@@ -25,10 +30,10 @@
             <el-icon class="is-loading"><Loading /></el-icon>
             <span>加载中...</span>
           </div>
-          <el-alert 
-            v-if="error" 
-            :title="error" 
-            type="error" 
+          <el-alert
+            v-if="error"
+            :title="error"
+            type="error"
             :closable="false"
             show-icon
           />
@@ -47,21 +52,20 @@
       <div v-if="loadingDevices" class="loading-container">
         <el-skeleton :rows="3" animated />
       </div>
-      <el-alert 
-        v-else-if="deviceError" 
-        :title="deviceError" 
-        type="error" 
+      <el-alert
+        v-else-if="deviceError"
+        :title="deviceError"
+        type="error"
         :closable="false"
         show-icon
       />
       <div v-else>
         <!-- 桌面端表格布局 -->
         <el-table :data="deviceMappings" stripe style="width: 100%">
-          <el-table-column prop="roleName" label="游戏角色" width="200">
+          <el-table-column prop="roleName" label="设备角色" width="200">
             <template #default="{ row }">
               <div class="role-info">
                 <strong>{{ row.roleName }}</strong>
-                <div class="role-description">{{ row.roleDescription }}</div>
                 <div class="role-description">
                   <span v-if="row.capabilities && row.capabilities.length">能力：{{ row.capabilities.join(', ') }}</span>
                 </div>
@@ -87,7 +91,7 @@
             </template>
           </el-table-column>
         </el-table>
-        
+
         <!-- 移动端卡片布局 -->
         <div class="device-mapping-mobile">
           <div v-for="row in deviceMappings" :key="row.logicalId || row.roleName" class="device-card">
@@ -97,8 +101,8 @@
               <el-tag v-if="(row.deviceIds && row.deviceIds.length > 0)" type="success" size="small">已选 {{ row.deviceIds.length }} 台</el-tag>
               <el-tag v-else type="info" size="small">未选择</el-tag>
             </div>
-            <div v-if="row.roleDescription" class="device-card-description">
-              {{ row.roleDescription }}
+            <div v-if="row.capabilities && row.capabilities.length" class="device-card-description">
+              能力：{{ row.capabilities.join(', ') }}
             </div>
             <el-checkbox-group v-model="row.deviceIds" @change="updateMapping(row)" class="device-card-select" style="display:flex;flex-direction:column;gap:8px">
               <el-checkbox
@@ -123,8 +127,8 @@
           </div>
         </div>
       </template>
-      <el-empty 
-        v-if="schemaEntries.length === 0" 
+      <el-empty
+        v-if="schemaEntries.length === 0"
         description="暂无参数元信息"
         :image-size="80"
       />
@@ -135,8 +139,8 @@
         :label-width="isMobile ? undefined : '150px'"
         class="params-form"
       >
-        <el-form-item 
-          v-for="p in basicSchemaEntries" 
+        <el-form-item
+          v-for="p in basicSchemaEntries"
           :key="p.key"
           :label="p.name || p.key"
         >
@@ -148,7 +152,7 @@
               </el-tooltip>
             </div>
           </template>
-          
+
           <el-input
             v-if="p.type === 'string'"
             v-model="parameters[p.key]"
@@ -183,7 +187,7 @@
             v-model="parameters[p.key]"
             :placeholder="p.placeholder || ''"
           />
-          
+
           <div v-if="p.required && (parameters[p.key] === undefined || parameters[p.key] === null || parameters[p.key] === '')" class="param-warning">
             <el-text type="warning" size="small">必填</el-text>
           </div>
@@ -199,8 +203,8 @@
               <span>高级配置（{{ advancedSchemaEntries.length }}项）</span>
             </template>
 
-            <el-form-item 
-              v-for="p in advancedSchemaEntries" 
+            <el-form-item
+              v-for="p in advancedSchemaEntries"
               :key="p.key"
               :label="p.name || p.key"
             >
@@ -212,7 +216,7 @@
                   </el-tooltip>
                 </div>
               </template>
-              
+
               <el-input
                 v-if="p.type === 'string'"
                 v-model="parameters[p.key]"
@@ -247,7 +251,7 @@
                 v-model="parameters[p.key]"
                 :placeholder="p.placeholder || ''"
               />
-              
+
               <div v-if="p.required && (parameters[p.key] === undefined || parameters[p.key] === null || parameters[p.key] === '')" class="param-warning">
                 <el-text type="warning" size="small">必填</el-text>
               </div>
@@ -273,7 +277,7 @@
           </div>
         </div>
       </template>
-      
+
       <div class="summary-content">
         <div class="summary-section">
           <h4>设备映射</h4>
@@ -283,7 +287,7 @@
             </li>
           </ul>
         </div>
-        
+
         <div class="summary-section">
           <h4>参数</h4>
           <el-input
@@ -295,40 +299,40 @@
           />
         </div>
       </div>
-      
+
       <div class="action-section">
         <div class="error-display">
-          <el-alert 
-            v-if="startError" 
-            :title="startError" 
-            type="error" 
+          <el-alert
+            v-if="startError"
+            :title="startError"
+            type="error"
             :closable="false"
             show-icon
           />
         </div>
-        
+
         <div class="action-buttons">
           <el-button @click="cancel" :icon="ArrowLeft">
             取消返回
           </el-button>
-          <el-button 
-            :disabled="startBusy" 
+          <el-button
+            :disabled="startBusy"
             @click="start(true)"
           >
             强行启动
           </el-button>
-          <el-button 
-            type="primary" 
+          <el-button
+            type="primary"
             :icon="VideoPlay"
             :loading="startBusy"
             :disabled="blocking.length > 0"
             @click="start(false)"
           >
-            {{ startBusy ? '启动中...' : '启动' }}
+            {{ startBusy ? '启动中...' : (carrierType === 'plugin' ? '启动插件' : '启动') }}
           </el-button>
         </div>
       </div>
-      
+
       <div v-if="blocking.length > 0" class="blocking-section">
         <h4>阻塞项</h4>
         <el-alert
@@ -342,6 +346,20 @@
         />
       </div>
     </el-card>
+
+    <el-dialog
+      v-model="carrierConfirm.visible"
+      :title="carrierConfirm.title"
+      width="520px"
+      append-to-body
+      @closed="onCarrierConfirmClosed"
+    >
+      <p class="carrier-confirm-message">{{ carrierConfirm.message }}</p>
+      <template #footer>
+        <el-button @click="resolveCarrierConfirm(false)">取消</el-button>
+        <el-button type="primary" @click="resolveCarrierConfirm(true)">继续</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -349,71 +367,82 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { track } from '../analytics';
-import { ElMessageBox } from 'element-plus';
+import { setActivePlay } from '../composables/useActivePlay';
 
-import { 
-  Setting, 
-  Connection, 
-  Tools, 
-  QuestionFilled, 
-  DocumentChecked, 
-  VideoPlay, 
+import {
+  Setting,
+  Connection,
+  Tools,
+  QuestionFilled,
+  DocumentChecked,
+  VideoPlay,
   ArrowLeft,
   Loading
 } from '@element-plus/icons-vue';
 
-interface GameDevice { id: string; capabilities?: string[]; required?: boolean }
-interface GameParam { key: string; type: string; default?: any; label?: string; min?: number; max?: number; enum?: any[]; required?: boolean }
+interface PlayDevice { id: string; capabilities?: string[]; required?: boolean }
+interface PlayParam { key: string; type: string; default?: any; label?: string; min?: number; max?: number; enum?: any[]; required?: boolean; name?: string; placeholder?: string }
 
-interface GameItem {
+interface PlayDetail {
   id: string;
-  name: string;
+  name?: string;       // 游戏
+  title?: string;      // 插件
   description?: string;
   version?: string;
+  devices?: PlayDevice[];
+  params?: PlayParam[];
+  // 游戏专属
   gamePath?: string;
   external?: boolean;
   externalUrl?: string;
   lastPlayed?: number | null;
-  // 新 manifest 格式（唯一来源）
-  devices?: GameDevice[];
-  params?: GameParam[];
+  arguments?: string;
+  // 插件专属
+  homeUrl?: string;
+  source?: string;
 }
 
-interface DeviceItem { id: string; name?: string; type?: string; connected: boolean; lastReport?: string | null; data?: Record<string, any> }
+interface DeviceItem { id: string; name?: string; nickname?: string; type?: string; connected: boolean; lastReport?: string | null; data?: Record<string, any> }
 
 const route = useRoute();
 const router = useRouter();
-const gameId = computed(() => String(route.params.id || ''));
 
-const game = ref<GameItem | null>(null);
+// carrierType 来自路由参数：game | plugin
+const carrierType = computed<'game' | 'plugin'>(() => {
+  const t = String(route.params.type || 'game');
+  return t === 'plugin' ? 'plugin' : 'game';
+});
+const playId = computed(() => String(route.params.id || ''));
+
+const play = ref<PlayDetail | null>(null);
 const devices = ref<DeviceItem[]>([]);
 const typeCapabilityMap = ref<Record<string, string[]>>({});
 const loadingAll = ref(false);
+const loadingDevices = ref(false);
 const error = ref('');
+const deviceError = ref('');
 
 const deviceMapping = reactive<Record<string, string[]>>({});
 const parameters = reactive<Record<string, any>>({});
-const deviceError = ref('');
-const loadingDevices = ref(false);
- 
 
 const isMobile = ref(window.innerWidth <= 768);
 function onResize() { isMobile.value = window.innerWidth <= 768; }
 
+const title = computed(() => play.value?.title || play.value?.name || play.value?.id || '未知玩法');
+
 const requiredDevices = computed(() => {
-  const arr = (game.value?.devices || []).filter(Boolean);
+  const arr = (play.value?.devices || []).filter(Boolean);
   return Array.isArray(arr) ? arr : [];
 });
 
+// 参数 schema：提取 label 括号说明为 tooltip，默认值回填。基础/高级按 required 切分。
 const schemaEntries = computed(() => {
-  const list = (game.value?.params || []).filter(p => p && typeof p.key === 'string');
-  // 初始化默认值（仅第一次）
+  const list = (play.value?.params || []).filter(p => p && typeof p.key === 'string');
   for (const p of list) {
     if (parameters[p.key] === undefined && p.default !== undefined) {
       parameters[p.key] = p.default;
     }
   }
-  // 标签来自 manifest 的 label；提取括号说明到 tooltip
   for (const p of list as any[]) {
     const nm = String(p.label ?? p.key ?? '');
     p.name = nm;
@@ -434,14 +463,12 @@ const advancedCollapseActive = ref<string[]>([]);
 const deviceMappings = computed(() => {
   return requiredDevices.value.map(rd => ({
     roleName: rd.id || '未知角色',
-    roleDescription: '',
     deviceIds: deviceMapping[rdKey(rd)] || [],
     logicalId: rd.id,
     required: rd.required,
-    capabilities: rdCapabilities(rd)
+    capabilities: rdCapabilities(rd),
   }));
 });
-
 
 function rdCapabilities(rd: any): string[] {
   if (Array.isArray(rd?.capabilities)) return rd.capabilities.filter((x: any) => typeof x === 'string' && x.length > 0);
@@ -496,6 +523,10 @@ function buildDefaultParameters(meta: any) {
   return defaults;
 }
 
+function clearReactive(obj: Record<string, any>) {
+  for (const k of Object.keys(obj)) delete obj[k];
+}
+
 function updateMapping(row: any) {
   const key = String(row.logicalId ?? '');
   if (key) {
@@ -520,9 +551,14 @@ function formatMapping(d: { id?: string }): string {
   }).join(', ');
 }
 
+function hostOf(url?: string) {
+  try { return url ? new URL(url).hostname : ''; } catch { return ''; }
+}
+
 function storageKey() {
+  if (carrierType.value === 'plugin') return `pluginConfig:${playId.value}`;
   const ext = String(route.query.externalUrl || '');
-  return ext ? `gameConfig:ext:${ext}` : `gameConfig:${gameId.value}`;
+  return ext ? `gameConfig:ext:${ext}` : `gameConfig:${playId.value}`;
 }
 
 function loadSavedConfig(): { deviceMap?: Record<string, string[]>; params?: Record<string, any> } | null {
@@ -545,20 +581,27 @@ function saveConfig() {
 
 async function loadAll() {
   loadingAll.value = true;
+  loadingDevices.value = true;
   error.value = '';
+  deviceError.value = '';
   try {
+    // 按 carrierType 选数据源
     const externalUrl = String(route.query.externalUrl || '');
-    const gameMetaUrl = externalUrl
-      ? `/api/games/external/meta?url=${encodeURIComponent(externalUrl)}`
-      : `/api/games/${encodeURIComponent(gameId.value)}`;
-    const [gRes, dRes, iRes] = await Promise.all([
-      fetch(gameMetaUrl),
+    const metaUrl = carrierType.value === 'plugin'
+      ? `/api/plugins/${encodeURIComponent(playId.value)}`
+      : (externalUrl
+        ? `/api/games/external/meta?url=${encodeURIComponent(externalUrl)}`
+        : `/api/games/${encodeURIComponent(playId.value)}`);
+
+    const [mRes, dRes, iRes] = await Promise.all([
+      fetch(metaUrl),
       fetch('/api/devices'),
       fetch('/api/device-capabilities'),
     ]);
-    const g = await gRes.json();
-    if (!gRes.ok) throw new Error(apiErrorMessage(g, '获取游戏详情失败'));
-    game.value = g as any;
+    const m = await mRes.json();
+    if (!mRes.ok) throw new Error(apiErrorMessage(m, carrierType.value === 'plugin' ? '获取插件详情失败' : '获取玩法详情失败'));
+    play.value = m as any;
+
     const devs = await dRes.json();
     if (!dRes.ok) throw new Error(devs?.message || '获取设备列表失败');
     devices.value = Array.isArray(devs) ? devs : [];
@@ -568,8 +611,8 @@ async function loadAll() {
 
     // 参数：优先 localStorage 回填，否则用 manifest 默认值
     const saved = loadSavedConfig();
-    const defaults = buildDefaultParameters(g);
-    for (const k of Object.keys(parameters)) delete (parameters as any)[k];
+    const defaults = buildDefaultParameters(m);
+    clearReactive(parameters);
     Object.assign(parameters, (saved?.params && typeof saved.params === 'object') ? saved.params : defaults);
 
     // 设备映射：优先 localStorage 回填（校验在线），否则按能力默认选第一台在线设备
@@ -579,7 +622,6 @@ async function loadAll() {
       const capabilities = rdCapabilities(rd);
       const savedIds = Array.isArray(saved?.deviceMap?.[key]) ? saved!.deviceMap![key] : null;
       if (savedIds) {
-        // 仅保留当前在线且能力匹配的设备
         const valid = savedIds.filter(id => {
           const dev = getDevice(id);
           return dev && dev.connected && typeSupportsCapabilities(dev.type, capabilities);
@@ -594,10 +636,9 @@ async function loadAll() {
     error.value = e?.message || '数据加载失败';
   } finally {
     loadingAll.value = false;
+    loadingDevices.value = false;
   }
 }
-
- 
 
 const blocking = ref<string[]>([]);
 function recomputeBlocking() {
@@ -615,7 +656,7 @@ function recomputeBlocking() {
       if (capabilities.length && dev && !typeSupportsCapabilities(dev.type, capabilities)) items.push(`能力不匹配(${key}): 需 ${capabilities.join(', ')}`);
     }
   }
-  // 参数校验（若有）
+  // 参数校验
   for (const p of schemaEntries.value) {
     const val = parameters[p.key];
     if (p.required && (val === undefined || val === null || val === '')) {
@@ -647,17 +688,16 @@ function recomputeBlocking() {
       }
     }
   }
-  blocking.value = items;
+  blocking.value = Array.from(new Set(items));
 }
 
 watch([deviceMapping, parameters, requiredDevices, schemaEntries], () => { recomputeBlocking(); }, { deep: true });
 
 async function resetToDefault() {
-  // 纯前端：清除该游戏的 localStorage 配置，重置为 manifest 默认
   try { localStorage.removeItem(storageKey()); } catch (_) {}
-  const defaults = buildDefaultParameters(game.value);
-  for (const k of Object.keys(parameters)) delete (parameters as any)[k];
-  Object.assign(parameters, defaults);
+  clearReactive(parameters);
+  Object.assign(parameters, buildDefaultParameters(play.value));
+  clearReactive(deviceMapping);
   for (const rd of requiredDevices.value) {
     const key = rdKey(rd);
     if (!key) continue;
@@ -668,6 +708,55 @@ async function resetToDefault() {
   recomputeBlocking();
 }
 
+/** 进入外部载体（插件 / 外部游戏）的统一确认框，文案按 type 微调 */
+function carrierConfirmConfig(externalUrl: string, homeUrl: string): { title: string; message: string } {
+  if (carrierType.value === 'plugin') {
+    return {
+      title: '插件启动确认',
+      message: `即将进入外部网站${homeUrl ? `（${homeUrl}）` : ''}并注入本地检测脚本，插件可能根据页面情况对已连接设备发起控制行为（存在异常或意外触发的风险）。\n\n请确认设备已正确佩戴、参数配置无误，并在可随时中断的环境下使用。是否继续？`,
+    };
+  }
+  return {
+    title: '外部网页提示',
+    message: `您即将进入外部网页（${externalUrl}），该页面不受硅基之下控制，请注意安全。`,
+  };
+}
+
+const carrierConfirm = reactive<{
+  visible: boolean;
+  title: string;
+  message: string;
+  resolve: null | ((confirmed: boolean) => void);
+}>({
+  visible: false,
+  title: '',
+  message: '',
+  resolve: null,
+});
+
+function openCarrierConfirm(cfg: { title: string; message: string }): Promise<boolean> {
+  carrierConfirm.title = cfg.title;
+  carrierConfirm.message = cfg.message;
+  carrierConfirm.visible = true;
+  return new Promise((resolve) => {
+    carrierConfirm.resolve = resolve;
+  });
+}
+
+function resolveCarrierConfirm(confirmed: boolean) {
+  const resolve = carrierConfirm.resolve;
+  carrierConfirm.resolve = null;
+  carrierConfirm.visible = false;
+  resolve?.(confirmed);
+}
+
+function onCarrierConfirmClosed() {
+  if (carrierConfirm.resolve) resolveCarrierConfirm(false);
+}
+
+const startBusy = ref(false);
+const startError = ref('');
+
 async function start(force: boolean) {
   startError.value = '';
   if (!force && blocking.value.length > 0) {
@@ -675,39 +764,49 @@ async function start(force: boolean) {
     return;
   }
 
-  // 外部网页：启动前安全提示
-  const externalUrl = String(route.query.externalUrl || '') || (game.value as any)?.externalUrl || '';
-  if (externalUrl) {
-    try {
-      await ElMessageBox.confirm(
-        `您即将进入外部网页（${externalUrl}），该页面不受硅基之下控制，请注意安全。`,
-        '外部网页提示',
-        { confirmButtonText: '继续', cancelButtonText: '取消', type: 'warning' }
-      );
-    } catch (_) {
-      return; // 用户取消
-    }
+  const externalUrl = String(route.query.externalUrl || '') || (play.value as any)?.externalUrl || '';
+  // 外部游戏 / 插件：进入外部载体确认（合流）
+  const needsConfirm = carrierType.value === 'plugin' || (carrierType.value === 'game' && externalUrl);
+  if (needsConfirm) {
+    const cfg = carrierConfirmConfig(externalUrl, (play.value as any)?.homeUrl || '');
+    const confirmed = await openCarrierConfirm(cfg);
+    if (!confirmed) return;
   }
 
   startBusy.value = true;
   try {
-    track('game_start', {
-      game_id: gameId.value || externalUrl || 'unknown',
-      device_count: Object.keys(deviceMapping).length,
-    });
-    // 持久化本次配置
     saveConfig();
-    // 配置经路由 query 注入运行页（deviceMap/params）
-    router.push({
-      name: 'game_current',
-      query: {
-        id: gameId.value,
-        externalUrl: externalUrl || undefined,
-        gamePath: (game.value as any)?.gamePath || undefined,
+    const t = title.value;
+
+    if (carrierType.value === 'game') {
+      track('game_start', {
+        game_id: playId.value || externalUrl || 'unknown',
+        device_count: Object.keys(deviceMapping).length,
+      });
+      const resumeQuery: Record<string, string> = {
+        id: playId.value,
         deviceMap: JSON.stringify({ ...deviceMapping }),
         params: JSON.stringify({ ...parameters }),
-      },
-    });
+      };
+      if (externalUrl) resumeQuery.externalUrl = externalUrl;
+      if ((play.value as any)?.gamePath) resumeQuery.gamePath = (play.value as any).gamePath;
+      setActivePlay({ carrierType: 'game', id: playId.value, title: t, resume: { name: 'game_current', query: resumeQuery } });
+      router.push({ name: 'game_current', query: resumeQuery });
+    } else {
+      const res = await fetch(`/api/plugins/${encodeURIComponent(playId.value)}/activate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceMap: { ...deviceMapping }, params: { ...parameters } }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(apiErrorMessage(data, '插件启动失败'));
+      track('plugin_start', {
+        plugin_id: playId.value,
+        device_count: Object.keys(deviceMapping).length,
+      });
+      setActivePlay({ carrierType: 'plugin', id: playId.value, title: t, resume: { name: 'plugin_run', params: { id: playId.value } } });
+      router.push({ name: 'plugin_run', params: { id: playId.value } });
+    }
   } catch (e: any) {
     startError.value = e?.message || '启动失败';
   } finally {
@@ -715,17 +814,18 @@ async function start(force: boolean) {
   }
 }
 
-function cancel() { router.push({ name: 'games' }); }
+function cancel() { router.push({ name: 'play_library' }); }
 
-const startBusy = ref(false);
-const startError = ref('');
-
-onMounted(() => { onResize(); window.addEventListener('resize', onResize); loadAll().then(() => recomputeBlocking()); });
+onMounted(() => {
+  onResize();
+  window.addEventListener('resize', onResize);
+  loadAll().then(() => recomputeBlocking());
+});
 onUnmounted(() => { window.removeEventListener('resize', onResize); });
 </script>
 
 <style scoped>
-.game-start-config-page {
+.play-config-page {
   padding: 16px;
   width: 100%;
   max-width: 1200px;
@@ -747,6 +847,11 @@ onUnmounted(() => { window.removeEventListener('resize', onResize); });
   font-weight: 600;
 }
 
+.carrier-type-tag,
+.advanced-collapse {
+  margin-left: 8px;
+}
+
 .advanced-collapse {
   margin-top: 8px;
 }
@@ -755,29 +860,29 @@ onUnmounted(() => { window.removeEventListener('resize', onResize); });
   margin-left: auto;
 }
 
-.game-overview {
+.play-overview {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 24px;
 }
 
-.game-basic-info {
+.play-basic-info {
   flex: 1;
 }
 
-.game-title {
+.play-title {
   margin: 0 0 8px 0;
   font-size: 20px;
   color: var(--el-text-color-primary);
 }
 
-.game-description {
+.play-description {
   margin: 0 0 12px 0;
   color: var(--el-text-color-regular);
 }
 
-.game-meta {
+.play-meta {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
@@ -879,45 +984,52 @@ onUnmounted(() => { window.removeEventListener('resize', onResize); });
   color: var(--el-color-warning);
 }
 
+.carrier-confirm-message {
+  margin: 0;
+  line-height: 1.7;
+  color: var(--el-text-color-regular);
+  white-space: pre-line;
+}
+
 @media (max-width: 768px) {
-  .game-start-config-page {
+  .play-config-page {
     padding: 8px;
     min-height: 100vh;
     box-sizing: border-box;
     overflow-x: hidden;
     position: relative;
   }
-  
+
   .config-header-card,
   .device-mapping-card,
   .params-config-card,
   .summary-card {
     margin-bottom: 12px;
   }
-  
-  .game-overview {
+
+  .play-overview {
     flex-direction: column;
     gap: 12px;
   }
-  
-  .game-title {
+
+  .play-title {
     font-size: 18px;
   }
-  
-  .game-meta {
+
+  .play-meta {
     flex-direction: column;
     align-items: flex-start;
   }
-  
+
   /* 设备映射表格在移动端改为卡片式布局 */
   .el-table {
     display: none;
   }
-  
+
   .device-mapping-mobile {
     display: block;
   }
-  
+
   .device-card {
     border: 1px solid var(--el-border-color);
     border-radius: 8px;
@@ -925,53 +1037,52 @@ onUnmounted(() => { window.removeEventListener('resize', onResize); });
     margin-bottom: 12px;
     background: var(--el-bg-color);
   }
-  
+
   .device-card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
   }
-  
+
   .device-card-title {
     font-weight: 600;
     color: var(--el-text-color-primary);
   }
-  
+
   .device-card-description {
     font-size: 12px;
     color: var(--el-text-color-secondary);
     margin-bottom: 12px;
   }
-  
+
   .device-card-select {
     width: 100%;
     margin-bottom: 8px;
   }
-  
+
   .params-form .el-form-item {
     margin-bottom: 16px;
   }
-  
+
   .params-form .el-form-item__label {
     line-height: 1.4;
     margin-bottom: 8px;
   }
-  
+
   .params-form .el-input-number,
   .params-form .el-select {
     width: 100% !important;
   }
-  
+
   .summary-content {
     gap: 16px;
   }
-  
+
   .mapping-list {
     font-size: 14px;
   }
-  
-  /* 修复按钮区域的布局问题 */
+
   .action-section {
     margin-top: 20px;
     margin-bottom: 30px;
@@ -980,13 +1091,13 @@ onUnmounted(() => { window.removeEventListener('resize', onResize); });
     z-index: 10;
     background: var(--el-bg-color);
   }
-  
+
   .action-buttons {
     flex-direction: column;
     gap: 12px;
     width: 100%;
   }
-  
+
   .action-buttons .el-button {
     width: 100%;
     height: 48px;
@@ -994,52 +1105,48 @@ onUnmounted(() => { window.removeEventListener('resize', onResize); });
     border-radius: 8px;
     touch-action: manipulation;
   }
-  
-  /* 确保摘要卡片不会遮挡按钮 */
+
   .summary-card {
     margin-bottom: 20px;
     overflow: visible;
   }
-  
+
   .summary-card .el-card__body {
     padding-bottom: 20px;
   }
-  
+
   .blocking-section {
     margin-bottom: 20px;
   }
-  
+
   .blocking-section .el-alert {
     margin-bottom: 8px;
     font-size: 14px;
   }
-  
-  /* 确保页面底部有足够的空间 */
-  .game-start-config-page::after {
+
+  .play-config-page::after {
     content: '';
     display: block;
     height: 40px;
   }
-  
-  /* 优化表单元素的触摸体验 */
+
   .el-input__inner,
   .el-select .el-input__inner,
   .el-input-number .el-input__inner {
     min-height: 44px;
     font-size: 16px;
   }
-  
+
   .el-select-dropdown__item {
     min-height: 44px;
     line-height: 44px;
     font-size: 16px;
   }
-  
-  /* 确保卡片内容不会溢出 */
+
   .el-card {
     overflow: visible;
   }
-  
+
   .el-card__body {
     word-wrap: break-word;
     overflow-wrap: break-word;
@@ -1052,4 +1159,3 @@ onUnmounted(() => { window.removeEventListener('resize', onResize); });
   }
 }
 </style>
- 

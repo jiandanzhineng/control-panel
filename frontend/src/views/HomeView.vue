@@ -16,11 +16,11 @@
         </el-card>
       </el-col>
       <el-col :xs="24" :sm="8">
-        <el-card shadow="hover" class="feature-card" @click="$router.push('/games')">
+        <el-card shadow="hover" class="feature-card" @click="$router.push('/plays')">
           <div class="feature-content">
             <el-icon class="feature-icon" color="#67c23a"><VideoPlay /></el-icon>
-            <h3>游戏管理</h3>
-            <p>启动和管理各种游戏模式</p>
+            <h3>玩法</h3>
+            <p>启动和管理游戏与插件玩法</p>
           </div>
         </el-card>
       </el-col>

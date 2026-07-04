@@ -20,7 +20,7 @@
         </div>
         
         <el-menu
-          :default-active="$route.path"
+          :default-active="menuActive"
           class="sidebar-menu"
           :collapse="isCollapsed"
           :collapse-transition="false"
@@ -30,25 +30,15 @@
             <el-icon><HomeFilled /></el-icon>
             <template #title>首页</template>
           </el-menu-item>
-          
+
           <el-menu-item index="/devices">
             <el-icon><Monitor /></el-icon>
             <template #title>设备管理</template>
           </el-menu-item>
-          
-          <el-menu-item index="/games">
-            <el-icon><VideoPlay /></el-icon>
-            <template #title>游戏管理</template>
-          </el-menu-item>
-          
-          <el-menu-item index="/games/current">
-            <el-icon><Present /></el-icon>
-            <template #title>当前游戏</template>
-          </el-menu-item>
 
-          <el-menu-item index="/plugins">
-            <el-icon><Operation /></el-icon>
-            <template #title>插件</template>
+          <el-menu-item index="/plays">
+            <el-icon><VideoPlay /></el-icon>
+            <template #title>玩法</template>
           </el-menu-item>
 
           <el-menu-item index="/browser">
@@ -105,11 +95,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Present, Menu, Document, Compass, Operation } from '@element-plus/icons-vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRoute } from 'vue-router'
+import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass } from '@element-plus/icons-vue'
 
+const route = useRoute()
 const isCollapsed = ref(false)
 const isMobile = ref(false)
+
+// 玩法相关页面（/plays、配置、运行）统一高亮「玩法」入口
+const menuActive = computed(() => (route.path.startsWith('/plays') ? '/plays' : route.path))
 
 const checkMobile = () => {
   isMobile.value = window.innerWidth <= 768

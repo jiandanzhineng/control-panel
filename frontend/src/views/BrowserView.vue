@@ -1,37 +1,25 @@
 <template>
-  <div class="browser-view">
-    <div class="toolbar">
-      <el-button :disabled="!canBack" @click="goBack" :icon="ArrowLeft" circle size="small" />
-      <el-button :disabled="!canForward" @click="goForward" :icon="ArrowRight" circle size="small" />
-      <el-button @click="reload" :icon="Refresh" circle size="small" />
-      <el-button @click="goHome" :icon="HomeFilled" circle size="small" />
-      <el-input
-        v-model="addressInput"
-        class="address"
-        placeholder="输入网址，如 example.com"
-        clearable
-        @keyup.enter="navigate"
-      >
-        <template #prefix>
-          <el-icon v-if="isHttps" class="lock-ok"><Lock /></el-icon>
-          <el-icon v-else class="lock-warn"><Warning /></el-icon>
-        </template>
-      </el-input>
-      <el-button :loading="loading" type="primary" @click="navigate">前往</el-button>
-    </div>
-
-    <el-alert
-      v-if="detectedGame"
-      class="game-banner"
-      type="success"
-      :closable="false"
-      show-icon
-    >
-      <div class="banner-inner">
-        <span>检测到可控制硬件的游戏：<b>{{ detectedGame.name }}</b></span>
-        <el-button size="small" type="primary" @click="runInPanel">在控制端运行（接入设备）</el-button>
-      </div>
-    </el-alert>
+  <PlayCarrierShell
+    mode="browser"
+    :stoppable="false"
+    :address="currentUrl"
+    :can-back="canBack"
+    :can-forward="canForward"
+    :loading="loading"
+    @back="goBack"
+    @forward="goForward"
+    @reload="reload"
+    @home="goHome"
+    @navigate="navigate"
+  >
+    <template v-if="detected" #banner>
+      <el-alert class="play-banner" type="success" :closable="false" show-icon>
+        <div class="banner-inner">
+          <span>检测到可接入设备的玩法：<b>{{ detected.name }}</b></span>
+          <el-button size="small" type="primary" @click="runDetected">配置并运行</el-button>
+        </div>
+      </el-alert>
+    </template>
 
     <webview
       ref="webviewEl"
@@ -40,27 +28,36 @@
       partition="persist:browser"
       allowpopups
     ></webview>
-  </div>
+  </PlayCarrierShell>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
-import {
-  ArrowLeft, ArrowRight, Refresh, HomeFilled, Lock, Warning,
-} from '@element-plus/icons-vue';
+import PlayCarrierShell from '../components/PlayCarrierShell.vue';
+
+interface PluginMatcher {
+  id: string;
+  title?: string;
+  name?: string;
+  homeUrl?: string;
+  matchUrls?: string[];
+}
+
+type DetectedPlay =
+  | { kind: 'game'; name: string; externalUrl: string }
+  | { kind: 'plugin'; id: string; name: string };
 
 const router = useRouter();
 const HOME = 'http://127.0.0.1:8080/';
 
 const webviewEl = ref<any>(null);
-const addressInput = ref(HOME);
 const currentUrl = ref(HOME);
 const loading = ref(false);
 const canBack = ref(false);
 const canForward = ref(false);
-const isHttps = ref(false);
-const detectedGame = ref<null | { name: string; externalUrl: string; gamePath: string }>(null);
+const detected = ref<DetectedPlay | null>(null);
+const plugins = ref<PluginMatcher[]>([]);
 
 let detectTimer: number | undefined;
 
@@ -73,55 +70,101 @@ function normalizeUrl(s: string): string {
   return `https://www.bing.com/search?q=${encodeURIComponent(t)}`;
 }
 
-function navigate() {
-  const url = normalizeUrl(addressInput.value);
+function navigate(input: string) {
+  const url = normalizeUrl(input);
   try { webviewEl.value?.loadURL(url); } catch { /* webview 未就绪 */ }
 }
 function goBack() { try { webviewEl.value?.goBack(); } catch {} }
 function goForward() { try { webviewEl.value?.goForward(); } catch {} }
 function reload() { try { webviewEl.value?.reload(); } catch {} }
-function goHome() { addressInput.value = HOME; navigate(); }
+function goHome() { navigate(HOME); }
 
 function syncNavState() {
   const wv = webviewEl.value;
   if (!wv) return;
   try {
     currentUrl.value = wv.getURL();
-    addressInput.value = currentUrl.value;
-    isHttps.value = currentUrl.value.startsWith('https:');
     canBack.value = wv.canGoBack();
     canForward.value = wv.canGoForward();
   } catch {}
 }
 
-async function detectGame(url: string) {
-  detectedGame.value = null;
-  if (!/^https?:\/\//i.test(url)) return;
+/**
+ * 复刻 electron/main.js 的 urlMatchesPattern：转义正则元字符（保留 *）、
+ * * → .*、大小写不敏感、整串全匹配。
+ */
+function urlMatchesPattern(url: string, pattern: string): boolean {
+  if (!url || !pattern) return false;
+  const escaped = String(pattern)
+    .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*');
+  return new RegExp(`^${escaped}$`, 'i').test(url);
+}
+
+function matchPlugin(url: string): PluginMatcher | null {
+  return (
+    plugins.value.find((p) => Array.isArray(p.matchUrls) && p.matchUrls.some((pat) => urlMatchesPattern(url, pat))) ||
+    null
+  );
+}
+
+async function detectExternalGame(url: string): Promise<{ name: string; externalUrl: string } | null> {
   try {
     const r = await fetch(`/api/games/external/meta?url=${encodeURIComponent(url)}`);
-    if (!r.ok) return; // 422 NO_MANIFEST = 普通网页，静默
+    if (!r.ok) return null; // 422 NO_MANIFEST = 普通网页，静默
     const g = await r.json();
-    detectedGame.value = {
-      name: g.name || g.title || '未命名游戏',
+    return {
+      name: g.name || g.title || '未命名玩法',
       externalUrl: g.externalUrl || url,
-      gamePath: g.gamePath || '',
     };
-  } catch { /* 普通网页或检测失败，忽略 */ }
+  } catch {
+    return null;
+  }
+}
+
+async function detect(url: string) {
+  detected.value = null;
+  if (!/^https?:\/\//i.test(url)) return;
+  // 本地通配匹配已安装插件（即时）；外部游戏抓取（网络）
+  const matchedPlugin = matchPlugin(url);
+  const externalGame = await detectExternalGame(url);
+  if (externalGame) {
+    detected.value = { kind: 'game', name: externalGame.name, externalUrl: externalGame.externalUrl };
+  } else if (matchedPlugin) {
+    detected.value = {
+      kind: 'plugin',
+      id: matchedPlugin.id,
+      name: matchedPlugin.title || matchedPlugin.name || matchedPlugin.id,
+    };
+  }
 }
 
 function onNavigated() {
   syncNavState();
   if (detectTimer) clearTimeout(detectTimer);
-  detectTimer = window.setTimeout(() => detectGame(currentUrl.value), 300);
+  detectTimer = window.setTimeout(() => detect(currentUrl.value), 300);
 }
 
-function runInPanel() {
-  if (!detectedGame.value) return;
-  router.push({
-    name: 'game_config',
-    params: { id: 'external' },
-    query: { externalUrl: detectedGame.value.externalUrl },
-  });
+function runDetected() {
+  const d = detected.value;
+  if (!d) return;
+  if (d.kind === 'game') {
+    router.push({
+      name: 'play_config',
+      params: { type: 'game', id: 'external' },
+      query: { externalUrl: d.externalUrl },
+    });
+  } else {
+    router.push({ name: 'play_config', params: { type: 'plugin', id: d.id } });
+  }
+}
+
+async function loadPlugins() {
+  try {
+    const res = await fetch('/api/plugins');
+    const data = await res.json();
+    if (res.ok && Array.isArray(data)) plugins.value = data;
+  } catch { /* 列表加载失败不影响浏览 */ }
 }
 
 function bindEvents() {
@@ -134,6 +177,7 @@ function bindEvents() {
 }
 
 onMounted(() => {
+  loadPlugins();
   // webview 需在元素 attach 后绑定事件
   setTimeout(bindEvents, 0);
 });
@@ -143,25 +187,11 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.browser-view {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--el-bg-color);
-}
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--el-border-color);
+.play-banner {
   flex: 0 0 auto;
+  border-radius: 0;
 }
-.address { flex: 1 1 auto; }
-.lock-ok { color: var(--el-color-success); }
-.lock-warn { color: var(--el-color-warning); }
-.game-banner { flex: 0 0 auto; border-radius: 0; }
+
 .banner-inner {
   display: flex;
   align-items: center;
@@ -169,6 +199,7 @@ onBeforeUnmount(() => {
   gap: 12px;
   width: 100%;
 }
+
 .webview {
   flex: 1 1 auto;
   width: 100%;

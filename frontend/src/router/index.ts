@@ -3,13 +3,11 @@ import type { RouteRecordRaw } from 'vue-router';
 import HomeView from '../views/HomeView.vue';
 import ServicesView from '../views/ServicesView.vue';
 import DevicesView from '../views/DevicesView.vue';
-import GameListView from '../views/GameListView.vue';
+import PlayLibraryView from '../views/PlayLibraryView.vue';
+import PlayConfigView from '../views/PlayConfigView.vue';
 import GameCurrentView from '../views/GameCurrentView.vue';
-import GameStartConfigView from '../views/GameStartConfigView.vue';
-import BrowserView from '../views/BrowserView.vue';
-import PluginListView from '../views/PluginListView.vue';
-import PluginConfigView from '../views/PluginConfigView.vue';
 import PluginRunView from '../views/PluginRunView.vue';
+import BrowserView from '../views/BrowserView.vue';
 import LogManagement from '../views/LogManagement.vue';
 import AutoTest from '../views/AutoTest.vue';
 import FirmwareBatchUpgrade from '../views/FirmwareBatchUpgrade.vue';
@@ -20,16 +18,25 @@ const routes: RouteRecordRaw[] = [
   { path: '/devices', name: 'devices', component: DevicesView, meta: { title: '设备管理' } },
   { path: '/devices/firmware-batch', name: 'firmware_batch', component: FirmwareBatchUpgrade, meta: { title: '批量固件升级' } },
   { path: '/test', name: 'test', component: AutoTest, meta: { title: '自动化测试' } },
-  { path: '/games', name: 'games', component: GameListView, meta: { title: '游戏管理' } },
-  { path: '/games/current', name: 'game_current', component: GameCurrentView, meta: { title: '当前游戏' } },
-  { path: '/games/:id/config', name: 'game_config', component: GameStartConfigView, meta: { title: '游戏配置' } },
-  { path: '/plugins', name: 'plugins', component: PluginListView, meta: { title: '插件' } },
-  { path: '/plugins/:id/config', name: 'plugin_config', component: PluginConfigView, meta: { title: '插件配置' } },
-  { path: '/plugins/:id/run', name: 'plugin_run', component: PluginRunView, meta: { title: '插件运行' } },
+
+  // 玩法（游戏 + 插件统一入口）
+  { path: '/plays', name: 'play_library', component: PlayLibraryView, meta: { title: '玩法库' } },
+  { path: '/plays/:type/:id/config', name: 'play_config', component: PlayConfigView, meta: { title: '玩法配置' } },
+  // 运行态（全屏覆盖层，靠「启动」进入、「停止」退出，不进侧边栏）
+  { path: '/plays/game/current', name: 'game_current', component: GameCurrentView, meta: { title: '玩法运行' } },
+  { path: '/plays/plugin/:id/run', name: 'plugin_run', component: PluginRunView, meta: { title: '插件运行' } },
+
   { path: '/browser', name: 'browser', component: BrowserView, meta: { title: '浏览器' } },
   { path: '/network', name: 'network', component: ServicesView, meta: { title: '网络设置' } },
   { path: '/logs', name: 'logs', component: LogManagement, meta: { title: '日志管理' } },
-  // 保留旧路径的重定向
+
+  // 旧路径重定向（沿用 /gamelist→/games 的做法，保留外链/书签可用）
+  { path: '/games', redirect: '/plays' },
+  { path: '/games/current', redirect: '/plays/game/current' },
+  { path: '/games/:id/config', redirect: (to) => `/plays/game/${to.params.id}/config` },
+  { path: '/plugins', redirect: '/plays' },
+  { path: '/plugins/:id/config', redirect: (to) => `/plays/plugin/${to.params.id}/config` },
+  { path: '/plugins/:id/run', redirect: (to) => `/plays/plugin/${to.params.id}/run` },
   { path: '/gamelist', redirect: '/games' },
   { path: '/services', redirect: '/network' },
 ];

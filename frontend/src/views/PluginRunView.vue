@@ -1,26 +1,18 @@
 <template>
-  <div class="plugin-run">
-    <div class="toolbar">
-      <el-button :disabled="!canBack" :icon="ArrowLeft" circle size="small" @click="goBack" />
-      <el-button :disabled="!canForward" :icon="ArrowRight" circle size="small" @click="goForward" />
-      <el-button :icon="Refresh" circle size="small" @click="reload" />
-      <el-input v-model="currentUrl" class="address" readonly>
-        <template #prefix>
-          <el-icon v-if="isHttps" class="lock-ok"><Lock /></el-icon>
-          <el-icon v-else class="lock-warn"><Warning /></el-icon>
-        </template>
-      </el-input>
-      <el-button type="danger" :icon="Close" :loading="stopping" @click="stopPlugin">停止</el-button>
-    </div>
-
-    <el-alert
-      v-if="error"
-      class="run-alert"
-      :title="error"
-      type="error"
-      :closable="false"
-      show-icon
-    />
+  <PlayCarrierShell
+    mode="webview"
+    :address="currentUrl"
+    :can-back="canBack"
+    :can-forward="canForward"
+    :stopping="stopping"
+    @back="goBack"
+    @forward="goForward"
+    @reload="reload"
+    @stop="stopPlugin"
+  >
+    <template v-if="error" #banner>
+      <el-alert class="run-alert" :title="error" type="error" :closable="false" show-icon />
+    </template>
 
     <webview
       v-if="runtime && !stopped"
@@ -33,15 +25,16 @@
     ></webview>
 
     <el-empty v-else class="empty" description="插件未运行或正在加载" :image-size="120">
-      <el-button type="primary" @click="$router.push('/plugins')">返回插件列表</el-button>
+      <el-button type="primary" @click="$router.push('/plays')">返回玩法库</el-button>
     </el-empty>
-  </div>
+  </PlayCarrierShell>
 </template>
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArrowLeft, ArrowRight, Close, Lock, Refresh, Warning } from '@element-plus/icons-vue';
+import { clearActivePlay } from '../composables/useActivePlay';
+import PlayCarrierShell from '../components/PlayCarrierShell.vue';
 
 interface RuntimeInfo {
   id: string;
@@ -58,7 +51,6 @@ const webviewEl = ref<any>(null);
 const currentUrl = ref('');
 const canBack = ref(false);
 const canForward = ref(false);
-const isHttps = ref(false);
 const error = ref('');
 const stopping = ref(false);
 const stopped = ref(false);
@@ -78,7 +70,6 @@ async function loadRuntime() {
     const info = await window.pluginApi.getRuntimeInfo(pluginId);
     runtime.value = info;
     currentUrl.value = info.homeUrl;
-    isHttps.value = info.homeUrl.startsWith('https:');
     await nextTick();
     setTimeout(bindWebviewEvents, 0);
   } catch (e: any) {
@@ -105,10 +96,7 @@ function syncNavState() {
   if (!wv) return;
   try {
     const url = wv.getURL();
-    if (url) {
-      currentUrl.value = url;
-      isHttps.value = url.startsWith('https:');
-    }
+    if (url) currentUrl.value = url;
     canBack.value = wv.canGoBack();
     canForward.value = wv.canGoForward();
   } catch (_) {}
@@ -136,48 +124,18 @@ async function stopPlugin() {
   stopping.value = true;
   await stopBridgeOnly();
   stopped.value = true;
+  clearActivePlay();
   try {
     webviewEl.value?.remove();
   } catch (_) {}
-  router.push('/plugins');
+  router.push('/plays');
 }
 </script>
 
 <style scoped>
-.plugin-run {
-  position: fixed;
-  inset: 0;
-  z-index: 2100;
-  display: flex;
-  flex-direction: column;
-  background: var(--el-bg-color);
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 42px;
-  padding: 4px 10px;
-  border-bottom: 1px solid var(--el-border-color);
-  background: var(--el-bg-color);
-  flex: 0 0 auto;
-}
-
-.address {
-  flex: 1 1 auto;
-}
-
-.lock-ok {
-  color: var(--el-color-success);
-}
-
-.lock-warn {
-  color: var(--el-color-warning);
-}
-
 .run-alert {
   border-radius: 0;
+  flex: 0 0 auto;
 }
 
 .webview {
@@ -192,12 +150,5 @@ async function stopPlugin() {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-@media (max-width: 768px) {
-  .toolbar {
-    gap: 4px;
-    padding: 4px 6px;
-  }
 }
 </style>

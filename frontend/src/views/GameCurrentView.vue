@@ -1,5 +1,5 @@
 <template>
-  <div class="game-runtime">
+  <PlayCarrierShell mode="iframe" :stoppable="!!iframeSrc" :stopping="stopping" @stop="stopGame">
     <iframe
       v-if="iframeSrc"
       :src="iframeSrc"
@@ -11,28 +11,25 @@
     <el-empty
       v-else
       class="game-empty"
-      description="未提供游戏配置，请先在游戏列表启动"
+      description="未提供游戏配置，请先在玩法库启动"
       :image-size="120"
     >
-      <el-button type="primary" @click="$router.push('/games')">前往游戏列表</el-button>
+      <el-button type="primary" @click="$router.push('/plays')">前往玩法库</el-button>
     </el-empty>
-
-    <button class="stop-fab" @click="stopGame" title="停止游戏">
-      <el-icon><Close /></el-icon>
-      <span>停止</span>
-    </button>
-  </div>
+  </PlayCarrierShell>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { track } from '../analytics';
-import { Close } from '@element-plus/icons-vue';
+import { clearActivePlay } from '../composables/useActivePlay';
+import PlayCarrierShell from '../components/PlayCarrierShell.vue';
 
 const route = useRoute();
 const router = useRouter();
 const iframeSrc = ref('');
+const stopping = ref(false);
 let stopped = false;
 
 function buildSrc(): string {
@@ -64,10 +61,12 @@ async function stopCurrentBridge() {
 }
 
 async function stopGame() {
+  stopping.value = true;
   track('game_stop', { game_id: String(route.query.id || 'unknown') });
   await stopCurrentBridge();
+  clearActivePlay();
   iframeSrc.value = '';
-  router.push('/games');
+  router.push('/plays');
 }
 
 onMounted(() => {
@@ -80,13 +79,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.game-runtime {
-  position: fixed;
-  inset: 0;
-  background: #000;
-  z-index: 2000;
-}
-
 .game-frame {
   position: absolute;
   inset: 0;
@@ -104,32 +96,5 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   background: var(--el-bg-color);
-}
-
-.stop-fab {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 2100;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 16px;
-  border: none;
-  border-radius: 24px;
-  background: rgba(220, 38, 38, 0.92);
-  color: #fff;
-  font-size: 14px;
-  cursor: pointer;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
-  -webkit-tap-highlight-color: transparent;
-}
-
-.stop-fab:hover {
-  background: rgba(220, 38, 38, 1);
-}
-
-.stop-fab:active {
-  transform: scale(0.96);
 }
 </style>

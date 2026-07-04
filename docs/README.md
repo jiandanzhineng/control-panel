@@ -76,6 +76,7 @@
 ### Plan（待实现）
 
 - [OpenPanel 埋点接入设计文档](plan/analytics-design.md)
+- [玩法载体统一方案设计文档](plan/unified-play-carrier-design.md)
 
 ### Agent
 
