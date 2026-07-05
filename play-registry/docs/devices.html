@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>设备与能力 · 玩法开发文档</title>
+<link rel="stylesheet" href="../assets/css/site.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="../index.html"><span class="brand-mark">⚡</span><span>玩法库</span></a>
+    <div class="nav-links">
+      <a href="../index.html">游戏</a>
+      <a href="getting-started.html">开发文档</a>
+      <a href="device-api.html">DeviceAPI</a>
+      <a href="contribute.html" class="nav-cta">投稿</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container">
+<div class="docs-layout">
+<aside class="docs-sidebar">
+  <h4>开发文档</h4>
+  <a href="getting-started.html">快速开始</a>
+  <a href="device-api.html">DeviceAPI 参考</a>
+  <a href="devices.html" class="active">设备与能力</a>
+  <a href="contribute.html">投稿与奖励</a>
+</aside>
+
+<main class="docs-body">
+<h1>设备与能力</h1>
+<div class="updated">声明玩法所需设备 · 对照后端 <code>backend/devices/registry.js</code></div>
+
+<p>玩法在 manifest 的 <code>devices[]</code> 里声明<strong>逻辑设备</strong>及其所需<strong>能力</strong>。启动时用户在面板 UI 把逻辑设备映射到真实物理设备；宿主按能力校验：<code>required=true</code> 的逻辑设备必须映射、已映射设备必须在线且同时满足声明的全部能力。</p>
+
+<h2>声明设备需求</h2>
+<pre><code>"devices": [
+  { "id": "sensor",  "capabilities": ["sphincterPressure"], "required": true },
+  { "id": "motor",   "capabilities": ["strength"],          "required": true },
+  { "id": "punish",  "capabilities": ["shock"],             "required": false }
+]</code></pre>
+<blockquote><p><code>required: false</code> 的设备是可选的——玩法代码里用 <code>device(id).isMapped()</code> 判断后再调，匹配不到就走降级分支。</p></blockquote>
+
+<h2>设备类型清单</h2>
+<table>
+  <tr><th>类型</th><th>名称</th><th>能力集</th></tr>
+  <tr><td><code>PJ01</code></td><td>往复电机控制器</td><td><code>strength</code></td></tr>
+  <tr><td><code>TD01</code></td><td>偏轴电机控制器</td><td><code>strength</code></td></tr>
+  <tr><td><code>OSR6</code></td><td>OSR6 控制器</td><td><code>strength</code></td></tr>
+  <tr><td><code>QIYA</code></td><td>气压传感器</td><td><code>sphincterPressure</code>、<code>reporting</code></td></tr>
+  <tr><td><code>DIANJI</code></td><td>电脉冲设备</td><td><code>shock</code></td></tr>
+  <tr><td><code>ZIDONGSUO</code></td><td>自动锁</td><td><code>lock</code></td></tr>
+  <tr><td><code>QTZ</code></td><td>测距及脚踏传感器</td><td><code>distance</code>、<code>buttonInput</code>、<code>reporting</code></td></tr>
+  <tr><td><code>DZC01</code></td><td>电子秤</td><td><code>weight</code>、<code>reporting</code></td></tr>
+  <tr><td><code>CUNZHI01</code></td><td>寸止玩法设备</td><td><code>sphincterPressure</code>、<code>tiptoePressure</code>、<code>strength</code>、<code>shock</code>、<code>reporting</code></td></tr>
+</table>
+<p>未知设备类型会返回基础设备类型（显示名为类型本身，无能力、无操作、无监控字段）。</p>
+
+<h2>能力总表</h2>
+<table>
+  <tr><th>能力 key</th><th>名称</th><th>Actions</th><th>Events</th><th>拥有设备</th></tr>
+  <tr><td><code>strength</code></td><td>强度控制</td><td><code>set(value:0-255)</code></td><td>—</td><td>PJ01, TD01, OSR6, CUNZHI01</td></tr>
+  <tr><td><code>shock</code></td><td>电击控制</td><td><code>start(voltage)</code>、<code>stop()</code></td><td>—</td><td>DIANJI, CUNZHI01</td></tr>
+  <tr><td><code>lock</code></td><td>锁控制</td><td><code>setOpen(open:bool)</code></td><td>—</td><td>ZIDONGSUO</td></tr>
+  <tr><td><code>sphincterPressure</code></td><td>括约压力</td><td>—</td><td><code>pressureChange</code></td><td>QIYA, CUNZHI01</td></tr>
+  <tr><td><code>tiptoePressure</code></td><td>踮脚压力</td><td>—</td><td><code>pressureChange</code></td><td>CUNZHI01</td></tr>
+  <tr><td><code>distance</code></td><td>距离</td><td><code>configure(lowBand, highBand, reportDelayMs)</code></td><td><code>enterLow</code>、<code>enterHigh</code></td><td>QTZ</td></tr>
+  <tr><td><code>buttonInput</code></td><td>按钮输入</td><td>—</td><td><code>pressed</code>、<code>pushDown</code>、<code>pushUp</code></td><td>QTZ</td></tr>
+  <tr><td><code>weight</code></td><td>重量</td><td>—</td><td><code>weightChange</code></td><td>DZC01</td></tr>
+  <tr><td><code>reporting</code></td><td>上报频率</td><td><code>setReportDelay(ms)</code></td><td>—</td><td>QIYA, QTZ, DZC01, CUNZHI01</td></tr>
+</table>
+
+<h2>能力详解</h2>
+
+<h3>strength — 强度控制</h3>
+<p>控制电机功率。<code>set</code> 的 <code>value</code> 范围 0–255。下行广播到所有映射电机。</p>
+<pre><code>DeviceAPI.device('motor').invoke('strength', 'set', { value: 128 });</code></pre>
+
+<h3>shock — 电击控制</h3>
+<p><code>start(voltage)</code> 开始电击，<code>stop()</code> 停止。建议 voltage 不超过 30V（玩法可声明 <code>allowUnsafeIntensity</code> 参数放开）。</p>
+<pre><code>DeviceAPI.device('punish').invoke('shock', 'start', { voltage: 30 });
+// …
+DeviceAPI.device('punish').invoke('shock', 'stop');</code></pre>
+
+<h3>sphincterPressure / tiptoePressure — 压力上报</h3>
+<p>纯上行能力，无下行动作。监听 <code>pressureChange</code> 事件读 <code>data.props.pressure</code>。CUNZHI01 同时支持两种压力（括约 + 踮脚）。</p>
+<pre><code>DeviceAPI.device('sensor').on('sphincterPressure', 'pressureChange', (data) =&gt; {
+  console.log('压力:', data.props.pressure);
+});</code></pre>
+
+<h3>buttonInput — 按钮输入</h3>
+<p>三个事件：<code>pressed</code>（短按）、<code>pushDown</code>（按下）、<code>pushUp</code>（松开）。底层是设备消息，能力层封装为统一事件。</p>
+<pre><code>DeviceAPI.device('qtz').on('buttonInput', 'pushDown', () =&gt; onPushDown());
+DeviceAPI.device('qtz').on('buttonInput', 'pushUp',   () =&gt; onPushUp());</code></pre>
+
+<h3>distance — 距离检测</h3>
+<p><code>configure</code> 设置近/远阈值带和上报间隔；事件 <code>enterLow</code>（进入近带）、<code>enterHigh</code>（进入远带）。</p>
+<pre><code>DeviceAPI.device('qtz').invoke('distance', 'configure', { lowBand: 20, highBand: 80, reportDelayMs: 200 });
+DeviceAPI.device('qtz').on('distance', 'enterLow', () =&gt; {/* 脚离开 */});</code></pre>
+
+<h3>lock — 锁控制</h3>
+<pre><code>DeviceAPI.device('lock').invoke('lock', 'setOpen', { open: true });  // 开锁
+DeviceAPI.device('lock').invoke('lock', 'setOpen', { open: false }); // 关锁</code></pre>
+
+<h3>weight — 重量上报</h3>
+<p>纯上行，监听 <code>weightChange</code>，读 <code>data.props.weight</code>。</p>
+
+<h3>reporting — 上报频率</h3>
+<p>调节传感器上报间隔（毫秒）。压力大或需要精细响应时调小，省电时调大。</p>
+<pre><code>DeviceAPI.device('sensor').invoke('reporting', 'setReportDelay', { ms: 200 });</code></pre>
+
+<h2>能力事件 trigger 的 data</h2>
+<p>能力事件的 <code>data</code> 含 <code>props</code>（属性快照）、<code>changed</code>（变化属性 key）、<code>msg</code>（消息对象，消息类事件才有）。watch 支持混合监听属性和消息，能力层屏蔽底层差异——你只关心能力级事件，不用管属性名或 MQTT 消息格式。</p>
+
+<div class="callout callout-warn">
+  <span class="callout-icon">🔒</span>
+  <p>所有设备类型都声明 <code>close</code> 操作定义安全停机指令（电机归零、停止电击、传感器恢复空闲频率）。会话结束时宿主<strong>强制</strong>调用，独立于玩法逻辑——这是设备安全的最后一道防线。</p>
+</div>
+
+<p>→ 怎么用这些设备写玩法见 <a href="getting-started.html">快速开始</a>，API 细节见 <a href="device-api.html">DeviceAPI 参考</a>。</p>
+</main>
+</div>
+</div>
+</body>
+</html>

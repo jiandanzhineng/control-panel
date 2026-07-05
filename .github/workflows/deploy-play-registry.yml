@@ -1,0 +1,132 @@
+name: deploy-play-registry
+
+# 部署「游戏网站」(play-registry 子目录) 到 GitHub Pages + 阿里云 OSS。
+# 游戏内容独立成网站、单独部署；面板运行时拉取 registry.json，游戏经 gameProxy 同源加载。
+# 仅当 play-registry/ 下的内容变更时才触发（也可手动 workflow_dispatch）。
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'play-registry/**'
+      - '.github/workflows/deploy-play-registry.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: deploy-play-registry
+  cancel-in-progress: false
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 生成 registry.json + 跑正则锁定测试
+        working-directory: play-registry
+        run: |
+          node scripts/build-registry.js
+          npm test
+
+      # 原子顺序：games 资源先就位，registry.json 最后（它是"指针"）。
+      # 发布网站 = 首页/文档/样式 + games + registry.json（不带源码/测试/脚本上网站）。
+      - name: 组装站点产物
+        run: |
+          mkdir -p site
+          cp play-registry/index.html site/index.html
+          cp -r play-registry/docs site/docs
+          cp -r play-registry/assets site/assets
+          cp -r play-registry/games site/games
+          cp play-registry/registry.json site/registry.json
+
+      - name: 部署到阿里云 OSS
+        env:
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ezs-games
+          # 默认部署到 bucket 根目录；如需前缀，可在 Repository Variables 配 PLAY_REGISTRY_OSS_PREFIX。
+          OSS_PREFIX: ${{ vars.PLAY_REGISTRY_OSS_PREFIX }}
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install oss2
+          python - <<'PY'
+          import mimetypes
+          import os
+          from pathlib import Path
+
+          import oss2
+
+          site = Path("site")
+          required = ["OSS_ENDPOINT", "OSS_ACCESS_KEY_ID", "OSS_ACCESS_KEY_SECRET"]
+          missing = [name for name in required if not os.environ.get(name, "").strip()]
+          if missing:
+              raise SystemExit(f"Missing required OSS secrets: {', '.join(missing)}")
+
+          endpoint = os.environ["OSS_ENDPOINT"].strip()
+          bucket_name = os.environ.get("OSS_BUCKET", "ezs-games").strip() or "ezs-games"
+          prefix = os.environ.get("OSS_PREFIX", "").strip("/")
+
+          auth = oss2.Auth(
+              os.environ["OSS_ACCESS_KEY_ID"].strip(),
+              os.environ["OSS_ACCESS_KEY_SECRET"].strip(),
+          )
+          bucket = oss2.Bucket(auth, endpoint, bucket_name)
+
+          mimetypes.add_type("application/javascript; charset=utf-8", ".js")
+          mimetypes.add_type("text/css; charset=utf-8", ".css")
+          mimetypes.add_type("text/html; charset=utf-8", ".html")
+          mimetypes.add_type("application/json; charset=utf-8", ".json")
+
+          files = sorted(path for path in site.rglob("*") if path.is_file())
+          if not files:
+              raise SystemExit("No files found in site/")
+
+          def object_key(path):
+              rel = path.relative_to(site).as_posix()
+              return f"{prefix}/{rel}" if prefix else rel
+
+          def headers_for(key):
+              content_type, _ = mimetypes.guess_type(key)
+              headers = {
+                  "Cache-Control": "no-cache, max-age=60"
+                  if key.endswith((".html", ".json"))
+                  else "public, max-age=300"
+              }
+              if content_type:
+                  headers["Content-Type"] = content_type
+              return headers
+
+          def upload(path):
+              key = object_key(path)
+              print(f"Uploading {path} to oss://{bucket_name}/{key}")
+              bucket.put_object_from_file(key, str(path), headers=headers_for(key))
+
+          registry = site / "registry.json"
+          for path in files:
+              if path != registry:
+                  upload(path)
+          if registry.exists():
+              # registry.json 是面板读取的指针，最后上传，避免先暴露未就位的 games 资源。
+              upload(registry)
+          PY
+
+      - name: 上传 Pages 产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: 部署到 GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

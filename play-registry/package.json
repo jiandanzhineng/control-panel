@@ -1,0 +1,12 @@
+{
+  "name": "play-registry",
+  "version": "1.0.0",
+  "private": true,
+  "description": "UnderSilicon 控制面板的远程游戏仓库（静态站）。面板运行时拉取 registry.json，游戏经面板 gameProxy 同源加载。",
+  "scripts": {
+    "build": "node scripts/build-registry.js",
+    "test": "node --test test/extract.test.js",
+    "serve": "npx --yes serve ."
+  },
+  "license": "UNLICENSED"
+}

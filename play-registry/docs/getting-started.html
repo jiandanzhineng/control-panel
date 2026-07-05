@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>快速开始 · 玩法开发文档</title>
+<link rel="stylesheet" href="../assets/css/site.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="../index.html"><span class="brand-mark">⚡</span><span>玩法库</span></a>
+    <div class="nav-links">
+      <a href="../index.html">游戏</a>
+      <a href="getting-started.html" class="active">开发文档</a>
+      <a href="device-api.html">DeviceAPI</a>
+      <a href="contribute.html" class="nav-cta">投稿</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container">
+<div class="docs-layout">
+<aside class="docs-sidebar">
+  <h4>开发文档</h4>
+  <a href="getting-started.html" class="active">快速开始</a>
+  <a href="device-api.html">DeviceAPI 参考</a>
+  <a href="devices.html">设备与能力</a>
+  <a href="contribute.html">投稿与奖励</a>
+</aside>
+
+<main class="docs-body">
+<h1>快速开始</h1>
+<div class="updated">面向第一次写玩法的开发者 · 5 分钟跑通</div>
+
+<p>UnderSilicon 玩法 = 一个自包含的网页。逻辑和 UI 都在一个 HTML/JS 里，通过注入的 <code>DeviceAPI</code> 桥接控制真实设备。你不需要独立 JS 引擎，也不需要逻辑/UI 分离——<strong>写游戏就是写网页</strong>。</p>
+
+<div class="callout callout-warn">
+  <span class="callout-icon">💡</span>
+  <p>核心承诺：游戏页面代码<strong>不区分</strong>自己跑在宿主里还是直接浏览器打开。两种入口下读同样的 <code>DeviceAPI.params</code> / <code>DeviceAPI.deviceMap</code>，降级逻辑由桥接统一兜底。</p>
+</div>
+
+<h2>目录结构</h2>
+<p>每个玩法一个目录，至少包含 <code>index.html</code>。可以再拆出 <code>game.js</code>、<code>style.css</code>。</p>
+<pre><code>games/
+└── my-game/
+    ├── index.html        # 主页面（逻辑+UI+内联元数据，单文件即可运行）
+    ├── style.css         # 可选
+    └── game.js           # 可选（也可内联进 html）</code></pre>
+
+<h2>三步写一个玩法</h2>
+
+<div class="steps">
+  <div class="step">
+    <div class="step-num">1</div>
+    <div class="step-body">
+      <h4>建目录 + 内联元数据</h4>
+      <p>在 <code>games/my-game/index.html</code> 的 <code>&lt;head&gt;</code> 内联一段 <code>&lt;script id="game-manifest"&gt;</code>，声明 id / title / version / devices / params。</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">2</div>
+    <div class="step-body">
+      <h4>引入桥接 + 写逻辑</h4>
+      <p>页面里 <code>&lt;script src="/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;</code>，然后 <code>await DeviceAPI.ready</code> 之后再操作设备。</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">3</div>
+    <div class="step-body">
+      <h4>构建 registry + 提交</h4>
+      <p>跑 <code>npm run build &amp;&amp; npm test</code>，提交到 <code>main</code> 分支，CI 自动发布到玩法网站。</p>
+    </div>
+  </div>
+</div>
+
+<h2>最小完整示例</h2>
+<p>下面是一个能跑的最小玩法：监听压力传感器，超阈值就电击。</p>
+<pre><code>&lt;!DOCTYPE html&gt;
+&lt;html lang="zh-CN"&gt;
+&lt;head&gt;
+&lt;meta charset="utf-8" /&gt;
+&lt;title&gt;压力寸止 demo&lt;/title&gt;
+&lt;script type="application/json" id="game-manifest"&gt;
+{
+  "id": "my-game",
+  "title": "我的玩法",
+  "description": "压力超阈值就电击",
+  "version": "1.0.0",
+  "devices": [
+    { "id": "sensor", "capabilities": ["sphincterPressure"], "required": true },
+    { "id": "punish", "capabilities": ["shock"], "required": false }
+  ],
+  "params": [
+    { "key": "threshold", "type": "number", "default": 80, "label": "压力阈值" }
+  ]
+}
+&lt;/script&gt;
+&lt;script src="/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;
+&lt;/head&gt;
+&lt;body&gt;
+&lt;h2&gt;压力: &lt;span id="gauge"&gt;-&lt;/span&gt;&lt;/h2&gt;
+&lt;script&gt;
+(async function () {
+  await DeviceAPI.ready;
+  const threshold = DeviceAPI.params.threshold;
+
+  DeviceAPI.device('sensor').on('sphincterPressure', 'pressureChange', (data) =&gt; {
+    const val = data.props.pressure;
+    document.getElementById('gauge').textContent = val;
+    if (val &gt; threshold &amp;&amp; DeviceAPI.device('punish').isMapped()) {
+      DeviceAPI.device('punish').invoke('shock', 'start', { voltage: 30 });
+    }
+  });
+
+  DeviceAPI.log('info', '玩法已启动', { threshold });
+})();
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;</code></pre>
+
+<h2>关键规则（必须遵守）</h2>
+<ul>
+  <li><strong>元数据必须内联</strong>在 <code>index.html</code> 的 <code>&lt;script id="game-manifest"&gt;</code> 中，<code>type</code> 用 <code>application/json</code>。不用单独的 <code>manifest.json</code>。</li>
+  <li><strong>版本号必须是合法 semver</strong>（如 <code>1.0.0</code>、<code>2.1.3</code>）。构建脚本会校验。</li>
+  <li><strong>资源引用只能用相对路径或 <code>/bridge-api/</code> 开头的绝对路径</strong>。禁止根绝对路径（如 <code>/games/foo/x.js</code>）——会被面板 gameProxy 误判为本地资源，构建 lint 会拦截。</li>
+  <li><strong>设备交互一律走 <code>DeviceAPI</code></strong>，不要自己开 WebSocket 连 <code>/bridge</code>。桥接脚本已经处理好了连接、重连、属性缓存。</li>
+  <li><strong>可选设备先 <code>isMapped()</code></strong> 再用。必填设备由宿主保证已映射，可选设备可能为空数组。</li>
+</ul>
+
+<h2>本地调试</h2>
+<p>玩法页面可以直接浏览器打开调试——它会连到本机后端的 WebSocket Bridge。流程：</p>
+<ol>
+  <li>启动控制面板后端（它会监听 <code>/bridge</code> WebSocket 和 <code>/bridge-api/device-api-bridge.js</code> 静态资源）。</li>
+  <li>把你的玩法目录挂到能被面板扫描的位置，或在面板「玩法库」里用外部 URL 加载。</li>
+  <li>浏览器开发者工具直接断点调试页面 JS，和调试普通网页完全一样。</li>
+</ol>
+
+<h2>下一步</h2>
+<ul>
+  <li>→ <a href="device-api.html">DeviceAPI 完整参考</a>（每个方法的签名与语义）</li>
+  <li>→ <a href="devices.html">设备与能力清单</a>（你能用哪些设备、哪些能力）</li>
+  <li>→ <a href="contribute.html">投稿与奖励</a>（怎么上架、怎么拿 Token）</li>
+</ul>
+</main>
+</div>
+</div>
+</body>
+</html>

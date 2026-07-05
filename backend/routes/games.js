@@ -52,6 +52,16 @@ router.get('/status', (req, res) => {
   res.json({ running: false });
 });
 
+router.post('/played', (req, res) => {
+  try {
+    const saved = gameService.savePlayedGame(req.body || {});
+    res.json(saved);
+  } catch (e) {
+    const status = e?.code === 'INVALID_PLAYED_GAME' ? 400 : 500;
+    sendError(res, e?.code || 'GAME_PLAYED_SAVE_FAILED', e?.message || String(e), status);
+  }
+});
+
 router.get('/:id', (req, res) => {
   try {
     const g = gameService.getGameById(req.params.id);

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DeviceAPI 参考 · 玩法开发文档</title>
+<link rel="stylesheet" href="../assets/css/site.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="../index.html"><span class="brand-mark">⚡</span><span>玩法库</span></a>
+    <div class="nav-links">
+      <a href="../index.html">游戏</a>
+      <a href="getting-started.html">开发文档</a>
+      <a href="device-api.html" class="active">DeviceAPI</a>
+      <a href="contribute.html" class="nav-cta">投稿</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container">
+<div class="docs-layout">
+<aside class="docs-sidebar">
+  <h4>开发文档</h4>
+  <a href="getting-started.html">快速开始</a>
+  <a href="device-api.html" class="active">DeviceAPI 参考</a>
+  <a href="devices.html">设备与能力</a>
+  <a href="contribute.html">投稿与奖励</a>
+</aside>
+
+<main class="docs-body">
+<h1>DeviceAPI 参考</h1>
+<div class="updated">注入到每个玩法页面的统一桥接 API · PC 与 Android 接口完全一致</div>
+
+<p>每个玩法页面加载时，宿主会注入全局 <code>window.DeviceAPI</code>。所有设备交互都通过它完成——不要自己开 WebSocket。<strong>通道就绪前调用会失败</strong>，请先 <code>await DeviceAPI.ready</code>。</p>
+
+<pre><code>window.DeviceAPI = {
+  device(logicalId),       // 获取设备代理
+  getDevices(),            // 列出已连接设备及能力
+  getDeviceMap(),          // 当前会话 logicalId → physicalId[]
+  log(level, message, meta),
+  onSystemLog(cb), offSystemLog(cb),
+  params,                  // 用户启动时配置的参数
+  deviceMap,               // {logicalId: physicalId[]} 恒为数组
+  ready,                   // Promise，Bridge 就绪后 resolve
+};</code></pre>
+
+<h2>device(id) — 设备代理</h2>
+<p>通过逻辑设备 id 拿到代理对象，调用其能力方法。id 来自你 manifest 里 <code>devices[].id</code>。</p>
+<table>
+  <tr><th>方法</th><th>说明</th></tr>
+  <tr><td><code>invoke(capability, action, params)</code></td><td>调用能力方法（走 Capability 路由，有校验、有映射）。推荐入口。</td></tr>
+  <tr><td><code>writeProps(props)</code></td><td>直接写属性字典（跳过能力层）。调试或能力未覆盖时用。</td></tr>
+  <tr><td><code>sendMessage(msg)</code></td><td>直接发消息给设备（跳过能力层）。</td></tr>
+  <tr><td><code>on(capability, event, cb)</code></td><td>监听能力事件（由能力的 <code>events</code> 定义）。</td></tr>
+  <tr><td><code>off(capability, event, cb)</code></td><td>取消能力事件监听。</td></tr>
+  <tr><td><code>onProperty(property, cb)</code></td><td>低层：监听底层属性变化。</td></tr>
+  <tr><td><code>offProperty(property, cb)</code></td><td>低层：取消属性监听。</td></tr>
+  <tr><td><code>onMessage(cb)</code></td><td>低层：监听设备原始消息。</td></tr>
+  <tr><td><code>offMessage(cb)</code></td><td>低层：取消原始消息监听。</td></tr>
+  <tr><td><code>async read(property)</code></td><td>读属性缓存值（异步，返回<strong>数组</strong>，顺序同 deviceMap 物理 ID）。</td></tr>
+  <tr><td><code>isMapped()</code></td><td>该逻辑设备是否已映射到物理设备（bool）。</td></tr>
+</table>
+
+<h2>关键语义</h2>
+
+<h3>invoke vs writeProps</h3>
+<p><code>invoke</code> 走 Capability 路由，有校验、有逻辑→物理映射，是推荐入口。<code>writeProps</code> 直接把属性字典发给设备，跳过能力层，适合调试或能力体系未覆盖的场景。<code>sendMessage</code> 直接给设备发原始消息。</p>
+
+<h3>deviceMap 恒为数组</h3>
+<p><code>deviceMap</code> 和 <code>getDeviceMap()</code> 的值<strong>固定是 <code>physicalId[]</code></strong>。一个逻辑设备可对应多个物理设备，未映射时为空数组 <code>[]</code>，不会出现单值或 undefined。<code>device(id).isMapped()</code> 等价于「该数组非空」。</p>
+
+<h3>多物理设备语义</h3>
+<ul>
+  <li><strong>下行广播</strong>：<code>invoke</code> / <code>writeProps</code> / <code>sendMessage</code> 对所有映射的物理设备执行同一操作。</li>
+  <li><strong>上行逐设备触发</strong>：<code>on(capability, event)</code> 回调里 <code>data</code> 含触发源物理设备 ID（<code>data.physicalId</code>）及该设备属性，每个物理设备独立触发、不合并。</li>
+</ul>
+
+<h3>read 返回数组</h3>
+<p><code>read(property)</code> 是<strong>异步方法</strong>，从宿主属性缓存读取（不发起设备查询），返回<strong>数组</strong>——顺序与 <code>deviceMap</code> 中物理 ID 顺序一致。例如映射了两个传感器：<code>[72]</code> 或 <code>[72, 68]</code>。</p>
+
+<h3>ready</h3>
+<p>桥接脚本保证在 DOM 可用前注入，但 WebSocket 连接需要时间。<strong>所有设备操作之前必须 <code>await DeviceAPI.ready</code></strong>。</p>
+
+<h3>设备离线</h3>
+<p><code>invoke</code> / <code>writeProps</code> / <code>sendMessage</code> 调用时若设备离线，宿主<strong>不抛错</strong>，而是通过 <code>systemLog</code> 推一条 <code>warn</code> 日志（「设备 X 可能离线」）。用 <code>onSystemLog</code> 监听。</p>
+
+<h2>使用示例</h2>
+<pre><code>// 1. 等通道就绪
+await DeviceAPI.ready;
+
+// 2. 通过能力调用（推荐，有校验）
+DeviceAPI.device('motor').invoke('strength', 'set', { value: 128 });
+DeviceAPI.device('punish').invoke('shock', 'start', { voltage: 30 });
+
+// 3. 可选设备先判断再调
+if (DeviceAPI.device('punish').isMapped()) {
+  DeviceAPI.device('punish').invoke('shock', 'start', { voltage: 30 });
+}
+
+// 4. 监听能力事件
+DeviceAPI.device('sensor').on('sphincterPressure', 'pressureChange', (data) =&gt; {
+  const val = data.props.pressure;
+  if (val &gt; threshold) {
+    DeviceAPI.device('punish').invoke('shock', 'start', { voltage: 30 });
+  }
+});
+
+// 5. 读当前值（异步，返回数组）
+const pressures = await DeviceAPI.device('sensor').read('pressure'); // [72]
+
+// 6. 回传日志到宿主统一聚合
+DeviceAPI.log('info', '进入惩罚阶段', { count: 3 });
+
+// 7. 监听系统日志（设备离线警告等）
+DeviceAPI.onSystemLog((entry) =&gt; {
+  if (entry.level === 'warn') console.warn(entry.message, entry.meta);
+});
+
+// 8. 低层接口（调试用）
+DeviceAPI.device('sensor').onProperty('pressure', (val, old) =&gt; {
+  console.log('pressure:', old, '→', val);
+});
+DeviceAPI.device('qtz').onMessage((msg) =&gt; console.log('raw:', msg));</code></pre>
+
+<h2>能力事件 data 结构</h2>
+<p><code>on(capability, event, cb)</code> 回调的 <code>data</code> 含：</p>
+<table>
+  <tr><th>字段</th><th>说明</th></tr>
+  <tr><td><code>data.props</code></td><td>设备属性快照（dict）</td></tr>
+  <tr><td><code>data.changed</code></td><td>本次变化的属性 key</td></tr>
+  <tr><td><code>data.msg</code></td><td>触发的原始消息对象（消息类事件才有）</td></tr>
+  <tr><td><code>data.physicalId</code></td><td>触发源物理设备 ID（多物理设备时区分来源）</td></tr>
+</table>
+
+<h2>运行模型：游戏自驱动</h2>
+<p>玩法逻辑<strong>完全在页面 JS 内自驱动</strong>。计时、阶段切换、强度递增、惩罚检测等节奏由页面自己的 <code>setInterval</code> / <code>requestAnimationFrame</code> 维护。<strong>宿主不提供 <code>loop()</code> 回调</strong>——游戏即网页，状态由页面自己持有。</p>
+
+<div class="callout callout-warn">
+  <span class="callout-icon">⚠️</span>
+  <p>页面定时器在后台标签/息屏时可能被节流，因此<strong>设备安全不能依赖页面逻辑</strong>。关键安全（停止电击、强度归零）由宿主 <code>close</code> 兜底强制保证：游戏主动结束、连接断开超 180s、下一个玩法启动时，宿主对该会话所有映射设备强制调用 <code>close</code>，页面崩溃也能保证设备停止。</p>
+</div>
+
+<p>→ 完整能力清单见 <a href="devices.html">设备与能力</a>。</p>
+</main>
+</div>
+</div>
+</body>
+</html>

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>运行玩法 · 玩法库</title>
+<link rel="stylesheet" href="assets/css/site.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+<style>
+  body { overflow: hidden; }
+  .play-shell { display: flex; flex-direction: column; height: 100vh; }
+  .play-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 20px; background: var(--bg-soft); border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .play-bar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .play-bar-back { color: var(--text-soft); font-size: 14px; }
+  .play-bar-back:hover { color: var(--text); }
+  .play-title { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .play-conn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+  .play-conn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 6px var(--success); }
+  .play-conn.disconnected .dot { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+  .play-bar-actions { display: flex; gap: 8px; }
+  .play-bar .btn { padding: 7px 14px; font-size: 13px; }
+  .play-frame-wrap { flex: 1; position: relative; background: #06090f; min-height: 0; }
+  .play-frame-wrap iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .play-loading {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--text-soft); gap: 12px; text-align: center;
+  }
+  .spinner {
+    width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--primary);
+    border-radius: 50%; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .play-error {
+    position: absolute; inset: 0; display: none; place-items: center; text-align: center; padding: 40px;
+    background: var(--bg);
+  }
+  .play-error.show { display: grid; }
+  .play-error h3 { color: var(--danger); margin-bottom: 12px; }
+  .play-error p { color: var(--text-soft); margin-bottom: 8px; max-width: 480px; }
+</style>
+</head>
+<body>
+<div class="play-shell">
+  <div class="play-bar">
+    <div class="play-bar-left">
+      <a class="play-bar-back" href="index.html">← 返回</a>
+      <span class="play-title" id="play-title">玩法</span>
+      <span class="play-conn" id="play-conn"><span class="dot"></span> <span id="play-conn-text">加载中</span></span>
+    </div>
+    <div class="play-bar-actions">
+      <button class="btn btn-ghost" id="btn-reselect">重选设备</button>
+      <button class="btn btn-ghost" id="btn-stop">停止</button>
+    </div>
+  </div>
+  <div class="play-frame-wrap">
+    <div class="play-loading" id="play-loading">
+      <div class="spinner"></div>
+      <div>正在加载玩法…</div>
+    </div>
+    <div class="play-error" id="play-error">
+      <div>
+        <h3>⚠ 无法加载玩法</h3>
+        <p id="play-error-msg"></p>
+        <p style="font-size:13px;color:var(--text-dim);">需本机控制面板在线，且玩法经面板 gameProxy 加载。</p>
+        <a class="btn btn-primary" href="index.html" style="margin-top:16px;">返回玩法库</a>
+      </div>
+    </div>
+    <iframe id="play-iframe" allow="autoplay; fullscreen; gamepad; publickey-credentials-get" allowfullscreen></iframe>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  // 从 sessionStorage 读启动参数（避免静态站 cleanURL 重写丢 query）
+  var launch = null;
+  try { launch = JSON.parse(sessionStorage.getItem('play-launch') || 'null'); } catch (_) {}
+  sessionStorage.removeItem('play-launch');
+
+  var launchUrl = launch && launch.launch;
+  var title = (launch && launch.title) || '玩法';
+  var backend = (launch && launch.backend) || '';
+  var gameId = (launch && launch.id) || '';
+
+  document.getElementById('play-title').textContent = title;
+  document.title = title + ' · 玩法库';
+
+  var iframe = document.getElementById('play-iframe');
+  var loading = document.getElementById('play-loading');
+  var errBox = document.getElementById('play-error');
+  var errMsg = document.getElementById('play-error-msg');
+  var conn = document.getElementById('play-conn');
+  var connText = document.getElementById('play-conn-text');
+
+  if (!launchUrl) {
+    showError('缺少 launch 参数');
+    return;
+  }
+
+  // 超时兜底：8s 没加载完提示
+  var loaded = false;
+  var timeout = setTimeout(function () {
+    if (!loaded) { /* 不报错，仅隐藏 loading 让 iframe 自己显示 */ loading.style.display = 'none'; }
+  }, 8000);
+
+  iframe.addEventListener('load', function () {
+    loaded = true;
+    clearTimeout(timeout);
+    loading.style.display = 'none';
+    updateConnStatus();
+  });
+  iframe.addEventListener('error', function () {
+    showError('iframe 加载失败');
+  });
+
+  iframe.src = launchUrl;
+
+  // 连接状态：尝试探 iframe contentWindow 的 ws 不行（跨域），用 backend /api/devices 健康度近似
+  function updateConnStatus() {
+    if (!backend) return;
+    fetch(backend + '/api/devices', { mode: 'cors' })
+      .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+      .then(function (list) {
+        var online = (list || []).filter(function (d) { return d.connected; }).length;
+        if (online > 0) {
+          conn.classList.remove('disconnected');
+          connText.textContent = online + ' 设备在线';
+        } else {
+          conn.classList.add('disconnected');
+          connText.textContent = '无在线设备';
+        }
+      })
+      .catch(function () {
+        conn.classList.add('disconnected');
+        connText.textContent = '面板离线';
+      });
+  }
+
+  function showError(msg) {
+    loading.style.display = 'none';
+    iframe.style.display = 'none';
+    errBox.classList.add('show');
+    errMsg.textContent = msg;
+  }
+
+  // 停止：通知后端停当前 bridge 会话
+  document.getElementById('btn-stop').addEventListener('click', function () {
+    if (backend) {
+      fetch(backend + '/api/games/stop-current', { method: 'POST', mode: 'cors' }).catch(function () {});
+    }
+    setTimeout(function () { location.href = 'index.html'; }, 200);
+  });
+
+  // 重选设备：回首页重新打开 modal
+  document.getElementById('btn-reselect').addEventListener('click', function () {
+    if (backend) {
+      fetch(backend + '/api/games/stop-current', { method: 'POST', mode: 'cors' }).catch(function () {});
+    }
+    setTimeout(function () { location.href = gameId ? ('index.html?open=' + encodeURIComponent(gameId)) : 'index.html'; }, 200);
+  });
+
+  // 周期刷新连接状态
+  setInterval(updateConnStatus, 5000);
+  updateConnStatus();
+
+  // 页面卸载时也通知停止
+  window.addEventListener('beforeunload', function () {
+    if (backend) {
+      try { fetch(backend + '/api/games/stop-current', { method: 'POST', mode: 'cors', keepalive: true }); } catch (_) {}
+    }
+  });
+})();
+</script>
+</body>
+</html>

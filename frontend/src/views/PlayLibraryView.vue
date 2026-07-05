@@ -27,6 +27,23 @@
       </template>
     </el-alert>
 
+    <el-alert
+      v-if="registry.schemaWarning"
+      class="running-banner"
+      type="warning"
+      :title="registry.schemaWarning"
+      :closable="false"
+      show-icon
+    />
+    <el-alert
+      v-else-if="registry.loaded && registry.stale"
+      class="running-banner"
+      type="info"
+      :title="`远程仓库：离线，显示上次缓存${registry.fetchedAt ? '（' + new Date(registry.fetchedAt).toLocaleString('zh-CN') + '）' : ''}；已降级到装机兜底`"
+      :closable="false"
+      show-icon
+    />
+
     <section class="toolbar-card">
       <div class="row">
         <el-input
@@ -78,9 +95,16 @@
                 <el-tag size="small">v{{ item.version || '1.0.0' }}</el-tag>
                 <el-tag v-if="item.source" size="small" type="success">{{ item.source === 'builtin' ? '内置' : '用户' }}</el-tag>
               </template>
-              <!-- 游戏：版本 / 最后游玩 / 参数 -->
+              <!-- 游戏：版本 / 来源 / 最后游玩 / 参数 -->
               <template v-else>
                 <el-tag size="small" type="info">版本：{{ item.version || '-' }}</el-tag>
+                <el-tag v-if="item.source === 'remote'" size="small" type="warning" effect="plain">远程</el-tag>
+                <el-tag v-else-if="item.source === 'saved'" size="small" type="warning" effect="plain">已保存</el-tag>
+                <el-tag v-else size="small" type="success" effect="plain">本地</el-tag>
+                <el-tag v-if="item.isNew" size="small" type="success">新增</el-tag>
+                <el-tag v-else-if="item.hasUpdate" size="small" type="warning">
+                  线上较新{{ item.localVersion ? `（装机兜底 v${item.localVersion}）` : '' }}
+                </el-tag>
                 <el-tag size="small" type="success">最后游玩：{{ formatLastPlayed(item.lastPlayed) }}</el-tag>
                 <el-tag v-if="item.arguments" size="small">参数：{{ item.arguments }}</el-tag>
               </template>
@@ -94,7 +118,7 @@
         </div>
         <div class="play-actions">
           <el-button type="primary" :icon="VideoPlay" @click="goConfig(item)">{{ item.carrierType === 'game' ? '启动' : '配置启动' }}</el-button>
-          <el-button v-if="item.carrierType === 'game'" type="danger" plain :icon="Delete" @click="deleteGame(item)">删除</el-button>
+          <el-button v-if="item.carrierType === 'game' && item.source !== 'remote'" type="danger" plain :icon="Delete" @click="deleteGame(item)">删除</el-button>
         </div>
       </article>
     </div>
@@ -125,9 +149,24 @@ interface PlayItem {
   // 插件
   homeUrl?: string;
   source?: string;
+  origin?: string;
   // 游戏
   arguments?: string;
   lastPlayed?: number | null;
+  // 远程仓库（play-registry）
+  gamePath?: string;        // 启动用：远程为 /games/proxy/...，本地为 /games/<folder>/index.html
+  externalUrl?: string;     // 远程游戏绝对 URL（供外部确认框展示）
+  localVersion?: string;    // 装机兜底版本（远程权威，本地作离线备份）
+  hasUpdate?: boolean;      // 线上版本 > 装机兜底
+  isNew?: boolean;          // 线上有、装机没有
+}
+
+interface RegistryState {
+  loaded: boolean;
+  stale: boolean;
+  source: string;
+  schemaWarning: string | null;
+  fetchedAt: number;
 }
 
 const router = useRouter();
@@ -135,6 +174,7 @@ const { activePlay } = useActivePlay();
 
 const games = ref<PlayItem[]>([]);
 const plugins = ref<PlayItem[]>([]);
+const registry = ref<RegistryState>({ loaded: false, stale: false, source: '', schemaWarning: null, fetchedAt: 0 });
 const search = ref('');
 const error = ref('');
 const busy = ref({ refresh: false, upload: false, stop: false });
@@ -160,14 +200,39 @@ onMounted(loadAll);
 
 async function loadAll() {
   error.value = '';
-  const [gRes, pRes] = await Promise.all([
+  // 本地兜底 + 远程仓库并发拉取；远程分支 3s 超时，失败/超时静默降级本地
+  const remotePromise = fetch('/api/game-registry')
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+  const remoteTimed = Promise.race([
+    remotePromise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+  ]);
+
+  const [gRes, pRes, rRes] = await Promise.all([
     fetch('/api/games').then((r) => r.json()).catch(() => null),
     fetch('/api/plugins').then((r) => r.json()).catch(() => null),
+    remoteTimed,
   ]);
+
+  // 远程仓库状态（stale/schemaWarning 用于顶部提示）
+  if (rRes && Array.isArray(rRes.games)) {
+    registry.value = {
+      loaded: true,
+      stale: !!rRes.stale,
+      source: String(rRes.source || ''),
+      schemaWarning: rRes.schemaWarning || null,
+      fetchedAt: Number(rRes.fetchedAt || 0),
+    };
+  } else {
+    registry.value = { loaded: false, stale: false, source: '', schemaWarning: null, fetchedAt: 0 };
+  }
+
   try {
-    if (gRes && Array.isArray(gRes)) {
-      games.value = gRes.map((g: any) => ({ ...g, carrierType: 'game' as const }));
-    }
+    const localGames: PlayItem[] = (gRes && Array.isArray(gRes))
+      ? gRes.map((g: any) => ({ ...g, carrierType: 'game' as const, source: g.source || 'builtin' }))
+      : [];
+    games.value = mergeGames(localGames, rRes?.games || []);
   } catch (e: any) {
     error.value = e?.message || '游戏列表获取失败';
   }
@@ -180,6 +245,69 @@ async function loadAll() {
   } catch (e: any) {
     error.value = e?.message || '插件列表获取失败';
   }
+}
+
+// 本地兜底 + 远程 registry 按 id 合并：远程为权威内容源（gamePath/devices/params/version），
+// 本地版本仅用于"线上 vX / 装机兜底 vY"徽标。远程有、本地无 → 新增游戏。
+function mergeGames(local: PlayItem[], remote: any[]): PlayItem[] {
+  const remoteMap = new Map<string, any>();
+  for (const rg of remote) remoteMap.set(String(rg.id), rg);
+  const merged: PlayItem[] = [];
+  for (const lg of local) {
+    const rg = remoteMap.get(lg.id);
+    if (rg) {
+      remoteMap.delete(lg.id);
+      merged.push({
+        carrierType: 'game',
+        id: rg.id,
+        title: rg.title || lg.title || lg.id,
+        name: rg.title || lg.name,
+        description: rg.description || lg.description || '',
+        version: rg.version || lg.version,
+        devices: rg.devices || lg.devices || [],
+        source: 'remote',
+        origin: rg.origin || lg.origin,
+        gamePath: rg.gamePath,
+        externalUrl: rg.externalUrl,
+        localVersion: lg.version,
+        hasUpdate: hasNewer(rg.version, lg.version),
+        isNew: false,
+        lastPlayed: lg.lastPlayed ?? null,
+      });
+    } else {
+      merged.push(lg);
+    }
+  }
+  for (const rg of remoteMap.values()) {
+    merged.push({
+      carrierType: 'game',
+      id: rg.id,
+      title: rg.title || rg.id,
+      description: rg.description || '',
+      version: rg.version,
+      devices: rg.devices || [],
+      source: 'remote',
+      gamePath: rg.gamePath,
+      externalUrl: rg.externalUrl,
+      localVersion: null,
+      hasUpdate: false,
+      isNew: true,
+      lastPlayed: null,
+    });
+  }
+  return merged;
+}
+
+function hasNewer(remote?: string, local?: string): boolean {
+  if (!remote || !local) return false;
+  const p = (s: string) => s.split('.').map((n) => parseInt(n, 10) || 0);
+  const a = p(remote), b = p(local);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] || 0, y = b[i] || 0;
+    if (x > y) return true;
+    if (x < y) return false;
+  }
+  return false;
 }
 
 async function refresh() {
@@ -270,7 +398,18 @@ async function deleteGame(item: PlayItem) {
 }
 
 function goConfig(item: PlayItem) {
-  router.push({ name: 'play_config', params: { type: item.carrierType, id: item.id } });
+  const query: Record<string, string> = {};
+  if (item.source === 'remote') {
+    query.source = 'remote';
+    if (item.externalUrl) query.externalUrl = item.externalUrl;
+    if (item.gamePath) query.gamePath = item.gamePath;
+  } else if (item.source === 'saved') {
+    query.source = 'saved';
+    if (item.origin) query.origin = item.origin;
+    if (item.externalUrl) query.externalUrl = item.externalUrl;
+    if (item.gamePath) query.gamePath = item.gamePath;
+  }
+  router.push({ name: 'play_config', params: { type: item.carrierType, id: item.id }, query });
 }
 
 function resumeRun() {

@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>玩法库 · UnderSilicon 控制面板</title>
+<meta name="description" content="UnderSilicon 控制面板的远程玩法网站。改这里即生效，无需重发 App。游戏经面板 gameProxy 同源加载、连本机 Bridge 驱动真实设备。" />
+<link rel="stylesheet" href="assets/css/site.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+</head><body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark">⚡</span>
+      <span>玩法库</span>
+    </a>
+    <div class="nav-links">
+      <a href="index.html" class="active">游戏</a>
+      <a href="docs/getting-started.html">开发文档</a>
+      <a href="docs/device-api.html">DeviceAPI</a>
+      <a href="docs/contribute.html" class="nav-cta">投稿</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="container">
+    <span class="hero-eyebrow"><span class="dot"></span> 远程玩法仓库 · 实时更新</span>
+    <h1>玩法即网页<span class="grad">，改站即生效</span></h1>
+    <p class="lead">UnderSilicon 控制面板的远程游戏网站。游戏自包含 HTML+JS，经面板 <code>gameProxy</code> 同源加载、连本机 <code>/bridge</code> 驱动真实设备。无需重发安装包。</p>
+    <div class="hero-actions">
+      <a class="btn btn-primary" href="#games">浏览游戏 →</a>
+      <a class="btn btn-ghost" href="docs/getting-started.html">如何开发一个玩法</a>
+    </div>
+    <div class="stat-row" id="stats">
+      <div class="stat"><div class="stat-num" id="stat-games">—</div><div class="stat-label">在线玩法</div></div>
+      <div class="stat"><div class="stat-num" id="stat-devices">—</div><div class="stat-label">支持设备类型</div></div>
+      <div class="stat"><div class="stat-num" id="stat-caps">—</div><div class="stat-label">设备能力</div></div>
+    </div>
+  </div>
+</header>
+
+<section class="section" id="games">
+  <div class="container">
+    <div class="section-head">
+      <span class="tag">Library</span>
+      <h2>玩法列表</h2>
+      <p>从 <code>registry.json</code> 实时拉取。点击「在面板中启动」需先安装控制面板并完成设备映射。</p>
+    </div>
+
+    <div class="toolbar">
+      <div class="search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input id="search" type="text" placeholder="搜索玩法标题、描述、id…" />
+      </div>
+      <div class="filter-chips" id="filters"></div>
+    </div>
+
+    <div class="game-grid" id="grid">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
+    <div class="contribute">
+      <div class="contribute-grid">
+        <div>
+          <span class="hero-eyebrow"><span class="dot"></span> 玩家投稿计划</span>
+          <h2 style="font-size:30px;font-weight:800;letter-spacing:-0.02em;margin-bottom:12px;">把你的脑洞做成玩法，<br/>按热度赚设备 Token</h2>
+          <p style="color:var(--text-soft);font-size:16px;">玩法 = 自包含网页。你写 <code>index.html</code> + <code>game.js</code>，PR 进本仓库，上线后玩家在面板里直接看到、直接玩。我们按真实运行热度返还设备控制 Token——玩得越多、Token 越多，可兑换实体设备时长或新硬件优先体验。</p>
+          <div class="tier-list">
+            <div class="tier"><span class="tier-icon">🥉</span><div class="tier-info"><div class="tier-name">入选上架</div><div class="tier-desc">PR 合并、过审上架到玩法库</div></div><span class="tier-reward">+ 200 Token</span></div>
+            <div class="tier"><span class="tier-icon">🥈</span><div class="tier-info"><div class="tier-name">热度玩法</div><div class="tier-desc">累计启动 100+ 次或周活进前 30%</div></div><span class="tier-reward">+ 1,000 Token</span></div>
+            <div class="tier"><span class="tier-icon">🥇</span><div class="tier-info"><div class="tier-name">人气玩法</div><div class="tier-desc">累计启动 1,000+ 次，玩家主动收藏 ≥ 50</div></div><span class="tier-reward">+ 5,000 Token + 硬件优先体验</span></div>
+          </div>
+          <div style="margin-top:24px;display:flex;gap:12px;flex-wrap:wrap;">
+            <a class="btn btn-primary" href="docs/contribute.html">查看投稿指南 →</a>
+            <a class="btn btn-ghost" href="docs/getting-started.html">先学开发</a>
+          </div>
+        </div>
+        <div class="qr-card">
+          <img src="assets/img/微信客服二维码.png" alt="微信客服二维码" onerror="this.style.display='none'" />
+          <div class="qr-label">扫码加客服微信</div>
+          <div class="qr-sub">投稿审核 · Token 兑换 · 技术答疑</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-links">
+      <a href="index.html">游戏</a>
+      <a href="docs/getting-started.html">开发文档</a>
+      <a href="docs/device-api.html">DeviceAPI</a>
+      <a href="docs/devices.html">设备清单</a>
+      <a href="docs/contribute.html">投稿</a>
+    </div>
+    <div>UnderSilicon 控制面板 · 远程玩法仓库 · 内容随仓库 <code>main</code> 分支自动发布</div>
+  </div>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<!-- 设备选择 / 启动 modal -->
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-game-title">
+  <div class="modal-panel">
+    <div class="modal-head">
+      <h3 id="modal-game-title">玩法</h3>
+      <button class="modal-close" aria-label="关闭">✕</button>
+    </div>
+    <div class="modal-status" id="modal-status"></div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="modal-cancel">取消</button>
+      <button class="btn btn-primary" id="modal-start" disabled>启动玩法 →</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/play-launcher.js"></script>
+<script>
+(function () {
+  "use strict";
+  var grid = document.getElementById('grid');
+  var search = document.getElementById('search');
+  var filters = document.getElementById('filters');
+  var toastEl = document.getElementById('toast');
+  var allGames = [];
+  var activeFilter = 'all';
+
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    setTimeout(function () { toastEl.classList.remove('show'); }, 2200);
+  }
+
+  // 游戏图标按 id 哈希选 emoji（确定性，无随机）
+  var ICONS = ['⚡', '🎯', '🔥', '💧', '🚪', '⚖️', '📏', '🦶', '💫', '🎮', '🧩', '⏳'];
+  function iconFor(id) {
+    var h = 0;
+    for (var i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+    return ICONS[h % ICONS.length];
+  }
+
+  function fmtSize(bytes) {
+    if (!bytes) return '';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(2) + ' MB';
+  }
+
+  function uniq(arr) {
+    var seen = Object.create(null);
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      if (arr[i] && !seen[arr[i]]) { seen[arr[i]] = 1; out.push(arr[i]); }
+    }
+    return out;
+  }
+
+  function capabilityChips(g) {
+    var caps = [];
+    (g.devices || []).forEach(function (d) {
+      (d.capabilities || []).forEach(function (c) { caps.push(c); });
+    });
+    return uniq(caps);
+  }
+
+  function buildFilters(games) {
+    var set = Object.create(null);
+    games.forEach(function (g) {
+      capabilityChips(g).forEach(function (c) { set[c] = (set[c] || 0) + 1; });
+    });
+    var keys = Object.keys(set).sort();
+    var html = '<span class="chip ' + (activeFilter === 'all' ? 'active' : '') + '" data-filter="all">全部</span>';
+    keys.forEach(function (k) {
+      html += '<span class="chip" data-filter="' + k + '">' + k + ' <span style="opacity:.6">' + set[k] + '</span></span>';
+    });
+    filters.innerHTML = html;
+    filters.querySelectorAll('.chip').forEach(function (el) {
+      el.addEventListener('click', function () {
+        activeFilter = el.getAttribute('data-filter');
+        filters.querySelectorAll('.chip').forEach(function (x) { x.classList.remove('active'); });
+        el.classList.add('active');
+        render();
+      });
+    });
+  }
+
+  function matches(g, q) {
+    if (!q) return true;
+    q = q.toLowerCase();
+    return (g.title || '').toLowerCase().indexOf(q) >= 0
+      || (g.id || '').toLowerCase().indexOf(q) >= 0
+      || (g.description || '').toLowerCase().indexOf(q) >= 0;
+  }
+
+  function cardHtml(g) {
+    var caps = capabilityChips(g);
+    var reqDevices = (g.devices || []).filter(function (d) { return d.required; }).map(function (d) { return d.id; });
+    var badges = caps.map(function (c) {
+      return '<span class="badge">' + c + '</span>';
+    }).join('');
+    if (reqDevices.length) {
+      badges += '<span class="badge required">必需: ' + reqDevices.join(', ') + '</span>';
+    }
+    return '<article class="game-card">'
+      + '<div class="game-card-head">'
+        + '<div class="game-icon">' + iconFor(g.id) + '</div>'
+        + '<div style="flex:1;min-width:0;">'
+          + '<div class="game-title">' + esc(g.title || g.id) + '</div>'
+          + '<div class="game-id">' + esc(g.id) + '</div>'
+        + '</div>'
+        + '<span class="badge ver">v' + esc(g.version || '0.0.0') + '</span>'
+      + '</div>'
+      + '<p class="game-desc">' + esc(g.description || '（无描述）') + '</p>'
+      + '<div class="game-meta">' + badges + '</div>'
+      + '<div class="game-card-foot">'
+        + '<span class="game-size">' + (g.sha256 ? ('sha ' + g.sha256.slice(0, 8)) : '') + (g.size ? ' · ' + fmtSize(g.size) : '') + '</span>'
+        + '<button class="play-link" type="button" data-launch="' + esc(g.id) + '">启动玩法 →</button>'
+      + '</div>'
+    + '</article>';
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function render() {
+    var q = search.value.trim();
+    var list = allGames.filter(function (g) {
+      if (!matches(g, q)) return false;
+      if (activeFilter !== 'all' && capabilityChips(g).indexOf(activeFilter) < 0) return false;
+      return true;
+    });
+    if (!list.length) {
+      grid.innerHTML = '<div class="empty-state"><p style="font-size:16px;margin-bottom:6px;">没找到匹配的玩法</p><p>试试别的关键词或清空筛选</p></div>';
+      return;
+    }
+    grid.innerHTML = list.map(cardHtml).join('');
+  }
+
+  function updateStats(games) {
+    document.getElementById('stat-games').textContent = games.length;
+    var capSet = Object.create(null), devSet = Object.create(null);
+    games.forEach(function (g) {
+      (g.devices || []).forEach(function (d) {
+        devSet[d.id] = 1;
+        (d.capabilities || []).forEach(function (c) { capSet[c] = 1; });
+      });
+    });
+    document.getElementById('stat-devices').textContent = Object.keys(devSet).length;
+    document.getElementById('stat-caps').textContent = Object.keys(capSet).length;
+  }
+
+  function loadFrom(path) {
+    return fetch(path).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+  }
+
+  function applyRegistry(data) {
+    var games = data.games || [];
+    // 路径解析：本页通常在站点根，entry.path 形如 games/<id>/index.html
+    games.forEach(function (g) {
+      g._path = g.path || ('games/' + g.id + '/index.html');
+      // 面板启动入口：把路径交给面板的 gameProxy（绝对 URL 形式）
+      var abs = new URL(g._path, location.href).href;
+      g._launchUrl = 'undersilicon://play/' + encodeURIComponent(abs);
+    });
+    allGames = games;
+    updateStats(games);
+    buildFilters(games);
+    render();
+  }
+
+  loadFrom('registry.json')
+    .then(applyRegistry)
+    .catch(function (err) {
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">'
+        + '<p style="font-size:16px;margin-bottom:6px;color:var(--warn);">⚠ 无法加载 registry.json</p>'
+        + '<p>' + esc(err.message || err) + '</p>'
+        + '<p>站点可能尚未部署，或当前在离线环境。本地开发请先运行 <code>npm run build</code> 生成 registry.json。</p>'
+        + '</div>';
+    });
+
+  search.addEventListener('input', render);
+
+  // 点击"启动玩法" → 打开设备选择 modal
+  grid.addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-launch]');
+    if (!btn) return;
+    var id = btn.getAttribute('data-launch');
+    var g = allGames.find(function (x) { return x.id === id; });
+    if (g && window.PlayLauncher) window.PlayLauncher.open(g);
+  });
+
+  // 绑定 modal 取消按钮
+  var cancelBtn = document.getElementById('modal-cancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', function () { window.PlayLauncher.closeModal(); });
+
+  // 从 play.html「重选设备」跳回时带 ?open=<id>，自动打开 modal
+  var openId = new URLSearchParams(location.search).get('open');
+  if (openId) {
+    var tryOpen = function () {
+      var g = allGames.find(function (x) { return x.id === openId; });
+      if (g && window.PlayLauncher) { window.PlayLauncher.open(g); }
+      else setTimeout(tryOpen, 200);
+    };
+    setTimeout(tryOpen, 300);
+  }
+})();
+</script>
+</body>
+</html>

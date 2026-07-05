@@ -7,13 +7,14 @@ const logger = require('../utils/logger');
 const backendRoot = path.resolve(__dirname, '..');
 const projectRoot = path.resolve(backendRoot, '..');
 const newGameDir = path.resolve(backendRoot, 'games');
+const SAVED_GAMES_KEY = 'games';
 
 function ensureGameDir() {
   if (!fs.existsSync(newGameDir)) fs.mkdirSync(newGameDir, { recursive: true });
 }
 
 function readGames() {
-  const raw = fileStorage.getItem('games');
+  const raw = fileStorage.getItem(SAVED_GAMES_KEY);
   if (!raw) return [];
   try {
     const arr = JSON.parse(raw);
@@ -22,7 +23,7 @@ function readGames() {
 }
 
 function writeGames(rows) {
-  fileStorage.setItem('games', JSON.stringify(rows || []));
+  fileStorage.setItem(SAVED_GAMES_KEY, JSON.stringify(rows || []));
 }
 
 function stableIdForPath(relPath) {
@@ -31,7 +32,9 @@ function stableIdForPath(relPath) {
 }
 
 function extractManifestFromHtml(htmlContent) {
-  const m = htmlContent.match(/<script[^>]+id\s*=\s*["']game-manifest["'][^>]*>([\s\S]*?)<\/script>/i);
+  // 与 play-registry/scripts/build-registry.js 的正则保持一致（test/extract.test.js 双端锁定）。
+  // 用 [^>]*\bid= 而非旧 [^>]+id=：后者要求 id 前至少一字符，id 写在最前时会失配。
+  const m = htmlContent.match(/<script[^>]*\bid\s*=\s*["']game-manifest["'][^>]*>([\s\S]*?)<\/script>/i);
   if (!m) return null;
   try { return JSON.parse(m[1]); } catch (_) { return null; }
 }
@@ -72,7 +75,25 @@ function scanHtmlGames() {
 
 function listGames() {
   const htmlGames = scanHtmlGames();
-  return htmlGames;
+  const byId = new Map(htmlGames.map((g) => [g.id, { ...g, source: 'builtin' }]));
+  for (const saved of readGames()) {
+    const normalized = normalizeSavedGame(saved, { existing: saved, markPlayed: false });
+    if (!normalized) continue;
+    const current = byId.get(normalized.id);
+    if (current) {
+      byId.set(normalized.id, {
+        ...current,
+        lastPlayed: normalized.lastPlayed || current.lastPlayed || null,
+        lastDeviceMap: normalized.lastDeviceMap || {},
+        lastParams: normalized.lastParams || {},
+        savedAt: normalized.savedAt || current.savedAt,
+        playCount: normalized.playCount || 0,
+      });
+    } else {
+      byId.set(normalized.id, normalized);
+    }
+  }
+  return Array.from(byId.values());
 }
 
 function getGameById(id) {
@@ -89,6 +110,9 @@ function reloadGames() {
 function deleteGameById(id, { removeFile } = {}) {
   const game = getGameById(id);
   if (!game) return { ok: false, notFound: true };
+  const saved = readGames();
+  const nextSaved = saved.filter((g) => g && String(g.id) !== String(id));
+  if (nextSaved.length !== saved.length) writeGames(nextSaved);
   if (removeFile && game.folder) {
     const dir = path.join(newGameDir, game.folder);
     if (fs.existsSync(dir)) {
@@ -102,6 +126,70 @@ function updateGameById(id, changes = {}) {
   return { ok: true };
 }
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function asObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function cleanString(value, fallback = '') {
+  const s = String(value == null ? '' : value).trim();
+  return s || fallback;
+}
+
+function normalizeSavedGame(input, { existing = null, markPlayed = true } = {}) {
+  if (!input || typeof input !== 'object') return null;
+  const externalUrl = cleanString(input.externalUrl || existing?.externalUrl);
+  const gamePath = cleanString(input.gamePath || existing?.gamePath);
+  const id = cleanString(input.id || existing?.id || (externalUrl ? stableIdForPath(externalUrl) : ''));
+  if (!id || (!gamePath && !externalUrl)) return null;
+
+  const now = Date.now();
+  const title = cleanString(input.title || input.name || existing?.title || existing?.name, id);
+  const lastDeviceMap = asObject(input.deviceMap || input.lastDeviceMap || existing?.lastDeviceMap);
+  const lastParams = asObject(input.parameters || input.paramsValues || input.lastParams || existing?.lastParams);
+
+  return {
+    id,
+    title,
+    name: title,
+    description: cleanString(input.description || existing?.description),
+    status: 'idle',
+    type: 'html',
+    source: 'saved',
+    origin: cleanString(input.origin || existing?.origin, externalUrl ? 'external' : 'remote'),
+    gamePath,
+    externalUrl,
+    devices: asArray(input.devices || existing?.devices),
+    params: asArray(input.params || existing?.params),
+    version: cleanString(input.version || existing?.version, '1.0.0'),
+    createdAt: Number(existing?.createdAt || input.createdAt || now),
+    savedAt: markPlayed ? now : Number(input.savedAt || existing?.savedAt || now),
+    lastPlayed: markPlayed ? now : Number(input.lastPlayed || existing?.lastPlayed || 0) || null,
+    playCount: Number(existing?.playCount || input.playCount || 0) + (markPlayed ? 1 : 0),
+    lastDeviceMap,
+    lastParams,
+  };
+}
+
+function savePlayedGame(input) {
+  const rows = readGames();
+  const idx = rows.findIndex((g) => g && String(g.id) === String(input?.id));
+  const existing = idx >= 0 ? rows[idx] : null;
+  const normalized = normalizeSavedGame(input, { existing, markPlayed: true });
+  if (!normalized) {
+    const error = new Error('需提供 id 以及 gamePath 或 externalUrl');
+    error.code = 'INVALID_PLAYED_GAME';
+    throw error;
+  }
+  if (idx >= 0) rows[idx] = normalized;
+  else rows.push(normalized);
+  writeGames(rows);
+  return normalized;
+}
+
 module.exports = {
   listGames,
   getGameById,
@@ -109,6 +197,7 @@ module.exports = {
   deleteGameById,
   ensureGameDir,
   updateGameById,
+  savePlayedGame,
   extractManifestFromHtml,
   scanHtmlGames,
 };

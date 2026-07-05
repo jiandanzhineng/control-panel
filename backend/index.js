@@ -62,6 +62,7 @@ app.use('/api/devices', require('./routes/devices'));
 app.use('/api/device-types', require('./routes/deviceTypes'));
 app.use('/api/device-capabilities', require('./routes/deviceCapabilities'));
 app.use('/api/games', require('./routes/games'));
+app.use('/api/game-registry', require('./routes/gameRegistry'));
 app.use('/api/plugins', require('./routes/plugins'));
 app.use('/api/logs', require('./routes/logs'));
 app.use('/api/test', require('./routes/test'));

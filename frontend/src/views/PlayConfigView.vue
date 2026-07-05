@@ -400,6 +400,9 @@ interface PlayDetail {
   // 插件专属
   homeUrl?: string;
   source?: string;
+  origin?: string;
+  lastDeviceMap?: Record<string, string[]>;
+  lastParams?: Record<string, any>;
 }
 
 interface DeviceItem { id: string; name?: string; nickname?: string; type?: string; connected: boolean; lastReport?: string | null; data?: Record<string, any> }
@@ -557,6 +560,9 @@ function hostOf(url?: string) {
 
 function storageKey() {
   if (carrierType.value === 'plugin') return `pluginConfig:${playId.value}`;
+  // 远程仓库游戏：用稳定 id 命名，不随站点迁移丢失已存的设备映射/参数
+  if (route.query.source === 'remote') return `gameConfig:remote:${playId.value}`;
+  if (route.query.source === 'saved') return `gameConfig:saved:${playId.value}`;
   const ext = String(route.query.externalUrl || '');
   return ext ? `gameConfig:ext:${ext}` : `gameConfig:${playId.value}`;
 }
@@ -579,6 +585,44 @@ function saveConfig() {
   } catch (_) {}
 }
 
+function gameOrigin() {
+  if (route.query.source === 'remote') return 'remote';
+  return String(route.query.origin || '') || (String(route.query.externalUrl || '') ? 'external' : 'saved');
+}
+
+async function savePlayedGame() {
+  if (carrierType.value !== 'game' || !play.value) return;
+  const externalUrl = String(route.query.externalUrl || '') || play.value.externalUrl || '';
+  const gamePath = play.value.gamePath || String(route.query.gamePath || '');
+  if (!gamePath && !externalUrl) return;
+
+  await fetch('/api/games/played', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      id: play.value.id || playId.value || externalUrl,
+      title: title.value,
+      description: play.value.description || '',
+      version: play.value.version || '1.0.0',
+      devices: play.value.devices || [],
+      params: play.value.params || [],
+      gamePath,
+      externalUrl,
+      origin: gameOrigin(),
+      deviceMap: { ...deviceMapping },
+      parameters: { ...parameters },
+    }),
+  }).catch(() => null);
+}
+
+function metaUrlForPlay(source: string, externalUrl: string) {
+  if (carrierType.value === 'plugin') return `/api/plugins/${encodeURIComponent(playId.value)}`;
+  if (source === 'remote') return `/api/game-registry/${encodeURIComponent(playId.value)}`;
+  if (source === 'saved') return `/api/games/${encodeURIComponent(playId.value)}`;
+  if (externalUrl) return `/api/games/external/meta?url=${encodeURIComponent(externalUrl)}`;
+  return `/api/games/${encodeURIComponent(playId.value)}`;
+}
+
 async function loadAll() {
   loadingAll.value = true;
   loadingDevices.value = true;
@@ -586,12 +630,9 @@ async function loadAll() {
   deviceError.value = '';
   try {
     // 按 carrierType 选数据源
+    const source = String(route.query.source || '');
     const externalUrl = String(route.query.externalUrl || '');
-    const metaUrl = carrierType.value === 'plugin'
-      ? `/api/plugins/${encodeURIComponent(playId.value)}`
-      : (externalUrl
-        ? `/api/games/external/meta?url=${encodeURIComponent(externalUrl)}`
-        : `/api/games/${encodeURIComponent(playId.value)}`);
+    const metaUrl = metaUrlForPlay(source, externalUrl);
 
     const [mRes, dRes, iRes] = await Promise.all([
       fetch(metaUrl),
@@ -613,14 +654,20 @@ async function loadAll() {
     const saved = loadSavedConfig();
     const defaults = buildDefaultParameters(m);
     clearReactive(parameters);
-    Object.assign(parameters, (saved?.params && typeof saved.params === 'object') ? saved.params : defaults);
+    const savedParams = (saved?.params && typeof saved.params === 'object')
+      ? saved.params
+      : ((m as any).lastParams && typeof (m as any).lastParams === 'object' ? (m as any).lastParams : null);
+    Object.assign(parameters, savedParams || defaults);
 
     // 设备映射：优先 localStorage 回填（校验在线），否则按能力默认选第一台在线设备
     for (const rd of requiredDevices.value) {
       const key = rdKey(rd);
       if (!key) continue;
       const capabilities = rdCapabilities(rd);
-      const savedIds = Array.isArray(saved?.deviceMap?.[key]) ? saved!.deviceMap![key] : null;
+      const detailMap = (m as any).lastDeviceMap && typeof (m as any).lastDeviceMap === 'object' ? (m as any).lastDeviceMap : {};
+      const savedIds = Array.isArray(saved?.deviceMap?.[key])
+        ? saved!.deviceMap![key]
+        : (Array.isArray(detailMap[key]) ? detailMap[key] : null);
       if (savedIds) {
         const valid = savedIds.filter(id => {
           const dev = getDevice(id);
@@ -776,6 +823,7 @@ async function start(force: boolean) {
   startBusy.value = true;
   try {
     saveConfig();
+    await savePlayedGame();
     const t = title.value;
 
     if (carrierType.value === 'game') {
@@ -788,8 +836,9 @@ async function start(force: boolean) {
         deviceMap: JSON.stringify({ ...deviceMapping }),
         params: JSON.stringify({ ...parameters }),
       };
+      const gamePath = (play.value as any)?.gamePath || String(route.query.gamePath || '');
       if (externalUrl) resumeQuery.externalUrl = externalUrl;
-      if ((play.value as any)?.gamePath) resumeQuery.gamePath = (play.value as any).gamePath;
+      if (gamePath) resumeQuery.gamePath = gamePath;
       setActivePlay({ carrierType: 'game', id: playId.value, title: t, resume: { name: 'game_current', query: resumeQuery } });
       router.push({ name: 'game_current', query: resumeQuery });
     } else {
