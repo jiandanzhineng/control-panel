@@ -120,18 +120,13 @@ jobs:
           PY
 
       - name: 上传 Pages 产物
-        if: github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
   deploy-pages:
-    if: github.ref == 'refs/heads/main'
     needs: build-oss-deploy
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - name: 部署到 GitHub Pages
         id: deploy
