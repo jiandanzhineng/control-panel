@@ -37,15 +37,13 @@ jobs:
           npm test
 
       # 原子顺序：games 资源先就位，registry.json 最后（它是"指针"）。
-      # 发布网站 = 首页/文档/样式 + games + registry.json（不带源码/测试/脚本上网站）。
+      # 默认发布 play-registry 下的静态站内容，再剔除开发/构建辅助文件，避免新增页面或资源漏发。
       - name: 组装站点产物
         run: |
           mkdir -p site
-          cp play-registry/index.html site/index.html
-          cp -r play-registry/docs site/docs
-          cp -r play-registry/assets site/assets
-          cp -r play-registry/games site/games
-          cp play-registry/registry.json site/registry.json
+          cp -a play-registry/. site/
+          rm -rf site/scripts site/test site/node_modules
+          rm -f site/package.json site/package-lock.json site/README.md site/.gitignore site/.gitattributes site/*.log
 
       - name: 部署到阿里云 OSS
         env:

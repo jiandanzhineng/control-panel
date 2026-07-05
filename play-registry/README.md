@@ -45,7 +45,7 @@ npm run serve     # 本地起静态站（等效 GH Pages，供面板联调；面
 
 GitHub Actions：仓库根 `.github/workflows/deploy-play-registry.yml`，仅当 `play-registry/**` 变更时触发，发布网站产物到两个地方：
 
-- GitHub Pages：发布 `index.html` / `docs/` / `assets/` / `games/` / `registry.json`。
+- GitHub Pages：发布 `play-registry/` 下的静态站内容（如 `*.html` / `docs/` / `assets/` / `games/` / `registry.json`），排除 `scripts/`、`test/`、`node_modules/`、`README.md` 和包元数据。
 - 阿里云 OSS：发布同一份网站产物到 `oss://ezs-games/`，`registry.json` 最后上传。
 
 > 首次需在 GitHub 仓库 **Settings → Pages → Source** 选 **GitHub Actions**。
