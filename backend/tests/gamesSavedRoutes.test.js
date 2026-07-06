@@ -85,6 +85,21 @@ describe('saved played games API', () => {
     });
   });
 
+  it('lists built-in games from backend/games', async () => {
+    const listRes = await request(app).get('/api/games');
+
+    expect(listRes.status).toBe(200);
+    expect(listRes.body).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'pressure-edging-v2',
+        source: 'builtin',
+        type: 'html',
+        gamePath: '/games/pressure-edging-v2/index.html',
+        folder: 'pressure-edging-v2',
+      }),
+    ]));
+  });
+
   it('removes saved played games from the list', async () => {
     await request(app)
       .post('/api/games/played')

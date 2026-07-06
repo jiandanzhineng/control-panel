@@ -11,10 +11,15 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const AdmZip = require('adm-zip');
 
 const ROOT = path.resolve(__dirname, '..');
-const GAMES_DIR = path.join(ROOT, 'games');
-const OUT = path.join(ROOT, 'registry.json');
+const DEFAULT_SOURCE_ROOTS = [
+  { source: 'builtin', dir: path.resolve(ROOT, '..', 'backend', 'games') },
+  { source: 'online', dir: path.join(ROOT, 'games') },
+];
+const DEFAULT_PACKAGES_DIR = path.join(ROOT, 'packages');
+const DEFAULT_OUT = path.join(ROOT, 'registry.json');
 const SCHEMA_VERSION = 1;
 
 // —— vendored from backend/services/gameService.js#extractManifestFromHtml ——
@@ -44,6 +49,18 @@ function sha256OfFile(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
 
+function ensureCleanPackagesDir(packagesDir) {
+  fs.rmSync(packagesDir, { recursive: true, force: true });
+  fs.mkdirSync(packagesDir, { recursive: true });
+}
+
+function sanitizePackagePart(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'game';
+}
+
 // 整个游戏目录的内容指纹：对所有文件 (相对路径:文件sha256) 排序后整体 sha256。
 function fingerprintGame(gameDir) {
   const files = walkDir(gameDir).sort();
@@ -55,6 +72,25 @@ function fingerprintGame(gameDir) {
     sha256: crypto.createHash('sha256').update(parts.join('\n')).digest('hex'),
     size: files.reduce((n, f) => n + fs.statSync(f).size, 0),
     fileCount: files.length,
+  };
+}
+
+function writeGamePackage(gameDir, id, version, packagesDir) {
+  const zip = new AdmZip();
+  const files = walkDir(gameDir).sort();
+  for (const file of files) {
+    const rel = path.relative(gameDir, file).replace(/\\/g, '/');
+    zip.addLocalFile(file, path.posix.dirname(rel) === '.' ? '' : path.posix.dirname(rel));
+  }
+
+  const packageName = `${sanitizePackagePart(id)}-${sanitizePackagePart(version)}.zip`;
+  const packagePath = path.join(packagesDir, packageName);
+  zip.writeZip(packagePath);
+
+  return {
+    packageUrl: `packages/${packageName}`,
+    packageSha256: sha256OfFile(packagePath),
+    packageSize: fs.statSync(packagePath).size,
   };
 }
 
@@ -77,55 +113,82 @@ function lintResourceRefs(html, gameId) {
   }
 }
 
-function build() {
-  if (!fs.existsSync(GAMES_DIR)) throw new Error('games 目录不存在');
+function normalizeSourceRoots(sourceRoots) {
+  return sourceRoots.map((root) => ({
+    source: String(root.source || 'online'),
+    dir: path.resolve(root.dir),
+  }));
+}
+
+function build(options = {}) {
+  const sourceRoots = normalizeSourceRoots(options.sourceRoots || DEFAULT_SOURCE_ROOTS);
+  const outFile = path.resolve(options.outFile || DEFAULT_OUT);
+  const packagesDir = path.resolve(options.packagesDir || DEFAULT_PACKAGES_DIR);
+
+  ensureCleanPackagesDir(packagesDir);
   const games = [];
   const seenIds = new Set();
-  for (const ent of fs.readdirSync(GAMES_DIR, { withFileTypes: true })) {
-    if (!ent.isDirectory()) continue;
-    const gameDir = path.join(GAMES_DIR, ent.name);
-    const indexHtml = path.join(gameDir, 'index.html');
-    if (!fs.existsSync(indexHtml)) continue;
-    const html = fs.readFileSync(indexHtml, 'utf8');
-    const manifest = extractManifestFromHtml(html);
-    if (!manifest) throw new Error(`[${ent.name}] index.html 缺少内联 game-manifest`);
-    lintResourceRefs(html, ent.name);
+  const seenPaths = new Set();
 
-    const id = String(manifest.id || ent.name).trim();
-    const version = String(manifest.version || '').trim();
-    if (!id) throw new Error(`[${ent.name}] manifest 缺少 id`);
-    if (seenIds.has(id)) throw new Error(`id 重复：${id}`);
-    seenIds.add(id);
-    if (!SEMVER_RE.test(version)) throw new Error(`[${id}] version 非法 semver: ${version}`);
+  for (const root of sourceRoots) {
+    if (!fs.existsSync(root.dir)) continue;
+    for (const ent of fs.readdirSync(root.dir, { withFileTypes: true })) {
+      if (!ent.isDirectory()) continue;
+      const gameDir = path.join(root.dir, ent.name);
+      const indexHtml = path.join(gameDir, 'index.html');
+      if (!fs.existsSync(indexHtml)) continue;
+      const html = fs.readFileSync(indexHtml, 'utf8');
+      const manifest = extractManifestFromHtml(html);
+      if (!manifest) throw new Error(`[${ent.name}] index.html 缺少内联 game-manifest`);
+      lintResourceRefs(html, ent.name);
 
-    const fp = fingerprintGame(gameDir);
-    games.push({
-      id,
-      title: manifest.title || id,
-      description: manifest.description || '',
-      version,
-      devices: Array.isArray(manifest.devices) ? manifest.devices : [],
-      params: Array.isArray(manifest.params) ? manifest.params : [],
-      path: `games/${ent.name}/index.html`,
-      sha256: fp.sha256,
-      size: fp.size,
-      fileCount: fp.fileCount,
-    });
+      const id = String(manifest.id || ent.name).trim();
+      const version = String(manifest.version || '').trim();
+      const publicPath = `games/${ent.name}/index.html`;
+      if (!id) throw new Error(`[${ent.name}] manifest 缺少 id`);
+      if (id !== ent.name) throw new Error(`[${ent.name}] manifest id 必须等于目录名: ${id}`);
+      if (seenIds.has(id)) throw new Error(`id 重复：${id}`);
+      if (seenPaths.has(publicPath)) throw new Error(`游戏发布路径重复：${publicPath}`);
+      seenIds.add(id);
+      seenPaths.add(publicPath);
+      if (!SEMVER_RE.test(version)) throw new Error(`[${id}] version 非法 semver: ${version}`);
+
+      const fp = fingerprintGame(gameDir);
+      const pkg = writeGamePackage(gameDir, id, version, packagesDir);
+      games.push({
+        id,
+        title: manifest.title || id,
+        description: manifest.description || '',
+        version,
+        source: root.source,
+        devices: Array.isArray(manifest.devices) ? manifest.devices : [],
+        params: Array.isArray(manifest.params) ? manifest.params : [],
+        path: publicPath,
+        sha256: fp.sha256,
+        size: fp.size,
+        fileCount: fp.fileCount,
+        packageUrl: pkg.packageUrl,
+        packageSha256: pkg.packageSha256,
+        packageSize: pkg.packageSize,
+        cacheable: true,
+      });
+    }
   }
+  if (!games.length) throw new Error('未发现可发布游戏');
   games.sort((a, b) => a.id.localeCompare(b.id));
   const registry = {
     schemaVersion: SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
     games,
   };
-  fs.writeFileSync(OUT, JSON.stringify(registry, null, 2) + '\n', 'utf8');
+  fs.writeFileSync(outFile, JSON.stringify(registry, null, 2) + '\n', 'utf8');
   // eslint-disable-next-line no-console
-  console.log(`registry.json: ${games.length} games → ${path.relative(ROOT, OUT)}`);
-  games.forEach((g) => console.log(`  - ${g.id} v${g.version}  (${g.fileCount} files, ${g.size}B)`));
+  console.log(`registry.json: ${games.length} games → ${path.relative(ROOT, outFile)}`);
+  games.forEach((g) => console.log(`  - ${g.id} v${g.version}  (${g.fileCount} files, ${g.size}B, package ${g.packageSize}B)`));
 }
 
 if (require.main === module) {
   try { build(); } catch (e) { console.error(e.message); process.exit(1); }
 }
 
-module.exports = { extractManifestFromHtml, build, MANIFEST_RE };
+module.exports = { extractManifestFromHtml, build, MANIFEST_RE, DEFAULT_SOURCE_ROOTS };

@@ -8,5 +8,8 @@
     "test": "node --test test/extract.test.js",
     "serve": "npx --yes serve ."
   },
+  "dependencies": {
+    "adm-zip": "^0.5.16"
+  },
   "license": "UNLICENSED"
 }

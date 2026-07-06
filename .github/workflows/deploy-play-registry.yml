@@ -2,12 +2,13 @@ name: deploy-play-registry
 
 # 部署「游戏网站」(play-registry 子目录) 到 GitHub Pages + 阿里云 OSS。
 # 游戏内容独立成网站、单独部署；面板运行时拉取 registry.json，游戏经 gameProxy 同源加载。
-# 仅当 play-registry/ 下的内容变更时才触发（也可手动 workflow_dispatch）。
+# 默认游戏来自 backend/games，网站额外游戏来自 play-registry/games，构建时合并发布。
 on:
   push:
     branches: [main, develop]
     paths:
       - 'play-registry/**'
+      - 'backend/games/**'
       - '.github/workflows/deploy-play-registry.yml'
   workflow_dispatch:
 
@@ -33,17 +34,23 @@ jobs:
       - name: 生成 registry.json + 跑正则锁定测试
         working-directory: play-registry
         run: |
+          npm ci
           node scripts/build-registry.js
           npm test
 
-      # 原子顺序：games 资源先就位，registry.json 最后（它是"指针"）。
-      # 默认发布 play-registry 下的静态站内容，再剔除开发/构建辅助文件，避免新增页面或资源漏发。
+      # 原子顺序：games/packages 资源先就位，registry.json 最后（它是"指针"）。
+      # site/ 是临时发布产物：先宽复制 play-registry 网站壳，剔除开发文件，
+      # 再把 backend/games 默认游戏合并进 site/games。
       - name: 组装站点产物
         run: |
+          rm -rf site
           mkdir -p site
           cp -a play-registry/. site/
           rm -rf site/scripts site/test site/node_modules
           rm -f site/package.json site/package-lock.json site/README.md site/.gitignore site/.gitattributes site/*.log
+          mkdir -p site/games
+          [ ! -d backend/games ] || cp -a backend/games/. site/games/
+          rm -f site/games/.gitkeep
 
       - name: 部署到阿里云 OSS
         env:
