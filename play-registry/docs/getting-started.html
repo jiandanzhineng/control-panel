@@ -32,93 +32,76 @@
 
 <main class="docs-body">
 <h1>快速开始</h1>
-<div class="updated">面向第一次写玩法的开发者 · 5 分钟跑通</div>
+<div class="updated">推荐流程：clone 本仓库 · 用 Claude Code / Codex 参考现有游戏改出新玩法</div>
 
-<p>UnderSilicon 玩法 = 一个自包含的网页。逻辑和 UI 都在一个 HTML/JS 里，通过注入的 <code>DeviceAPI</code> 桥接控制真实设备。你不需要独立 JS 引擎，也不需要逻辑/UI 分离——<strong>写游戏就是写网页</strong>。</p>
+<p>UnderSilicon 玩法 = 一个自包含网页。最快的开发方式不是从零写空白项目，而是 clone 本仓库，让 Claude Code 或 Codex 读取现有游戏，按你的玩法想法改出一个新游戏目录。</p>
 
 <div class="callout callout-warn">
   <span class="callout-icon">💡</span>
-  <p>核心承诺：游戏页面代码<strong>不区分</strong>自己跑在宿主里还是直接浏览器打开。两种入口下读同样的 <code>DeviceAPI.params</code> / <code>DeviceAPI.deviceMap</code>，降级逻辑由桥接统一兜底。</p>
+  <p>推荐给 AI 的上下文：先让它阅读 <code>backend/games/</code> 和 <code>play-registry/games/</code> 里最接近的现有游戏，再要求它复制结构、改玩法逻辑、更新 manifest，并保持 DeviceAPI 调用方式一致。</p>
 </div>
 
-<h2>目录结构</h2>
-<p>每个玩法一个目录，至少包含 <code>index.html</code>。可以再拆出 <code>game.js</code>、<code>style.css</code>。</p>
-<pre><code>games/
-└── my-game/
-    ├── index.html        # 主页面（逻辑+UI+内联元数据，单文件即可运行）
-    ├── style.css         # 可选
-    └── game.js           # 可选（也可内联进 html）</code></pre>
-
-<h2>三步写一个玩法</h2>
+<h2>推荐开发流程</h2>
 
 <div class="steps">
   <div class="step">
     <div class="step-num">1</div>
     <div class="step-body">
-      <h4>建目录 + 内联元数据</h4>
-      <p>在 <code>games/my-game/index.html</code> 的 <code>&lt;head&gt;</code> 内联一段 <code>&lt;script id="game-manifest"&gt;</code>，声明 id / title / version / devices / params。</p>
+      <h4>clone 本仓库</h4>
+      <p>把控制面板仓库 clone 到本地，进入仓库根目录后重点关注 <code>backend/games/</code> 和 <code>play-registry/games/</code>。</p>
     </div>
   </div>
   <div class="step">
     <div class="step-num">2</div>
     <div class="step-body">
-      <h4>引入桥接 + 写逻辑</h4>
-      <p>页面里 <code>&lt;script src="/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;</code>，然后 <code>await DeviceAPI.ready</code> 之后再操作设备。</p>
+      <h4>选一个参考游戏</h4>
+      <p>找一个设备类型、交互节奏或惩罚逻辑最接近的现有游戏。优先参考已经能构建通过的目录，而不是从空文件开始。</p>
     </div>
   </div>
   <div class="step">
     <div class="step-num">3</div>
     <div class="step-body">
-      <h4>构建 registry + 提交</h4>
-      <p>跑 <code>npm run build &amp;&amp; npm test</code>，提交到 <code>main</code> 分支，CI 自动发布到玩法网站。</p>
+      <h4>让 Claude Code / Codex 改出新玩法</h4>
+      <p>让 AI 先阅读参考游戏，再复制到新的 <code>games/&lt;your-id&gt;/</code> 目录，按你的玩法规则修改 UI、参数、设备映射和 DeviceAPI 调用。</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">4</div>
+    <div class="step-body">
+      <h4>检查 manifest 和资源路径</h4>
+      <p>确认新游戏的 <code>id</code> 全局唯一、<code>version</code> 是合法 semver、<code>devices</code>/<code>params</code> 声明完整，资源只使用相对路径或 <code>/bridge-api/</code>。</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">5</div>
+    <div class="step-body">
+      <h4>构建 + 自测</h4>
+      <p>在 <code>play-registry/</code> 下运行 <code>npm run build &amp;&amp; npm test</code>。再用浏览器或控制面板客户端打开本地游戏网站，确认游戏能启动。</p>
+    </div>
+  </div>
+  <div class="step">
+    <div class="step-num">6</div>
+    <div class="step-body">
+      <h4>commit 并提交 PR</h4>
+      <p>提交你的新游戏目录和必要文档改动，发 PR 到 <code>main</code>。PR 描述里写清玩法意图、参考了哪个游戏、需要哪些设备、是否包含电击/锁定等敏感内容。</p>
     </div>
   </div>
 </div>
 
-<h2>最小完整示例</h2>
-<p>下面是一个能跑的最小玩法：监听压力传感器，超阈值就电击。</p>
-<pre><code>&lt;!DOCTYPE html&gt;
-&lt;html lang="zh-CN"&gt;
-&lt;head&gt;
-&lt;meta charset="utf-8" /&gt;
-&lt;title&gt;压力寸止 demo&lt;/title&gt;
-&lt;script type="application/json" id="game-manifest"&gt;
-{
-  "id": "my-game",
-  "title": "我的玩法",
-  "description": "压力超阈值就电击",
-  "version": "1.0.0",
-  "devices": [
-    { "id": "sensor", "capabilities": ["sphincterPressure"], "required": true },
-    { "id": "punish", "capabilities": ["shock"], "required": false }
-  ],
-  "params": [
-    { "key": "threshold", "type": "number", "default": 80, "label": "压力阈值" }
-  ]
-}
-&lt;/script&gt;
-&lt;script src="/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;
-&lt;/head&gt;
-&lt;body&gt;
-&lt;h2&gt;压力: &lt;span id="gauge"&gt;-&lt;/span&gt;&lt;/h2&gt;
-&lt;script&gt;
-(async function () {
-  await DeviceAPI.ready;
-  const threshold = DeviceAPI.params.threshold;
+<h2>给 AI 的提示词</h2>
+<pre><code>请先阅读 backend/games/ 和 play-registry/games/ 里最接近的现有游戏。
+我要做一个新的玩法：&lt;描述玩法规则&gt;。
+请复制参考游戏结构到 play-registry/games/&lt;your-id&gt;/，
+更新 game-manifest、UI、参数、设备声明和 DeviceAPI 调用。
+保持资源自包含，跑 npm run build &amp;&amp; npm test，最后说明改了哪些文件。</code></pre>
 
-  DeviceAPI.device('sensor').on('sphincterPressure', 'pressureChange', (data) =&gt; {
-    const val = data.props.pressure;
-    document.getElementById('gauge').textContent = val;
-    if (val &gt; threshold &amp;&amp; DeviceAPI.device('punish').isMapped()) {
-      DeviceAPI.device('punish').invoke('shock', 'start', { voltage: 30 });
-    }
-  });
-
-  DeviceAPI.log('info', '玩法已启动', { threshold });
-})();
-&lt;/script&gt;
-&lt;/body&gt;
-&lt;/html&gt;</code></pre>
+<h2>目录结构</h2>
+<p>每个玩法一个目录，至少包含 <code>index.html</code>。可以再拆出 <code>game.js</code>、<code>style.css</code>，但更重要的是沿用参考游戏已经验证过的结构。</p>
+<pre><code>play-registry/games/
+└── your-id/
+    ├── index.html        # 主页面和内联 manifest
+    ├── style.css         # 可选
+    └── game.js           # 可选</code></pre>
 
 <h2>关键规则（必须遵守）</h2>
 <ul>
