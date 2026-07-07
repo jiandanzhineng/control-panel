@@ -395,6 +395,10 @@ interface PlayDetail {
   gamePath?: string;
   external?: boolean;
   externalUrl?: string;
+  cacheable?: boolean;
+  cached?: boolean;
+  localGamePath?: string;
+  packageSha256?: string;
   lastPlayed?: number | null;
   arguments?: string;
   // 插件专属
@@ -585,16 +589,20 @@ function saveConfig() {
   } catch (_) {}
 }
 
+const launchGamePath = ref('');
+const launchCacheInfo = ref<any | null>(null);
+
 function gameOrigin() {
   if (route.query.source === 'remote') return 'remote';
   return String(route.query.origin || '') || (String(route.query.externalUrl || '') ? 'external' : 'saved');
 }
 
-async function savePlayedGame() {
+async function savePlayedGame(gamePathOverride = '') {
   if (carrierType.value !== 'game' || !play.value) return;
   const externalUrl = String(route.query.externalUrl || '') || play.value.externalUrl || '';
-  const gamePath = play.value.gamePath || String(route.query.gamePath || '');
+  const gamePath = gamePathOverride || launchGamePath.value || play.value.gamePath || String(route.query.gamePath || '');
   if (!gamePath && !externalUrl) return;
+  const cached = gamePath.startsWith('/games/cache/') || !!launchCacheInfo.value?.localGamePath;
 
   await fetch('/api/games/played', {
     method: 'POST',
@@ -609,6 +617,9 @@ async function savePlayedGame() {
       gamePath,
       externalUrl,
       origin: gameOrigin(),
+      cached,
+      localGamePath: cached ? (launchCacheInfo.value?.localGamePath || gamePath) : '',
+      packageSha256: launchCacheInfo.value?.packageSha256 || play.value.packageSha256 || '',
       deviceMap: { ...deviceMapping },
       parameters: { ...parameters },
     }),
@@ -621,6 +632,64 @@ function metaUrlForPlay(source: string, externalUrl: string) {
   if (source === 'saved') return `/api/games/${encodeURIComponent(playId.value)}`;
   if (externalUrl) return `/api/games/external/meta?url=${encodeURIComponent(externalUrl)}`;
   return `/api/games/${encodeURIComponent(playId.value)}`;
+}
+
+async function tryLoadRegistryDetailForExternalGame() {
+  if (carrierType.value !== 'game' || !play.value) return null;
+  if (route.query.source === 'remote' || playId.value !== 'external') return play.value;
+  const id = play.value.id;
+  if (!id || id === 'external') return play.value;
+  try {
+    const res = await fetch(`/api/game-registry/${encodeURIComponent(id)}`);
+    if (!res.ok) return play.value;
+    const detail = await res.json();
+    if (!detail || detail.id !== id) return play.value;
+    return { ...play.value, ...detail };
+  } catch {
+    return play.value;
+  }
+}
+
+async function installRemoteGameIfNeeded(): Promise<string> {
+  launchCacheInfo.value = null;
+  launchGamePath.value = '';
+  if (carrierType.value !== 'game' || !play.value) {
+    return '';
+  }
+
+  const enriched = await tryLoadRegistryDetailForExternalGame();
+  if (enriched && enriched !== play.value) play.value = enriched as any;
+
+  const fallbackPath = play.value.gamePath || String(route.query.gamePath || '');
+  if (play.value.localGamePath && play.value.cached) {
+    launchGamePath.value = play.value.localGamePath;
+    launchCacheInfo.value = {
+      localGamePath: play.value.localGamePath,
+      packageSha256: play.value.packageSha256 || '',
+    };
+    return launchGamePath.value;
+  }
+  if (!play.value.cacheable || !play.value.packageSha256) {
+    launchGamePath.value = fallbackPath;
+    return fallbackPath;
+  }
+
+  const res = await fetch(`/api/game-cache/install/${encodeURIComponent(play.value.id || playId.value)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (fallbackPath) {
+      launchGamePath.value = fallbackPath;
+      return fallbackPath;
+    }
+    throw new Error(apiErrorMessage(data, '游戏缓存安装失败'));
+  }
+  launchCacheInfo.value = data;
+  launchGamePath.value = data.localGamePath || fallbackPath;
+  return launchGamePath.value;
 }
 
 async function loadAll() {
@@ -823,7 +892,8 @@ async function start(force: boolean) {
   startBusy.value = true;
   try {
     saveConfig();
-    await savePlayedGame();
+    const installedGamePath = await installRemoteGameIfNeeded();
+    await savePlayedGame(installedGamePath);
     const t = title.value;
 
     if (carrierType.value === 'game') {
@@ -836,7 +906,7 @@ async function start(force: boolean) {
         deviceMap: JSON.stringify({ ...deviceMapping }),
         params: JSON.stringify({ ...parameters }),
       };
-      const gamePath = (play.value as any)?.gamePath || String(route.query.gamePath || '');
+      const gamePath = installedGamePath || (play.value as any)?.gamePath || String(route.query.gamePath || '');
       if (externalUrl) resumeQuery.externalUrl = externalUrl;
       if (gamePath) resumeQuery.gamePath = gamePath;
       setActivePlay({ carrierType: 'game', id: playId.value, title: t, resume: { name: 'game_current', query: resumeQuery } });

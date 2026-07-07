@@ -19,8 +19,8 @@
         <el-card shadow="hover" class="feature-card" @click="$router.push('/plays')">
           <div class="feature-content">
             <el-icon class="feature-icon" color="#67c23a"><VideoPlay /></el-icon>
-            <h3>玩法</h3>
-            <p>启动和管理游戏与插件玩法</p>
+            <h3>本地游戏</h3>
+            <p>启动和管理本地游戏与插件</p>
           </div>
         </el-card>
       </el-col>

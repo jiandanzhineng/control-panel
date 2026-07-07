@@ -19,14 +19,14 @@ const routes: RouteRecordRaw[] = [
   { path: '/devices/firmware-batch', name: 'firmware_batch', component: FirmwareBatchUpgrade, meta: { title: '批量固件升级' } },
   { path: '/test', name: 'test', component: AutoTest, meta: { title: '自动化测试' } },
 
-  // 玩法（游戏 + 插件统一入口）
-  { path: '/plays', name: 'play_library', component: PlayLibraryView, meta: { title: '玩法库' } },
+  // 本地游戏（游戏 + 插件统一入口）
+  { path: '/plays', name: 'play_library', component: PlayLibraryView, meta: { title: '本地游戏' } },
   { path: '/plays/:type/:id/config', name: 'play_config', component: PlayConfigView, meta: { title: '玩法配置' } },
   // 运行态（全屏覆盖层，靠「启动」进入、「停止」退出，不进侧边栏）
   { path: '/plays/game/current', name: 'game_current', component: GameCurrentView, meta: { title: '玩法运行' } },
   { path: '/plays/plugin/:id/run', name: 'plugin_run', component: PluginRunView, meta: { title: '插件运行' } },
 
-  { path: '/browser', name: 'browser', component: BrowserView, meta: { title: '浏览器' } },
+  { path: '/browser', name: 'browser', component: BrowserView, meta: { title: '在线游戏' } },
   { path: '/network', name: 'network', component: ServicesView, meta: { title: '网络设置' } },
   { path: '/logs', name: 'logs', component: LogManagement, meta: { title: '日志管理' } },
 

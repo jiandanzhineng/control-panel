@@ -49,7 +49,7 @@ type DetectedPlay =
   | { kind: 'plugin'; id: string; name: string };
 
 const router = useRouter();
-const HOME = 'http://127.0.0.1:8080/';
+const HOME = import.meta.env.VITE_BROWSER_HOME_URL || 'https://game.undersilicon.cn/';
 
 const webviewEl = ref<any>(null);
 const currentUrl = ref(HOME);

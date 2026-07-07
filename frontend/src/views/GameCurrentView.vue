@@ -11,10 +11,10 @@
     <el-empty
       v-else
       class="game-empty"
-      description="未提供游戏配置，请先在玩法库启动"
+      description="未提供游戏配置，请先在本地游戏启动"
       :image-size="120"
     >
-      <el-button type="primary" @click="$router.push('/plays')">前往玩法库</el-button>
+      <el-button type="primary" @click="$router.push('/plays')">前往本地游戏</el-button>
     </el-empty>
   </PlayCarrierShell>
 </template>

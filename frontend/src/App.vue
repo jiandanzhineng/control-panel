@@ -38,12 +38,12 @@
 
           <el-menu-item index="/plays">
             <el-icon><VideoPlay /></el-icon>
-            <template #title>玩法</template>
+            <template #title>本地游戏</template>
           </el-menu-item>
 
           <el-menu-item index="/browser">
             <el-icon><Compass /></el-icon>
-            <template #title>浏览器</template>
+            <template #title>在线游戏</template>
           </el-menu-item>
 
           <el-menu-item index="/network">
@@ -103,7 +103,7 @@ const route = useRoute()
 const isCollapsed = ref(false)
 const isMobile = ref(false)
 
-// 玩法相关页面（/plays、配置、运行）统一高亮「玩法」入口
+// 本地游戏相关页面（/plays、配置、运行）统一高亮「本地游戏」入口
 const menuActive = computed(() => (route.path.startsWith('/plays') ? '/plays' : route.path))
 
 const checkMobile = () => {

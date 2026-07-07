@@ -25,7 +25,7 @@
     ></webview>
 
     <el-empty v-else class="empty" description="插件未运行或正在加载" :image-size="120">
-      <el-button type="primary" @click="$router.push('/plays')">返回玩法库</el-button>
+      <el-button type="primary" @click="$router.push('/plays')">返回本地游戏</el-button>
     </el-empty>
   </PlayCarrierShell>
 </template>
