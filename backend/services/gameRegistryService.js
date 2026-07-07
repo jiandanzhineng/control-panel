@@ -16,7 +16,7 @@ const SOURCE_KEY = 'game-registry-source';
 const CACHE_KEY = 'game-registry-cache';
 const CACHE_TTL_MS = 60 * 1000;
 const FETCH_TIMEOUT_MS = 5000;
-const KNOWN_SCHEMA_VERSION = 1;
+const KNOWN_SCHEMA_VERSION = 2;
 
 // 默认源：play-registry 的 OSS/CDN 站点（同一产物也会部署到 GitHub Pages）。
 // 可被 env GAME_REGISTRY_URL 或 fileStorage['game-registry-source'] 覆盖。
@@ -67,6 +67,13 @@ function resolveGamePath(entry, registryUrl) {
   const proto = abs.protocol.replace(':', '');
   const proxyPath = `/games/proxy/${proto}/${abs.host}${abs.pathname}`;
   return { gamePath: proxyPath, externalUrl: `${abs.origin}${abs.pathname}` };
+}
+
+function normalizeV2Fields(entry) {
+  return {
+    allowedOrigins: Array.isArray(entry.allowedOrigins) ? entry.allowedOrigins : [],
+    files: Array.isArray(entry.files) ? entry.files : [],
+  };
 }
 
 async function fetchFresh(source) {
@@ -135,6 +142,7 @@ async function listForClient({ force = false } = {}) {
       packageSha256: g.packageSha256 || '',
       packageSize: Number(g.packageSize || 0),
       cacheable: !!(g.cacheable && g.packageUrl && g.packageSha256),
+      ...normalizeV2Fields(g),
       source: 'remote',
     };
   });
@@ -167,6 +175,7 @@ async function getGameById(id) {
     packageSha256: entry.packageSha256 || '',
     packageSize: Number(entry.packageSize || 0),
     cacheable: !!(entry.cacheable && entry.packageUrl && entry.packageSha256),
+    ...normalizeV2Fields(entry),
     source: 'remote',
     external: true, // 让 PlayConfigView 走"外部载体"确认框分支
   };

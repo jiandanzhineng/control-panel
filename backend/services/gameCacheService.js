@@ -63,7 +63,7 @@ function packageUrlFor(entry) {
     if (/^https?:\/\//i.test(String(entry.packageUrl || ''))) {
       return new URL(entry.packageUrl).toString();
     }
-    return new URL(entry.packageUrl, entry.externalUrl || gameRegistryService.getSource()).toString();
+    return new URL(entry.packageUrl, gameRegistryService.getSource()).toString();
   } catch (_) {
     throw cacheError('GAME_CACHE_INVALID_PACKAGE_URL', '游戏包地址无效', 400);
   }

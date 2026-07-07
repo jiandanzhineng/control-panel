@@ -60,7 +60,7 @@
     <div class="step-num">3</div>
     <div class="step-body">
       <h4>本地构建 + 自测</h4>
-      <p>在 <code>play-registry/</code> 下跑 <code>npm run build &amp;&amp; npm test</code>。构建会校验 semver 版本、id 唯一、资源引用路径（禁止根绝对路径）、生成 sha256 指纹。</p>
+      <p>在 <code>play-registry/</code> 下跑 <code>npm run build &amp;&amp; npm test</code>。构建会校验 semver 版本、id 唯一、资源引用路径、外部 origin 声明，并生成离线包与逐文件 sha256 清单。</p>
     </div>
   </div>
   <div class="step">
@@ -88,11 +88,12 @@
 
 <h2>审核标准</h2>
 <ul>
-  <li><strong>自包含</strong>：玩法只依赖相对路径资源 + <code>/bridge-api/</code> 桥接脚本，不引外部 CDN。</li>
-  <li><strong>元数据合规</strong>：<code>id</code> 唯一、<code>version</code> 合法 semver、<code>devices</code>/<code>params</code> 声明完整。</li>
-  <li><strong>安全停机</strong>：玩法结束/异常退出时不能让设备停留在危险状态（电击不停、电机满功率）。宿主有 <code>close</code> 兜底，但玩法内也应主动 <code>stop()</code>。</li>
+  <li><strong>自包含</strong>：游戏只依赖相对路径资源 + <code>/bridge-api/</code> 桥接脚本，不引外部 CDN；HTML/CSS/JS 中的根绝对路径会被构建拦截。</li>
+  <li><strong>外部请求显式声明</strong>：确需访问外部服务时，在 manifest 增加 <code>allowedOrigins</code>，例如 <code>["https://api.example.com"]</code>；未声明的 <code>https://</code>、<code>//</code> 和非 <code>/bridge-api/</code> 根路径会构建失败。</li>
+  <li><strong>元数据合规</strong>：<code>id</code> 唯一、<code>version</code> 合法 semver、<code>devices</code>/<code>params</code> 声明完整；内容变更必须同步 bump <code>version</code>。</li>
+  <li><strong>安全停机</strong>：游戏结束/异常退出时不能让设备停留在危险状态（电击不停、电机满功率）。宿主有 <code>close</code> 兜底，但游戏内也应主动 <code>stop()</code>。</li>
   <li><strong>敏感内容标注</strong>：含电击、长时间锁定等强刺激玩法的，必须在描述里标注，参数给合理上限与默认值。</li>
-  <li><strong>不碰文件系统</strong>：玩法跑在沙箱 iframe 里，不能尝试访问本机文件、发起除本机 bridge 外的网络请求。</li>
+  <li><strong>不碰文件系统</strong>：游戏跑在沙箱 iframe 里，不能尝试访问本机文件、发起除本机 bridge 外的网络请求。</li>
 </ul>
 
 <h2>客服联系</h2>
@@ -109,7 +110,7 @@
 <h2>FAQ</h2>
 
 <h3>玩法更新怎么发版？</h3>
-<p>改 <code>games/&lt;id&gt;/</code> 里的内容，把 manifest 的 <code>version</code> bump 一档（按 semver：修复 <code>1.0.1</code>、新增能力 <code>1.1.0</code>、破坏性改动 <code>2.0.0</code>），重新跑 build + test，提 PR。合并后面板侧会按版本号判定「线上较新」，玩家刷新玩法库即看到新版本。</p>
+<p>改 <code>games/&lt;id&gt;/</code> 里的内容，把 manifest 的 <code>version</code> bump 一档（按 semver：修复 <code>1.0.1</code>、新增能力 <code>1.1.0</code>、破坏性改动 <code>2.0.0</code>），重新跑 build + test，提 PR。CI 会对比线上 registry 的内容指纹；内容变了但 version 没变会拒绝发布。合并后面板侧会按版本号判定「线上较新」，玩家刷新玩法库即看到新版本。</p>
 
 <h3>能引用第三方库吗？</h3>
 <p>可以，但必须把库文件放进玩法目录里用相对路径引用（自包含）。不引外部 CDN——玩法要在离线/纯内网环境也能跑。</p>

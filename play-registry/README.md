@@ -35,13 +35,24 @@ npm test          # 跑 fixture（锁正则）
 npm run serve     # 本地起静态站（等效 GH Pages，供面板联调；面板用 GAME_REGISTRY_URL 指向它）
 ```
 
+`registry.json` 当前为 `schemaVersion: 2`。v1 字段继续保留，新增：
+
+- `files[]`：zip 根目录下每个文件的 `{ path, sha256, size }`，用于解压后逐文件校验和损坏定位。
+- `allowedOrigins`：游戏确需外部网络请求时显式声明允许的 origin；缺省为空数组。
+
+校验优先级：离线整包下载用 `packageSha256`，解压后单文件校验用 `files[].sha256`。顶层 `sha256` 只是目录内容指纹，保留给变更检测和旧消费方展示，不作为客户端完整性校验依据。
+
 ## 添加 / 更新一个游戏
 
 1. 默认内置游戏放 `backend/games/<id>/`；只给网站发布的扩展游戏放 `play-registry/games/<id>/`。
 2. 目录内放 `index.html` + `game.js`。
 3. `index.html` 头部必须有内联 `<script id="game-manifest">`，声明 `id` / `title` / `version`(semver) / `devices` / `params`，其中 `id` 必须等于目录名。
-4. **资源引用只能用相对路径或 `/bridge-api/` 开头的绝对路径**——禁止根绝对路径（如 `/games/foo/x.js`），否则会被面板 gameProxy 误判为本地资源（build 会 lint 拦截）。
-5. `npm run build && npm test`，提交到 `main`。
+4. **资源引用默认只能用相对路径或 `/bridge-api/` 开头的绝对路径**。构建会扫描 HTML 的 `src`/`href`、HTML/CSS 的 `url(...)`、JS 字符串里的绝对 URL；禁止根绝对路径（如 `/games/foo/x.js`）和未声明的外部 URL。
+5. 如游戏确实需要访问外部服务，在 manifest 中加 `allowedOrigins: ["https://api.example.com"]`。只写 origin；路径会被忽略。
+6. 内容变更必须 bump `version`。CI 会从线上 `registry.json` 对比目录指纹，发现内容变了但 version 未变会拒绝发布。
+7. `npm run build && npm test`，提交到 `main`。
+
+zip 包名为 `<id>-<version>-<packageSha256前8位>.zip`，因此可长期缓存；客户端始终从 `registry.json` 读取 `packageUrl`。
 
 ## 部署
 

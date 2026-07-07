@@ -6,6 +6,7 @@ const AdmZip = require('adm-zip');
 
 jest.mock('../services/gameRegistryService', () => ({
   getGameById: jest.fn(),
+  getSource: jest.fn(() => 'https://registry.example.test/root/registry.json'),
 }));
 
 const registry = require('../services/gameRegistryService');
@@ -103,6 +104,25 @@ describe('gameCacheService', () => {
     const second = await service.installGame('demo-game');
     expect(second.installed).toBe(true);
     expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves relative packageUrl against the registry source URL', async () => {
+    const buffer = createPackage({
+      'index.html': indexHtml(),
+      'game.js': 'window.demo = true;\n',
+    });
+    mockRegistryWithPackage(buffer, {
+      externalUrl: 'https://registry.example.test/root/games/demo-game/index.html',
+      packageUrl: 'packages/demo-game-1.0.0-abcd1234.zip',
+    });
+    const service = require('../services/gameCacheService');
+
+    await service.installGame('demo-game');
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://registry.example.test/root/packages/demo-game-1.0.0-abcd1234.zip',
+      { redirect: 'follow' },
+    );
   });
 
   it('rejects packages with a sha256 mismatch', async () => {
