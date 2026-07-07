@@ -33,11 +33,42 @@
     if (ws && ws.readyState === 1) ws.send(JSON.stringify(data));
   }
 
+  function restoreSubscriptions() {
+    subCallbacks.forEach(function (_callbacks, key) {
+      var parts = key.split(':');
+      if (parts.length < 3) return;
+      sendFire({ action: 'subscribe', deviceId: parts[0], capability: parts[1], event: parts.slice(2).join(':') });
+    });
+    propCallbacks.forEach(function (_callbacks, key) {
+      var idx = key.indexOf(':');
+      if (idx < 0) return;
+      sendFire({ action: 'subscribeProperty', deviceId: key.slice(0, idx), property: key.slice(idx + 1) });
+    });
+    msgCallbacks.forEach(function (_callbacks, logicalId) {
+      sendFire({ action: 'subscribeMessages', deviceId: logicalId });
+    });
+  }
+
+  function rejectPendingOnClose() {
+    pending.forEach(function (p) {
+      try { p.reject(new Error('Bridge disconnected')); } catch (_) {}
+    });
+    pending.clear();
+  }
+
   function connect() {
     ws = new WebSocket(WS_URL);
     ws.onopen = function () {
       var initId = genId();
-      pending.set(initId, { resolve: function(r) { if (r && r.ready && readyResolve) readyResolve(); }, reject: function(){} });
+      pending.set(initId, {
+        resolve: function(r) {
+          if (r && r.ready) {
+            if (readyResolve) readyResolve();
+            restoreSubscriptions();
+          }
+        },
+        reject: function(){}
+      });
       ws.send(JSON.stringify({
         id: initId,
         action: 'init',
@@ -57,7 +88,9 @@
       }
       if (msg.event) handleEvent(msg);
     };
-    ws.onclose = function () {
+    ws.onclose = function (evt) {
+      rejectPendingOnClose();
+      if (evt && (evt.code === 1000 || evt.code === 4000)) return;
       setTimeout(connect, 2000);
     };
   }
