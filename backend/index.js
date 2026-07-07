@@ -8,6 +8,7 @@ const mqttService = require('./services/mqttService');
 const mdnsService = require('./services/mdnsService');
 const logService = require('./services/logService');
 const bridgeService = require('./services/bridgeService');
+const gameCacheService = require('./services/gameCacheService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -51,6 +52,7 @@ deviceService.initDeviceList();
 app.use('/bridge-api', express.static(path.join(__dirname, 'public')));
 // 第三方游戏前缀反向代理（须在静态 /games 之前，避免被 static 捕获）
 app.use('/games/proxy', require('./routes/gameProxy'));
+app.use('/games/cache', express.static(gameCacheService.getCacheRoot()));
 app.use('/games', express.static(path.join(__dirname, 'games')));
 
 // Routes
@@ -63,6 +65,7 @@ app.use('/api/device-types', require('./routes/deviceTypes'));
 app.use('/api/device-capabilities', require('./routes/deviceCapabilities'));
 app.use('/api/games', require('./routes/games'));
 app.use('/api/game-registry', require('./routes/gameRegistry'));
+app.use('/api/game-cache', require('./routes/gameCache'));
 app.use('/api/plugins', require('./routes/plugins'));
 app.use('/api/logs', require('./routes/logs'));
 app.use('/api/test', require('./routes/test'));

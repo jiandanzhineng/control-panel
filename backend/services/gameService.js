@@ -88,6 +88,9 @@ function listGames() {
         lastParams: normalized.lastParams || {},
         savedAt: normalized.savedAt || current.savedAt,
         playCount: normalized.playCount || 0,
+        cached: normalized.cached || current.cached || false,
+        localGamePath: normalized.localGamePath || current.localGamePath || '',
+        packageSha256: normalized.packageSha256 || current.packageSha256 || '',
       });
     } else {
       byId.set(normalized.id, normalized);
@@ -150,6 +153,9 @@ function normalizeSavedGame(input, { existing = null, markPlayed = true } = {}) 
   const title = cleanString(input.title || input.name || existing?.title || existing?.name, id);
   const lastDeviceMap = asObject(input.deviceMap || input.lastDeviceMap || existing?.lastDeviceMap);
   const lastParams = asObject(input.parameters || input.paramsValues || input.lastParams || existing?.lastParams);
+  const localGamePath = cleanString(input.localGamePath || existing?.localGamePath);
+  const packageSha256 = cleanString(input.packageSha256 || existing?.packageSha256);
+  const cached = input.cached === true || existing?.cached === true || gamePath.startsWith('/games/cache/');
 
   return {
     id,
@@ -162,6 +168,9 @@ function normalizeSavedGame(input, { existing = null, markPlayed = true } = {}) 
     origin: cleanString(input.origin || existing?.origin, externalUrl ? 'external' : 'remote'),
     gamePath,
     externalUrl,
+    cached,
+    localGamePath,
+    packageSha256,
     devices: asArray(input.devices || existing?.devices),
     params: asArray(input.params || existing?.params),
     version: cleanString(input.version || existing?.version, '1.0.0'),

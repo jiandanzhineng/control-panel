@@ -131,6 +131,10 @@ async function listForClient({ force = false } = {}) {
       externalUrl: resolved.externalUrl,
       sha256: g.sha256,
       size: g.size,
+      packageUrl: g.packageUrl || '',
+      packageSha256: g.packageSha256 || '',
+      packageSize: Number(g.packageSize || 0),
+      cacheable: !!(g.cacheable && g.packageUrl && g.packageSha256),
       source: 'remote',
     };
   });
@@ -159,6 +163,10 @@ async function getGameById(id) {
     externalUrl: resolved.externalUrl,
     sha256: entry.sha256,
     size: entry.size,
+    packageUrl: entry.packageUrl || '',
+    packageSha256: entry.packageSha256 || '',
+    packageSize: Number(entry.packageSize || 0),
+    cacheable: !!(entry.cacheable && entry.packageUrl && entry.packageSha256),
     source: 'remote',
     external: true, // 让 PlayConfigView 走"外部载体"确认框分支
   };

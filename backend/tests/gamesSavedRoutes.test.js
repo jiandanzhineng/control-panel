@@ -120,4 +120,36 @@ describe('saved played games API', () => {
       expect.objectContaining({ id: 'remove-me' }),
     ]));
   });
+
+  it('persists cached game paths and package metadata', async () => {
+    const saveRes = await request(app)
+      .post('/api/games/played')
+      .send({
+        id: 'cached-game',
+        title: 'Cached Game',
+        gamePath: '/games/cache/cached-game/1.0.0/index.html',
+        externalUrl: 'https://game.undersilicon.cn/games/cached-game/index.html',
+        cached: true,
+        localGamePath: '/games/cache/cached-game/1.0.0/index.html',
+        packageSha256: 'a'.repeat(64),
+      });
+
+    expect(saveRes.status).toBe(200);
+    expect(saveRes.body).toMatchObject({
+      id: 'cached-game',
+      cached: true,
+      gamePath: '/games/cache/cached-game/1.0.0/index.html',
+      localGamePath: '/games/cache/cached-game/1.0.0/index.html',
+      packageSha256: 'a'.repeat(64),
+    });
+
+    const detailRes = await request(app).get('/api/games/cached-game');
+    expect(detailRes.status).toBe(200);
+    expect(detailRes.body).toMatchObject({
+      id: 'cached-game',
+      cached: true,
+      localGamePath: '/games/cache/cached-game/1.0.0/index.html',
+      packageSha256: 'a'.repeat(64),
+    });
+  });
 });
