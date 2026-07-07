@@ -24,7 +24,7 @@ scripts/build-registry.js           扫 ../backend/games 和 games 生成 regist
 test/extract.test.js                锁定 manifest 提取正则，防与面板侧 gameService 漂移
 ```
 
-网站首页 `index.html` 运行时 fetch `registry.json` 渲染游戏卡片（搜索 / 能力筛选 / 统计），含投稿奖励档位与客服二维码。文档页 `docs/` 从仓库 `docs/` 抽取关键内容整理而成，独立于后端文档站。
+网站首页 `index.html` 运行时 fetch `registry.json` 渲染游戏卡片（搜索 / 能力筛选 / 统计），含投稿入口与客服二维码。文档页 `docs/` 从仓库 `docs/` 抽取关键内容整理而成，独立于后端文档站。
 
 ## 开发
 
