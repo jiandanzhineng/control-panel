@@ -13,25 +13,23 @@
 
 ## 0. 本项目的开发环境怎么启动
 
-正常开发（不带调试）分两步，**必须先起前端，再起 electron**：
+正常开发（不带调试）直接启动 Electron 即可：
 
 ```bash
-# 终端 1：起 vite dev server（跑在 http://localhost:5173）
-npm run dev:frontend
-
-# 终端 2：起 electron，它会通过 VITE_DEV_SERVER_URL 加载 5173 的页面
+# 会自动启动/复用 vite dev server（http://localhost:5173），等待可用后再开 Electron
 npm run electron:dev
 ```
 
 后端由 electron 自己拉起（`main.js` 里 `startBackendThenWindow`，监听 5278），
-所以开发时一般不用单独起后端。要单独起：`npm run dev:backend`。
+所以开发时一般不用单独起后端。纯浏览器开发可用 `npm run dev:all`；
+要单独起后端：`npm run dev:backend`。
 
 启动脚本一览（`package.json`）：
 
 | 脚本 | 作用 |
 |------|------|
 | `dev:frontend` | 起 vite（5173） |
-| `electron:dev` | 起 electron，加载 5173 的 dev 页面 |
+| `electron:dev` | 启动/复用 vite（5173），再起 electron 加载 dev 页面 |
 | `electron:prod` | 起 electron，加载打包好的 `frontend/dist` |
 | `electron:debug` | = `electron:dev` + **开 CDP 端口 9222** |
 | `electron:debug:prod` | = `electron:prod` + **开 CDP 端口 9222** |
@@ -43,9 +41,7 @@ npm run electron:dev
 ### 第一步：带调试端口启动 electron
 
 ```bash
-# 终端 1
-npm run dev:frontend
-# 终端 2（注意用 debug 脚本）
+# 自动启动/复用 vite，并开启 Electron CDP 端口
 npm run electron:debug
 ```
 
@@ -82,10 +78,10 @@ win.webContents.openDevTools();   // 启动就自动弹出 F12 面板
 
 ```bash
 # 开发模式 + 主进程调试端口 5858
-set VITE_DEV_SERVER_URL=http://localhost:5173 && electron --inspect=5858 electron/main.js
+node tools/electron-dev.js --inspect=5858
 
 # 想让它在第一行代码就断住、等你连上再跑，用 --inspect-brk
-set VITE_DEV_SERVER_URL=http://localhost:5173 && electron --inspect-brk=5858 electron/main.js
+node tools/electron-dev.js --inspect-brk=5858
 ```
 
 ### 连上去，两种方式
@@ -118,7 +114,7 @@ set VITE_DEV_SERVER_URL=http://localhost:5173 && electron --inspect-brk=5858 ele
 两个端口一起开即可：
 
 ```bash
-set VITE_DEV_SERVER_URL=http://localhost:5173 && electron --inspect=5858 --remote-debugging-port=9222 electron/main.js
+node tools/electron-dev.js --inspect=5858 --remote-debugging-port=9222
 ```
 
 `chrome://inspect` 里会同时出现 Node 目标（主进程）和页面目标（渲染进程）。

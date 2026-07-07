@@ -4,14 +4,14 @@
 
 ## 开发模式
 
-1. 启动前端：
-   ```powershell
-   npm --prefix frontend run dev
-   ```
-2. 启动 Electron：
-   ```powershell
-   npm run electron:dev
-   ```
+启动 Electron：
+
+```powershell
+npm run electron:dev
+```
+
+`electron:dev` 会自动启动或复用 `http://localhost:5173` 上的 Vite dev server，
+并等待前端可访问后再打开 Electron 窗口。
 
 `electron:dev` 会设置：
 

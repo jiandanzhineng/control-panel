@@ -21,8 +21,8 @@
 
 ### Electron 开发模式
 
-- 先启动前端开发服务器：`npm --prefix frontend run dev`。
-- 再运行：`npm run electron:dev`。
+- 运行：`npm run electron:dev`。
+- 根目录脚本会自动启动或复用前端开发服务器 `http://localhost:5173`，等待可用后再启动 Electron。
 - Electron 主进程会在本进程内 `require backend/index.js`，并固定把后端监听在 `127.0.0.1:5278`。
 - Renderer 加载 `VITE_DEV_SERVER_URL=http://localhost:5173`。
 - `electron/preload.js` 会把 `fetch('/api/...')` 和 `EventSource('/api/...')` 改写到 `BACKEND_URL`，即 Electron 内部后端。
