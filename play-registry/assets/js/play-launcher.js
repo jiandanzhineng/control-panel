@@ -56,6 +56,18 @@
     });
   }
 
+  function apiJson(base, path, options) {
+    return fetch(base + path, Object.assign({ mode: 'cors' }, options || {})).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) {
+        if (!r.ok) {
+          var msg = (data && data.error && data.error.message) || data.message || ('HTTP ' + r.status);
+          throw new Error(msg);
+        }
+        return data;
+      });
+    });
+  }
+
   // ---------- 状态 ----------
   var currentGame = null;      // 当前选中的游戏 entry（含 manifest 解析结果）
   var devices = [];            // 在线物理设备 [{id, type, connected, ...}]
@@ -91,6 +103,15 @@
 
   function onlineDevices() {
     return devices.filter(function (d) { return d.connected; });
+  }
+
+  function mappingHasSelection(logicalId) {
+    return Array.isArray(mapping[logicalId]) && mapping[logicalId].length > 0;
+  }
+
+  function setDefaultMapping(logicalDevice, candidates) {
+    if (!logicalDevice || !logicalDevice.id || mappingHasSelection(logicalDevice.id)) return;
+    mapping[logicalDevice.id] = candidates.length ? [candidates[0].id] : [];
   }
 
   // ---------- modal 渲染 ----------
@@ -176,17 +197,22 @@
           var req = d.required ? '<span class="req">必需</span>' : '<span class="opt">可选</span>';
           var caps = (d.capabilities || []).join(', ');
           var candidates = online.filter(function (p) { return canMap(d, p); });
+          setDefaultMapping(d, candidates);
           html += '<div class="map-row" data-logical="' + esc(d.id) + '">'
             + '<div class="map-meta">'
             + '<span class="map-lid">' + esc(d.id) + '</span> ' + req
             + '<span class="map-caps">能力: ' + esc(caps || '（无）') + '</span>'
             + '</div>'
-            + '<select class="map-select" data-lid="' + esc(d.id) + '">'
-            + '<option value="">— 未映射 —</option>'
+            + '<div class="map-options" role="group" aria-label="' + esc(d.id) + ' 设备映射">'
             + candidates.map(function (p) {
-              return '<option value="' + esc(p.id) + '">' + esc(p.id) + ' · ' + esc(p.type) + '</option>';
+              var checked = (mapping[d.id] || []).indexOf(p.id) >= 0 ? ' checked' : '';
+              return '<label class="map-option">'
+                + '<input class="map-checkbox" type="checkbox" data-lid="' + esc(d.id) + '" value="' + esc(p.id) + '"' + checked + '>'
+                + '<span class="map-device-id">' + esc(p.id) + '</span>'
+                + '<span class="map-device-type">' + esc(p.type) + '</span>'
+                + '</label>';
             }).join('')
-            + '</select>'
+            + '</div>'
             + (candidates.length === 0 ? '<span class="map-none">无匹配设备</span>' : '')
             + '</div>';
         });
@@ -228,11 +254,16 @@
       validateStart(devs);
 
       // 绑定 change
-      el('modal-body').querySelectorAll('.map-select').forEach(function (sel) {
-        sel.addEventListener('change', function () {
-          var lid = sel.getAttribute('data-lid');
-          var v = sel.value;
-          if (v) mapping[lid] = [v]; else delete mapping[lid];
+      el('modal-body').querySelectorAll('.map-checkbox').forEach(function (box) {
+        box.addEventListener('change', function () {
+          var lid = box.getAttribute('data-lid');
+          var selected = [];
+          el('modal-body').querySelectorAll('.map-checkbox').forEach(function (checkedBox) {
+            if (checkedBox.getAttribute('data-lid') === lid && checkedBox.checked) {
+              selected.push(checkedBox.value);
+            }
+          });
+          mapping[lid] = selected;
           validateStart(devs);
         });
       });
@@ -254,7 +285,7 @@
   }
 
   function validateStart(devs) {
-    var missing = devs.filter(function (d) { return d.required && !mapping[d.id]; });
+    var missing = devs.filter(function (d) { return d.required && !mappingHasSelection(d.id); });
     var btn = el('modal-start');
     if (missing.length) {
       btn.disabled = true;
@@ -266,8 +297,37 @@
   }
 
   // ---------- 启动 ----------
-  function savePlayedGame(game, gameUrl, proxyPath) {
+  function installGamePackage(game) {
+    if (!backendBase || !game || !game.cacheable || !game.packageUrl || !game.packageSha256) {
+      return Promise.resolve(null);
+    }
+    var status = el('modal-status');
+    if (status) {
+      status.innerHTML = '<span class="dot pulse"></span> 正在缓存游戏本体…';
+      status.className = 'modal-status searching';
+    }
+    return apiJson(backendBase, '/api/game-cache/install/' + encodeURIComponent(game.id), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }).then(function (installed) {
+      if (status) {
+        status.innerHTML = '<span class="dot ok"></span> 已使用本地缓存启动';
+        status.className = 'modal-status ok';
+      }
+      return installed;
+    }).catch(function (err) {
+      if (status) {
+        status.innerHTML = '<span class="dot warn"></span> 缓存失败，改用在线加载: ' + esc(err.message || err);
+        status.className = 'modal-status warn';
+      }
+      return null;
+    });
+  }
+
+  function savePlayedGame(game, gameUrl, gamePath, cacheInfo) {
     if (!backendBase || !game) return Promise.resolve();
+    var cached = !!(cacheInfo && cacheInfo.localGamePath);
     var payload = {
       id: game.id,
       title: game.title || game.id,
@@ -275,9 +335,12 @@
       version: game.version || '1.0.0',
       devices: game.devices || [],
       params: game.params || [],
-      gamePath: proxyPath,
+      gamePath: gamePath,
       externalUrl: gameUrl,
       origin: 'website',
+      cached: cached,
+      localGamePath: cached ? cacheInfo.localGamePath : '',
+      packageSha256: cached ? (cacheInfo.packageSha256 || game.packageSha256 || '') : '',
       deviceMap: mapping,
       parameters: params,
     };
@@ -296,24 +359,29 @@
     // 经本机后端 gameProxy 同源化：/games/proxy/<proto>/<host>/<path>
     var u = new URL(gameUrl);
     var proxyPathOnly = '/games/proxy/' + u.protocol.replace(':', '') + '/' + u.host + u.pathname;
-    var proxyPath = backendBase + proxyPathOnly;
-    var q = new URLSearchParams();
-    q.set('deviceMap', JSON.stringify(mapping));
-    q.set('params', JSON.stringify(params));
-    var launchUrl = proxyPath + '?' + q.toString();
+    el('modal-start').disabled = true;
+    el('modal-start').textContent = '启动中…';
+    installGamePackage(currentGame).then(function (cacheInfo) {
+      var selectedPath = (cacheInfo && cacheInfo.localGamePath) ? cacheInfo.localGamePath : proxyPathOnly;
+      var launchBase = backendBase + selectedPath;
+      var q = new URLSearchParams();
+      q.set('deviceMap', JSON.stringify(mapping));
+      q.set('params', JSON.stringify(params));
+      var launchUrl = launchBase + '?' + q.toString();
 
-    // 用 sessionStorage 传参给 play.html（避免静态站 cleanURL 重写丢 query）
-    try {
-      sessionStorage.setItem('play-launch', JSON.stringify({
-        id: currentGame.id,
-        title: currentGame.title || currentGame.id,
-        backend: backendBase,
-        launch: launchUrl,
-      }));
-    } catch (_) {}
-    closeModal();
-    savePlayedGame(currentGame, gameUrl, proxyPathOnly).finally(function () {
-      location.href = 'play.html';
+      // 用 sessionStorage 传参给 play.html（避免静态站 cleanURL 重写丢 query）
+      try {
+        sessionStorage.setItem('play-launch', JSON.stringify({
+          id: currentGame.id,
+          title: currentGame.title || currentGame.id,
+          backend: backendBase,
+          launch: launchUrl,
+        }));
+      } catch (_) {}
+      closeModal();
+      savePlayedGame(currentGame, gameUrl, selectedPath, cacheInfo).finally(function () {
+        location.href = 'play.html';
+      });
     });
   }
 
