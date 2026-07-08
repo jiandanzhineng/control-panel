@@ -1,5 +1,5 @@
 const path = require('path');
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell, webContents } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
@@ -10,6 +10,8 @@ let server;
 let frontendServer;
 let mainWindow;
 let updateInitialized = false;
+let browserDevicePreloadPath = '';
+const browserWebviewOrigins = new Map();
 
 const UPDATE_FEEDS = {
   stable: 'http://firmware.undersilicon.cn/control-panel/stable/',
@@ -188,12 +190,169 @@ function getBridgeService() {
   return getBackendModule(path.join('services', 'bridgeService.js'));
 }
 
+function getBrowserDeviceGrantService() {
+  return getBackendModule(path.join('services', 'browserDeviceGrantService.js'));
+}
+
 function stopActiveBridgeSession() {
   try {
     return getBridgeService().exitCurrent();
   } catch (error) {
     console.error('[electron] Failed to stop active bridge session:', error);
     return { ok: false, error: error?.message || String(error) };
+  }
+}
+
+function getWebviewOrigin(webContents) {
+  try {
+    return getBrowserDeviceGrantService().normalizeOrigin(webContents.getURL());
+  } catch (error) {
+    error.code = error.code || 'INVALID_ORIGIN';
+    throw error;
+  }
+}
+
+function ensureBrowserDeviceGrant(webContents) {
+  const origin = getWebviewOrigin(webContents);
+  const grantService = getBrowserDeviceGrantService();
+  if (!grantService.isGranted(origin)) {
+    const error = new Error('当前网站未获得设备控制授权');
+    error.code = 'BROWSER_DEVICE_NOT_GRANTED';
+    error.origin = origin;
+    throw error;
+  }
+  return origin;
+}
+
+function getTargetWebviewContents(webContentsId) {
+  const id = Number(webContentsId);
+  const target = Number.isFinite(id) ? webContents.fromId(id) : null;
+  if (!target || (target.getType && target.getType() !== 'webview')) {
+    const error = new Error('目标 webview 不存在');
+    error.code = 'WEBVIEW_NOT_FOUND';
+    throw error;
+  }
+  return target;
+}
+
+async function browserDeviceResult(handler) {
+  try {
+    return await handler();
+  } catch (error) {
+    return {
+      ok: false,
+      error: error?.message || String(error),
+      code: error?.code || 'BROWSER_DEVICE_ERROR',
+      origin: error?.origin,
+    };
+  }
+}
+
+function registerBrowserDeviceIpcHandlers() {
+  ipcMain.handle('browser-device:get-grant-status', (event) => browserDeviceResult(() => {
+    const origin = getWebviewOrigin(event.sender);
+    return { ok: true, ...getBrowserDeviceGrantService().getStatus(origin) };
+  }));
+
+  ipcMain.handle('browser-device:get-grant-status-for-webview', (_event, webContentsId) => browserDeviceResult(() => {
+    const target = getTargetWebviewContents(webContentsId);
+    const origin = getWebviewOrigin(target);
+    return { ok: true, ...getBrowserDeviceGrantService().getStatus(origin) };
+  }));
+
+  ipcMain.handle('browser-device:request-access', async (event) => browserDeviceResult(async () => {
+    const origin = getWebviewOrigin(event.sender);
+    const grantService = getBrowserDeviceGrantService();
+    const existing = grantService.getGrant(origin);
+    if (existing) return { ok: true, granted: true, origin, expiresAt: existing.expiresAt };
+
+    const result = await dialog.showMessageBox(mainWindow || BrowserWindow.fromWebContents(event.sender) || undefined, {
+      type: 'warning',
+      title: '设备控制授权',
+      message: `${origin} 请求访问设备控制能力`,
+      detail: '允许后，该网站今天内可以通过 DeviceAPI 控制当前客户端已接入的全部设备和能力。\n\n请确认你信任该网站。恶意网页可能导致设备误触发或持续输出。',
+      buttons: ['允许今天访问', '拒绝'],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    });
+
+    if (result.response !== 0) {
+      const error = new Error('用户拒绝设备控制授权');
+      error.code = 'BROWSER_DEVICE_DENIED';
+      error.origin = origin;
+      throw error;
+    }
+
+    const grant = grantService.grantToday(origin);
+    return { ok: true, granted: true, origin, expiresAt: grant.expiresAt };
+  }));
+
+  ipcMain.handle('browser-device:revoke-access', (event) => browserDeviceResult(() => {
+    const origin = getWebviewOrigin(event.sender);
+    getBrowserDeviceGrantService().revoke(origin);
+    getBridgeService().exitBrowserOrigin(origin);
+    return { ok: true, origin, granted: false };
+  }));
+
+  ipcMain.handle('browser-device:revoke-access-for-webview', (_event, webContentsId) => browserDeviceResult(() => {
+    const target = getTargetWebviewContents(webContentsId);
+    const origin = getWebviewOrigin(target);
+    getBrowserDeviceGrantService().revoke(origin);
+    getBridgeService().exitBrowserOrigin(origin);
+    return { ok: true, origin, granted: false };
+  }));
+
+  ipcMain.handle('browser-device:stop-origin', (event) => browserDeviceResult(() => {
+    const origin = getWebviewOrigin(event.sender);
+    getBridgeService().exitBrowserOrigin(origin);
+    return { ok: true, origin };
+  }));
+
+  ipcMain.handle('browser-device:stop-origin-for-webview', (_event, webContentsId) => browserDeviceResult(() => {
+    const target = getTargetWebviewContents(webContentsId);
+    const origin = getWebviewOrigin(target);
+    getBridgeService().exitBrowserOrigin(origin);
+    return { ok: true, origin };
+  }));
+
+  ipcMain.handle('browser-device:command', (event, action, payload = {}) => browserDeviceResult(() => {
+    const origin = ensureBrowserDeviceGrant(event.sender);
+    const result = getBridgeService().runBrowserCommand(origin, action, payload || {});
+    return { ok: true, result };
+  }));
+}
+
+function stopBrowserDeviceSessionForContents(webviewContents) {
+  try {
+    const origin = browserWebviewOrigins.get(webviewContents.id)
+      || getBrowserDeviceGrantService().normalizeOrigin(webviewContents.getURL());
+    getBridgeService().exitBrowserOrigin(origin);
+    browserWebviewOrigins.delete(webviewContents.id);
+  } catch (_) {}
+}
+
+function updateBrowserWebviewOrigin(webviewContents) {
+  try {
+    const origin = getBrowserDeviceGrantService().normalizeOrigin(webviewContents.getURL());
+    browserWebviewOrigins.set(webviewContents.id, origin);
+    return origin;
+  } catch (_) {
+    browserWebviewOrigins.delete(webviewContents.id);
+    return '';
+  }
+}
+
+function stopIfWebviewLeavesOrigin(webviewContents, nextUrl) {
+  try {
+    const currentOrigin = browserWebviewOrigins.get(webviewContents.id)
+      || getBrowserDeviceGrantService().normalizeOrigin(webviewContents.getURL());
+    const nextOrigin = getBrowserDeviceGrantService().normalizeOrigin(nextUrl);
+    if (currentOrigin && nextOrigin && currentOrigin !== nextOrigin) {
+      getBridgeService().exitBrowserOrigin(currentOrigin);
+    }
+  } catch (_) {
+    stopBrowserDeviceSessionForContents(webviewContents);
   }
 }
 
@@ -253,10 +412,23 @@ function createWindow() {
 // - 收紧 webview 安全：去掉 preload、关 nodeIntegration、开 contextIsolation，
 //   避免被浏览的任意外站获得壳的能力。
 function setupWebviewHandling() {
+  browserDevicePreloadPath = path.resolve(path.join(__dirname, 'browser-device-preload.js'));
   app.on('web-contents-created', (_e, contents) => {
     const pendingPluginWebviews = new Map();
 
     if (contents.getType && contents.getType() === 'webview') {
+      contents.on('will-navigate', (_event, url) => {
+        stopIfWebviewLeavesOrigin(contents, url);
+      });
+      contents.on('did-navigate', () => {
+        updateBrowserWebviewOrigin(contents);
+      });
+      contents.on('did-navigate-in-page', () => {
+        updateBrowserWebviewOrigin(contents);
+      });
+      contents.on('destroyed', () => {
+        stopBrowserDeviceSessionForContents(contents);
+      });
       // webview 内的弹窗/新窗口：留在 webview 内导航，不踢系统浏览器。
       contents.setWindowOpenHandler(({ url }) => {
         if (/^https?:\/\//i.test(url)) {
@@ -272,6 +444,7 @@ function setupWebviewHandling() {
       const requestedPreload = normalizePreloadPath(webPreferences.preload || webPreferences.preloadURL || params?.preload || '');
       const src = String(params?.src || '');
       let pluginForWebview = null;
+      const isBrowserDevicePreload = requestedPreload && requestedPreload === browserDevicePreloadPath;
 
       if (requestedPreload) {
         try {
@@ -293,6 +466,8 @@ function setupWebviewHandling() {
         webPreferences.preload = pluginForWebview.detectorPath;
         webPreferences.sandbox = false;
         pendingPluginWebviews.set(contents.id, pluginForWebview.id);
+      } else if (isBrowserDevicePreload || !requestedPreload) {
+        webPreferences.preload = browserDevicePreloadPath;
       }
     });
 
@@ -461,6 +636,7 @@ function startBackendThenWindow() {
 app.whenReady().then(() => {
   registerUpdateIpcHandlers();
   registerPluginIpcHandlers();
+  registerBrowserDeviceIpcHandlers();
   setupWebviewHandling();
   startBackendThenWindow();
   initAutoUpdate();

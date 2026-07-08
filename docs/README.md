@@ -7,16 +7,17 @@
 1. [项目语境与领域语言](../CONTEXT.md)（根目录）
 2. [项目架构说明](architecture/ARCHITECTURE.md)
 3. [插件系统设计](architecture/PLUGIN_SYSTEM.md)
-4. [统一游戏运行时方案设计](architecture/game-runtime-unified-design.md)
-5. [产品功能说明](requirements/PRD.md)
-6. [后端 API 文档](api/Backend_API.md)
-7. [设备能力说明](device/capabilities.md) / [设备注册表](device/device-registry.md)
-8. [游戏与玩法运行时说明](requirements/Game_Runtime.md)
-9. [MQTT、EMQX、mDNS 集成说明](integration/MQTT_mDNS.md)
-10. [后端运行与测试指引](guides/BACKEND_IMPLEMENTATION.md)
-11. [Windows Electron 启动指南](guides/Windows_通过_Electron_启动指南.md) / [Electron 调试速查](guides/ELECTRON_DEBUG.md)
-12. [构建打包指南](guides/Build_Package_Guide.md)
-13. [架构决策记录 (ADR)](adr/)
+4. [内置浏览器 DeviceAPI Origin 授权](architecture/browser-deviceapi-origin-grant.md)
+5. [统一游戏运行时方案设计](architecture/game-runtime-unified-design.md)
+6. [产品功能说明](requirements/PRD.md)
+7. [后端 API 文档](api/Backend_API.md)
+8. [设备能力说明](device/capabilities.md) / [设备注册表](device/device-registry.md)
+9. [游戏与玩法运行时说明](requirements/Game_Runtime.md)
+10. [MQTT、EMQX、mDNS 集成说明](integration/MQTT_mDNS.md)
+11. [后端运行与测试指引](guides/BACKEND_IMPLEMENTATION.md)
+12. [Windows Electron 启动指南](guides/Windows_通过_Electron_启动指南.md) / [Electron 调试速查](guides/ELECTRON_DEBUG.md)
+13. [构建打包指南](guides/Build_Package_Guide.md)
+14. [架构决策记录 (ADR)](adr/)
 
 ## 目录说明
 
@@ -38,6 +39,7 @@
 
 - [项目架构说明](architecture/ARCHITECTURE.md)
 - [插件系统设计](architecture/PLUGIN_SYSTEM.md)
+- [内置浏览器 DeviceAPI Origin 授权](architecture/browser-deviceapi-origin-grant.md)
 - [统一游戏运行时方案设计](architecture/game-runtime-unified-design.md)
 
 ### ADR（架构决策记录）

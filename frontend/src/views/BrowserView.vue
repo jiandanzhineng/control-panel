@@ -12,6 +12,29 @@
     @home="goHome"
     @navigate="navigate"
   >
+    <template #toolbar-actions>
+      <el-tag v-if="grantStatus.origin" size="small" :type="grantStatus.granted ? 'success' : 'info'" effect="plain">
+        {{ grantStatus.granted ? '设备已授权' : '设备未授权' }}
+      </el-tag>
+      <el-button
+        v-if="grantStatus.granted"
+        size="small"
+        plain
+        @click="stopOrigin"
+      >
+        停止设备
+      </el-button>
+      <el-button
+        v-if="grantStatus.granted"
+        size="small"
+        type="danger"
+        plain
+        @click="revokeOrigin"
+      >
+        撤销授权
+      </el-button>
+    </template>
+
     <template v-if="detected" #banner>
       <el-alert class="play-banner" type="success" :closable="false" show-icon>
         <div class="banner-inner">
@@ -34,6 +57,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
+import { ElMessage } from 'element-plus';
 import PlayCarrierShell from '../components/PlayCarrierShell.vue';
 
 interface PluginMatcher {
@@ -58,8 +82,10 @@ const canBack = ref(false);
 const canForward = ref(false);
 const detected = ref<DetectedPlay | null>(null);
 const plugins = ref<PluginMatcher[]>([]);
+const grantStatus = ref<{ granted: boolean; origin: string; expiresAt?: number }>({ granted: false, origin: '' });
 
 let detectTimer: number | undefined;
+let grantTimer: number | undefined;
 
 function normalizeUrl(s: string): string {
   const t = s.trim();
@@ -139,8 +165,65 @@ async function detect(url: string) {
   }
 }
 
+function getWebContentsId(): number | null {
+  const wv = webviewEl.value;
+  if (!wv) return null;
+  try {
+    const id = Number(wv.getWebContentsId?.());
+    return Number.isFinite(id) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
+async function refreshGrantStatus() {
+  const id = getWebContentsId();
+  if (!id || !window.browserDeviceApi?.getGrantStatusForWebview) {
+    grantStatus.value = { granted: false, origin: '' };
+    return;
+  }
+  try {
+    const status = await window.browserDeviceApi.getGrantStatusForWebview(id);
+    if (!status.ok) {
+      grantStatus.value = { granted: false, origin: '' };
+      return;
+    }
+    grantStatus.value = {
+      granted: !!status.granted,
+      origin: status.origin || '',
+      expiresAt: status.expiresAt,
+    };
+  } catch {
+    grantStatus.value = { granted: false, origin: '' };
+  }
+}
+
+async function revokeOrigin() {
+  const id = getWebContentsId();
+  if (!id || !window.browserDeviceApi?.revokeAccessForWebview) return;
+  const res = await window.browserDeviceApi.revokeAccessForWebview(id);
+  if (!res.ok) {
+    ElMessage.error(res.error || '撤销授权失败');
+    return;
+  }
+  ElMessage.success('已撤销当前网站设备授权');
+  await refreshGrantStatus();
+}
+
+async function stopOrigin() {
+  const id = getWebContentsId();
+  if (!id || !window.browserDeviceApi?.stopOriginForWebview) return;
+  const res = await window.browserDeviceApi.stopOriginForWebview(id);
+  if (!res.ok) {
+    ElMessage.error(res.error || '停止设备失败');
+    return;
+  }
+  ElMessage.success('已停止当前网站设备会话');
+}
+
 function onNavigated() {
   syncNavState();
+  refreshGrantStatus();
   if (detectTimer) clearTimeout(detectTimer);
   detectTimer = window.setTimeout(() => detect(currentUrl.value), 300);
 }
@@ -174,15 +257,18 @@ function bindEvents() {
   wv.addEventListener('did-stop-loading', () => { loading.value = false; });
   wv.addEventListener('did-navigate', onNavigated);
   wv.addEventListener('did-navigate-in-page', onNavigated);
+  refreshGrantStatus();
 }
 
 onMounted(() => {
   loadPlugins();
   // webview 需在元素 attach 后绑定事件
   setTimeout(bindEvents, 0);
+  grantTimer = window.setInterval(refreshGrantStatus, 2000);
 });
 onBeforeUnmount(() => {
   if (detectTimer) clearTimeout(detectTimer);
+  if (grantTimer) clearInterval(grantTimer);
 });
 </script>
 

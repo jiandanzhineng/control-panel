@@ -41,6 +41,7 @@
         </el-input>
 
         <el-button v-if="mode === 'browser'" :loading="loading" type="primary" @click="submitNavigate">前往</el-button>
+        <slot name="toolbar-actions" />
         <el-button v-if="showStop" type="danger" :icon="Close" :loading="stopping" @click="$emit('stop')">停止</el-button>
       </div>
 

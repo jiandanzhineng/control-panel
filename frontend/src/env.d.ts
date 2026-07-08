@@ -40,4 +40,12 @@ interface Window {
     }>;
     stopCurrent: () => Promise<{ ok: boolean; error?: string }>;
   };
+  browserDeviceApi?: {
+    getGrantStatus: () => Promise<{ ok: boolean; granted?: boolean; origin?: string; expiresAt?: number; error?: string }>;
+    getGrantStatusForWebview: (webContentsId: number) => Promise<{ ok: boolean; granted?: boolean; origin?: string; expiresAt?: number; error?: string }>;
+    revokeAccess: () => Promise<{ ok: boolean; origin?: string; error?: string }>;
+    revokeAccessForWebview: (webContentsId: number) => Promise<{ ok: boolean; origin?: string; error?: string }>;
+    stopOrigin: () => Promise<{ ok: boolean; origin?: string; error?: string }>;
+    stopOriginForWebview: (webContentsId: number) => Promise<{ ok: boolean; origin?: string; error?: string }>;
+  };
 }

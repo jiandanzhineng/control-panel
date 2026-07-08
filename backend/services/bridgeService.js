@@ -21,6 +21,8 @@ class GameSession {
     this.id = generateId();
     this.deviceMap = config.deviceMap || {};
     this.params = config.params || {};
+    this.kind = config.kind || 'play';
+    this.origin = config.origin || '';
     this.subscriptions = new Map();
     this.propertySubscriptions = new Map();
     this.messageSubscriptions = new Set();
@@ -33,7 +35,7 @@ class GameSession {
   }
 
   send(data) {
-    if (this.ws.readyState === 1) {
+    if (this.ws && this.ws.readyState === 1) {
       this.ws.send(JSON.stringify(data));
     }
   }
@@ -144,79 +146,22 @@ function handleMessage(session, msg) {
   try {
     switch (action) {
       case 'invoke': {
-        const physIds = session.getPhysicalIds(msg.deviceId);
-        if (!physIds.length) {
-          emitSystemLog(session, 'warn', `设备 ${msg.deviceId} 未映射或离线`);
-          session.send({ id, result: null });
-          return;
-        }
-        if (msg.capability === 'shock' && msg.actionName === 'start') {
-          const gate = checkShockSafetyGate(session);
-          if (!gate.ok) {
-            emitSystemLog(session, 'warn', gate.message);
-            session.send({ id, result: { ok: false, skipped: true, reason: gate.reason } });
-            return;
-          }
-          // 无上限、无冷却：仅记录用于展示/日志，不参与拦截。
-          session.lastShockAt = Date.now();
-          session.shockCount += 1;
-        }
-        for (const physId of physIds) {
-          const safeParams = sanitizeCapabilityInput(msg.capability, msg.actionName, msg.params || {});
-          if (virtualDeviceService.isVirtualDevice(physId)) {
-            virtualDeviceService.interceptCommand(physId, { action: 'invoke', capability: msg.capability, actionName: msg.actionName, params: safeParams });
-          } else {
-            deviceService.invokeDeviceCapability(physId, msg.capability, msg.actionName, safeParams);
-          }
-          scheduleShockAutoStop(session, physId, msg.capability, msg.actionName);
-        }
-        session.send({ id, result: { ok: true } });
+        session.send({ id, result: invokeForSession(session, msg) });
         break;
       }
 
       case 'writeProps': {
-        const physIds = session.getPhysicalIds(msg.deviceId);
-        if (!physIds.length) {
-          emitSystemLog(session, 'warn', `设备 ${msg.deviceId} 未映射或离线`);
-          session.send({ id, result: null });
-          return;
-        }
-        for (const physId of physIds) {
-          if (virtualDeviceService.isVirtualDevice(physId)) {
-            virtualDeviceService.interceptCommand(physId, { action: 'writeProps', props: msg.props });
-          } else {
-            deviceService.publishDeviceMessage(physId, { method: 'update', ...msg.props });
-          }
-        }
-        session.send({ id, result: { ok: true } });
+        session.send({ id, result: writePropsForSession(session, msg) });
         break;
       }
 
       case 'sendMessage': {
-        const physIds = session.getPhysicalIds(msg.deviceId);
-        if (!physIds.length) {
-          emitSystemLog(session, 'warn', `设备 ${msg.deviceId} 未映射或离线`);
-          session.send({ id, result: null });
-          return;
-        }
-        for (const physId of physIds) {
-          if (virtualDeviceService.isVirtualDevice(physId)) {
-            virtualDeviceService.interceptCommand(physId, { action: 'sendMessage', msg: msg.msg });
-          } else {
-            deviceService.publishDeviceMessage(physId, msg.msg);
-          }
-        }
-        session.send({ id, result: { ok: true } });
+        session.send({ id, result: sendMessageForSession(session, msg) });
         break;
       }
 
       case 'read': {
-        const physIds = session.getPhysicalIds(msg.deviceId);
-        const values = physIds.map((physId) => {
-          const dev = deviceService.getDeviceById(physId);
-          return dev?.data?.[msg.property] ?? null;
-        });
-        session.send({ id, result: values });
+        session.send({ id, result: readForSession(session, msg) });
         break;
       }
 
@@ -261,12 +206,7 @@ function handleMessage(session, msg) {
       }
 
       case 'getDevices': {
-        const devices = deviceService.listDevicesForApi().map((d) => ({
-          id: d.id, type: d.type,
-          capabilities: deviceRegistry.getDeviceCapabilities(d.type),
-          connected: d.connected,
-        }));
-        session.send({ id, result: devices });
+        session.send({ id, result: listDevicesWithCapabilities() });
         break;
       }
 
@@ -386,6 +326,121 @@ function matchMessage(match, payload) {
   return true;
 }
 
+function listDevicesWithCapabilities() {
+  return deviceService.listDevicesForApi().map((d) => ({
+    id: d.id,
+    type: d.type,
+    name: d.name,
+    nickname: d.nickname,
+    connected: d.connected,
+    data: d.data || {},
+    capabilities: deviceRegistry.getDeviceCapabilities(d.type),
+  }));
+}
+
+function getAllDeviceMap() {
+  const map = {};
+  const devices = deviceService.listDevicesForApi();
+  for (const device of devices) {
+    map[device.id] = [device.id];
+    const caps = deviceRegistry.getDeviceCapabilities(device.type);
+    if (caps.includes('shock') && !map.shock) map.shock = [device.id];
+    if (caps.includes('strength') && !map.vibrator) map.vibrator = [device.id];
+  }
+  return map;
+}
+
+function resolvePhysicalIds(session, logicalOrPhysicalId) {
+  const mapped = session.getPhysicalIds(logicalOrPhysicalId);
+  if (mapped.length) return mapped;
+  const direct = deviceService.getDeviceById(logicalOrPhysicalId);
+  return direct ? [logicalOrPhysicalId] : [];
+}
+
+function requirePhysicalIds(session, logicalOrPhysicalId) {
+  const physIds = resolvePhysicalIds(session, logicalOrPhysicalId);
+  if (!physIds.length) {
+    emitSystemLog(session, 'warn', `设备 ${logicalOrPhysicalId} 未映射或离线`);
+    return [];
+  }
+  return physIds;
+}
+
+function ensureCapability(physId, capability) {
+  const device = deviceService.getDeviceById(physId);
+  if (!device) {
+    const error = new Error('设备不存在');
+    error.code = 'DEVICE_NOT_FOUND';
+    throw error;
+  }
+  if (!deviceRegistry.hasCapability(device.type, capability)) {
+    const error = new Error(`设备 ${physId} 不支持能力 ${capability}`);
+    error.code = 'CAPABILITY_NOT_SUPPORTED';
+    throw error;
+  }
+  return device;
+}
+
+function invokeForSession(session, msg) {
+  const physIds = requirePhysicalIds(session, msg.deviceId);
+  if (!physIds.length) return null;
+  if (msg.capability === 'shock' && msg.actionName === 'start') {
+    const gate = checkShockSafetyGate(session);
+    if (!gate.ok) {
+      emitSystemLog(session, 'warn', gate.message);
+      return { ok: false, skipped: true, reason: gate.reason };
+    }
+    // 无上限、无冷却：仅记录用于展示/日志，不参与拦截。
+    session.lastShockAt = Date.now();
+    session.shockCount += 1;
+  }
+  for (const physId of physIds) {
+    ensureCapability(physId, msg.capability);
+    const safeParams = sanitizeCapabilityInput(msg.capability, msg.actionName, msg.params || {});
+    if (virtualDeviceService.isVirtualDevice(physId)) {
+      virtualDeviceService.interceptCommand(physId, { action: 'invoke', capability: msg.capability, actionName: msg.actionName, params: safeParams });
+    } else {
+      deviceService.invokeDeviceCapability(physId, msg.capability, msg.actionName, safeParams);
+    }
+    scheduleShockAutoStop(session, physId, msg.capability, msg.actionName);
+  }
+  return { ok: true };
+}
+
+function writePropsForSession(session, msg) {
+  const physIds = requirePhysicalIds(session, msg.deviceId);
+  if (!physIds.length) return null;
+  for (const physId of physIds) {
+    if (virtualDeviceService.isVirtualDevice(physId)) {
+      virtualDeviceService.interceptCommand(physId, { action: 'writeProps', props: msg.props });
+    } else {
+      deviceService.publishDeviceMessage(physId, { method: 'update', ...msg.props });
+    }
+  }
+  return { ok: true };
+}
+
+function sendMessageForSession(session, msg) {
+  const physIds = requirePhysicalIds(session, msg.deviceId);
+  if (!physIds.length) return null;
+  for (const physId of physIds) {
+    if (virtualDeviceService.isVirtualDevice(physId)) {
+      virtualDeviceService.interceptCommand(physId, { action: 'sendMessage', msg: msg.msg });
+    } else {
+      deviceService.publishDeviceMessage(physId, msg.msg);
+    }
+  }
+  return { ok: true };
+}
+
+function readForSession(session, msg) {
+  const physIds = resolvePhysicalIds(session, msg.deviceId);
+  return physIds.map((physId) => {
+    const dev = deviceService.getDeviceById(physId);
+    return dev?.data?.[msg.property] ?? null;
+  });
+}
+
 function buildReverseMap(deviceMap) {
   const rev = new Map();
   for (const [logicalId, ids] of Object.entries(deviceMap || {})) {
@@ -451,9 +506,12 @@ function removeSession(session) {
 
 function resetSessionDevices(session) {
   const logicalEntries = Object.entries(session.deviceMap || {});
+  const seenPhysicalIds = new Set();
   for (const [logicalId, ids] of logicalEntries) {
     const arr = Array.isArray(ids) ? ids : (ids ? [ids] : []);
     for (const physId of arr) {
+      if (seenPhysicalIds.has(physId)) continue;
+      seenPhysicalIds.add(physId);
       resetPhysicalDevice(session, logicalId, physId);
     }
   }
@@ -499,6 +557,78 @@ function resetPhysicalDevice(session, logicalId, physId) {
 function closeSession(session) {
   resetSessionDevices(session);
   removeSession(session);
+}
+
+function getOrCreateBrowserSession(origin) {
+  const normalizedOrigin = String(origin || '');
+  if (!normalizedOrigin) {
+    const error = new Error('origin is required');
+    error.code = 'ORIGIN_REQUIRED';
+    throw error;
+  }
+  if (activeSession?.kind === 'browser' && activeSession.origin === normalizedOrigin) {
+    return activeSession;
+  }
+  replaceActiveSession();
+  const session = new GameSession(null, {
+    kind: 'browser',
+    origin: normalizedOrigin,
+    deviceMap: getAllDeviceMap(),
+    params: {},
+  });
+  sessions.set(session.id, session);
+  activeSession = session;
+  return session;
+}
+
+function ensureBrowserSession(origin) {
+  const normalizedOrigin = String(origin || '');
+  if (activeSession?.kind === 'browser' && activeSession.origin === normalizedOrigin) {
+    activeSession.deviceMap = getAllDeviceMap();
+    return activeSession;
+  }
+  return getOrCreateBrowserSession(normalizedOrigin);
+}
+
+function runBrowserCommand(origin, action, payload = {}) {
+  if (action === 'getDevices') return listDevicesWithCapabilities();
+  if (action === 'getDeviceMap') return getAllDeviceMap();
+
+  const session = action === 'read'
+    ? new GameSession(null, {
+      kind: 'browser-query',
+      origin: String(origin || ''),
+      deviceMap: getAllDeviceMap(),
+      params: {},
+    })
+    : ensureBrowserSession(origin);
+  const msg = {
+    ...payload,
+    action,
+  };
+  switch (action) {
+    case 'invoke':
+      return invokeForSession(session, msg);
+    case 'writeProps':
+      return writePropsForSession(session, msg);
+    case 'sendMessage':
+      return sendMessageForSession(session, msg);
+    case 'read':
+      return readForSession(session, msg);
+    default: {
+      const error = new Error(`Unknown browser device action: ${action}`);
+      error.code = 'UNKNOWN_BROWSER_DEVICE_ACTION';
+      throw error;
+    }
+  }
+}
+
+function exitBrowserOrigin(origin) {
+  const normalizedOrigin = String(origin || '');
+  if (activeSession?.kind === 'browser' && activeSession.origin === normalizedOrigin) {
+    resetActiveSession('browser-origin-exit');
+  }
+  return { ok: true };
 }
 
 function sanitizeCapabilityInput(capability, actionName, params = {}) {
@@ -566,4 +696,14 @@ function exitCurrent() {
   return { ok: true };
 }
 
-module.exports = { init, getActiveSessions, closeSession, exitCurrent, resetActiveSession };
+module.exports = {
+  init,
+  getActiveSessions,
+  closeSession,
+  exitCurrent,
+  resetActiveSession,
+  runBrowserCommand,
+  exitBrowserOrigin,
+  getAllDeviceMap,
+  listDevicesWithCapabilities,
+};
