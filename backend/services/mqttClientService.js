@@ -90,6 +90,22 @@ function safePayloadToString(buf) {
   try { return buf.toString('utf8'); } catch (_) { return ''; }
 }
 
+function serializePayload(message) {
+  if (typeof message === 'string') return message;
+  return JSON.stringify(message);
+}
+
+function normalizePublishOptions(options = {}) {
+  return {
+    qos: typeof options?.qos === 'number' ? options.qos : 0,
+    retain: !!options?.retain,
+  };
+}
+
+function formatOutboundLog(topic, payload, options) {
+  return `topic: ${topic}, qos: ${options.qos}, retain: ${options.retain}, payload: ${payload}`;
+}
+
 function trySubscribe(topic, qos = 0) {
   if (!state.client) return;
   state.client.subscribe(topic, { qos }, (err) => {
@@ -133,18 +149,19 @@ function publish(topic, message, options = { qos: 0, retain: false }) {
     };
     throw error;
   }
-  
-  const payload = typeof message === 'string' ? message : JSON.stringify(message);
+
+  const publishOptions = normalizePublishOptions(options);
+  const payload = serializePayload(message);
+  const auditContext = formatOutboundLog(topic, payload, publishOptions);
   
   // 使用同步方式检查发布状态
   try {
-    state.client.publish(topic, payload, options, (err) => {
+    state.client.publish(topic, payload, publishOptions, (err) => {
       if (err) {
-        logService.warn('mqttClient', `MQTT publish failed (async callback) - topic: ${topic}, error: ${err?.message || err}, connected: ${state.connected}, clientState: ${state.client?.connected}`);
-      } else {
-        logService.debug('mqttClient', `MQTT publish ok - topic: ${topic}`);
+        logService.warn('mqttClient', `MQTT outbound failed (async) - ${auditContext}, error: ${err?.message || err}, connected: ${state.connected}, clientState: ${state.client?.connected}`);
       }
     });
+    logService.info('mqttClient', `MQTT outbound queued - ${auditContext}`);
     
     // 立即检查客户端状态
     if (!state.client.connected) {
@@ -154,7 +171,7 @@ function publish(topic, message, options = { qos: 0, retain: false }) {
     }
     
   } catch (syncError) {
-    logService.error('mqttClient', `MQTT publish failed (sync) - topic: ${topic}, error: ${syncError.message}, connected: ${state.connected}, clientConnected: ${state.client?.connected}`);
+    logService.error('mqttClient', `MQTT outbound failed (sync) - ${auditContext}, error: ${syncError.message}, connected: ${state.connected}, clientConnected: ${state.client?.connected}`);
     throw syncError;
   }
 }
