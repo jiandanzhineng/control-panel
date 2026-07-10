@@ -8,6 +8,7 @@
 - 独立后端默认端口：`3000`，可由 `PORT` 覆盖。
 - Electron 内置后端端口：`5278`。
 - JSON 请求使用 `Content-Type: application/json`。
+- 带浏览器 `Origin` 的 `/api/*` 请求只允许受信任的面板前端来源；普通网页直接访问本机控制接口会返回 `BROWSER_API_FORBIDDEN`（403）。本机原生请求（无 `Origin`）不受影响。
 - 大部分路由错误格式为：
   ```json
   { "error": { "code": "SOME_ERROR_CODE", "message": "错误描述" } }
@@ -107,6 +108,11 @@ Windows 平台优先启动 EMQX；其他平台使用 mosquitto。Windows 下 EMQ
   - Body: `{ params?: object }`
   - 根据设备类型注册表执行操作，并通过 MQTT 下发。
   - 成功返回 `{ "success": true, "message": "操作执行成功" }`。
+- `POST /api/devices/:id/capabilities/:capability/actions/:action`
+  - Body: `{ input?: object, params?: object }`，也兼容直接传裸对象。
+  - 直接调用能力动作，适合 `strength.set`、`shock.start`、`reporting.setReportDelay`、`distance.configure` 这类可调参数动作。
+  - 成功返回 `{ "success": true, "ok": true }`。
+  - 设备不存在返回 `DEVICE_NOT_FOUND`（404）；能力或动作不受该设备支持时返回 400。
 
 ## 设备监控
 

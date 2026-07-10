@@ -338,6 +338,41 @@ router.post('/:id/operations/:operationKey', (req, res) => {
   }
 });
 
+function getCapabilityRouteStatus(code) {
+  switch (code) {
+    case 'DEVICE_NOT_FOUND':
+      return 404;
+    case 'CAPABILITY_NOT_FOUND':
+    case 'CAPABILITY_ACTION_NOT_FOUND':
+    case 'DEVICE_CAPABILITY_NOT_SUPPORTED':
+    case 'DEVICE_CAPABILITY_ACTION_NOT_SUPPORTED':
+      return 400;
+    default:
+      return 500;
+  }
+}
+
+// 调用设备能力动作 —— 参数可调的统一入口。
+// operations 仅暴露了 start/stop/lock 等预置动作；要调节 reporting.setReportDelay、
+// distance.configure、strength.set(任意值)、shock.start(任意电压) 等全部参数，
+// 走这条路由（复用 deviceService.invokeDeviceCapability，有 hasCapability 校验）。
+// 请求体：{ input: { ...动作参数 } }（也兼容裸对象或 { params } 写法）。
+router.post('/:id/capabilities/:capability/actions/:action', (req, res) => {
+  const { id, capability, action } = req.params;
+  const input = (req.body && req.body.input) || (req.body && req.body.params) || req.body || {};
+  try {
+    const result = deviceService.invokeDeviceCapability(id, capability, action, input);
+    res.json({ success: true, ...(result || {}) });
+  } catch (e) {
+    sendError(
+      res,
+      e.code || 'DEVICE_CAPABILITY_FAILED',
+      e.message || String(e),
+      getCapabilityRouteStatus(e.code),
+    );
+  }
+});
+
 // 获取设备监控数据
 router.get('/:id/monitor-data', (req, res) => {
   try {

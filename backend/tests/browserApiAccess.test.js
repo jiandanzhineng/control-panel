@@ -15,6 +15,7 @@ jest.mock('../services/testService', () => ({
 
 jest.mock('../services/deviceService', () => ({
   executeDeviceOperation: jest.fn(() => ({ success: true })),
+  invokeDeviceCapability: jest.fn(() => ({ ok: true })),
 }));
 
 jest.mock('../utils/logger', () => ({
@@ -55,6 +56,20 @@ describe('browser api access guard', () => {
       message: '当前网页不能直接访问本机控制接口',
     });
     expect(deviceService.executeDeviceOperation).not.toHaveBeenCalled();
+  });
+
+  it('blocks untrusted browser origins from capability mutation routes', async () => {
+    const res = await request(createApp())
+      .post('/api/devices/ctrl_td01/capabilities/strength/actions/set')
+      .set('Origin', 'http://127.0.0.1:3011')
+      .send({ input: { value: 123 } });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toEqual({
+      code: 'BROWSER_API_FORBIDDEN',
+      message: '当前网页不能直接访问本机控制接口',
+    });
+    expect(deviceService.invokeDeviceCapability).not.toHaveBeenCalled();
   });
 
   it('blocks untrusted browser origins from mqtt publish routes', async () => {

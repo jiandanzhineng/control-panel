@@ -2,12 +2,14 @@
 
 本文档说明如何通过后端 REST 接口对本机已接入的设备进行控制。适用范围：面板管理侧、自动化测试、脚本化驱动。实时玩法（游戏/插件 detector）的设备驱动走 WebSocket bridge，不在本文档范围内，详见 [Backend_API.md](../api/Backend_API.md)。
 
-> 约定：REST 仅本机自用，不对外暴露，故无鉴权。两种运行方式下 REST 路径完全一致，仅端口不同：
+> 约定：REST 仅本机自用，不对外暴露。两种运行方式下 REST 路径完全一致，仅端口不同：
 >
 > - 独立后端（`node backend/index.js`）：默认端口 `3000`，可用 `PORT` 环境变量覆盖。
 > - Electron 客户端内置后端：端口 `5278`（写死于 [electron/main.js:432](../../electron/main.js)）。
 >
 > 下文示例以独立后端 `http://127.0.0.1:3000` 为例；Electron 运行时把端口换成 `5278` 即可。
+>
+> 浏览器侧还有一层来源限制：普通网页带 `Origin` 直接访问本机 `/api/*` 会返回 `BROWSER_API_FORBIDDEN`（403）；本机原生请求（无 `Origin`）与受信任的面板前端来源不受影响。Electron 内置浏览器里的网页请走 `DeviceAPI`，不要直接调本机 REST。
 >
 > **为什么 Electron 下 REST 与 WS bridge 都可用**：Electron 不重新 `app.listen()`，而是 `require('backend/index.js')` 后拿其导出的 `server`（`http.createServer(app)`，已由 `bridgeService.init(server)` 挂好 `/bridge` WS）来 listen（见 [backend/index.js:108-113](../../backend/index.js)、[electron/main.js:435-436](../../electron/main.js)）。REST 路由与 WS bridge 共用同一个 server，故两者都能正常工作。若误对 `app` 重新 `listen`，新建 server 不带 WS，会导致 `/bridge` 握手 404（REST 不受影响，但插件/游戏设备连不上）。
 >
@@ -16,9 +18,15 @@
 ## 一、整体链路
 
 ```
-REST 请求  →  routes/devices.js  →  deviceService  →  deviceType.invokeOperation
-                                                       →  capability.action  →  ctx.writeProps
-                                                                                   →  MQTT publish(/drecv/<id>)
+REST 请求  →  routes/devices.js  →  deviceService
+                                 ├─ operations/:operationKey
+                                 │   → deviceType.invokeOperation
+                                 │   → capability.action / operation.invoke
+                                 └─ capabilities/:capability/actions/:action
+                                     → deviceType.invokeCapability
+                                     → capability.action
+                                                   →  ctx.writeProps
+                                                       →  MQTT publish(/drecv/<id>)
 ```
 
 所有设备控制最终通过 MQTT 下发到物理设备，topic 为 `/drecv/<设备id>`。REST 只是把"操作"封装成 HTTP 调用，底层与 WS bridge 共用同一套 capability/registry。
@@ -40,6 +48,25 @@ Body: { "params": { ... } }   // params 可选
 - 设备不存在返回 `DEVICE_NOT_FOUND`（404）；操作失败返回 `DEVICE_OPERATION_FAILED`（500）。
 
 实现：[routes/devices.js:298](../../backend/routes/devices.js)、[deviceService.js:392](../../backend/services/deviceService.js)、[baseDeviceType.js:131](../../backend/devices/baseDeviceType.js)。
+
+### 直接调用能力动作
+
+```
+POST /api/devices/:id/capabilities/:capability/actions/:action
+Content-Type: application/json
+Body: { "input": { ... } }
+```
+
+- `:capability` / `:action` 对应能力模型里的动作名，语义与 `DeviceAPI.device(...).invoke(capability, action, params)` 一致。
+- 请求体支持三种写法，等价：
+  - `{ "input": { ... } }`
+  - `{ "params": { ... } }`
+  - 直接传裸对象 `{ ... }`
+- 适合 `strength.set`、`shock.start`、`reporting.setReportDelay`、`distance.configure` 这类需要精确传参的动作。
+- 成功返回 `{ "success": true, "ok": true }`。
+- `DEVICE_NOT_FOUND` 返回 404；能力不存在、设备类型不支持该能力或动作时返回 400。
+
+实现：[routes/devices.js](../../backend/routes/devices.js)、[deviceService.js:410](../../backend/services/deviceService.js)、[baseDeviceType.js:112](../../backend/devices/baseDeviceType.js)。
 
 ### 原始 MQTT 下发（绕过能力层）
 
@@ -72,9 +99,9 @@ Body: { "topic": "/drecv/<id>", "message": { ... } }
 | `OSR6` | OSR6控制器 | strength | `start` / `stop` | start: `{value:255}` |
 | `ZIDONGSUO` | 自动锁 | lock | `lock` / `unlock` | lock:`{open:false}` / unlock:`{open:true}` |
 | `CUNZHI01` | 寸止玩法设备 | sphincterPressure/tiptoePressure/strength/shock/reporting | `start` / `stop` | 自定义 invoke，直接写 `{shock,voltage,power}` |
-| `QIYA` | 气压传感器 | sphincterPressure/reporting | 无 | 仅上报，无可控操作 |
-| `QTZ` | 测距及脚踏传感器 | distance/buttonInput/reporting | 无 | 仅上报/事件 |
-| `DZC01` | 电子秤 | weight/reporting | 无 | 仅上报 |
+| `QIYA` | 气压传感器 | sphincterPressure/reporting | 无 | 仅无预置 operation；可走 capability route 调 `reporting.setReportDelay` |
+| `QTZ` | 测距及脚踏传感器 | distance/buttonInput/reporting | 无 | 仅无预置 operation；可走 capability route 调 `distance.configure` / `reporting.setReportDelay` |
+| `DZC01` | 电子秤 | weight/reporting | 无 | 仅无预置 operation；可走 capability route 调 `reporting.setReportDelay` |
 
 > 注意：`CUNZHI01` 的 start/stop 用的是 `operation.invoke`（直接写 props），不走 capability action，因此 params 不会被合并进预设——传参无效。
 
@@ -149,7 +176,26 @@ curl -X POST http://127.0.0.1:3000/api/devices/abc123/operations/lock  -H "Conte
 curl -X POST http://127.0.0.1:3000/api/devices/abc123/operations/unlock -H "Content-Type: application/json" -d '{}'
 ```
 
-### 5. 原始 MQTT 下发（无 operation 的设备/非标准 payload）
+### 5. 直接调能力动作（推荐用于可调参数）
+
+```bash
+# 电机强度设为 120
+curl -X POST http://127.0.0.1:3000/api/devices/abc123/capabilities/strength/actions/set \
+  -H "Content-Type: application/json" \
+  -d '{"input":{"value":120}}'
+
+# 传感器上报间隔设为 200ms
+curl -X POST http://127.0.0.1:3000/api/devices/abc123/capabilities/reporting/actions/setReportDelay \
+  -H "Content-Type: application/json" \
+  -d '{"params":{"ms":200}}'
+
+# QTZ 配置距离阈值
+curl -X POST http://127.0.0.1:3000/api/devices/abc123/capabilities/distance/actions/configure \
+  -H "Content-Type: application/json" \
+  -d '{"lowBand":20,"highBand":80,"reportDelayMs":200}'
+```
+
+### 6. 原始 MQTT 下发（无 operation 的设备/非标准 payload）
 
 ```bash
 curl -X POST http://127.0.0.1:3000/api/mqtt-client/publish \
@@ -176,10 +222,10 @@ curl -X POST http://127.0.0.1:3000/api/mqtt-client/publish \
 
 ## 七、注意事项
 
-1. **本机自用**：REST 无鉴权、CORS 全放行，仅限本机调用，不要对外网暴露端口。
+1. **本机自用**：REST 无用户鉴权，但浏览器来源受限，仅限本机调用，不要对外网暴露端口。
+2. **浏览器来源限制**：普通网页带 `Origin` 访问本机 `/api/*` 会被拦截为 `BROWSER_API_FORBIDDEN`（403）。需要在 Electron 内置浏览器控制设备时，请走 `DeviceAPI`。
 2. **params 覆盖语义**：`{...operation.input, ...params}` 浅合并，可覆盖 voltage/value 等默认值；`CUNZHI01` 例外（自定义 invoke，不合并）。
-3. **入参钳制**：REST 走 operation → capability action 时，钳制在 capability 内部生效（如 strength 0–255）。原始 MQTT publish 不经钳制，自行负责。
-4. **与 WS bridge 的差异**：WS bridge 的 `invoke`/`writeProps` 可调用任意 capability action，并有服务端 `sanitizeCapabilityInput` 和电击自动停止定时器（1–10s）；REST operations 仅暴露每类型预设的几个 operation，无自动停止——长时电击需调用方自行 `stop`。
+3. **入参钳制**：REST 走 capability route 或 operation → capability action 时，钳制在 capability 内部生效（如 strength 0–255）。原始 MQTT publish 不经钳制，自行负责。
+4. **与 WS bridge 的差异**：REST capability route 与 `DeviceAPI.invoke` 共用能力模型，但 REST 直接按物理设备 ID 操作；WS bridge 还负责逻辑设备映射、网页授权与会话管理。
 5. **设备在线**：操作前建议 `GET /api/devices/:id` 确认 `connected`，离线设备下发会成功 publish 但无实际效果。
-6. **错误码**：统一 `{ "error": { "code", "message" } }`，常见 `DEVICE_NOT_FOUND`、`DEVICE_OPERATION_NOT_SUPPORTED`、`DEVICE_OPERATION_FAILED`、`CAPABILITY_ACTION_NOT_FOUND`。
-
+6. **错误码**：统一 `{ "error": { "code", "message" } }`，常见 `DEVICE_NOT_FOUND`、`DEVICE_OPERATION_NOT_SUPPORTED`、`DEVICE_OPERATION_FAILED`、`DEVICE_CAPABILITY_ACTION_NOT_SUPPORTED`。
