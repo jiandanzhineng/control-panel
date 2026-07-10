@@ -4,6 +4,7 @@ const deviceRegistry = require('../devices/registry');
 const { getCapabilityDefinition } = require('../devices/capabilities');
 const logService = require('./logService');
 const virtualDeviceService = require('./virtualDeviceService');
+const { BRIDGE_INTERNAL_HEADER } = require('../constants/bridgeAccess');
 
 let wss = null;
 const sessions = new Map();
@@ -73,6 +74,7 @@ function init(server) {
       const origin = info.origin || info.req.headers.origin;
       if (!origin) return true;
       try {
+        if (info.req.headers[BRIDGE_INTERNAL_HEADER] !== '1') return false;
         const originHost = new URL(origin).hostname;
         const hostHeader = info.req.headers.host || '';
         const reqHost = hostHeader.split(':')[0];

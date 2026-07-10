@@ -9,6 +9,7 @@ const mdnsService = require('./services/mdnsService');
 const logService = require('./services/logService');
 const bridgeService = require('./services/bridgeService');
 const gameCacheService = require('./services/gameCacheService');
+const { BRIDGE_INTERNAL_HEADER } = require('./constants/bridgeAccess');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -48,8 +49,13 @@ deviceService.initDeviceList();
   }
 })();
 
+function requireInternalBridgeAccess(req, res, next) {
+  if (req.get(BRIDGE_INTERNAL_HEADER) === '1') return next();
+  res.status(403).json({ error: 'Bridge script access denied' });
+}
+
 // Static: bridge script and game files
-app.use('/bridge-api', express.static(path.join(__dirname, 'public')));
+app.use('/bridge-api', requireInternalBridgeAccess, express.static(path.join(__dirname, 'public')));
 // 第三方游戏前缀反向代理（须在静态 /games 之前，避免被 static 捕获）
 app.use('/games/proxy', require('./routes/gameProxy'));
 app.use('/games/cache', express.static(gameCacheService.getCacheRoot()));

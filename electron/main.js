@@ -5,6 +5,7 @@ const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const fs = require('fs');
 const { fileURLToPath, pathToFileURL } = require('url');
+const { BRIDGE_INTERNAL_HEADER } = require('../backend/constants/bridgeAccess.js');
 
 let server;
 let frontendServer;
@@ -554,6 +555,11 @@ function startFrontendServer(callback) {
     target: backendTarget,
     changeOrigin: true,
     pathRewrite: { '^/': '/bridge-api/' },
+    on: {
+      proxyReq(proxyReq) {
+        proxyReq.setHeader(BRIDGE_INTERNAL_HEADER, '1');
+      },
+    },
   }));
   // Bridge WebSocket 转发。
   // WS 升级请求走下方 frontendServer.on('upgrade') 直接调用 .upgrade()，
@@ -563,6 +569,11 @@ function startFrontendServer(callback) {
     target: backendTarget,
     changeOrigin: true,
     ws: true,
+    on: {
+      proxyReqWs(proxyReq) {
+        proxyReq.setHeader(BRIDGE_INTERNAL_HEADER, '1');
+      },
+    },
   });
   frontendApp.use('/bridge', bridgeWsProxy);
   

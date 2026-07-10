@@ -4,6 +4,7 @@ import { resolve } from 'path'
 import { readFileSync } from 'fs'
 
 const pkg = JSON.parse(readFileSync(resolve(__dirname, 'package.json'), 'utf-8'))
+const BRIDGE_INTERNAL_HEADER = 'x-control-panel-bridge-internal'
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => {
@@ -44,11 +45,21 @@ export default defineConfig(({ command }) => {
         '/bridge-api': {
           target: apiProxyTarget,
           changeOrigin: true,
+          configure: (proxy) => {
+            proxy.on('proxyReq', (proxyReq) => {
+              proxyReq.setHeader(BRIDGE_INTERNAL_HEADER, '1')
+            })
+          },
         },
         '/bridge': {
           target: apiProxyTarget,
           changeOrigin: true,
           ws: true,
+          configure: (proxy) => {
+            proxy.on('proxyReqWs', (proxyReq) => {
+              proxyReq.setHeader(BRIDGE_INTERNAL_HEADER, '1')
+            })
+          },
         },
       }
     },
