@@ -70,6 +70,11 @@ test('build 生成 schema v2 registry、逐文件清单和内容寻址 zip 包',
     assert.strictEqual(game.size, game.files.reduce((sum, file) => sum + file.size, 0));
     assert.deepStrictEqual(game.files.map((file) => file.path), [...game.files.map((file) => file.path)].sort());
     assert.deepStrictEqual(game.allowedOrigins, []);
+    assert.ok(game.manifest, `${game.id} must expose manifest`);
+    assert.strictEqual(game.manifest.id, game.id);
+    assert.deepStrictEqual(game.manifest.devices, game.devices);
+    assert.deepStrictEqual(game.manifest.params, game.params);
+    assert.deepStrictEqual(game.manifest.permissions, game.permissions);
 
     const packagePath = path.join(ROOT, game.packageUrl);
     assert.ok(fs.existsSync(packagePath), `${game.packageUrl} must exist`);
@@ -286,6 +291,7 @@ test('build 将声明的 allowedOrigins 写入 registry 并放行对应 JS URL',
       version: '1.0.0',
       devices: [],
       params: [],
+      permissions: ['camera'],
       allowedOrigins: ['https://api.example.test/path-is-ignored'],
     }, {
       gameJs: "fetch('https://api.example.test/state');\n",
@@ -301,6 +307,8 @@ test('build 将声明的 allowedOrigins 写入 registry 并放行对应 JS URL',
 
     const registry = JSON.parse(fs.readFileSync(outFile, 'utf8'));
     assert.deepStrictEqual(registry.games[0].allowedOrigins, ['https://api.example.test']);
+    assert.deepStrictEqual(registry.games[0].permissions, ['camera']);
+    assert.deepStrictEqual(registry.games[0].manifest.permissions, ['camera']);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
