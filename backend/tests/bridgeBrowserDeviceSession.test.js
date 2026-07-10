@@ -16,6 +16,15 @@ jest.mock('../devices/registry', () => ({
     if (type === 'TD01') return ['strength'];
     return [];
   }),
+  getDeviceTypeConfig: jest.fn((type) => {
+    if (type === 'DIANJI') {
+      return { name: '电脉冲设备', capabilities: ['shock'], monitorData: [], operations: [] };
+    }
+    if (type === 'TD01') {
+      return { name: '偏轴电机控制器', capabilities: ['strength'], monitorData: [], operations: [] };
+    }
+    return { name: type, capabilities: [], monitorData: [], operations: [] };
+  }),
   hasCapability: jest.fn((type, capability) => {
     if (type === 'DIANJI') return capability === 'shock';
     if (type === 'TD01') return capability === 'strength';
@@ -29,6 +38,7 @@ jest.mock('../devices/capabilities', () => ({
 
 const mockInvokeDeviceCapability = jest.fn();
 const mockPublishDeviceMessage = jest.fn();
+const mockExecuteDeviceOperation = jest.fn();
 
 jest.mock('../services/deviceService', () => ({
   onDeviceDataChange: jest.fn(),
@@ -42,6 +52,7 @@ jest.mock('../services/deviceService', () => ({
     if (id === 'motor-1') return { id: 'motor-1', type: 'TD01', data: { power: 0 } };
     return null;
   }),
+  executeDeviceOperation: (...args) => mockExecuteDeviceOperation(...args),
   invokeDeviceCapability: (...args) => mockInvokeDeviceCapability(...args),
   publishDeviceMessage: (...args) => mockPublishDeviceMessage(...args),
 }));
@@ -65,6 +76,7 @@ describe('bridgeService browser device sessions', () => {
     jest.resetModules();
     mockInvokeDeviceCapability.mockClear();
     mockPublishDeviceMessage.mockClear();
+    mockExecuteDeviceOperation.mockClear();
     mockInterceptCommand.mockClear();
   });
 
@@ -146,5 +158,18 @@ describe('bridgeService browser device sessions', () => {
     })).toEqual([0]);
 
     expect(bridgeService.getActiveSessions()).toHaveLength(0);
+  });
+
+  it('lets an origin execute device operations through the browser session', () => {
+    const bridgeService = require('../services/bridgeService');
+    bridgeService.init({});
+
+    bridgeService.runBrowserCommand('https://example.com', 'operate', {
+      deviceId: 'motor-1',
+      operationKey: 'start',
+      params: {},
+    });
+
+    expect(mockExecuteDeviceOperation).toHaveBeenCalledWith('motor-1', 'start', {});
   });
 });

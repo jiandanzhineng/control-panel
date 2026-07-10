@@ -10,11 +10,20 @@ const logService = require('./services/logService');
 const bridgeService = require('./services/bridgeService');
 const gameCacheService = require('./services/gameCacheService');
 const { BRIDGE_INTERNAL_HEADER } = require('./constants/bridgeAccess');
+const { browserApiCors } = require('./middleware/browserApiAccess');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    return callback(null, false);
+  },
+  credentials: false,
+  preflightContinue: true,
+}));
+app.use('/api', browserApiCors);
 app.use(express.json());
 
 app.use((req, res, next) => {
@@ -121,3 +130,4 @@ process.on('SIGINT', async () => {
 // 导致 /bridge 握手 404、插件设备连不上。
 module.exports = app;
 module.exports.server = server;
+module.exports.BRIDGE_INTERNAL_HEADER = BRIDGE_INTERNAL_HEADER;

@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>设备控制中心 · 玩法库</title>
+<meta name="description" content="UnderSilicon 控制面板设备全局控制中心。通过控制面板授权的 DeviceAPI 列出全部连接设备，并调整每台设备的全部参数（强度、电击、锁、上报频率、距离阈值等）。" />
+<link rel="stylesheet" href="assets/css/site.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+<style>
+  .ctrl-hero { padding: 40px 0 24px; }
+  .ctrl-hero h1 { font-size: 38px; font-weight: 800; margin-bottom: 8px;
+    background: linear-gradient(180deg, #fff 30%, #8a9bc4 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .ctrl-hero p.lead { font-size: 15px; color: var(--text-soft); max-width: 720px; margin-bottom: 18px; overflow-wrap: anywhere; }
+
+  .conn-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 18px; margin-bottom: 18px; }
+  .conn-status { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-soft); font-family: var(--mono); }
+  .conn-status .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--text-dim); }
+  .conn-status.searching .dot { background: var(--warn); animation: pulse 1.2s infinite; }
+  .conn-status.ok .dot { background: var(--success); box-shadow: 0 0 8px var(--success); }
+  .conn-status.error .dot { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+  .conn-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .conn-actions .btn { padding: 7px 14px; font-size: 13px; }
+  .btn-danger { background: linear-gradient(135deg, var(--danger), #e0455f); color: #fff; box-shadow: 0 8px 24px rgba(255,92,122,0.3); }
+  .btn-danger:hover { box-shadow: 0 12px 30px rgba(255,92,122,0.4); }
+  .btn-sm { padding: 6px 12px !important; font-size: 13px !important; }
+  .auth-note { margin-bottom: 18px; background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px 18px; font-size: 14px; color: var(--text-soft); }
+  .auth-note strong { color: var(--text); }
+  .auth-note.warn { border-color: rgba(255, 184, 77, 0.35); }
+  .auth-note.ok { border-color: rgba(56, 214, 138, 0.35); }
+  .auth-note.error { border-color: rgba(255, 92, 122, 0.35); }
+
+  .toolbar { display: flex; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; }
+  .filter-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip i { font-style: normal; opacity: .6; font-family: var(--mono); }
+
+  .dev-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 18px; }
+
+  .dev-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .dev-card.offline { opacity: .62; }
+  .dev-head { display: flex; align-items: flex-start; gap: 10px; }
+  .dev-status { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 6px;
+    background: var(--success); box-shadow: 0 0 8px var(--success); }
+  .dev-status.off { background: var(--danger); box-shadow: 0 0 8px var(--danger); }
+  .dev-titles { flex: 1; min-width: 0; }
+  .dev-name { font-size: 15px; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dev-sub { font-size: 12px; color: var(--text-dim); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .dev-type { color: var(--accent); }
+  .dev-id { font-size: 11px; color: var(--text-dim); }
+  .dev-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+  .dev-last { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+  .dev-caps { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .ctrl-section { border-top: 1px solid var(--border); padding-top: 12px; }
+  .ctrl-section:first-of-type { border-top: 0; padding-top: 0; }
+  .ctrl-section.muted { color: var(--text-dim); font-size: 13px; }
+  .ctrl-section-head { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin-bottom: 10px; }
+
+  .mon-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 10px; }
+  .mon-tile { background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px; text-align: center; }
+  .mon-val { font-size: 22px; font-weight: 800; font-family: var(--mono);
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .mon-name { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+
+  .op-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .op-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); }
+
+  .ctrl { background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px; }
+  .ctrl + .ctrl { margin-top: 10px; }
+  .ctrl-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .ctrl-name { font-weight: 700; font-size: 13px; color: var(--text); }
+  .ctrl-val { font-family: var(--mono); font-size: 15px; font-weight: 700; color: var(--accent); min-width: 30px; text-align: right; }
+  .ctrl-hint { font-size: 11px; color: var(--warn); }
+  .ctrl-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ctrl-row + .ctrl-row { margin-top: 8px; }
+  .ctrl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; margin-bottom: 10px; }
+  .cap-field-label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text-soft); }
+  .cap-range { flex: 1; min-width: 120px; accent-color: var(--primary); height: 6px; }
+  .cap-field { background: var(--bg-card); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 6px 8px; font-size: 14px; font-family: var(--mono); width: 84px; }
+  .cap-field:focus { outline: none; border-color: var(--primary); }
+  .cap-unit { font-size: 12px; color: var(--text-dim); }
+  .ctrl-stops { margin-top: 8px; }
+
+  .dev-foot { display: flex; justify-content: space-between; gap: 8px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .dev-data-pre { background: #0d1322; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 10px; font-size: 11px; color: #c8d4ec; overflow-x: auto; margin: 0; }
+
+  @media (max-width: 560px) {
+    .ctrl-hero h1 { font-size: 30px; }
+    .dev-grid { grid-template-columns: 1fr; }
+    .cap-field { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">⚡</span><span>玩法库</span></a>
+    <div class="nav-links">
+      <a href="index.html">游戏</a>
+      <a href="control.html" class="active">设备控制</a>
+      <a href="docs/device-api.html">DeviceAPI</a>
+      <a href="docs/contribute.html" class="nav-cta">投稿</a>
+    </div>
+  </div>
+</nav>
+
+<header class="ctrl-hero">
+  <div class="container">
+    <span class="hero-eyebrow"><span class="dot"></span> 设备全局控制中心 · 控制面板授权访问</span>
+    <h1>设备控制中心</h1>
+    <p class="lead">在控制面板内置浏览器中打开此页后，通过授权过的 <code>DeviceAPI</code> 集中查看所有已连接设备，并调整每台设备的全部参数。未授权前，此页不会直接访问本机控制接口。</p>
+    <div class="conn-bar">
+      <span class="conn-status searching" id="conn-status"><span class="dot"></span> 正在探测本机控制面板…</span>
+      <div class="conn-actions">
+        <button class="btn btn-primary" id="request-auth">申请授权</button>
+        <button class="btn btn-ghost" id="revoke-auth" hidden>撤销授权</button>
+        <button class="btn btn-ghost" id="refresh">刷新</button>
+        <button class="btn btn-ghost" id="retry-top">重新检查</button>
+        <button class="btn btn-danger" id="estop">⚠ 全部停止 / 归零</button>
+      </div>
+    </div>
+    <div class="auth-note warn" id="auth-note">当前正在检查网页授权状态…</div>
+    <div class="toolbar">
+      <div class="search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input id="search" type="text" placeholder="搜索设备 id、名称、类型…" />
+      </div>
+      <div class="filter-chips" id="filters"></div>
+    </div>
+  </div>
+</header>
+
+<section class="section" style="padding-top:8px;">
+  <div class="container">
+    <div class="dev-grid" id="grid">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-links">
+      <a href="index.html">游戏</a>
+      <a href="control.html">设备控制</a>
+      <a href="docs/device-api.html">DeviceAPI</a>
+      <a href="docs/devices.html">设备清单</a>
+      <a href="docs/contribute.html">投稿</a>
+    </div>
+    <div>UnderSilicon 控制面板 · 设备控制中心 · 内容随仓库 <code>main</code> 分支自动发布</div>
+  </div>
+</footer>
+
+<div class="toast" id="toast"></div>
+<script src="assets/js/device-control.js"></script>
+</body>
+</html>

@@ -157,6 +157,11 @@ function handleMessage(session, msg) {
         break;
       }
 
+      case 'operate': {
+        session.send({ id, result: operateForSession(session, msg) });
+        break;
+      }
+
       case 'sendMessage': {
         session.send({ id, result: sendMessageForSession(session, msg) });
         break;
@@ -328,6 +333,14 @@ function matchMessage(match, payload) {
   return true;
 }
 
+function getCloneableTypeConfig(type) {
+  try {
+    return JSON.parse(JSON.stringify(deviceRegistry.getDeviceTypeConfig(type) || {}));
+  } catch (_) {
+    return {};
+  }
+}
+
 function listDevicesWithCapabilities() {
   return deviceService.listDevicesForApi().map((d) => ({
     id: d.id,
@@ -337,6 +350,7 @@ function listDevicesWithCapabilities() {
     connected: d.connected,
     data: d.data || {},
     capabilities: deviceRegistry.getDeviceCapabilities(d.type),
+    typeConfig: getCloneableTypeConfig(d.type),
   }));
 }
 
@@ -418,6 +432,15 @@ function writePropsForSession(session, msg) {
     } else {
       deviceService.publishDeviceMessage(physId, { method: 'update', ...msg.props });
     }
+  }
+  return { ok: true };
+}
+
+function operateForSession(session, msg) {
+  const physIds = requirePhysicalIds(session, msg.deviceId);
+  if (!physIds.length) return null;
+  for (const physId of physIds) {
+    deviceService.executeDeviceOperation(physId, msg.operationKey, msg.params || {});
   }
   return { ok: true };
 }
@@ -613,6 +636,8 @@ function runBrowserCommand(origin, action, payload = {}) {
       return invokeForSession(session, msg);
     case 'writeProps':
       return writePropsForSession(session, msg);
+    case 'operate':
+      return operateForSession(session, msg);
     case 'sendMessage':
       return sendMessageForSession(session, msg);
     case 'read':

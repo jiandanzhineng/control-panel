@@ -36,6 +36,9 @@ function device(deviceId) {
     invoke(capability, actionName, params) {
       return command('invoke', { deviceId, capability, actionName, params: params || {} });
     },
+    operate(operationKey, params) {
+      return command('operate', { deviceId, operationKey, params: params || {} });
+    },
     writeProps(props) {
       return command('writeProps', { deviceId, props: props || {} });
     },
