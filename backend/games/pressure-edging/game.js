@@ -42,7 +42,8 @@
     baseIntensity: 0,
     intensityIncreaseStartTime: 0,
     isShocking: false,
-    shockCount: 0,
+    edgingCount: 0,
+    wasOverPressure: false,
     shockTimer: null,
     totalStimulationTime: 0,
   };
@@ -58,7 +59,7 @@
     averagePressure: 0,
     currentIntensity: 0,
     targetIntensity: 0,
-    shockCount: 0,
+    edgingCount: 0,
     totalStimulationTime: 0,
   };
 
@@ -125,8 +126,6 @@
     if (!force && rt.isShocking) return;
     try {
       rt.isShocking = true;
-      rt.shockCount += 1;
-      view.shockCount = rt.shockCount;
       addLog('warn', `触发电击 — ${cfg.shockVoltage}V / ${cfg.shockDuration}s`);
       startShock(cfg.shockVoltage);
       if (rt.shockTimer) clearTimeout(rt.shockTimer);
@@ -152,13 +151,19 @@
 
     const pressure = rt.currentPressure;
     if (pressure >= cfg.criticalPressure) {
-      // 超压：停止刺激并触发电击
+      // 超压：停止刺激并触发电击；一次连续超压只计一次寸止
+      if (!rt.wasOverPressure) {
+        rt.edgingCount += 1;
+        view.edgingCount = rt.edgingCount;
+      }
+      rt.wasOverPressure = true;
       rt.targetIntensity = 0;
       rt.isInDelayPeriod = false;
       rt.baseIntensity = 0;
       rt.intensityIncreaseStartTime = 0;
       triggerShock(false);
     } else {
+      rt.wasOverPressure = false;
       const pressureDiff = cfg.criticalPressure - pressure;
       const normalizedDiff = pressureDiff / Math.max(1e-6, cfg.criticalPressure);
       if (!rt.isInDelayPeriod) {
@@ -195,15 +200,16 @@
     const cur = rt.currentIntensity;
     const tgt = rt.targetIntensity;
     let next = (tgt > cur) ? Math.min(cur + maxChange, tgt) : tgt;
-    setStrength(next);
-    rt.currentIntensity = Math.round(next);
-    if (rt.currentIntensity > 0) rt.totalStimulationTime += dtSec;
+    const appliedIntensity = Math.round(next);
+    setStrength(appliedIntensity);
+    rt.currentIntensity = next;
+    if (appliedIntensity > 0) rt.totalStimulationTime += dtSec;
 
     view.currentPressure = rt.currentPressure;
     view.averagePressure = rt.averagePressure;
-    view.currentIntensity = rt.currentIntensity;
+    view.currentIntensity = appliedIntensity;
     view.targetIntensity = rt.targetIntensity;
-    view.shockCount = rt.shockCount;
+    view.edgingCount = rt.edgingCount;
     view.totalStimulationTime = Number(rt.totalStimulationTime.toFixed(1));
     render();
   }
@@ -215,6 +221,9 @@
     rt.startTime = now;
     rt.endTime = now + cfg.duration * 60 * 1000;
     rt.lastUpdateTs = now;
+    rt.edgingCount = 0;
+    rt.wasOverPressure = false;
+    view.edgingCount = 0;
     view.running = true;
     view.startTime = now;
     view.statusText = '准备就绪';
@@ -255,7 +264,7 @@
     view.running = false;
     view.statusText = '已结束';
     view.btnText = '暂停';
-    addLog('info', `气压寸止玩法结束（电击 ${rt.shockCount} 次）`);
+    addLog('info', `气压寸止玩法结束（寸止 ${rt.edgingCount} 次）`);
     render();
   }
 
