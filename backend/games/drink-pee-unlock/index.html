@@ -9,7 +9,7 @@
   "id": "drink-pee-unlock",
   "title": "喝水/憋尿解锁玩法",
   "description": "称重(DZC01)回调更新 + 状态机：保持提肛与双脚踮脚，同时持续变轻/变重，达成目标或超时自动解锁。",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "devices": [
     { "id": "scale", "capabilities": ["weight", "reporting"], "required": true },
     { "id": "sensor", "capabilities": ["sphincterPressure", "reporting"], "required": false },
@@ -95,9 +95,12 @@
           <div class="progress-text"><span data-bind="progress">0</span> / <span data-bind="targetWeight">500</span> g</div>
         </div>
         <div class="hero-stats">
-          <div class="hero-stat-item">惩罚次数: <b data-bind="shockCount" class="text-danger">0</b></div>
+          <div class="hero-stat-item">电击触发次数: <b data-bind="shockCount" class="text-danger">0</b></div>
+          <div class="hero-stat-item">电击设备: <b data-bind="punishDevice">未映射</b></div>
+          <div class="hero-stat-item">电击状态: <b data-bind="shockStatus" id="shockStatusVal">不可用</b></div>
+          <div class="hero-stat-item">电击参数: <b><span data-bind="shockIntensity">0</span>V / <span data-bind="shockDuration">0</span>s</b></div>
           <div class="hero-stat-item">冷却时间: <b data-bind="cooldownRemainingSec">0</b>s</div>
-          <div class="hero-stat-item" style="color:var(--warn);"><b data-bind="lastPunishReason"></b></div>
+          <div class="hero-stat-item" style="color:var(--warn);">惩罚原因: <b data-bind="lastPunishReason"></b></div>
         </div>
       </div>
       <div class="panel panel-metric">

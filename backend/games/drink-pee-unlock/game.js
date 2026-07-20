@@ -17,8 +17,10 @@
     running: false, state: 'End', startTs: 0, endTs: 0, cooldownUntil: 0, forceStop: false,
     pressure: 0, pressureMin: null, pressureMax: null, button0: 0, button1: 0,
     qiyaMapped: false, qtzMapped: false,
-    weight: null, weightTs: 0, weightHistory: [], weightMin: null, weightMax: null, initialWeight: 0,
+    weight: null, weightTs: 0, weightHistory: [], weightMin: null, weightMax: null, initialWeight: null,
+    stableSinceTs: 0, stableAnchorWeight: null,
     progress: 0, lastPunishReason: '无', shockCount: 0, shockTimer: null,
+    punishMapped: false, shockActive: false,
     vibeActive: false, vibeTimer: null, lastProgressLogTs: 0,
   };
   const view = {
@@ -26,7 +28,8 @@
     progress: 0, targetWeight: 500, shockCount: 0, cooldownRemainingSec: 0, lastPunishReason: '',
     weight: '-', pressure: '-', tiptoeOk: false, punishCountdown: '-', mode: 'drink',
     weightMin: '-', weightMax: '-', pressureMin: '-', pressureMax: '-', weightCount: 0,
-    stableWindowSec: 0, punishCooldownSec: 0,
+    stableWindowSec: 0, punishCooldownSec: 0, punishDevice: '未映射',
+    shockStatus: '不可用', shockIntensity: 0, shockDuration: 0,
   };
 
   const $ = (s) => Array.from(document.querySelectorAll(s));
@@ -46,6 +49,8 @@
     if (bar) bar.style.width = (clamp(t > 0 ? p / t : 0, 0, 1) * 100).toFixed(1) + '%';
     const tip = document.getElementById('tiptoeVal');
     if (tip) { tip.classList.toggle('ok', !!view.tiptoeOk); tip.classList.toggle('warn', !view.tiptoeOk); }
+    const shock = document.getElementById('shockStatusVal');
+    if (shock) shock.classList.toggle('text-danger', !!rt.shockActive);
   }
   function addLog(level, message) {
     const li = document.createElement('li');
@@ -57,9 +62,33 @@
     try { DeviceAPI.log(level, message); } catch (_) {}
   }
 
+  function speak(message) {
+    const synth = window.speechSynthesis;
+    const Utterance = window.SpeechSynthesisUtterance;
+    if (!synth || typeof Utterance !== 'function') return;
+    try {
+      const utterance = new Utterance(String(message || ''));
+      utterance.lang = 'zh-CN';
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      const voice = synth.getVoices().find((item) => /^zh(?:-|_)/i.test(item.lang || ''));
+      if (voice) utterance.voice = voice;
+      synth.cancel();
+      synth.speak(utterance);
+    } catch (_) {}
+  }
+
   function setStrength(dev, v) { if (DeviceAPI.device(dev).isMapped()) DeviceAPI.device(dev).invoke('strength', 'set', { value: Math.round(v) }); }
-  function startShock(voltage) { if (DeviceAPI.device(PUNISH).isMapped()) DeviceAPI.device(PUNISH).invoke('shock', 'start', { voltage }); }
-  function stopShockDev() { if (DeviceAPI.device(PUNISH).isMapped()) DeviceAPI.device(PUNISH).invoke('shock', 'stop', {}); }
+  function startShock(voltage) {
+    if (!rt.punishMapped) return false;
+    DeviceAPI.device(PUNISH).invoke('shock', 'start', { voltage });
+    rt.shockActive = true;
+    return true;
+  }
+  function stopShockDev() {
+    rt.shockActive = false;
+    if (rt.punishMapped) DeviceAPI.device(PUNISH).invoke('shock', 'stop', {});
+  }
   function setLockOpen(open) { if (DeviceAPI.device(LOCK).isMapped()) DeviceAPI.device(LOCK).invoke('lock', 'setOpen', { open: !!open }); }
   function isTruthy(v) {
     if (v === true || v === 1) return true;
@@ -70,20 +99,46 @@
   function tiptoeOk() { if (!rt.qtzMapped) return true; return isTruthy(rt.button0) && isTruthy(rt.button1); }
   function pressureOk() { if (!rt.qiyaMapped) return true; return Number(rt.pressure) >= (Number(cfg.pressureThreshold) || 0); }
   function remainingSec(now) { return Math.max(0, Math.ceil((rt.endTs - now) / 1000)); }
+  function punishCountdownSec(now) {
+    if (!rt.weightTs || !rt.stableSinceTs) return null;
+    const windowMs = Math.max(1, Number(cfg.stableWindowSec) || 0) * 1000;
+    return Math.max(0, (windowMs - (now - rt.stableSinceTs)) / 1000);
+  }
   function calcMinMax(arr) {
     let min = null, max = null;
     for (const it of (arr || [])) { const w = Number(it && it.weight); if (Number.isNaN(w)) continue; min = min === null ? w : Math.min(min, w); max = max === null ? w : Math.max(max, w); }
     return { min, max };
+  }
+  function resetStableTracking(ts) {
+    rt.weightHistory = [];
+    rt.weightMin = null;
+    rt.weightMax = null;
+    if (rt.weight === null) {
+      rt.weightTs = 0;
+      rt.stableSinceTs = 0;
+      rt.stableAnchorWeight = null;
+      return;
+    }
+    rt.weightTs = ts;
+    rt.stableSinceTs = ts;
+    rt.stableAnchorWeight = rt.weight;
+    rt.weightHistory.push({ ts, weight: rt.weight });
+    rt.weightMin = rt.weight;
+    rt.weightMax = rt.weight;
   }
 
   function syncView() {
     const now = Date.now();
     view.statusText = stateText();
     view.remainingSec = remainingSec(now);
-    view.initialWeight = rt.initialWeight || '-';
+    view.initialWeight = rt.initialWeight === null ? '-' : round1(rt.initialWeight);
     view.progress = round1(rt.progress);
     view.targetWeight = Number(cfg.targetWeight) || 0;
     view.shockCount = rt.shockCount;
+    view.punishDevice = rt.punishMapped ? '已映射' : '未映射';
+    view.shockStatus = !rt.punishMapped ? '不可用' : (rt.shockActive ? '电击中' : '待机');
+    view.shockIntensity = Number(cfg.shockIntensity) || 0;
+    view.shockDuration = Number(cfg.shockDuration) || 0;
     view.cooldownRemainingSec = rt.state === 'Cooldown' ? Math.max(0, Math.ceil((rt.cooldownUntil - now) / 1000)) : 0;
     view.lastPunishReason = rt.lastPunishReason;
     view.weight = rt.weight === null ? '-' : round1(rt.weight);
@@ -97,6 +152,8 @@
     view.weightCount = rt.weightHistory.length;
     view.stableWindowSec = Number(cfg.stableWindowSec) || 0;
     view.punishCooldownSec = Number(cfg.punishCooldownSec) || 0;
+    const countdown = punishCountdownSec(now);
+    view.punishCountdown = countdown === null ? '-' : Math.ceil(countdown);
   }
   function stateText() {
     switch (rt.state) {
@@ -133,9 +190,14 @@
     stopVibe();
     const shockDurationMs = Math.max(100, (Number(cfg.shockDuration) || 0) * 1000);
     const voltage = Number(cfg.shockIntensity) || 0;
-    startShock(voltage);
-    rt.shockCount += 1;
-    addLog('warn', `触发惩罚: ${rt.lastPunishReason}（${voltage}V）`);
+    const shockStarted = startShock(voltage);
+    if (shockStarted) {
+      rt.shockCount += 1;
+      addLog('warn', `触发电击惩罚: 原因=${rt.lastPunishReason}（${voltage}V）`);
+    } else {
+      addLog('warn', `触发惩罚: 原因=${rt.lastPunishReason}（未映射电击设备，已跳过电击）`);
+    }
+    speak(`惩罚开始。${rt.lastPunishReason}`);
     syncView(); render();
     if (rt.shockTimer) clearTimeout(rt.shockTimer);
     rt.shockTimer = setTimeout(() => { stopShockDev(); enterCooldown(); }, shockDurationMs);
@@ -158,37 +220,38 @@
   function onWeightSample(weight, ts) {
     const windowMs = Math.max(1, Number(cfg.stableWindowSec) || 0) * 1000;
     const cutoff = ts - windowMs;
+    const mode = cfg.mode === 'pee' ? 'pee' : 'drink';
     rt.weight = weight; rt.weightTs = ts;
-    if (!rt.initialWeight && weight > 0) rt.initialWeight = weight;
+    if (rt.initialWeight === null) rt.initialWeight = weight;
+    else if (mode === 'drink') rt.initialWeight = Math.max(rt.initialWeight, weight);
+    else rt.initialWeight = Math.min(rt.initialWeight, weight);
     rt.weightHistory = rt.weightHistory.filter((it) => it && typeof it.ts === 'number' && it.ts >= cutoff);
     rt.weightHistory.push({ ts, weight });
     const mm = calcMinMax(rt.weightHistory);
     rt.weightMin = mm.min; rt.weightMax = mm.max;
     const oldProgress = rt.progress;
-    const mode = cfg.mode === 'pee' ? 'pee' : 'drink';
-    if (rt.initialWeight) {
-      rt.progress = mode === 'drink' ? Math.max(0, rt.initialWeight - weight) : Math.max(0, weight - rt.initialWeight);
-    } else rt.progress = 0;
+    rt.progress = mode === 'drink'
+      ? Math.max(0, rt.initialWeight - weight)
+      : Math.max(0, weight - rt.initialWeight);
     if (rt.progress - oldProgress > 0.5) {
       const now = Date.now();
       if (now - (rt.lastProgressLogTs || 0) >= 2000) { rt.lastProgressLogTs = now; addLog('info', `进度更新: ${round1(rt.progress)}g`); }
     }
-    const historyDuration = rt.weightHistory.length > 0 ? (ts - rt.weightHistory[0].ts) : 0;
-    const isFullCycle = historyDuration >= windowMs;
-    if (rt.progress >= Math.max(1, Number(cfg.targetWeight) || 0)) { enterUnlocked('达成目标'); end({ reason: '达成目标' }); return; }
-    let punishCountdown = windowMs / 1000;
     const thresholdG = Math.max(0, Number(cfg.changeThreshold) || 0);
-    let lastValidTs = -1;
-    for (let i = rt.weightHistory.length - 1; i >= 0; i--) {
-      const item = rt.weightHistory[i];
-      if (mode === 'drink') { if (item.weight > weight + thresholdG) { lastValidTs = item.ts; break; } }
-      else { if (item.weight < weight - thresholdG) { lastValidTs = item.ts; break; } }
+    if (!rt.stableSinceTs || rt.stableAnchorWeight === null) {
+      rt.stableSinceTs = ts;
+      rt.stableAnchorWeight = weight;
+    } else {
+      const changed = mode === 'drink'
+        ? rt.stableAnchorWeight > weight + thresholdG
+        : rt.stableAnchorWeight < weight - thresholdG;
+      if (changed) {
+        rt.stableSinceTs = ts;
+        rt.stableAnchorWeight = weight;
+      }
     }
-    if (lastValidTs > 0) punishCountdown = Math.max(0, (windowMs - (ts - lastValidTs)) / 1000);
-    else punishCountdown = isFullCycle ? 0 : Math.max(0, (windowMs - historyDuration) / 1000);
-    view.punishCountdown = Math.ceil(punishCountdown);
+    if (rt.progress >= Math.max(1, Number(cfg.targetWeight) || 0)) { enterUnlocked('达成目标'); end({ reason: '达成目标' }); return; }
     syncView(); render();
-    if (rt.state === 'Running' && isFullCycle && punishCountdown <= 0) enterPunish('长时间未变化');
   }
   function loop() {
     if (!rt.running) return;
@@ -196,12 +259,23 @@
     const now = Date.now();
     if (now >= rt.endTs) { enterUnlocked('超时自动解锁'); end({ reason: '超时自动解锁' }); return; }
     if (rt.state === 'Cooldown') {
-      if (now >= rt.cooldownUntil) { rt.state = 'Running'; rt.lastPunishReason = '无'; addLog('info', '冷却结束，恢复运行'); }
+      if (now >= rt.cooldownUntil) {
+        resetStableTracking(now);
+        rt.state = 'Running';
+        rt.lastPunishReason = '无';
+        addLog('info', '冷却结束，恢复运行');
+      }
       syncView(); render(); return;
     }
     if (rt.state === 'Running') {
-      if (!pressureOk()) { enterPunish('气压不足'); return; }
-      if (!tiptoeOk()) { enterPunish('未踮脚'); return; }
+      if (!pressureOk()) { enterPunish('提肛惩罚：气压不足'); return; }
+      if (!tiptoeOk()) { enterPunish('踮脚惩罚：未保持双脚踮脚'); return; }
+      const countdown = punishCountdownSec(now);
+      if (countdown !== null && countdown <= 0) {
+        const type = cfg.mode === 'pee' ? '排泄惩罚' : '喝水惩罚';
+        enterPunish(`${type}：${Number(cfg.stableWindowSec) || 0}秒内无有效重量变化`);
+        return;
+      }
       if (!rt.vibeActive && Math.random() < clamp(Number(cfg.vibeStartProb) || 0, 0, 1)) startVibe();
       syncView(); render(); return;
     }
@@ -215,14 +289,25 @@
     rt.pressureMin = null; rt.pressureMax = null; rt.button0 = 0; rt.button1 = 0;
     rt.qiyaMapped = DeviceAPI.device(SENSOR).isMapped();
     rt.qtzMapped = DeviceAPI.device(QTZ).isMapped();
-    rt.weight = null; rt.weightTs = 0; rt.weightHistory = []; rt.weightMin = null; rt.weightMax = null; rt.initialWeight = 0;
+    rt.punishMapped = DeviceAPI.device(PUNISH).isMapped();
+    rt.weight = null; rt.weightTs = 0; rt.weightHistory = []; rt.weightMin = null; rt.weightMax = null; rt.initialWeight = null;
+    rt.stableSinceTs = 0; rt.stableAnchorWeight = null;
     rt.progress = 0; rt.lastPunishReason = '无'; rt.shockCount = 0;
-    rt.vibeActive = false;
+    rt.shockActive = false; rt.vibeActive = false;
+    const scaleDevice = DeviceAPI.device(SCALE);
+    scaleDevice.onProperty('weight', (nv) => { const w = Number(nv); if (!Number.isNaN(w)) onWeightSample(w, Date.now()); });
+    if (scaleDevice.isMapped()) {
+      scaleDevice.read('weight').then((values) => {
+        if (!rt.running || rt.weightTs) return;
+        const current = Array.isArray(values) ? values.find((value) => value !== null && value !== undefined) : values;
+        const weight = Number(current);
+        if (!Number.isNaN(weight)) onWeightSample(weight, Date.now());
+      }).catch((error) => addLog('warn', `读取电子秤当前重量失败: ${error && error.message || error}`));
+    }
     try {
-      if (DeviceAPI.device(SCALE).isMapped()) DeviceAPI.device(SCALE).invoke('reporting', 'setReportDelay', { ms: 1000 });
+      if (scaleDevice.isMapped()) scaleDevice.invoke('reporting', 'setReportDelay', { ms: 1000 });
       setLockOpen(false); stopShockDev(); setStrength(VIBE, 0);
     } catch (_) {}
-    DeviceAPI.device(SCALE).onProperty('weight', (nv) => { const w = Number(nv); if (!Number.isNaN(w)) onWeightSample(w, Date.now()); });
     if (rt.qiyaMapped) DeviceAPI.device(SENSOR).onProperty('pressure', (nv) => {
       const p = Number(nv); if (Number.isNaN(p)) return;
       rt.pressure = p; rt.pressureMin = rt.pressureMin === null ? p : Math.min(rt.pressureMin, p); rt.pressureMax = rt.pressureMax === null ? p : Math.max(rt.pressureMax, p);
@@ -232,6 +317,7 @@
       DeviceAPI.device(QTZ).onProperty('button1', (nv) => { rt.button1 = nv; });
     }
     addLog('info', `游戏启动 mode=${cfg.mode} target=${cfg.targetWeight}g`);
+    speak('玩法开始');
     syncView(); render();
   }
   function end(extra) {
@@ -241,7 +327,9 @@
     setStrength(VIBE, 0); stopShockDev(); setLockOpen(true);
     try { if (DeviceAPI.device(SCALE).isMapped()) DeviceAPI.device(SCALE).invoke('reporting', 'setReportDelay', { ms: 5000 }); } catch (_) {}
     if (rt.state !== 'Unlocked') rt.state = 'End';
-    addLog('info', `结束: ${extra && extra.reason || ''}（进度 ${round1(rt.progress)}g）`);
+    const reason = extra && extra.reason || '';
+    addLog('info', `结束: ${reason}（进度 ${round1(rt.progress)}g）`);
+    speak(reason ? `玩法结束。${reason}` : '玩法结束');
     syncView(); render();
   }
 
