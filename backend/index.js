@@ -85,6 +85,7 @@ app.use('/api/plugins', require('./routes/plugins'));
 app.use('/api/logs', require('./routes/logs'));
 app.use('/api/test', require('./routes/test'));
 app.use('/api/virtual-devices', require('./routes/virtualDevices'));
+app.use('/api/auth', require('./routes/auth'));
 
 app.get('/api/hello', (req, res) => { res.json({ message: 'Hello from Express backend!' }); });
 app.get('/api', (req, res) => { res.send('Backend is running'); });

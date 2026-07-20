@@ -11,6 +11,7 @@ import BrowserView from '../views/BrowserView.vue';
 import LogManagement from '../views/LogManagement.vue';
 import AutoTest from '../views/AutoTest.vue';
 import FirmwareBatchUpgrade from '../views/FirmwareBatchUpgrade.vue';
+import AccountView from '../views/AccountView.vue';
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/home' },
@@ -28,6 +29,7 @@ const routes: RouteRecordRaw[] = [
 
   { path: '/browser', name: 'browser', component: BrowserView, meta: { title: '在线游戏' } },
   { path: '/network', name: 'network', component: ServicesView, meta: { title: '网络设置' } },
+  { path: '/account', name: 'account', component: AccountView, meta: { title: '账号' } },
   { path: '/logs', name: 'logs', component: LogManagement, meta: { title: '日志管理' } },
 
   // 旧路径重定向（沿用 /gamelist→/games 的做法，保留外链/书签可用）

@@ -50,6 +50,11 @@
             <el-icon><Connection /></el-icon>
             <template #title>网络设置</template>
           </el-menu-item>
+
+          <el-menu-item index="/account">
+            <el-icon><User /></el-icon>
+            <template #title>账号</template>
+          </el-menu-item>
           
           <el-menu-item index="/logs">
             <el-icon><Document /></el-icon>
@@ -97,7 +102,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass } from '@element-plus/icons-vue'
+import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass, User } from '@element-plus/icons-vue'
+import { useAuth } from './composables/useAuth'
+
+const { checkSession } = useAuth()
 
 const route = useRoute()
 const isCollapsed = ref(false)
@@ -120,6 +128,8 @@ const toggleSidebar = () => {
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
+  // 启动时校验一次账号登录态（fire-and-forget，不阻塞页面）
+  checkSession()
 })
 
 onUnmounted(() => {
