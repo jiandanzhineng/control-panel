@@ -99,11 +99,11 @@ bridgeService.init(server);
 
 if (require.main === module) {
   logService.cleanOldLogs();
-  server.listen(PORT, () => {
+  server.listen(PORT, async () => {
     logger.info(`Backend server running at http://localhost:${PORT}`);
     if (process.platform === 'win32') {
       try {
-        const res = mdnsService.publish();
+        const res = await mdnsService.publish();
         if (res.running) logger.info('mDNS service started', { pid: res.pid });
       } catch (e) {
         logger.warn('mDNS service start failed', e?.message || e);
@@ -118,9 +118,7 @@ process.on('SIGINT', async () => {
   try {
     await mqttService.stop();
   } catch (_) {}
-  if (process.platform === 'win32') {
-    try { mdnsService.unpublish(); } catch (_) {}
-  }
+  try { await mdnsService.unpublish(); } catch (_) {}
   process.exit(0);
 });
 

@@ -117,6 +117,6 @@ Electron：
 ## 已知实现差异
 
 - `GET /api/network/ips` 使用 Node `os.networkInterfaces()`，不依赖 WSL 或 `ifconfig`。
-- `POST /api/mdns/publish` 当前不读取请求体；Windows 固定启动 `mdns_tool.exe 8080`。
-- 非 Windows mDNS 发布尚未实现。
+- `POST /api/mdns/publish` 当前不读取请求体；服务使用 Node.js 内置 `dgram` 在物理局域网网卡上发布 `A easysmart.local`。
+- mDNS 会排除 Hyper-V、WSL、VPN、蓝牙和常见虚拟网卡，并兼容 ESP-IDF 随机源端口查询所需的 legacy-unicast 响应。
 - 前端游戏配置页会调用 `POST /api/games/:id/config/reset`，后端尚未实现。

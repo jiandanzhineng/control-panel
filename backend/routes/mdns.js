@@ -3,18 +3,18 @@ const router = express.Router();
 const mdnsService = require('../services/mdnsService');
 const { sendError } = require('../utils/http');
 
-router.post('/publish', (req, res) => {
+router.post('/publish', async (req, res) => {
   try {
-    const result = mdnsService.publish();
+    const result = await mdnsService.publish();
     res.json(result);
   } catch (e) {
     sendError(res, 'MDNS_PUBLISH_FAILED', e.message);
   }
 });
 
-router.post('/unpublish', (req, res) => {
+router.post('/unpublish', async (req, res) => {
   try {
-    const result = mdnsService.unpublish();
+    const result = await mdnsService.unpublish();
     res.json(result);
   } catch (e) {
     sendError(res, 'MDNS_UNPUBLISH_FAILED', e.message);

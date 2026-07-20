@@ -65,14 +65,22 @@ EMQX 启动失败时，`mqttService` 会记录错误并继续走 mosquitto 启�
 - API 路由：[backend/routes/mdns.js](../../backend/routes/mdns.js)
 - 当前挂载服务：[backend/services/mdnsService.js](../../backend/services/mdnsService.js)
 
-当前 API 不读取请求体。`POST /api/mdns/publish` 的行为由平台决定：
+当前 API 不读取请求体。`POST /api/mdns/publish` 使用 Node.js 内置 `dgram`
+模块创建 UDP4 socket，绑定 `0.0.0.0:5353` 并在选中的物理局域网网卡上加入
+`224.0.0.251` 组播组。实现不再启动 `mdns_tool.exe`，也不依赖 Python、zeroconf
+或第三方 Node mDNS 包。
 
-- Windows：启动 `mdns_tool.exe 8080`
-  - 开发环境路径：`backend/inner-tools/mdns_tool.exe`
-  - 打包环境路径：`process.resourcesPath/inner-tools/mdns_tool.exe`
-- 非 Windows：仅记录日志，返回未运行状态，发布逻辑尚未实现。
+服务只发布设备连接 MQTT 所需的 `A easysmart.local`：
 
-同目录下的 `mdnsServiceWindows.js` 是旧的类式实现，当前 API 未挂载它。
+- WLAN/Wi-Fi 优先，其次是物理 Ethernet 网卡。
+- 自动排除 Hyper-V、WSL、VPN、蓝牙和常见虚拟网卡以及链路本地地址。
+- 可用 `MDNS_INTERFACE` 或 `MDNS_IPV4` 指定物理网卡；指定虚拟网卡仍会被拒绝。
+- 对源端口不是 `5353` 的查询使用 legacy-unicast：响应回到查询者的随机源端口，
+  保留查询 Transaction ID 和 Question，并设置 `QDCOUNT=1`。
+- 标准 mDNS 查询使用 `ID=0` 的响应，启动/停止时分别发送 TTL 120/0 的 A 记录公告。
+
+`GET /api/mdns/status` 会返回所选 `interface`、`ip`、Node 进程 PID 以及查询/响应计数。
+同目录下的 `mdnsServiceWindows.js` 和 `backend/inner-tools/mdns_tool.exe` 是未挂载的旧实现。
 
 直接运行 `node backend/index.js` 时，Windows 会在后端监听成功后尝试自动发布 mDNS。Electron 通过 `require backend/index.js` 获取 Express app，因此不会触发该自动发布分支，需要通过页面或 API 启动。
 

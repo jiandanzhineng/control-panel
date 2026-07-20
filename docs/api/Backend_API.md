@@ -62,15 +62,16 @@ Windows 平台优先启动 EMQX；其他平台使用 mosquitto。Windows 下 EMQ
 实现：[mdns.js](../../backend/routes/mdns.js)、[mdnsService.js](../../backend/services/mdnsService.js)
 
 - `POST /api/mdns/publish`
-  - 当前请求体未被使用。
-  - Windows：启动 `mdns_tool.exe 8080`。
-  - 非 Windows：记录日志并返回未运行状态，发布逻辑尚未实现。
-  - 返回示例：`{ "pid": 1234, "running": true }`
+  - 请求体未被使用。
+  - 使用 Node.js 原生 UDP socket 在物理局域网网卡上发布 `A easysmart.local`。
+  - 自动排除 Hyper-V、WSL、VPN、蓝牙和常见虚拟网卡地址。
+  - 可通过 `MDNS_INTERFACE` 或 `MDNS_IPV4` 环境变量指定物理网卡。
+  - 返回示例：`{ "pid": 1234, "running": true, "ip": "192.168.5.39", "interface": "Ethernet", "queries": 0, "responses": 0, "lastError": null }`
 - `POST /api/mdns/unpublish`
-  - 停止当前 mDNS 进程。
+  - 发送 TTL 0 的 goodbye A 记录并关闭 UDP socket。
   - 返回 `{ "running": false }`
 - `GET /api/mdns/status`
-  - 返回 `{ "pid"?: number, "running": boolean }`
+  - 返回发布状态、所选 IP/网卡和查询/响应计数。
 
 ## 设备管理
 
