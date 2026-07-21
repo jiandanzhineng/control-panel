@@ -16,9 +16,13 @@ pnpm-debug.log*
 # Environment files
 .env
 .env.*
+!.env.example
 backend/.env
 frontend/.env
 frontend/.env.*
+
+# Generated game voice staging output
+tools/cosyvoice/output_voices/
 
 # Vite caches (if any)
 frontend/.vite/

@@ -117,21 +117,19 @@ async function flushPromises() {
 
 async function loadGame({ params, propertyValues } = {}) {
   const document = createDocument();
-  const spoken = [];
-  class SpeechSynthesisUtterance {
-    constructor(text) {
-      this.text = text;
-      this.lang = '';
-      this.rate = 1;
-      this.pitch = 1;
-      this.voice = null;
-    }
+  const voiceKeys = [];
+  function FakeAudio(src) {
+    this.src = src;
+    this.volume = 1.0;
+    voiceKeys.push(src);
   }
+  FakeAudio.prototype.play = jest.fn(() => Promise.resolve());
   const speechSynthesis = {
     cancel: jest.fn(),
-    getVoices: jest.fn(() => [{ lang: 'zh-CN', name: 'Chinese' }]),
-    speak: jest.fn((utterance) => spoken.push(utterance)),
+    getVoices: jest.fn(() => []),
+    speak: jest.fn(),
   };
+  class SpeechSynthesisUtterance {}
   const api = createDeviceApi({
     mapped: ['scale', 'punish', 'lock'],
     params: {
@@ -149,9 +147,10 @@ async function loadGame({ params, propertyValues } = {}) {
     propertyValues,
   });
   const context = {
-    window: { speechSynthesis, SpeechSynthesisUtterance },
+    Audio: FakeAudio,
+    window: { speechSynthesis, SpeechSynthesisUtterance, Audio: FakeAudio },
     document,
-    spoken,
+    voiceKeys,
     DeviceAPI: api.DeviceAPI,
     Date,
     Math,
@@ -168,7 +167,7 @@ async function loadGame({ params, propertyValues } = {}) {
   return {
     game: context.window.__game,
     document,
-    spoken,
+    voiceKeys,
     ...api,
     shockStarts() {
       return api.invocations.filter((item) =>
@@ -261,19 +260,22 @@ describe('drink-pee-unlock game loop', () => {
     expect(env.game.rt.state).toBe('Unlocked');
   });
 
-  it('announces start, punishment, and end states in Chinese', async () => {
+  it('announces start, punishment, and end states with voice audio files', async () => {
     const env = await loadGame();
-    expect(env.spoken.map((utterance) => utterance.text)).toEqual(['玩法开始']);
-    expect(env.spoken[0].lang).toBe('zh-CN');
+    // 游戏开始时播放对应模式的语音
+    expect(env.voiceKeys[0]).toMatch(/start_drink\.mp3$/);
 
     env.emitProperty('scale', 'weight', 1001);
     jest.advanceTimersByTime(2000);
     await flushPromises();
-    expect(env.spoken.at(-1).text).toContain('惩罚开始');
-    expect(env.spoken.at(-1).text).toContain('喝水惩罚');
+    // 惩罚时播放对应惩罚语音
+    const punishKey = env.voiceKeys.find((k) => k.includes('punish_drink_stall'));
+    expect(punishKey).toBeTruthy();
 
     env.game.end({ reason: '手动结束' });
-    expect(env.spoken.at(-1).text).toBe('玩法结束。手动结束');
+    // 手动结束时播放结束语音
+    const endKey = env.voiceKeys[env.voiceKeys.length - 1];
+    expect(endKey).toMatch(/end_manual\.mp3$/);
   });
 
   it('restarts the stable weight countdown after punishment cooldown', async () => {

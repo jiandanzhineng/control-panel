@@ -146,6 +146,148 @@
   function stopShockDev() { if (DeviceAPI.device(PUNISH).isMapped()) DeviceAPI.device(PUNISH).invoke('shock', 'stop', {}); }
   function setLockOpen(open) { if (DeviceAPI.device(LOCK).isMapped()) DeviceAPI.device(LOCK).invoke('lock', 'setOpen', { open: !!open }); }
 
+  // 语音播放器后续会迁移到 GameCommon；本轮在游戏内保持相同的调度契约。
+  function createVoicePlayer(basePath) {
+    var enabled = true;
+    var current = null;
+    var queuedState = null;
+    var pendingGesture = null;
+    var gestureHandler = null;
+
+    function isValid(event) {
+      if (!event || typeof event.isValid !== 'function') return true;
+      try { return !!event.isValid(); } catch (_) { return false; }
+    }
+    function logFailure(event, error) {
+      var detail = error && error.message ? ': ' + error.message : '';
+      try { DeviceAPI.log('warn', '语音播放失败 ' + event.key + ' (' + event.url + ')' + detail); } catch (_) {}
+    }
+    function unbindGesture() {
+      if (!gestureHandler) return;
+      document.removeEventListener('pointerdown', gestureHandler);
+      document.removeEventListener('keydown', gestureHandler);
+      gestureHandler = null;
+    }
+    function stopEntry(entry) {
+      if (!entry) return;
+      entry.audio.removeEventListener('ended', entry.onEnded);
+      entry.audio.removeEventListener('error', entry.onError);
+      try { entry.audio.pause(); entry.audio.currentTime = 0; } catch (_) {}
+    }
+    function playQueuedState() {
+      var event = queuedState;
+      queuedState = null;
+      if (event && isValid(event)) startEvent(event);
+    }
+    function finishEntry(entry, failed) {
+      if (current !== entry) return;
+      entry.audio.removeEventListener('ended', entry.onEnded);
+      entry.audio.removeEventListener('error', entry.onError);
+      current = null;
+      if (failed) logFailure(entry.event);
+      playQueuedState();
+    }
+    function bindGesture() {
+      if (gestureHandler) return;
+      gestureHandler = function () {
+        var event = pendingGesture;
+        pendingGesture = null;
+        unbindGesture();
+        if (event && isValid(event)) startEvent(event);
+        else playQueuedState();
+      };
+      document.addEventListener('pointerdown', gestureHandler);
+      document.addEventListener('keydown', gestureHandler);
+    }
+    function deferUntilGesture(event, entry, error) {
+      if (current !== entry) return;
+      stopEntry(entry);
+      current = null;
+      pendingGesture = event;
+      logFailure(event, error);
+      bindGesture();
+    }
+    function startEvent(event) {
+      if (!enabled || !isValid(event)) return false;
+      try {
+        var audio = new Audio(event.url);
+        var entry = { audio: audio, event: event };
+        entry.onEnded = function () { finishEntry(entry, false); };
+        entry.onError = function () { finishEntry(entry, true); };
+        audio.volume = 1.0;
+        audio.addEventListener('ended', entry.onEnded);
+        audio.addEventListener('error', entry.onError);
+        current = entry;
+        var result = audio.play();
+        if (result && typeof result.catch === 'function') {
+          result.catch(function (error) { deferUntilGesture(event, entry, error); });
+        }
+        return true;
+      } catch (error) {
+        logFailure(event, error);
+        return false;
+      }
+    }
+    function play(key, options) {
+      if (!enabled || !key) return false;
+      var opts = options || {};
+      var event = {
+        key: key,
+        kind: opts.kind || 'info',
+        isValid: opts.isValid,
+        url: basePath + '/' + key + '.mp3',
+      };
+      if (pendingGesture && !isValid(pendingGesture)) {
+        pendingGesture = null;
+        unbindGesture();
+      }
+      if (pendingGesture) {
+        if (event.kind === 'critical') {
+          pendingGesture = null;
+          queuedState = null;
+          unbindGesture();
+        } else {
+          if (event.kind === 'state') queuedState = event;
+          return false;
+        }
+      }
+      if (!current) return startEvent(event);
+      if (current.event.key === key) return false;
+      if (event.kind === 'critical') {
+        queuedState = null;
+        stopEntry(current);
+        current = null;
+        return startEvent(event);
+      }
+      if (event.kind === 'state') {
+        if (current.event.kind === 'intro' || current.event.kind === 'critical') {
+          queuedState = event;
+          return false;
+        }
+        stopEntry(current);
+        current = null;
+        return startEvent(event);
+      }
+      return false;
+    }
+    function stop() {
+      if (current) stopEntry(current);
+      current = null;
+      queuedState = null;
+      pendingGesture = null;
+      unbindGesture();
+    }
+    function setEnabled(nextEnabled) {
+      enabled = !!nextEnabled;
+      if (!enabled) stop();
+    }
+    return { play: play, stop: stop, setEnabled: setEnabled };
+  }
+  var voicePlayer = createVoicePlayer('voices');
+  function playVoice(key, kind, isValid) {
+    return voicePlayer.play(key, { kind: kind, isValid: isValid });
+  }
+
   function normalizeThresholds() {
     const crit = Number(cfg.criticalPressure) || 20;
     cfg.midPressure = Number((clamp(Number(cfg.midPressure) || 0, chartXMin, crit - 0.1)).toFixed(1));
@@ -228,7 +370,11 @@
     const inTakeoff = takeoffMs > 0 && remainMs <= takeoffMs;
     if (inTakeoff) {
       if (rt.state !== S.SUB_CALM) rt.state = S.SUB_CALM;
-      if (!rt.endCalmLocked) { rt.endCalmLocked = true; view.statusText = '进入结束前起飞期'; }
+      if (!rt.endCalmLocked) {
+        rt.endCalmLocked = true;
+        view.statusText = '进入结束前起飞期';
+        playVoice('edging_takeoff', 'state', function () { return rt.running && rt.endCalmLocked; });
+      }
     } else if (rt.endCalmLocked) rt.endCalmLocked = false;
 
     switch (rt.state) {
@@ -244,6 +390,7 @@
           rt.state = S.MIDDLE;
           view.statusText = '进入中期刺激';
           addLog('info', `进入中期，基准强度 ${rt.recordedMidIntensity.toFixed(1)}`);
+          playVoice('edging_middle', 'state', function () { return rt.running && rt.state === S.MIDDLE; });
         }
         break;
       }
@@ -255,26 +402,42 @@
         if (pressure >= cfg.criticalPressure) {
           rt.state = S.EDGING; triggerShock(false); rt.edgingCount++;
           view.edgingCount = rt.edgingCount; view.statusText = '过载！边缘寸止中…';
+          playVoice('edging_peak', 'critical', function () { return rt.running && rt.state === S.EDGING; });
         } else if (pressure < cfg.midPressure) {
           rt.unRandomIntensity = rt.currentIntensity; rt.state = S.SUB_CALM;
           view.statusText = '压力回落，进入平静期';
+          playVoice('edging_calm', 'state', function () { return rt.running && rt.state === S.SUB_CALM; });
         }
         break;
       }
       case S.EDGING: {
         rt.targetIntensity = 0;
-        if (pressure < cfg.criticalPressure) { rt.state = S.DELAY; rt.stateTimer = now; view.statusText = `冷却延迟(${cfg.lowPressureDelay}s)…`; }
+        if (pressure < cfg.criticalPressure) {
+          rt.state = S.DELAY;
+          rt.stateTimer = now;
+          view.statusText = `冷却延迟(${cfg.lowPressureDelay}s)…`;
+          playVoice('edging_delay', 'state', function () { return rt.running && rt.state === S.DELAY; });
+        }
         break;
       }
       case S.DELAY: {
         rt.targetIntensity = 0;
-        if (pressure >= cfg.criticalPressure) { rt.state = S.EDGING; view.statusText = '过载！边缘寸止中…'; }
+        if (pressure >= cfg.criticalPressure) {
+          rt.state = S.EDGING;
+          view.statusText = '过载！边缘寸止中…';
+          playVoice('edging_peak', 'critical', function () { return rt.running && rt.state === S.EDGING; });
+        }
         else if (now - rt.stateTimer > cfg.lowPressureDelay * 1000) {
-          if (pressure > cfg.midPressure) { rt.state = S.MIDDLE; view.statusText = '延迟结束，高压保持'; }
+          if (pressure > cfg.midPressure) {
+            rt.state = S.MIDDLE;
+            view.statusText = '延迟结束，高压保持';
+            playVoice('edging_middle', 'state', function () { return rt.running && rt.state === S.MIDDLE; });
+          }
           else {
             const denom = Math.max(1e-6, cfg.criticalPressure - cfg.sensitivity);
             rt.unRandomIntensity = Math.max(0, cfg.maxMotorIntensity * (cfg.criticalPressure - pressure) / denom);
             rt.state = S.SUB_CALM; view.statusText = '延迟结束，重新积累';
+            playVoice('edging_calm', 'state', function () { return rt.running && rt.state === S.SUB_CALM; });
           }
         }
         break;
@@ -311,6 +474,7 @@
   }
   function start() {
     const now = Date.now();
+    voicePlayer.stop();
     rt.running = true; rt.paused = false; rt.startTime = now;
     rt.endTime = now + cfg.duration * 60 * 1000;
     rt.state = S.INITIAL_CALM; rt.stateTimer = 0; rt.recordedMidIntensity = 0; rt.endCalmLocked = false;
@@ -334,6 +498,7 @@
       view.currentPressure = p; view.averagePressure = Number(rt.averagePressure.toFixed(1));
     });
     addLog('info', '气压寸止3阶段已启动');
+    playVoice('edging_start', 'intro', function () { return rt.running; });
     render();
   }
   function end() {
@@ -345,6 +510,7 @@
     if (rt.shockTimer) { clearTimeout(rt.shockTimer); rt.shockTimer = null; }
     view.statusText = '已结束';
     addLog('info', `结束（边缘 ${rt.edgingCount}，电击 ${rt.shockCount}）`);
+    playVoice('edging_end', 'critical', function () { return !rt.running; });
     render();
   }
 
@@ -394,6 +560,7 @@
     try { await DeviceAPI.ready; } catch (_) {}
     const p = DeviceAPI.params || {};
     Object.keys(cfg).forEach((k) => { if (p[k] !== undefined && p[k] !== null) cfg[k] = p[k]; });
+    voicePlayer.setEnabled(p.voiceEnabled === undefined ? true : !!p.voiceEnabled);
     addLog('info', '设备通道就绪，开始游戏');
     start();
     if (loopTimer) clearInterval(loopTimer);

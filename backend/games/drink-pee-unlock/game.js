@@ -62,20 +62,197 @@
     try { DeviceAPI.log(level, message); } catch (_) {}
   }
 
-  function speak(message) {
-    const synth = window.speechSynthesis;
-    const Utterance = window.SpeechSynthesisUtterance;
-    if (!synth || typeof Utterance !== 'function') return;
-    try {
-      const utterance = new Utterance(String(message || ''));
-      utterance.lang = 'zh-CN';
-      utterance.rate = 1;
-      utterance.pitch = 1;
-      const voice = synth.getVoices().find((item) => /^zh(?:-|_)/i.test(item.lang || ''));
-      if (voice) utterance.voice = voice;
-      synth.cancel();
-      synth.speak(utterance);
-    } catch (_) {}
+  // 语音播放器后续会迁移到 GameCommon；本轮在游戏内保持相同的调度契约。
+  function createVoicePlayer(basePath) {
+    var enabled = true;
+    var current = null;
+    var queuedState = null;
+    var pendingGesture = null;
+    var gestureHandler = null;
+
+    function isValid(event) {
+      if (!event || typeof event.isValid !== 'function') return true;
+      try { return !!event.isValid(); } catch (_) { return false; }
+    }
+    function logFailure(event, error) {
+      var detail = error && error.message ? ': ' + error.message : '';
+      try { DeviceAPI.log('warn', '语音播放失败 ' + event.key + ' (' + event.url + ')' + detail); } catch (_) {}
+    }
+    function unbindGesture() {
+      if (!gestureHandler) return;
+      document.removeEventListener('pointerdown', gestureHandler);
+      document.removeEventListener('keydown', gestureHandler);
+      gestureHandler = null;
+    }
+    function stopEntry(entry) {
+      if (!entry) return;
+      entry.audio.removeEventListener('ended', entry.onEnded);
+      entry.audio.removeEventListener('error', entry.onError);
+      try { entry.audio.pause(); entry.audio.currentTime = 0; } catch (_) {}
+    }
+    function playQueuedState() {
+      var event = queuedState;
+      queuedState = null;
+      if (event && isValid(event)) startEvent(event);
+    }
+    function finishEntry(entry, failed) {
+      if (current !== entry) return;
+      entry.audio.removeEventListener('ended', entry.onEnded);
+      entry.audio.removeEventListener('error', entry.onError);
+      current = null;
+      if (failed) logFailure(entry.event);
+      playQueuedState();
+    }
+    function bindGesture() {
+      if (gestureHandler) return;
+      gestureHandler = function () {
+        var event = pendingGesture;
+        pendingGesture = null;
+        unbindGesture();
+        if (event && isValid(event)) startEvent(event);
+        else playQueuedState();
+      };
+      document.addEventListener('pointerdown', gestureHandler);
+      document.addEventListener('keydown', gestureHandler);
+    }
+    function deferUntilGesture(event, entry, error) {
+      if (current !== entry) return;
+      stopEntry(entry);
+      current = null;
+      pendingGesture = event;
+      logFailure(event, error);
+      bindGesture();
+    }
+    function startEvent(event) {
+      if (!enabled || !isValid(event)) return false;
+      try {
+        var audio = new Audio(event.url);
+        var entry = { audio: audio, event: event };
+        entry.onEnded = function () { finishEntry(entry, false); };
+        entry.onError = function () { finishEntry(entry, true); };
+        audio.volume = 1.0;
+        audio.addEventListener('ended', entry.onEnded);
+        audio.addEventListener('error', entry.onError);
+        current = entry;
+        var result = audio.play();
+        if (result && typeof result.catch === 'function') {
+          result.catch(function (error) { deferUntilGesture(event, entry, error); });
+        }
+        return true;
+      } catch (error) {
+        logFailure(event, error);
+        return false;
+      }
+    }
+    function play(key, options) {
+      if (!enabled || !key) return false;
+      var opts = options || {};
+      var event = {
+        key: key,
+        kind: opts.kind || 'info',
+        isValid: opts.isValid,
+        url: basePath + '/' + key + '.mp3',
+      };
+      if (pendingGesture && !isValid(pendingGesture)) {
+        pendingGesture = null;
+        unbindGesture();
+      }
+      if (pendingGesture) {
+        if (event.kind === 'critical') {
+          pendingGesture = null;
+          queuedState = null;
+          unbindGesture();
+        } else {
+          if (event.kind === 'state') queuedState = event;
+          return false;
+        }
+      }
+      if (!current) return startEvent(event);
+      if (current.event.key === key) return false;
+      if (event.kind === 'critical') {
+        queuedState = null;
+        stopEntry(current);
+        current = null;
+        return startEvent(event);
+      }
+      if (event.kind === 'state') {
+        if (current.event.kind === 'intro' || current.event.kind === 'critical') {
+          queuedState = event;
+          return false;
+        }
+        stopEntry(current);
+        current = null;
+        return startEvent(event);
+      }
+      return false;
+    }
+    function stop() {
+      if (current) stopEntry(current);
+      current = null;
+      queuedState = null;
+      pendingGesture = null;
+      unbindGesture();
+    }
+    function setEnabled(nextEnabled) {
+      enabled = !!nextEnabled;
+      if (!enabled) stop();
+    }
+    return { play: play, stop: stop, setEnabled: setEnabled };
+  }
+  var voicePlayer = createVoicePlayer('voices');
+  function playVoice(key, kind, isValid) {
+    return voicePlayer.play(key, { kind: kind, isValid: isValid });
+  }
+  // 根据惩罚原因映射语音 key
+  function getPunishVoiceKey() {
+    var r = rt.lastPunishReason;
+    if (r.indexOf('气压') >= 0) return 'punish_pressure';
+    if (r.indexOf('未保持双脚踮脚') >= 0) return 'punish_tiptoe_qtz';
+    if (r.indexOf('喝水') >= 0) return 'punish_drink_stall';
+    if (r.indexOf('排泄') >= 0) return 'punish_pee_stall';
+    return null;
+  }
+  // 根据结束原因映射语音 key
+  function getEndVoiceKey(reason) {
+    if (reason && reason.indexOf('达成目标') >= 0) return cfg.mode === 'pee' ? 'unlock_pee' : 'unlock_drink';
+    if (reason && reason.indexOf('超时') >= 0) return 'unlock_timeout';
+    return 'end_manual';
+  }
+  // 里程碑语音播报追踪（仅 Running 状态播报，避免与惩罚/冷却语音叠加及结束后误播）
+  var _lastMilestone = 0;
+  function checkMilestoneVoice() {
+    if (rt.state !== 'Running') return;
+    var pct = cfg.targetWeight > 0 ? rt.progress / cfg.targetWeight : 0;
+    var milestones = [0.25, 0.50, 0.75, 0.90];
+    for (var i = 0; i < milestones.length; i++) {
+      if (pct >= milestones[i] && _lastMilestone < milestones[i]) {
+        _lastMilestone = milestones[i];
+        var key = 'progress_' + String(Math.round(milestones[i] * 100));
+        playVoice(key, 'info', function () { return rt.running && rt.state === 'Running'; });
+        return;
+      }
+    }
+  }
+  // 随机鼓励与提醒
+  var _lastEncourageTs = 0;
+  var _lastRemindTs = 0;
+  function maybeEncourageOrRemind(now) {
+    // 每 60~120 秒随机一句鼓励
+    if (!_lastEncourageTs) _lastEncourageTs = now;
+    if (now - _lastEncourageTs > 60000 + Math.random() * 60000) {
+      _lastEncourageTs = now;
+      playVoice(cfg.mode === 'pee' ? 'encourage_pee' : 'encourage_drink', 'info', function () { return rt.running && rt.state === 'Running'; });
+      return;
+    }
+    // 每 45~90 秒随机一句姿态提醒（只提醒实际接了设备、正在被监测的姿态）
+    if (!_lastRemindTs) _lastRemindTs = now;
+    if (now - _lastRemindTs > 45000 + Math.random() * 45000) {
+      _lastRemindTs = now;
+      var remindKeys = [];
+      if (rt.qtzMapped) remindKeys.push('remind_tiptoe');
+      if (rt.qiyaMapped) remindKeys.push('remind_sphincter');
+      if (remindKeys.length) playVoice(remindKeys[Math.floor(Math.random() * remindKeys.length)], 'info', function () { return rt.running && rt.state === 'Running'; });
+    }
   }
 
   function setStrength(dev, v) { if (DeviceAPI.device(dev).isMapped()) DeviceAPI.device(dev).invoke('strength', 'set', { value: Math.round(v) }); }
@@ -197,7 +374,7 @@
     } else {
       addLog('warn', `触发惩罚: 原因=${rt.lastPunishReason}（未映射电击设备，已跳过电击）`);
     }
-    speak(`惩罚开始。${rt.lastPunishReason}`);
+    playVoice(getPunishVoiceKey(), 'critical', function () { return rt.running && rt.state === 'Punish'; });
     syncView(); render();
     if (rt.shockTimer) clearTimeout(rt.shockTimer);
     rt.shockTimer = setTimeout(() => { stopShockDev(); enterCooldown(); }, shockDurationMs);
@@ -206,6 +383,7 @@
     rt.state = 'Cooldown';
     rt.cooldownUntil = Date.now() + Math.max(1, Number(cfg.punishCooldownSec) || 0) * 1000;
     addLog('info', `进入冷却 (${Number(cfg.punishCooldownSec)}s)`);
+    playVoice('cooldown_start', 'state', function () { return rt.running && rt.state === 'Cooldown'; });
     syncView(); render();
   }
   function enterUnlocked(reason) {
@@ -251,6 +429,7 @@
       }
     }
     if (rt.progress >= Math.max(1, Number(cfg.targetWeight) || 0)) { enterUnlocked('达成目标'); end({ reason: '达成目标' }); return; }
+    checkMilestoneVoice();
     syncView(); render();
   }
   function loop() {
@@ -264,6 +443,7 @@
         rt.state = 'Running';
         rt.lastPunishReason = '无';
         addLog('info', '冷却结束，恢复运行');
+        playVoice('cooldown_end', 'state', function () { return rt.running && rt.state === 'Running'; });
       }
       syncView(); render(); return;
     }
@@ -277,12 +457,14 @@
         return;
       }
       if (!rt.vibeActive && Math.random() < clamp(Number(cfg.vibeStartProb) || 0, 0, 1)) startVibe();
+      maybeEncourageOrRemind(now);
       syncView(); render(); return;
     }
     if (rt.state === 'Unlocked') { end({ reason: '已解锁' }); return; }
   }
   function start() {
     const now = Date.now();
+    voicePlayer.stop();
     rt.running = true; rt.state = 'Running'; rt.startTs = now;
     rt.endTs = now + Math.max(1, Number(cfg.durationSec) || 0) * 1000;
     rt.cooldownUntil = 0; rt.forceStop = false;
@@ -294,6 +476,10 @@
     rt.stableSinceTs = 0; rt.stableAnchorWeight = null;
     rt.progress = 0; rt.lastPunishReason = '无'; rt.shockCount = 0;
     rt.shockActive = false; rt.vibeActive = false;
+    // 重置语音追踪状态
+    _lastMilestone = 0;
+    _lastEncourageTs = 0;
+    _lastRemindTs = 0;
     const scaleDevice = DeviceAPI.device(SCALE);
     scaleDevice.onProperty('weight', (nv) => { const w = Number(nv); if (!Number.isNaN(w)) onWeightSample(w, Date.now()); });
     if (scaleDevice.isMapped()) {
@@ -317,7 +503,7 @@
       DeviceAPI.device(QTZ).onProperty('button1', (nv) => { rt.button1 = nv; });
     }
     addLog('info', `游戏启动 mode=${cfg.mode} target=${cfg.targetWeight}g`);
-    speak('玩法开始');
+    playVoice(cfg.mode === 'pee' ? 'start_pee' : 'start_drink', 'intro', function () { return rt.running; });
     syncView(); render();
   }
   function end(extra) {
@@ -329,7 +515,7 @@
     if (rt.state !== 'Unlocked') rt.state = 'End';
     const reason = extra && extra.reason || '';
     addLog('info', `结束: ${reason}（进度 ${round1(rt.progress)}g）`);
-    speak(reason ? `玩法结束。${reason}` : '玩法结束');
+    playVoice(getEndVoiceKey(reason), 'critical', function () { return !rt.running; });
     syncView(); render();
   }
 
@@ -339,6 +525,7 @@
     try { await DeviceAPI.ready; } catch (_) {}
     const p = DeviceAPI.params || {};
     Object.keys(cfg).forEach((k) => { if (p[k] !== undefined && p[k] !== null) cfg[k] = p[k]; });
+    voicePlayer.setEnabled(p.voiceEnabled === undefined ? true : !!p.voiceEnabled);
     addLog('info', '设备通道就绪，开始游戏');
     start();
     if (loopTimer) clearInterval(loopTimer);
