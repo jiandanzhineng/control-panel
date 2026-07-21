@@ -199,13 +199,18 @@
       document.addEventListener('pointerdown', gestureHandler);
       document.addEventListener('keydown', gestureHandler);
     }
-    function deferUntilGesture(event, entry, error) {
+    function handlePlayRejection(event, entry, error) {
       if (current !== entry) return;
       stopEntry(entry);
       current = null;
-      pendingGesture = event;
       logFailure(event, error);
-      bindGesture();
+      if (error && error.name === 'NotAllowedError') {
+        pendingGesture = event.kind !== 'critical' && queuedState && isValid(queuedState) ? queuedState : event;
+        queuedState = null;
+        bindGesture();
+      } else {
+        playQueuedState();
+      }
     }
     function startEvent(event) {
       if (!enabled || !isValid(event)) return false;
@@ -220,11 +225,16 @@
         current = entry;
         var result = audio.play();
         if (result && typeof result.catch === 'function') {
-          result.catch(function (error) { deferUntilGesture(event, entry, error); });
+          result.catch(function (error) { handlePlayRejection(event, entry, error); });
         }
         return true;
       } catch (error) {
+        if (entry && current === entry) {
+          stopEntry(entry);
+          current = null;
+        }
         logFailure(event, error);
+        playQueuedState();
         return false;
       }
     }
@@ -247,7 +257,10 @@
           queuedState = null;
           unbindGesture();
         } else {
-          if (event.kind === 'state') queuedState = event;
+          if (event.kind === 'state' && pendingGesture.kind !== 'critical') {
+            pendingGesture = event;
+            queuedState = null;
+          }
           return false;
         }
       }

@@ -14,7 +14,6 @@ import json
 import os
 import sys
 import time
-import requests
 
 # ============================================================
 # API 配置
@@ -44,6 +43,13 @@ VOICE_CONFIG = {
     "speed": 0.95,                     # 稍慢，稳重
     "vol": 1.0,
     "pitch": -2,                       # 略低，增加威严感
+}
+
+SHORT_PUNISHMENT_KEYS = {
+    "punish_pressure",
+    "punish_tiptoe_qtz",
+    "punish_drink_stall",
+    "punish_pee_stall",
 }
 
 AUDIO_CONFIG = {
@@ -76,10 +82,10 @@ DRINK_PEE_LINES = [
     ("remind_sphincter","注意提肛，收紧一点，不要放松。"),
 
     # === 四、惩罚执行 ===
-    ("punish_pressure", "气压不足，惩罚。"),
-    ("punish_tiptoe_qtz","脚跟落地，惩罚。"),
-    ("punish_drink_stall","喝水停顿，惩罚。"),
-    ("punish_pee_stall","重量停滞，惩罚。"),
+    ("punish_pressure", "气压不足受罚。"),
+    ("punish_tiptoe_qtz","脚跟落地受罚。"),
+    ("punish_drink_stall","喝水停顿受罚。"),
+    ("punish_pee_stall","重量停滞受罚。"),
 
     # === 五、冷却期 ===
     ("cooldown_start",  "惩罚结束，给你一点时间缓缓。调整好状态，马上继续。"),
@@ -108,13 +114,19 @@ EDGING_LINES = [
 
 def generate_voice(name, text):
     """调用 speech-2.8-hd API 生成单条语音"""
+    import requests
+
     if not API_KEY:
         raise RuntimeError("未找到 MINIMAX_API_KEY，请在 tools/cosyvoice/.env 或环境变量中配置")
+    voice_setting = dict(VOICE_CONFIG)
+    if name in SHORT_PUNISHMENT_KEYS:
+        voice_setting["speed"] = 1.3
+
     payload = {
         "model": "speech-2.8-hd",
         "text": text,
         "stream": False,
-        "voice_setting": VOICE_CONFIG,
+        "voice_setting": voice_setting,
         "audio_setting": AUDIO_CONFIG,
     }
 

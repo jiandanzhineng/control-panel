@@ -117,9 +117,13 @@ function createAudioClass(playOutcomes) {
       this.listeners = new Map();
       this.play = jest.fn(() => {
         const outcome = playOutcomes.shift();
-        return outcome === 'reject'
-          ? Promise.reject(new Error('autoplay blocked'))
-          : Promise.resolve();
+        if (outcome === 'throw') throw new Error('play failed synchronously');
+        if (outcome === 'reject' || outcome === 'media-reject') {
+          const error = new Error(outcome === 'reject' ? 'autoplay blocked' : 'media unsupported');
+          error.name = outcome === 'reject' ? 'NotAllowedError' : 'NotSupportedError';
+          return Promise.reject(error);
+        }
+        return Promise.resolve();
       });
       this.pause = jest.fn();
       instances.push(this);
@@ -263,6 +267,35 @@ describe('game voice playback lifecycle', () => {
     env.document.dispatch('pointerdown');
     await flushPromises();
     expect(voiceNames(env.audio)).toEqual(['start_drink.mp3', 'punish_drink_stall.mp3']);
+  });
+
+  it('replaces a rejected intro with the latest state before gesture retry', async () => {
+    const env = await loadGame('pressureV2', { playOutcomes: ['reject', 'resolve'] });
+    await flushPromises();
+    env.emitProperty('sensor', 'pressure', 19.5);
+
+    expect(voiceNames(env.audio)).toEqual(['edging_start.mp3']);
+    env.document.dispatch('pointerdown');
+    await flushPromises();
+    expect(voiceNames(env.audio)).toEqual(['edging_start.mp3', 'edging_middle.mp3']);
+  });
+
+  it('releases a synchronous play failure before the next state event', async () => {
+    const env = await loadGame('pressureV2', { playOutcomes: ['throw', 'resolve'] });
+    env.emitProperty('sensor', 'pressure', 19.5);
+
+    expect(env.game.rt.state).toBe('MIDDLE');
+    expect(voiceNames(env.audio)).toEqual(['edging_start.mp3', 'edging_middle.mp3']);
+  });
+
+  it('does not treat a media play rejection as an autoplay restriction', async () => {
+    const env = await loadGame('pressureV2', { playOutcomes: ['media-reject', 'resolve'] });
+    await flushPromises();
+    env.emitProperty('sensor', 'pressure', 19.5);
+
+    expect(voiceNames(env.audio)).toEqual(['edging_start.mp3', 'edging_middle.mp3']);
+    env.document.dispatch('pointerdown');
+    expect(voiceNames(env.audio)).toEqual(['edging_start.mp3', 'edging_middle.mp3']);
   });
 
   it.each(['drink', 'pressureV1', 'pressureV2'])('creates no Audio when voice is disabled in %s', async (gameName) => {
