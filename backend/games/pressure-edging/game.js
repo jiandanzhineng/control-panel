@@ -237,7 +237,8 @@
     } catch (e) { addLog('warn', '初始化设备失败: ' + (e && e.message || e)); }
 
     // 监听压力
-    DeviceAPI.device(SENSOR).onProperty('pressure', (newVal) => {
+    const sensorDevice = DeviceAPI.device(SENSOR);
+    const applyPressure = (newVal) => {
       const p = Number(newVal) || 0;
       rt.currentPressure = p;
       rt.maxPressure = Math.max(rt.maxPressure, p);
@@ -248,7 +249,13 @@
       rt.averagePressure = recent.length ? sum / recent.length : p;
       view.currentPressure = p;
       view.averagePressure = rt.averagePressure;
-    });
+    };
+    sensorDevice.onValue('sphincterPressure', applyPressure);
+    sensorDevice.readValue('sphincterPressure').then((values) => {
+      if (!rt.running) return;
+      const current = Array.isArray(values) ? values.find((value) => value !== null && value !== undefined) : values;
+      if (current !== null && current !== undefined) applyPressure(current);
+    }).catch((error) => addLog('warn', `读取当前气压失败: ${error && error.message || error}`));
     addLog('info', '气压寸止玩法已启动');
     render();
   }

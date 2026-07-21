@@ -13,7 +13,7 @@
   "devices": [
     { "id": "scale", "capabilities": ["weight", "reporting"], "required": true },
     { "id": "sensor", "capabilities": ["sphincterPressure", "reporting"], "required": false },
-    { "id": "qtz", "capabilities": ["buttonInput"], "required": false },
+    { "id": "qtz", "capabilities": ["tiptoePressure"], "required": false },
     { "id": "punish", "capabilities": ["shock"], "required": false },
     { "id": "vibe", "capabilities": ["strength"], "required": false },
     { "id": "lock", "capabilities": ["lock"], "required": false }
@@ -28,6 +28,7 @@
     { "key": "shockIntensity", "type": "number", "default": 24, "label": "电击强度(V)" },
     { "key": "shockDuration", "type": "number", "default": 2, "label": "电击持续(秒)" },
     { "key": "pressureThreshold", "type": "number", "default": 20, "label": "气压阈值(kPa)" },
+    { "key": "tiptoePressureThreshold", "type": "number", "default": 100, "label": "踮脚压力阈值" },
     { "key": "vibeStartProb", "type": "number", "default": 0.05, "label": "振动启动概率(每秒)" },
     { "key": "vibeIntensity", "type": "number", "default": 255, "label": "振动强度(0-255)" },
     { "key": "vibeDuration", "type": "number", "default": 3, "label": "振动时长(秒)" }

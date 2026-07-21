@@ -70,7 +70,23 @@ const registeredTypes = [
   new BaseDeviceType({
     type: 'QTZ',
     name: '测距及脚踏传感器',
-    capabilities: ['distance', 'buttonInput', 'reporting'],
+    capabilities: {
+      distance: 'distance',
+      buttonInput: 'buttonInput',
+      reporting: 'reporting',
+      tiptoePressure: {
+        value: {
+          source: {
+            op: 'anyEquals',
+            keys: ['button0', 'button1'],
+            equals: 1,
+            on: 200,
+            off: 0,
+          },
+          watch: ['button0', 'button1'],
+        },
+      },
+    },
     close: (ctx) => ctx.writeProps({ report_delay_ms: 10000 }),
   }),
 

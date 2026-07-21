@@ -11,11 +11,12 @@
   const cfg = {
     mode: 'drink', durationSec: 1800, targetWeight: 500, changeThreshold: 1,
     stableWindowSec: 30, punishCooldownSec: 10, shockIntensity: 24, shockDuration: 2,
-    pressureThreshold: 20, vibeStartProb: 0.05, vibeIntensity: 255, vibeDuration: 3,
+    pressureThreshold: 20, tiptoePressureThreshold: 100,
+    vibeStartProb: 0.05, vibeIntensity: 255, vibeDuration: 3,
   };
   const rt = {
     running: false, state: 'End', startTs: 0, endTs: 0, cooldownUntil: 0, forceStop: false,
-    pressure: 0, pressureMin: null, pressureMax: null, button0: 0, button1: 0,
+    pressure: 0, pressureMin: null, pressureMax: null, tiptoePressure: 0,
     qiyaMapped: false, qtzMapped: false,
     weight: null, weightTs: 0, weightHistory: [], weightMin: null, weightMax: null, initialWeight: null,
     stableSinceTs: 0, stableAnchorWeight: null,
@@ -90,13 +91,10 @@
     if (rt.punishMapped) DeviceAPI.device(PUNISH).invoke('shock', 'stop', {});
   }
   function setLockOpen(open) { if (DeviceAPI.device(LOCK).isMapped()) DeviceAPI.device(LOCK).invoke('lock', 'setOpen', { open: !!open }); }
-  function isTruthy(v) {
-    if (v === true || v === 1) return true;
-    if (v === false || v === 0 || v === null || v === undefined) return false;
-    const s = String(v).trim().toLowerCase();
-    return s === '1' || s === 'true' || s === 'on' || s === 'pressed';
+  function tiptoeOk() {
+    if (!rt.qtzMapped) return true;
+    return Number(rt.tiptoePressure) <= (Number(cfg.tiptoePressureThreshold) || 0);
   }
-  function tiptoeOk() { if (!rt.qtzMapped) return true; return isTruthy(rt.button0) && isTruthy(rt.button1); }
   function pressureOk() { if (!rt.qiyaMapped) return true; return Number(rt.pressure) >= (Number(cfg.pressureThreshold) || 0); }
   function remainingSec(now) { return Math.max(0, Math.ceil((rt.endTs - now) / 1000)); }
   function punishCountdownSec(now) {
@@ -286,7 +284,7 @@
     rt.running = true; rt.state = 'Running'; rt.startTs = now;
     rt.endTs = now + Math.max(1, Number(cfg.durationSec) || 0) * 1000;
     rt.cooldownUntil = 0; rt.forceStop = false;
-    rt.pressureMin = null; rt.pressureMax = null; rt.button0 = 0; rt.button1 = 0;
+    rt.pressureMin = null; rt.pressureMax = null; rt.tiptoePressure = 0;
     rt.qiyaMapped = DeviceAPI.device(SENSOR).isMapped();
     rt.qtzMapped = DeviceAPI.device(QTZ).isMapped();
     rt.punishMapped = DeviceAPI.device(PUNISH).isMapped();
@@ -295,9 +293,9 @@
     rt.progress = 0; rt.lastPunishReason = '无'; rt.shockCount = 0;
     rt.shockActive = false; rt.vibeActive = false;
     const scaleDevice = DeviceAPI.device(SCALE);
-    scaleDevice.onProperty('weight', (nv) => { const w = Number(nv); if (!Number.isNaN(w)) onWeightSample(w, Date.now()); });
+    scaleDevice.onValue('weight', (nv) => { const w = Number(nv); if (!Number.isNaN(w)) onWeightSample(w, Date.now()); });
     if (scaleDevice.isMapped()) {
-      scaleDevice.read('weight').then((values) => {
+      scaleDevice.readValue('weight').then((values) => {
         if (!rt.running || rt.weightTs) return;
         const current = Array.isArray(values) ? values.find((value) => value !== null && value !== undefined) : values;
         const weight = Number(current);
@@ -308,13 +306,33 @@
       if (scaleDevice.isMapped()) scaleDevice.invoke('reporting', 'setReportDelay', { ms: 1000 });
       setLockOpen(false); stopShockDev(); setStrength(VIBE, 0);
     } catch (_) {}
-    if (rt.qiyaMapped) DeviceAPI.device(SENSOR).onProperty('pressure', (nv) => {
-      const p = Number(nv); if (Number.isNaN(p)) return;
-      rt.pressure = p; rt.pressureMin = rt.pressureMin === null ? p : Math.min(rt.pressureMin, p); rt.pressureMax = rt.pressureMax === null ? p : Math.max(rt.pressureMax, p);
-    });
+    if (rt.qiyaMapped) {
+      const sensorDevice = DeviceAPI.device(SENSOR);
+      const applyPressure = (nv) => {
+        const p = Number(nv); if (Number.isNaN(p)) return;
+        rt.pressure = p; rt.pressureMin = rt.pressureMin === null ? p : Math.min(rt.pressureMin, p); rt.pressureMax = rt.pressureMax === null ? p : Math.max(rt.pressureMax, p);
+        view.pressure = round1(p);
+      };
+      sensorDevice.onValue('sphincterPressure', applyPressure);
+      sensorDevice.readValue('sphincterPressure').then((values) => {
+        if (!rt.running) return;
+        const current = Array.isArray(values) ? values.find((value) => value !== null && value !== undefined) : values;
+        if (current !== null && current !== undefined) applyPressure(current);
+      }).catch((error) => addLog('warn', `读取当前气压失败: ${error && error.message || error}`));
+    }
     if (rt.qtzMapped) {
-      DeviceAPI.device(QTZ).onProperty('button0', (nv) => { rt.button0 = nv; });
-      DeviceAPI.device(QTZ).onProperty('button1', (nv) => { rt.button1 = nv; });
+      const tiptoeDevice = DeviceAPI.device(QTZ);
+      const applyTiptoePressure = (nv) => {
+        const p = Number(nv); if (Number.isNaN(p)) return;
+        rt.tiptoePressure = p;
+        view.tiptoeOk = tiptoeOk();
+      };
+      tiptoeDevice.onValue('tiptoePressure', applyTiptoePressure);
+      tiptoeDevice.readValue('tiptoePressure').then((values) => {
+        if (!rt.running) return;
+        const current = Array.isArray(values) ? values.find((value) => value !== null && value !== undefined) : values;
+        if (current !== null && current !== undefined) applyTiptoePressure(current);
+      }).catch((error) => addLog('warn', `读取当前踮脚压力失败: ${error && error.message || error}`));
     }
     addLog('info', `游戏启动 mode=${cfg.mode} target=${cfg.targetWeight}g`);
     speak('玩法开始');

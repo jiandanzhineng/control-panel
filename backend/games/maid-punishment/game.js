@@ -187,8 +187,14 @@
     rt.hasPressure = DeviceAPI.device(TIPTOE).isMapped();
     view.hasPressure = rt.hasPressure;
     if (rt.hasPressure) {
-      try { DeviceAPI.device(TIPTOE).invoke('reporting', 'setReportDelay', { ms: 100 }); } catch (_) {}
-      DeviceAPI.device(TIPTOE).onProperty('pressure1', (nv) => { evalPressure(Number(nv) || 0); });
+      const tiptoeDevice = DeviceAPI.device(TIPTOE);
+      try { tiptoeDevice.invoke('reporting', 'setReportDelay', { ms: 100 }); } catch (_) {}
+      tiptoeDevice.onValue('tiptoePressure', (nv) => { evalPressure(Number(nv) || 0); });
+      tiptoeDevice.readValue('tiptoePressure').then((values) => {
+        if (!rt.isActive && !rt.waitingForManualStart) return;
+        const current = Array.isArray(values) ? values.find((value) => value !== null && value !== undefined) : values;
+        if (current !== null && current !== undefined) evalPressure(Number(current) || 0);
+      }).catch((error) => addLog('warn', `读取当前踮脚压力失败: ${error && error.message || error}`));
       addLog('info', `踮脚压力监测已启用（阈值 ${cfg.tiptoePressureThreshold}，防抖 ${cfg.tiptoeDebounceMs}ms）`);
     }
     // 手动开启：监听锁按键

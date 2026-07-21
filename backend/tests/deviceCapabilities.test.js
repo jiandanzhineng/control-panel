@@ -19,6 +19,18 @@ describe('device capability registry', () => {
     expect(registry.getTypesByCapability('strength')).toEqual(expect.arrayContaining(['TD01', 'PJ01', 'CUNZHI01']));
   });
 
+  it('resolves tiptoe pressure through each device value contract', () => {
+    const qtz = registry.getDeviceType('QTZ');
+    const cunzhi = registry.getDeviceType('CUNZHI01');
+
+    expect(qtz.hasCapability('tiptoePressure')).toBe(true);
+    expect(qtz.getCapabilityValueWatch('tiptoePressure')).toEqual(['button0', 'button1']);
+    expect(qtz.resolveCapabilityValue('tiptoePressure', { button0: 0, button1: '1' })).toBe(200);
+    expect(qtz.resolveCapabilityValue('tiptoePressure', { button0: 0, button1: 0 })).toBe(0);
+    expect(cunzhi.getCapabilityValueWatch('tiptoePressure')).toEqual(['pressure1']);
+    expect(cunzhi.resolveCapabilityValue('tiptoePressure', { pressure1: 37.5 })).toBe(37.5);
+  });
+
   it('builds default strength update messages through bindings', () => {
     const td01 = registry.getDeviceType('TD01');
     const sent = [];

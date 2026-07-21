@@ -55,11 +55,14 @@ window.DeviceAPI = {
       sendMessage(msg),                    // 直接发消息给设备（跳过能力层）
       on(capability, event, callback),     // 监听能力事件（由能力的 events 定义）
       off(capability, event, callback),    // 取消能力事件监听
+      onValue(capability, callback),       // 监听能力标量值变化
+      offValue(capability, callback),      // 取消能力值监听
       onProperty(property, callback),      // 监听底层属性变化（低层接口）
       offProperty(property, callback),     // 取消属性监听
       onMessage(callback),                 // 监听设备原始消息（低层接口）
       offMessage(callback),                // 取消原始消息监听
       async read(property),                 // 读属性缓存值（异步，返回数组，顺序同 deviceMap）
+      async readValue(capability),          // 读能力当前值（异步，返回数组）
       isMapped(),                          // 该逻辑设备是否已映射到物理设备 (bool)
     };
   },
@@ -88,9 +91,13 @@ window.DeviceAPI = {
 
 > **on(capability, event, cb)：** 监听能力定义的事件。能力内部封装了底层属性变化和设备消息的监听逻辑，游戏只需关心能力级事件，不用关心底层属性名或消息格式。不同设备底层实现可能不同，能力层屏蔽差异。
 
+> **onValue / readValue：** 读取能力的归一化标量值。`onValue(capability, cb)` 的回调参数为 `(value, oldValue, physicalId)`；`readValue(capability)` 返回与 `deviceMap` 物理 ID 顺序一致的数组。玩法处理连续传感器值时应优先使用这两个入口。
+
 > **onProperty / onMessage：** 低层接口，直接监听底层属性变化或设备原始消息。适合调试或能力体系未覆盖的场景。推荐优先使用 `on(capability, event)`。
 
 > **属性缓存：** 宿主为每个物理设备维护一份属性快照，设备上报时实时更新（MQTT: `report`/`update` 消息；BLE: 属性特征通知）。`read(property)` 是**异步方法**（返回 Promise），从宿主缓存读取，返回**数组**——顺序与 `deviceMap` 中物理 ID 顺序一致。属性更新同时触发 `onProperty` 回调和相关能力事件。
+
+> **能力值一致性：** `readValue`、`onValue` 和游戏启动时的首次 `readValue` 都使用同一个设备类型值解析规则。订阅只在解析后的标量实际变化时推送；底层属性变化但语义值不变时不重复回调。
 
 > **deviceMap 恒为数组：** `deviceMap` 和 `getDeviceMap()` 的值**固定是 `physicalId[]`**（一个逻辑设备可对应多个物理设备），未映射时为空数组 `[]`，不会出现单值或 undefined。`device(id).isMapped()` 等价于「该逻辑设备的数组非空」。
 
@@ -126,7 +133,11 @@ DeviceAPI.device('qtz').on('buttonInput', 'pushDown', () => {
 });
 
 // 读取当前值（异步，返回数组，顺序同 deviceMap 中物理 ID）
-const pressures = await DeviceAPI.device('sensor').read('pressure');  // → [72] 或 [72, 68]（多物理设备时）
+const pressures = await DeviceAPI.device('sensor').readValue('sphincterPressure'); // → [72] 或 [72, 68]
+
+DeviceAPI.device('sensor').onValue('sphincterPressure', (value, oldValue, physicalId) => {
+  console.log(physicalId, oldValue, '→', value);
+});
 
 // 可选设备：未映射则跳过相关逻辑
 if (DeviceAPI.device('punish').isMapped())
@@ -228,10 +239,13 @@ games/
 ```
 设备上报 → 宿主更新属性快照
   ├─ 触发 propertyChange 推送（低层，供 onProperty 使用）
-  └─ 检查能力 events 的 watch/trigger → 满足则触发 capabilityEvent 推送（供 on 使用）
+  ├─ 检查能力 events 的 watch/trigger → 满足则触发 capabilityEvent 推送（供 on 使用）
+  └─ 检查能力 value.watch → 解析值变化时触发 capabilityValueChange（供 onValue 使用）
 ```
 
 游戏侧 `read(property)` 异步从宿主缓存读取（返回 Promise），不发起设备查询。返回数组，顺序与 `deviceMap` 物理 ID 一致。
+
+`readValue(capability)` 从同一快照按设备类型解析能力值；因此一次性读取、订阅变化和启动初始化不会出现不同语义。
 
 ### 5.2 Capability — 能力方法定义
 
@@ -257,6 +271,10 @@ export const strength = {
 export const sphincterPressure = {
   key: 'sphincterPressure',
   actions: {}, // 纯上行能力，无下行动作
+  value: {
+    source: { op: 'prop', key: 'pressure' },
+    watch: ['pressure'],
+  },
   events: {
     pressureChange: {
       watch: [{ type: 'prop', key: 'pressure' }],
@@ -306,6 +324,15 @@ export const distance = {
 
 > **事件 trigger 参数 data：** `data.props`（设备属性快照）、`data.changed`（变化属性 key）、`data.msg`（收到的消息对象）。watch 支持混合监听属性和消息。
 
+#### 5.2.1 能力可读值
+
+连续传感器能力用声明式 `value` 定义标量读取契约。首期解释器只支持：
+
+- `prop`：返回快照中的单个属性。
+- `anyEquals`：任一属性数值化后等于目标值则返回 `on`，否则返回 `off`；数字和数字字符串等价。
+
+规则必须是可序列化数据，禁止在设备定义中使用 JS 闭包。PC（JavaScript）与 Android（Dart）各自解释同一规则模型。解析读取的是“已有快照 + 本次上报”合并结果，缺失字段沿用已有快照；没有历史值时按未触发处理。
+
 ### 5.3 DeviceType — 设备类型声明
 
 ```js
@@ -323,9 +350,20 @@ export const distance = {
     },
     strength: 'strength',  // 字符串 = 用能力默认实现
 }}
+
+// QTZ 用按钮快照派生 tiptoePressure，不伪造 pressure1 属性
+{ type: 'QTZ', capabilities: {
+    distance: 'distance',
+    buttonInput: 'buttonInput',
+    reporting: 'reporting',
+    tiptoePressure: { value: {
+      source: { op: 'anyEquals', keys: ['button0', 'button1'], equals: 1, on: 200, off: 0 },
+      watch: ['button0', 'button1'],
+    }},
+}}
 ```
 
-> **解析优先级：** DeviceType 覆写 → Capability 默认实现 → 报错未实现。设备清单详见 `device/device-registry.md`。
+> **解析优先级：** DeviceType 覆写（actions/events/value）→ Capability 默认实现 → 报错未实现。设备清单详见 `device/device-registry.md`。
 
 ### 5.4 Operation — 设备自带方法
 
@@ -409,10 +447,13 @@ export const distance = {
 { id: "uuid", action: "writeProps", deviceId: "motor", props: { power: 128 } }
 { id: "uuid", action: "sendMessage", deviceId: "motor", msg: { method: "action", action: "blink" } }
 { id: "uuid", action: "read", deviceId: "sensor", property: "pressure" }
+{ id: "uuid", action: "readValue", deviceId: "sensor", capability: "sphincterPressure" }
 { id: "uuid", action: "subscribe", deviceId: "sensor", capability: "sphincterPressure", event: "pressureChange" }
 { id: "uuid", action: "unsubscribe", deviceId: "sensor", capability: "sphincterPressure", event: "pressureChange" }
 { id: "uuid", action: "subscribeProperty", deviceId: "sensor", property: "pressure" }
 { id: "uuid", action: "unsubscribeProperty", deviceId: "sensor", property: "pressure" }
+{ id: "uuid", action: "subscribeValue", deviceId: "sensor", capability: "sphincterPressure" }
+{ id: "uuid", action: "unsubscribeValue", deviceId: "sensor", capability: "sphincterPressure" }
 { id: "uuid", action: "subscribeMessages", deviceId: "qtz" }
 { id: "uuid", action: "unsubscribeMessages", deviceId: "qtz" }
 { id: "uuid", action: "getDevices" }
@@ -423,6 +464,7 @@ export const distance = {
 { id: "uuid", result: ... }                            // 请求响应
 { id: "uuid", error: "device not found" }                // 错误
 { event: "capabilityEvent", deviceId: "sensor", capability: "sphincterPressure", eventName: "pressureChange", data: { props: {...}, changed: "pressure" } }  // 能力事件推送
+{ event: "capabilityValueChange", deviceId: "sensor", capability: "sphincterPressure", value: 72, oldValue: 68, physicalId: "sensor-1" } // 能力标量值推送
 { event: "propertyChange", deviceId: "sensor", property: "pressure", value: 72, oldValue: 68 }  // 属性变化推送（低层）
 { event: "deviceMessage", deviceId: "qtz", payload: { method: "low" } }  // 原始消息推送（低层）
 { event: "systemLog", level: "warn", message: "设备 motor 可能离线", meta: { deviceId: "motor" } }  // 宿主系统日志推送

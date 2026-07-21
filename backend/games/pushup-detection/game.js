@@ -200,10 +200,17 @@
         if (rt.phase === 'down') { rt.phase = 'up'; rt.lastActionTs = now; onComplete(); }
       }
     });
-    DeviceAPI.device(QTZ).onProperty('distance', (val) => {
+    const qtzDevice = DeviceAPI.device(QTZ);
+    const applyDistance = (val) => {
       rt.currentDistance = Number(val) ? (Number(val) / 10).toFixed(1) : 0;
       view.currentDistance = rt.currentDistance;
-    });
+    };
+    qtzDevice.onValue('distance', applyDistance);
+    qtzDevice.readValue('distance').then((values) => {
+      if (!rt.running) return;
+      const current = Array.isArray(values) ? values.find((value) => value !== null && value !== undefined) : values;
+      if (current !== null && current !== undefined) applyDistance(current);
+    }).catch((error) => addLog('warn', `读取当前距离失败: ${error && error.message || error}`));
     setLock(false);
     render();
   }

@@ -54,6 +54,10 @@ const lock = {
 const sphincterPressure = {
   key: 'sphincterPressure',
   name: '括约压力',
+  value: {
+    source: { op: 'prop', key: 'pressure' },
+    watch: ['pressure'],
+  },
   actions: {},
   events: {
     pressureChange: {
@@ -66,6 +70,10 @@ const sphincterPressure = {
 const tiptoePressure = {
   key: 'tiptoePressure',
   name: '踮脚压力',
+  value: {
+    source: { op: 'prop', key: 'pressure1' },
+    watch: ['pressure1'],
+  },
   actions: {},
   events: {
     pressureChange: {
@@ -78,6 +86,10 @@ const tiptoePressure = {
 const distance = {
   key: 'distance',
   name: '距离检测',
+  value: {
+    source: { op: 'prop', key: 'distance' },
+    watch: ['distance'],
+  },
   actions: {
     configure: (ctx, params) => {
       const payload = {};
@@ -122,6 +134,10 @@ const buttonInput = {
 const weight = {
   key: 'weight',
   name: '重量检测',
+  value: {
+    source: { op: 'prop', key: 'weight' },
+    watch: ['weight'],
+  },
   actions: {},
   events: {
     weightChange: {
