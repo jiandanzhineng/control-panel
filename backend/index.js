@@ -45,18 +45,65 @@ try {
 
 deviceService.initDeviceList();
 
-(async () => {
-  try {
-    const result = await mqttService.start();
-    if (result.running) {
-      logger.info('MQTT service started successfully', {
-        broker: result.broker, pid: result.pid, port: result.port || 1883,
-      });
-    }
-  } catch (error) {
-    logger.warn('Failed to start MQTT service, continuing without it', { error: error.message });
+let runtimeServicesStartPromise = null;
+let runtimeServicesStopPromise = null;
+
+function startRuntimeServices() {
+  if (runtimeServicesStartPromise) return runtimeServicesStartPromise;
+
+  runtimeServicesStartPromise = Promise.all([
+    mqttService.start()
+      .then((result) => {
+        if (result.running) {
+          logger.info('MQTT service started successfully', {
+            broker: result.broker, pid: result.pid, port: result.port || 1883,
+          });
+        }
+        return result;
+      })
+      .catch((error) => {
+        logger.warn('Failed to start MQTT service, continuing without it', { error: error.message });
+        return { running: false, error: error.message };
+      }),
+    mdnsService.publish()
+      .then((result) => {
+        if (result.running) {
+          logger.info('mDNS service started', { pid: result.pid, ip: result.ip });
+        }
+        return result;
+      })
+      .catch((error) => {
+        logger.warn('mDNS service start failed', error?.message || error);
+        return { running: false, error: error?.message || String(error) };
+      }),
+  ]).then(([mqtt, mdns]) => ({ mqtt, mdns }));
+
+  return runtimeServicesStartPromise;
+}
+
+function stopRuntimeServices() {
+  if (runtimeServicesStopPromise) return runtimeServicesStopPromise;
+  if (!runtimeServicesStartPromise) {
+    return Promise.resolve({
+      mqtt: { running: false },
+      mdns: { running: false },
+    });
   }
-})();
+
+  runtimeServicesStopPromise = (async () => {
+    if (runtimeServicesStartPromise) await runtimeServicesStartPromise;
+    const [mqtt, mdns] = await Promise.all([
+      mqttService.stop({ onlyOwned: true }).catch(() => ({ running: false })),
+      mdnsService.unpublish().catch(() => ({ running: false })),
+    ]);
+    runtimeServicesStartPromise = null;
+    return { mqtt, mdns };
+  })().finally(() => {
+    runtimeServicesStopPromise = null;
+  });
+
+  return runtimeServicesStopPromise;
+}
 
 function requireInternalBridgeAccess(req, res, next) {
   if (req.get(BRIDGE_INTERNAL_HEADER) === '1') return next();
@@ -97,29 +144,24 @@ app.use((err, req, res, next) => {
 
 const server = http.createServer(app);
 bridgeService.init(server);
+server.on('listening', () => {
+  startRuntimeServices();
+});
+server.on('close', () => {
+  stopRuntimeServices();
+});
 
 if (require.main === module) {
   logService.cleanOldLogs();
-  server.listen(PORT, async () => {
+  server.listen(PORT, () => {
     logger.info(`Backend server running at http://localhost:${PORT}`);
-    if (process.platform === 'win32') {
-      try {
-        const res = await mdnsService.publish();
-        if (res.running) logger.info('mDNS service started', { pid: res.pid });
-      } catch (e) {
-        logger.warn('mDNS service start failed', e?.message || e);
-      }
-    }
   });
 }
 
 process.on('SIGINT', async () => {
   logger.info('Received SIGINT, cleaning up...');
   deviceService.cleanup();
-  try {
-    await mqttService.stop();
-  } catch (_) {}
-  try { await mdnsService.unpublish(); } catch (_) {}
+  await stopRuntimeServices();
   process.exit(0);
 });
 
@@ -129,4 +171,6 @@ process.on('SIGINT', async () => {
 // 导致 /bridge 握手 404、插件设备连不上。
 module.exports = app;
 module.exports.server = server;
+module.exports.startRuntimeServices = startRuntimeServices;
+module.exports.stopRuntimeServices = stopRuntimeServices;
 module.exports.BRIDGE_INTERNAL_HEADER = BRIDGE_INTERNAL_HEADER;

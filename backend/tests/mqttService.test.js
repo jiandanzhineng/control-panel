@@ -84,3 +84,51 @@ describe('mqttService', () => {
     expect(cp.spawn).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('mqttService on Windows', () => {
+  const originalPlatform = process.platform;
+  let mqttService;
+  let emqxService;
+
+  beforeEach(() => {
+    jest.resetModules();
+    Object.defineProperty(process, 'platform', { value: 'win32' });
+    jest.doMock('../services/emqxService', () => ({
+      checkStatus: jest.fn(async () => ({ running: true, status: 'running' })),
+      startBroker: jest.fn(async () => ({ success: true })),
+      stopBroker: jest.fn(async () => ({ success: true })),
+    }));
+    emqxService = require('../services/emqxService');
+    mqttService = require('../services/mqttService');
+  });
+
+  afterEach(async () => {
+    try { await mqttService.stop(); } catch (_) {}
+    jest.dontMock('../services/emqxService');
+    jest.restoreAllMocks();
+  });
+
+  afterAll(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform });
+  });
+
+  it('coalesces concurrent starts and reuses an existing EMQX broker', async () => {
+    const [first, second] = await Promise.all([
+      mqttService.start(),
+      mqttService.start(),
+    ]);
+
+    expect(first).toMatchObject({ running: true, broker: 'emqx', port: 1883 });
+    expect(second).toEqual(first);
+    expect(emqxService.checkStatus).toHaveBeenCalledTimes(1);
+    expect(emqxService.startBroker).not.toHaveBeenCalled();
+  });
+
+  it('does not stop a pre-existing EMQX broker during owned-service cleanup', async () => {
+    await mqttService.start();
+    const result = await mqttService.stop({ onlyOwned: true });
+
+    expect(result).toMatchObject({ running: true, broker: 'emqx', preserved: true });
+    expect(emqxService.stopBroker).not.toHaveBeenCalled();
+  });
+});

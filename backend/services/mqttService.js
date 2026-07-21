@@ -17,15 +17,26 @@ if (isWindows) {
 
 // 内部状态，用于管理单例 mosquitto 进程
 let state = { child: null, meta: null, tmpConfPath: null };
+let startPromise = null;
 
-async function start({ port = 1883, bind = '0.0.0.0', configPath } = {}) {
+async function startInternal({ port = 1883, bind = '0.0.0.0', configPath } = {}) {
   // Windows系统使用EMQX
   if (isWindows && emqxService) {
+    const owned = state.meta?.broker === 'emqx' && !!state.meta.owned;
+    state.meta = { port: 1883, bind: '0.0.0.0', broker: 'emqx', starting: true, owned };
     try {
+      const currentStatus = await emqxService.checkStatus();
+      if (currentStatus.running) {
+        state.meta.starting = false;
+        logService.info('Mqtt', 'Reusing the running EMQX broker');
+        return { running: true, broker: 'emqx', port: 1883, status: currentStatus };
+      }
+
       logService.info('Mqtt', `Starting EMQX broker on Windows - Port: ${port}, Bind: ${bind}`);
       const result = await emqxService.startBroker();
       if (result.success) {
-        state.meta = { port: 1883, bind: '0.0.0.0', broker: 'emqx' }; // EMQX默认端口
+        state.meta.starting = false;
+        state.meta.owned = true;
         return { running: true, broker: 'emqx', port: 1883, status: result.status };
       } else {
         logService.error('Mqtt', `Failed to start EMQX broker: ${result.error}`);
@@ -33,6 +44,7 @@ async function start({ port = 1883, bind = '0.0.0.0', configPath } = {}) {
       }
     } catch (error) {
       logService.error('Mqtt', `EMQX startup error, falling back to mosquitto: ${error.message}`);
+      state.meta = null;
       // 如果EMQX启动失败，继续使用mosquitto逻辑
     }
   }
@@ -62,7 +74,7 @@ async function start({ port = 1883, bind = '0.0.0.0', configPath } = {}) {
 
   const child = spawn('mosquitto', ['-c', confPath], { stdio: ['pipe', 'pipe', 'pipe'] });
   state.child = child;
-  state.meta = { port, bind, broker: 'mosquitto' };
+  state.meta = { port, bind, broker: 'mosquitto', owned: true };
 
   logService.info('Mqtt', `Starting mosquitto - Config: ${confPath}, Port: ${port}, Bind: ${bind}`);
 
@@ -87,6 +99,17 @@ async function start({ port = 1883, bind = '0.0.0.0', configPath } = {}) {
   return { running: true, pid: child.pid, port, broker: 'mosquitto' };
 }
 
+async function start(options = {}) {
+  if (startPromise) return startPromise;
+
+  startPromise = startInternal(options);
+  try {
+    return await startPromise;
+  } finally {
+    startPromise = null;
+  }
+}
+
 async function status() {
   // 如果使用EMQX
   if (state.meta?.broker === 'emqx' && isWindows && emqxService) {
@@ -94,6 +117,7 @@ async function status() {
       const emqxStatus = await emqxService.checkStatus();
       return {
         running: emqxStatus.running,
+        starting: !!state.meta.starting && !emqxStatus.running,
         broker: 'emqx',
         port: 1883,
         status: emqxStatus.status,
@@ -115,9 +139,17 @@ async function status() {
   return payload;
 }
 
-async function stop() {
+async function stop({ onlyOwned = false } = {}) {
+  if (startPromise) {
+    try { await startPromise; } catch (_) {}
+  }
+
   // 如果使用EMQX
   if (state.meta?.broker === 'emqx' && isWindows && emqxService) {
+    if (onlyOwned && !state.meta.owned) {
+      state.meta = null;
+      return { running: true, broker: 'emqx', preserved: true };
+    }
     try {
       logService.info('Mqtt', 'Stopping EMQX broker');
       const result = await emqxService.stopBroker();

@@ -34,7 +34,7 @@
         <span v-if="mqttStatusUpdated" class="ok">状态已更新</span>
       </div>
       <div class="status">
-        <p>状态：{{ mqttStatus.running ? '运行中' : '已停止' }}</p>
+        <p>状态：{{ mqttStatus.running ? '运行中' : (mqttStatus.starting ? '启动中...' : '已停止') }}</p>
         <p v-if="mqttStatus.port">端口：{{ mqttStatus.port }}</p>
         <p v-if="mqttError" class="error">{{ mqttError }}</p>
       </div>
@@ -82,7 +82,7 @@ const mdnsStatusLoading = ref(false);
 const mdnsStatusError = ref('');
 const mdnsStatusUpdated = ref(false);
 // MQTT 状态
-const mqttStatus = ref<{ running: boolean; pid?: number; port?: number }>({ running: false });
+const mqttStatus = ref<{ running: boolean; starting?: boolean; pid?: number; port?: number }>({ running: false });
 const mqttBusy = ref(false);
 const mqttError = ref('');
 const mqttStatusLoading = ref(false);
