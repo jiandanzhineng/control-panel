@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   const QTZ = 'qtz';      // 老版 qtz_sensor
-  const TIPTOE = 'tiptoeSensor'; // 踮脚压力传感器（tiptoePressure / pressure1）
+  const TIPTOE = 'tiptoeSensor'; // 踮脚压力传感器（tiptoePressure）
   const SHOCK = 'shock';  // 老版 shock_device
   const MOTOR = 'motor';  // 老版 td01_device
   const LOCK = 'lock';    // 老版 auto_lock
@@ -107,7 +107,7 @@
     render();
   }
   function resetTd01() { stopTd01(); rt.lastNoShockTs = Date.now(); }
-  // 统一的“是否没踮脚”判定：按钮线（任一按钮被踩下）或 压力线（pressure1 高于阈值持续防抖时长）
+  // 统一的“是否没踮脚”判定：按钮线或踮脚压力能力值持续超阈值
   function applyTiptoeState() {
     if (rt.paused) return; // 暂停期间不因传感器触发电击；恢复时会重新评估
     const buttonLost = rt.button0Pressed || rt.button1Pressed;
@@ -151,6 +151,9 @@
     if (rt.waitingForManualStart) return;
     if (!rt.isActive) return;
     if (rt.paused) return;
+    if (rt.hasPressure && rt.pressureViolatedSince && !rt.pressureViolated) {
+      evalPressure(rt.pressure1);
+    }
     const elapsed = Date.now() - rt.startTime;
     const total = Math.max(1, Math.floor(cfg.duration)) * 60 * 1000;
     view.remainingSec = Math.max(0, Math.ceil((total - elapsed) / 1000));
