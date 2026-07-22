@@ -15,9 +15,10 @@
 9. [游戏与玩法运行时说明](requirements/Game_Runtime.md)
 10. [MQTT、EMQX、mDNS 集成说明](integration/MQTT_mDNS.md)
 11. [后端运行与测试指引](guides/BACKEND_IMPLEMENTATION.md)
-12. [Windows Electron 启动指南](guides/Windows_通过_Electron_启动指南.md) / [Electron 调试速查](guides/ELECTRON_DEBUG.md)
-13. [构建打包指南](guides/Build_Package_Guide.md)
-14. [架构决策记录 (ADR)](adr/)
+12. [游戏 TESTING.md 编写指南](guides/GAME_TESTING.md)
+13. [Windows Electron 启动指南](guides/Windows_通过_Electron_启动指南.md) / [Electron 调试速查](guides/ELECTRON_DEBUG.md)
+14. [构建打包指南](guides/Build_Package_Guide.md)
+15. [架构决策记录 (ADR)](adr/)
 
 ## 目录说明
 
@@ -71,6 +72,7 @@
 ### Guides
 
 - [后端运行与测试指引](guides/BACKEND_IMPLEMENTATION.md)
+- [游戏 TESTING.md 编写指南](guides/GAME_TESTING.md)
 - [构建打包指南](guides/Build_Package_Guide.md)
 - [Windows Electron 启动指南](guides/Windows_通过_Electron_启动指南.md)
 - [Electron 调试速查](guides/ELECTRON_DEBUG.md)
