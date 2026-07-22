@@ -5,6 +5,7 @@ const { getCapabilityDefinition } = require('../devices/capabilities');
 const logService = require('./logService');
 const virtualDeviceService = require('./virtualDeviceService');
 const { BRIDGE_INTERNAL_HEADER } = require('../constants/bridgeAccess');
+const externalGameAccessService = require('./externalGameAccessService');
 
 let wss = null;
 const sessions = new Map();
@@ -77,6 +78,11 @@ function init(server) {
     verifyClient: (info) => {
       const origin = info.origin || info.req.headers.origin;
       if (!origin) return true;
+      // 开发者放行开关：受信开发 origin（本地任意端口 / 白名单）免内部头直连。
+      // 浏览器 WS 握手无法附加自定义头，故这里是外部本地游戏试玩的关键放行点。
+      try {
+        if (externalGameAccessService.isTrustedDevOrigin(origin)) return true;
+      } catch (_) {}
       try {
         if (info.req.headers[BRIDGE_INTERNAL_HEADER] !== '1') return false;
         const originHost = new URL(origin).hostname;

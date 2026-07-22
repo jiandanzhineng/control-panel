@@ -1,4 +1,5 @@
 const { sendError } = require('../utils/http');
+const externalGameAccessService = require('../services/externalGameAccessService');
 
 const DEFAULT_TRUSTED_ORIGINS = [
   'http://localhost:5173',
@@ -42,7 +43,12 @@ function getRequestOrigin(req) {
 
 function isTrustedBrowserOrigin(origin) {
   if (!origin) return false;
-  return getTrustedBrowserOrigins().has(origin);
+  if (getTrustedBrowserOrigins().has(origin)) return true;
+  // 开发者放行开关：开启时本地任意端口 + 白名单 origin 受信
+  try {
+    if (externalGameAccessService.isTrustedDevOrigin(origin)) return true;
+  } catch (_) {}
+  return false;
 }
 
 function appendVaryHeader(res, value) {

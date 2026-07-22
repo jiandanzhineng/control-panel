@@ -27,6 +27,7 @@ jest.mock('../utils/logger', () => ({
 const mqttClient = require('../services/mqttClientService');
 const testService = require('../services/testService');
 const deviceService = require('../services/deviceService');
+const externalGameAccessService = require('../services/externalGameAccessService');
 const { browserApiCors } = require('../middleware/browserApiAccess');
 
 function createApp() {
@@ -131,5 +132,39 @@ describe('browser api access guard', () => {
       .set('Access-Control-Request-Headers', 'content-type');
 
     expect(res.status).toBe(403);
+  });
+
+  describe('with external game access enabled', () => {
+    let getStatusSpy;
+
+    beforeEach(() => {
+      getStatusSpy = jest
+        .spyOn(externalGameAccessService, 'isTrustedDevOrigin')
+        .mockImplementation((origin) => origin === 'http://localhost:8080');
+    });
+
+    afterEach(() => {
+      getStatusSpy.mockRestore();
+    });
+
+    it('allows a trusted dev origin (arbitrary local port)', async () => {
+      const res = await request(createApp())
+        .post('/api/devices/ctrl_td01/operations/start')
+        .set('Origin', 'http://localhost:8080')
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.headers['access-control-allow-origin']).toBe('http://localhost:8080');
+      expect(deviceService.executeDeviceOperation).toHaveBeenCalled();
+    });
+
+    it('still blocks origins that are not trusted dev origins', async () => {
+      const res = await request(createApp())
+        .post('/api/devices/ctrl_td01/operations/start')
+        .set('Origin', 'http://localhost:9090')
+        .send({});
+
+      expect(res.status).toBe(403);
+    });
   });
 });

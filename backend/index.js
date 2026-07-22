@@ -11,6 +11,7 @@ const bridgeService = require('./services/bridgeService');
 const gameCacheService = require('./services/gameCacheService');
 const { BRIDGE_INTERNAL_HEADER } = require('./constants/bridgeAccess');
 const { browserApiCors } = require('./middleware/browserApiAccess');
+const externalGameAccessService = require('./services/externalGameAccessService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -107,6 +108,18 @@ function stopRuntimeServices() {
 
 function requireInternalBridgeAccess(req, res, next) {
   if (req.get(BRIDGE_INTERNAL_HEADER) === '1') return next();
+  // 开发者放行开关：受信开发 origin 直接以 <script src> 加载 bridge 脚本时，
+  // 无法带内部头。此时若来源受信则放行，并回写 CORS 头供跨端口读取。
+  const origin = req.get('Origin');
+  if (origin) {
+    try {
+      if (externalGameAccessService.isTrustedDevOrigin(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+        return next();
+      }
+    } catch (_) {}
+  }
   res.status(403).json({ error: 'Bridge script access denied' });
 }
 
@@ -133,6 +146,7 @@ app.use('/api/logs', require('./routes/logs'));
 app.use('/api/test', require('./routes/test'));
 app.use('/api/virtual-devices', require('./routes/virtualDevices'));
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/dev-access', require('./routes/devAccess'));
 
 app.get('/api/hello', (req, res) => { res.json({ message: 'Hello from Express backend!' }); });
 app.get('/api', (req, res) => { res.send('Backend is running'); });

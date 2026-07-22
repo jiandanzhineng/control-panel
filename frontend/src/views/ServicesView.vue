@@ -55,6 +55,50 @@
       </div>
     </section>
 
+    <section class="card">
+      <h2>开发者：外部本地游戏放行</h2>
+      <p class="muted" style="margin-top:0;">
+        开启后，本机浏览器里任意端口的本地网页（localhost / 127.0.0.1）以及下方显式添加的来源，
+        可直接连接本机后台试玩自研游戏。关闭时仅面板自身可访问控制接口。
+      </p>
+      <p class="warn-text">
+        ⚠ 安全提示：这会让你浏览器访问过的本地页面具备控制真实设备的能力，仅在本机开发调试时开启，用完请关闭。
+      </p>
+      <div class="row">
+        <label class="switch-label">
+          <input type="checkbox" v-model="devAccessEnabled" @change="saveDevAccess" :disabled="devAccessBusy" />
+          允许外部本地游戏连接
+        </label>
+        <span v-if="devAccessSaved" class="ok">已保存</span>
+        <span v-if="devAccessError" class="error">{{ devAccessError }}</span>
+      </div>
+
+      <div v-if="devAccessEnabled" class="dev-origins">
+        <div class="row">
+          <input
+            v-model="newOrigin"
+            type="text"
+            placeholder="额外来源，如 http://192.168.1.10:8080"
+            class="origin-input"
+            @keyup.enter="addOrigin"
+          />
+          <button @click="addOrigin" :disabled="devAccessBusy">添加来源</button>
+        </div>
+        <ul class="origin-list">
+          <li v-for="o in devAccessOrigins" :key="o">
+            <span>{{ o }}</span>
+            <button class="link-btn" @click="removeOrigin(o)" :disabled="devAccessBusy">移除</button>
+          </li>
+          <li v-if="!devAccessOrigins.length" class="muted">（本地任意端口已自动放行，如需非回环地址可在此添加）</li>
+        </ul>
+        <p class="muted hint">
+          游戏页接入方式：引用
+          <code>&lt;script src="http://127.0.0.1:5278/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;</code>，
+          脚本会自动连回后台 <code>/bridge</code>。
+        </p>
+      </div>
+    </section>
+
     <!-- 悬浮日志组件 -->
     <div class="floating-log">
       <RealTimeLog 
@@ -93,6 +137,69 @@ const mqttStatusUpdated = ref(false);
 const mqttClientStatus = ref<{ url?: string; clientId?: string; connected: boolean; connecting: boolean; subscriptions?: string[]; handlerCount?: number; lastError?: string | null }>({ connected: false, connecting: false });
 const mqttClientLoading = ref(false);
 const mqttClientError = ref('');
+
+// 开发者：外部本地游戏放行
+const devAccessEnabled = ref(false);
+const devAccessOrigins = ref<string[]>([]);
+const newOrigin = ref('');
+const devAccessBusy = ref(false);
+const devAccessError = ref('');
+const devAccessSaved = ref(false);
+
+async function loadDevAccess() {
+  try {
+    const res = await fetch('/api/dev-access');
+    if (!res.ok) return;
+    const data = await res.json();
+    devAccessEnabled.value = !!data.enabled;
+    devAccessOrigins.value = Array.isArray(data.origins) ? data.origins : [];
+  } catch {}
+}
+
+async function saveDevAccess() {
+  devAccessBusy.value = true;
+  devAccessError.value = '';
+  devAccessSaved.value = false;
+  try {
+    const res = await fetch('/api/dev-access', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: devAccessEnabled.value, origins: devAccessOrigins.value }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data?.error?.message || data.message || '保存失败');
+    devAccessEnabled.value = !!data.enabled;
+    devAccessOrigins.value = Array.isArray(data.origins) ? data.origins : [];
+    devAccessSaved.value = true;
+    setTimeout(() => (devAccessSaved.value = false), 1500);
+  } catch (e: any) {
+    devAccessError.value = e?.message || '保存失败';
+    // 保存失败时回读真实状态，避免开关与后端不一致
+    await loadDevAccess();
+  } finally {
+    devAccessBusy.value = false;
+  }
+}
+
+function addOrigin() {
+  const val = newOrigin.value.trim();
+  if (!val) return;
+  try {
+    const origin = new URL(val).origin;
+    if (!devAccessOrigins.value.includes(origin)) {
+      devAccessOrigins.value.push(origin);
+    }
+    newOrigin.value = '';
+    saveDevAccess();
+  } catch {
+    devAccessError.value = '无效的来源地址，需形如 http://host:port';
+  }
+}
+
+function removeOrigin(o: string) {
+  devAccessOrigins.value = devAccessOrigins.value.filter((x) => x !== o);
+  saveDevAccess();
+}
 
 async function loadMdnsStatus() {
   try {
@@ -239,6 +346,7 @@ onMounted(async () => {
   await loadMdnsStatus();
   await loadMqttStatus();
   await loadMqttClientStatus();
+  await loadDevAccess();
   refreshTimer = setInterval(() => {
     loadMdnsStatus();
     loadMqttStatus();
@@ -264,6 +372,17 @@ onUnmounted(() => {
 .status p { margin: 6px 0; }
 button { padding: 6px 12px; border: 1px solid #0ea5e9; background: #0ea5e9; color: white; border-radius: 6px; cursor: pointer; }
 button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.warn-text { color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; font-size: 13px; }
+.switch-label { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.switch-label input { width: 16px; height: 16px; }
+.dev-origins { margin-top: 12px; }
+.origin-input { flex: 1; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; }
+.origin-list { list-style: none; padding: 0; margin: 10px 0 0; }
+.origin-list li { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
+.link-btn { background: none; border: none; color: #e11d48; padding: 0; cursor: pointer; }
+.hint { font-size: 12px; margin-top: 10px; }
+.hint code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 
 /* 悬浮日志组件样式 */
 .floating-log {

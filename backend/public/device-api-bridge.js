@@ -1,6 +1,19 @@
 (function () {
   'use strict';
-  const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/bridge';
+  // WS 目标以「本脚本被加载的来源」为准，而非页面 location。
+  // 这样开发者把游戏跑在其它端口（如 localhost:8080）、脚本仍从后端
+  // (127.0.0.1:5278/bridge-api/...) 加载时，WS 能正确连回后端而非游戏页端口。
+  function resolveBridgeBase() {
+    try {
+      var src = document.currentScript && document.currentScript.src;
+      if (src) {
+        var u = new URL(src, location.href);
+        return (u.protocol === 'https:' ? 'wss://' : 'ws://') + u.host;
+      }
+    } catch (_) {}
+    return (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+  }
+  const WS_URL = resolveBridgeBase() + '/bridge';
 
   let ws = null;
   let readyResolve = null;
