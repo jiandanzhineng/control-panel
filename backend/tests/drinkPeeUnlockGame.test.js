@@ -69,9 +69,9 @@ function createDocument() {
   };
 }
 
-function createDeviceApi({ mapped = ['scale', 'punish'], params = {}, propertyValues = {} } = {}) {
+function createDeviceApi({ mapped = ['scale', 'punish'], params = {}, capabilityValues = {} } = {}) {
   const mappedSet = new Set(mapped);
-  const propertyHandlers = new Map();
+  const valueHandlers = new Map();
   const invocations = [];
 
   function handlerKey(logicalId, property) {
@@ -90,12 +90,12 @@ function createDeviceApi({ mapped = ['scale', 'punish'], params = {}, propertyVa
           invocations.push({ logicalId, capability, actionName, params: invokeParams });
           return Promise.resolve({ ok: true });
         },
-        onProperty: (property, callback) => {
-          const key = handlerKey(logicalId, property);
-          if (!propertyHandlers.has(key)) propertyHandlers.set(key, []);
-          propertyHandlers.get(key).push(callback);
+        onValue: (capability, callback) => {
+          const key = handlerKey(logicalId, capability);
+          if (!valueHandlers.has(key)) valueHandlers.set(key, []);
+          valueHandlers.get(key).push(callback);
         },
-        read: (property) => Promise.resolve(propertyValues[handlerKey(logicalId, property)] || []),
+        readValue: (capability) => Promise.resolve(capabilityValues[handlerKey(logicalId, capability)] || []),
       };
     },
   };
@@ -103,19 +103,18 @@ function createDeviceApi({ mapped = ['scale', 'punish'], params = {}, propertyVa
   return {
     DeviceAPI,
     invocations,
-    emitProperty(logicalId, property, value) {
-      const callbacks = propertyHandlers.get(handlerKey(logicalId, property)) || [];
+    emitValue(logicalId, capability, value) {
+      const callbacks = valueHandlers.get(handlerKey(logicalId, capability)) || [];
       callbacks.forEach((callback) => callback(value));
     },
   };
 }
 
 async function flushPromises() {
-  await Promise.resolve();
-  await Promise.resolve();
+  for (let i = 0; i < 5; i += 1) await Promise.resolve();
 }
 
-async function loadGame({ params, propertyValues } = {}) {
+async function loadGame({ params, capabilityValues, mapped } = {}) {
   const document = createDocument();
   const voiceKeys = [];
   function FakeAudio(src) {
@@ -131,7 +130,7 @@ async function loadGame({ params, propertyValues } = {}) {
   };
   class SpeechSynthesisUtterance {}
   const api = createDeviceApi({
-    mapped: ['scale', 'punish', 'lock'],
+    mapped: mapped || ['scale', 'punish', 'lock'],
     params: {
       mode: 'drink',
       durationSec: 60,
@@ -144,7 +143,7 @@ async function loadGame({ params, propertyValues } = {}) {
       vibeStartProb: 0,
       ...(params || {}),
     },
-    propertyValues,
+    capabilityValues,
   });
   const context = {
     Audio: FakeAudio,
@@ -192,7 +191,7 @@ describe('drink-pee-unlock game loop', () => {
   it('triggers and displays shock when the stable weight countdown expires without a new sample', async () => {
     const env = await loadGame();
 
-    env.emitProperty('scale', 'weight', 1001);
+    env.emitValue('scale', 'weight', 1001);
     expect(env.game.rt.running).toBe(true);
     expect(env.game.view.punishCountdown).toBe(2);
 
@@ -213,7 +212,7 @@ describe('drink-pee-unlock game loop', () => {
 
   it('reads the current scale snapshot when unchanged reports produce no property event', async () => {
     const env = await loadGame({
-      propertyValues: { 'scale:weight': [537] },
+      capabilityValues: { 'scale:weight': [537] },
     });
 
     expect(env.game.rt.weight).toBe(537);
@@ -226,21 +225,36 @@ describe('drink-pee-unlock game loop', () => {
     expect(env.shockStarts()).toHaveLength(1);
   });
 
+  it('initializes optional sensor values from capability snapshots', async () => {
+    const env = await loadGame({
+      mapped: ['scale', 'sensor', 'qtz', 'punish', 'lock'],
+      capabilityValues: {
+        'scale:weight': [500],
+        'sensor:sphincterPressure': [25],
+        'qtz:tiptoePressure': [0],
+      },
+    });
+
+    expect(env.game.rt.pressure).toBe(25);
+    expect(env.game.view.pressure).toBe(25);
+    expect(env.game.view.tiptoeOk).toBe(true);
+  });
+
   it('uses the highest detected weight as the drink-mode starting point', async () => {
     const env = await loadGame({
       params: { mode: 'drink', targetWeight: 100 },
-      propertyValues: { 'scale:weight': [0] },
+      capabilityValues: { 'scale:weight': [0] },
     });
 
     expect(env.game.rt.initialWeight).toBe(0);
-    env.emitProperty('scale', 'weight', 120);
-    env.emitProperty('scale', 'weight', 500);
+    env.emitValue('scale', 'weight', 120);
+    env.emitValue('scale', 'weight', 500);
     expect(env.game.rt.initialWeight).toBe(500);
     expect(env.game.view.progress).toBe(0);
 
-    env.emitProperty('scale', 'weight', 450);
+    env.emitValue('scale', 'weight', 450);
     expect(env.game.view.progress).toBe(50);
-    env.emitProperty('scale', 'weight', 400);
+    env.emitValue('scale', 'weight', 400);
     expect(env.game.rt.running).toBe(false);
     expect(env.game.rt.state).toBe('Unlocked');
   });
@@ -248,14 +262,14 @@ describe('drink-pee-unlock game loop', () => {
   it('uses the lowest detected weight as the pee-mode starting point', async () => {
     const env = await loadGame({
       params: { mode: 'pee', targetWeight: 60 },
-      propertyValues: { 'scale:weight': [500] },
+      capabilityValues: { 'scale:weight': [500] },
     });
 
-    env.emitProperty('scale', 'weight', 450);
+    env.emitValue('scale', 'weight', 450);
     expect(env.game.rt.initialWeight).toBe(450);
     expect(env.game.view.progress).toBe(0);
 
-    env.emitProperty('scale', 'weight', 510);
+    env.emitValue('scale', 'weight', 510);
     expect(env.game.rt.running).toBe(false);
     expect(env.game.rt.state).toBe('Unlocked');
   });
@@ -265,7 +279,7 @@ describe('drink-pee-unlock game loop', () => {
     // 游戏开始时播放对应模式的语音
     expect(env.voiceKeys[0]).toMatch(/start_drink\.mp3$/);
 
-    env.emitProperty('scale', 'weight', 1001);
+    env.emitValue('scale', 'weight', 1001);
     jest.advanceTimersByTime(2000);
     await flushPromises();
     // 惩罚时播放对应惩罚语音
@@ -280,7 +294,7 @@ describe('drink-pee-unlock game loop', () => {
 
   it('restarts the stable weight countdown after punishment cooldown', async () => {
     const env = await loadGame();
-    env.emitProperty('scale', 'weight', 1001);
+    env.emitValue('scale', 'weight', 1001);
 
     jest.advanceTimersByTime(2000);
     await flushPromises();

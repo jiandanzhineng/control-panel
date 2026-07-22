@@ -1,4 +1,5 @@
 const { getCapabilityDefinition } = require('./capabilities');
+const { resolveValue } = require('./capabilityValue');
 const { getMonitorSpec } = require('./monitorSpec');
 
 class BaseDeviceType {
@@ -60,7 +61,18 @@ class BaseDeviceType {
       key: capabilityKey,
       name: override.name || base.name || capabilityKey,
       actions: override.actions || base.actions || {},
+      value: override.value || base.value || null,
     };
+  }
+
+  resolveCapabilityValue(capabilityKey, props) {
+    const value = this.resolveCapability(capabilityKey).value;
+    return value ? resolveValue(value.source, props) : null;
+  }
+
+  getCapabilityValueWatch(capabilityKey) {
+    const value = this.resolveCapability(capabilityKey).value;
+    return Array.isArray(value?.watch) ? [...value.watch] : [];
   }
 
   // 聚合本设备所有能力对应的监控字段（数据源：monitorSpec 展示元数据，按 key 去重）

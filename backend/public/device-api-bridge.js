@@ -7,6 +7,7 @@
   let pending = new Map();
   let subCallbacks = new Map();
   let propCallbacks = new Map();
+  let valueCallbacks = new Map();
   let msgCallbacks = new Map();
   let systemLogCallbacks = [];
   let deviceMapData = {};
@@ -43,6 +44,11 @@
       var idx = key.indexOf(':');
       if (idx < 0) return;
       sendFire({ action: 'subscribeProperty', deviceId: key.slice(0, idx), property: key.slice(idx + 1) });
+    });
+    valueCallbacks.forEach(function (_callbacks, key) {
+      var idx = key.indexOf(':');
+      if (idx < 0) return;
+      sendFire({ action: 'subscribeValue', deviceId: key.slice(0, idx), capability: key.slice(idx + 1) });
     });
     msgCallbacks.forEach(function (_callbacks, logicalId) {
       sendFire({ action: 'subscribeMessages', deviceId: logicalId });
@@ -109,6 +115,14 @@
         if (pCbs) pCbs.forEach(function (cb) { try { cb(msg.value, msg.oldValue); } catch (_) {} });
         break;
       }
+      case 'capabilityValueChange': {
+        var vKey = msg.deviceId + ':' + msg.capability;
+        var vCbs = valueCallbacks.get(vKey);
+        if (vCbs) vCbs.forEach(function (cb) {
+          try { cb(msg.value, msg.oldValue, msg.physicalId); } catch (_) {}
+        });
+        break;
+      }
       case 'deviceMessage': {
         var mCbs = msgCallbacks.get(msg.deviceId);
         if (mCbs) mCbs.forEach(function (cb) { try { cb(msg.payload); } catch (_) {} });
@@ -168,6 +182,24 @@
           }
         }
       },
+      onValue: function (capability, callback) {
+        var key = logicalId + ':' + capability;
+        if (!valueCallbacks.has(key)) valueCallbacks.set(key, []);
+        valueCallbacks.get(key).push(callback);
+        sendFire({ action: 'subscribeValue', deviceId: logicalId, capability: capability });
+      },
+      offValue: function (capability, callback) {
+        var key = logicalId + ':' + capability;
+        var arr = valueCallbacks.get(key);
+        if (arr) {
+          var idx = arr.indexOf(callback);
+          if (idx >= 0) arr.splice(idx, 1);
+          if (!arr.length) {
+            valueCallbacks.delete(key);
+            sendFire({ action: 'unsubscribeValue', deviceId: logicalId, capability: capability });
+          }
+        }
+      },
       onMessage: function (callback) {
         if (!msgCallbacks.has(logicalId)) msgCallbacks.set(logicalId, []);
         msgCallbacks.get(logicalId).push(callback);
@@ -186,6 +218,9 @@
       },
       read: function (property) {
         return sendRequest({ action: 'read', deviceId: logicalId, property: property });
+      },
+      readValue: function (capability) {
+        return sendRequest({ action: 'readValue', deviceId: logicalId, capability: capability });
       },
       isMapped: function () {
         var ids = deviceMapData[logicalId];

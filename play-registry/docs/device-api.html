@@ -57,11 +57,14 @@
   <tr><td><code>sendMessage(msg)</code></td><td>直接发消息给设备（跳过能力层）。</td></tr>
   <tr><td><code>on(capability, event, cb)</code></td><td>监听能力事件（由能力的 <code>events</code> 定义）。</td></tr>
   <tr><td><code>off(capability, event, cb)</code></td><td>取消能力事件监听。</td></tr>
+  <tr><td><code>onValue(capability, cb)</code></td><td>监听能力标量值变化，回调参数为 <code>(value, oldValue, physicalId)</code>。</td></tr>
+  <tr><td><code>offValue(capability, cb)</code></td><td>取消能力值监听。</td></tr>
   <tr><td><code>onProperty(property, cb)</code></td><td>低层：监听底层属性变化。</td></tr>
   <tr><td><code>offProperty(property, cb)</code></td><td>低层：取消属性监听。</td></tr>
   <tr><td><code>onMessage(cb)</code></td><td>低层：监听设备原始消息。</td></tr>
   <tr><td><code>offMessage(cb)</code></td><td>低层：取消原始消息监听。</td></tr>
   <tr><td><code>async read(property)</code></td><td>读属性缓存值（异步，返回<strong>数组</strong>，顺序同 deviceMap 物理 ID）。</td></tr>
+  <tr><td><code>async readValue(capability)</code></td><td>按设备类型解析能力当前值（异步，返回<strong>数组</strong>）。</td></tr>
   <tr><td><code>isMapped()</code></td><td>该逻辑设备是否已映射到物理设备（bool）。</td></tr>
 </table>
 
@@ -81,6 +84,9 @@
 
 <h3>read 返回数组</h3>
 <p><code>read(property)</code> 是<strong>异步方法</strong>，从宿主属性缓存读取（不发起设备查询），返回<strong>数组</strong>——顺序与 <code>deviceMap</code> 中物理 ID 顺序一致。例如映射了两个传感器：<code>[72]</code> 或 <code>[72, 68]</code>。</p>
+
+<h3>能力值三入口一致</h3>
+<p><code>readValue</code>、<code>onValue</code> 和启动时的首次 <code>readValue</code> 使用同一设备类型解析规则。底层属性变化但解析后的标量值不变时，<code>onValue</code> 不会重复触发。<code>read</code> / <code>onProperty</code> 仍作为兼容和调试用低层接口保留。</p>
 
 <h3>ready</h3>
 <p>桥接脚本保证在 DOM 可用前注入，但 WebSocket 连接需要时间。<strong>所有设备操作之前必须 <code>await DeviceAPI.ready</code></strong>。</p>
@@ -109,8 +115,11 @@ DeviceAPI.device('sensor').on('sphincterPressure', 'pressureChange', (data) =&gt
   }
 });
 
-// 5. 读当前值（异步，返回数组）
-const pressures = await DeviceAPI.device('sensor').read('pressure'); // [72]
+// 5. 读当前能力值，并监听后续变化
+const pressures = await DeviceAPI.device('sensor').readValue('sphincterPressure'); // [72]
+DeviceAPI.device('sensor').onValue('sphincterPressure', (value, oldValue, physicalId) =&gt; {
+  console.log(physicalId, oldValue, '-&gt;', value);
+});
 
 // 6. 回传日志到宿主统一聚合
 DeviceAPI.log('info', '进入惩罚阶段', { count: 3 });

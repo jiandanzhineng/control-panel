@@ -82,7 +82,7 @@ async function main() {
   const deviceMaps = {
     'pressure-edging': { sensor: ['vb_qiya'], motor: ['vb_td01'], punish: ['vb_dianji'], lock: ['vb_lock'] },
     'pressure-edging-v2': { sensor: ['vb_qiya'], motor: ['vb_td01'], punish: ['vb_dianji'], lock: ['vb_lock'] },
-    'maid-punishment': { qtz: ['vb_qtz'], tiptoeSensor: ['vb_cunzhi'], shock: ['vb_dianji'], motor: ['vb_td01'], lock: ['vb_lock'] },
+    'maid-punishment': { qtz: ['vb_qtz'], tiptoeSensor: ['vb_qtz'], shock: ['vb_dianji'], motor: ['vb_td01'], lock: ['vb_lock'] },
     'pushup-detection': { qtz: ['vb_qtz'], lock: ['vb_lock'], shock: ['vb_dianji'], vibrator: ['vb_td01'] },
     'pelvic-training': { sensor: ['vb_qiya'], punish: ['vb_dianji'], lock: ['vb_lock'] },
     'drink-pee-unlock': { scale: ['vb_dzc'], sensor: ['vb_qiya'], qtz: ['vb_qtz'], punish: ['vb_dianji'], vibe: ['vb_td01'], lock: ['vb_lock'] },
@@ -92,7 +92,7 @@ async function main() {
     'pressure-edging': () => httpReq('PUT', '/api/virtual-devices/vb_qiya/properties', { pressure: 12.0 }),
     'pressure-edging-v2': () => httpReq('PUT', '/api/virtual-devices/vb_qiya/properties', { pressure: 10.0 }),
     'pelvic-training': () => httpReq('PUT', '/api/virtual-devices/vb_qiya/properties', { pressure: 8.0 }),
-    'maid-punishment': () => httpReq('PUT', '/api/virtual-devices/vb_cunzhi/properties', { pressure1: 150 }),
+    'maid-punishment': () => httpReq('PUT', '/api/virtual-devices/vb_qtz/properties', { button1: 1 }),
     'pushup-detection': () => httpReq('PUT', '/api/virtual-devices/vb_qtz/properties', { distance: 100 }),
     'drink-pee-unlock': () => httpReq('PUT', '/api/virtual-devices/vb_dzc/properties', { weight: 1050 }),
   };

@@ -500,7 +500,8 @@
       if (DeviceAPI.device(SENSOR).isMapped()) DeviceAPI.device(SENSOR).invoke('reporting', 'setReportDelay', { ms: 100 });
       setStrength(0); setLockOpen(false); stopShockDev();
     } catch (_) {}
-    DeviceAPI.device(SENSOR).onProperty('pressure', (nv) => {
+    const sensorDevice = DeviceAPI.device(SENSOR);
+    const applyPressure = (nv) => {
       const p = Number(nv) || 0;
       rt.currentPressure = p;
       rt.pressureHistory.push({ ts: Date.now(), pressure: p });
@@ -509,7 +510,13 @@
       // 高频即时响应
       calculateStateLogic(); updateIntensity();
       view.currentPressure = p; view.averagePressure = Number(rt.averagePressure.toFixed(1));
-    });
+    };
+    sensorDevice.onValue('sphincterPressure', applyPressure);
+    sensorDevice.readValue('sphincterPressure').then((values) => {
+      if (!rt.running) return;
+      const current = Array.isArray(values) ? values.find((value) => value !== null && value !== undefined) : values;
+      if (current !== null && current !== undefined) applyPressure(current);
+    }).catch((error) => addLog('warn', `读取当前气压失败: ${error && error.message || error}`));
     addLog('info', '气压寸止3阶段已启动');
     playVoice('edging_start', 'intro', function () { return rt.running; });
     render();

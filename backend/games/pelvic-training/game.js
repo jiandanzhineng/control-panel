@@ -130,7 +130,8 @@
       setLockOpen(false);
       stopShockDev();
     } catch (_) {}
-    DeviceAPI.device(SENSOR).onProperty('pressure', (nv) => {
+    const sensorDevice = DeviceAPI.device(SENSOR);
+    const applyPressure = (nv) => {
       const p = Number(nv) || 0;
       rt.currentPressure = p;
       if (rt.phase === 'relax') {
@@ -138,7 +139,13 @@
         rt.relaxMinPressure = Math.min(rt.relaxMinPressure, p);
       }
       view.currentPressure = p;
-    });
+    };
+    sensorDevice.onValue('sphincterPressure', applyPressure);
+    sensorDevice.readValue('sphincterPressure').then((values) => {
+      if (!rt.running) return;
+      const current = Array.isArray(values) ? values.find((value) => value !== null && value !== undefined) : values;
+      if (current !== null && current !== undefined) applyPressure(current);
+    }).catch((error) => addLog('warn', `读取当前气压失败: ${error && error.message || error}`));
     addLog('info', '提肛训练已启动');
     render();
   }

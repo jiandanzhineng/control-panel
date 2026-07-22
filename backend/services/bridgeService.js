@@ -26,6 +26,8 @@ class GameSession {
     this.origin = config.origin || '';
     this.subscriptions = new Map();
     this.propertySubscriptions = new Map();
+    this.valueSubscriptions = new Map();
+    this.capabilityValueCache = new Map();
     this.messageSubscriptions = new Set();
     this.active = true;
     this.pendingCloseTimer = null;
@@ -59,6 +61,8 @@ class GameSession {
     }
     this.subscriptions.clear();
     this.propertySubscriptions.clear();
+    this.valueSubscriptions.clear();
+    this.capabilityValueCache.clear();
     this.messageSubscriptions.clear();
   }
 }
@@ -172,6 +176,11 @@ function handleMessage(session, msg) {
         break;
       }
 
+      case 'readValue': {
+        session.send({ id, result: readValueForSession(session, msg) });
+        break;
+      }
+
       case 'subscribe': {
         const key = `${msg.deviceId}:${msg.capability}:${msg.event}`;
         session.subscriptions.set(key, { logicalId: msg.deviceId, capability: msg.capability, event: msg.event });
@@ -196,6 +205,25 @@ function handleMessage(session, msg) {
       case 'unsubscribeProperty': {
         const pKey = `${msg.deviceId}:${msg.property}`;
         session.propertySubscriptions.delete(pKey);
+        session.send({ id, result: { ok: true } });
+        break;
+      }
+
+      case 'subscribeValue': {
+        const valueKey = `${msg.deviceId}:${msg.capability}`;
+        session.valueSubscriptions.set(valueKey, {
+          logicalId: msg.deviceId,
+          capability: msg.capability,
+        });
+        initializeCapabilityValueCache(session, msg.deviceId, msg.capability);
+        session.send({ id, result: { ok: true } });
+        break;
+      }
+
+      case 'unsubscribeValue': {
+        const valueKey = `${msg.deviceId}:${msg.capability}`;
+        session.valueSubscriptions.delete(valueKey);
+        clearCapabilityValueCache(session, msg.deviceId, msg.capability);
         session.send({ id, result: { ok: true } });
         break;
       }
@@ -259,7 +287,63 @@ function handleDeviceDataChange(evt) {
 
         checkCapabilityEvents(session, logicalId, deviceId, 'prop', prop, change);
       }
+      checkCapabilityValueChanges(session, logicalId, deviceId, Object.keys(changes || {}));
     }
+  }
+}
+
+function capabilityValueCacheKey(logicalId, capability, physicalId) {
+  return `${logicalId}:${capability}:${physicalId}`;
+}
+
+function resolveCapabilityValueForDevice(physicalId, capability) {
+  const dev = deviceService.getDeviceById(physicalId);
+  if (!dev) return null;
+  const deviceType = deviceRegistry.getDeviceType(dev.type);
+  return deviceType.resolveCapabilityValue(capability, dev.data || {});
+}
+
+function initializeCapabilityValueCache(session, logicalId, capability) {
+  for (const physicalId of resolvePhysicalIds(session, logicalId)) {
+    const key = capabilityValueCacheKey(logicalId, capability, physicalId);
+    session.capabilityValueCache.set(
+      key,
+      resolveCapabilityValueForDevice(physicalId, capability)
+    );
+  }
+}
+
+function clearCapabilityValueCache(session, logicalId, capability) {
+  const prefix = `${logicalId}:${capability}:`;
+  for (const key of session.capabilityValueCache.keys()) {
+    if (key.startsWith(prefix)) session.capabilityValueCache.delete(key);
+  }
+}
+
+function checkCapabilityValueChanges(session, logicalId, physicalId, changedProps) {
+  const dev = deviceService.getDeviceById(physicalId);
+  if (!dev) return;
+  const deviceType = deviceRegistry.getDeviceType(dev.type);
+
+  for (const sub of session.valueSubscriptions.values()) {
+    if (sub.logicalId !== logicalId) continue;
+    const watch = deviceType.getCapabilityValueWatch(sub.capability);
+    if (!watch.some((prop) => changedProps.includes(prop))) continue;
+
+    const key = capabilityValueCacheKey(logicalId, sub.capability, physicalId);
+    const oldValue = session.capabilityValueCache.get(key);
+    const value = deviceType.resolveCapabilityValue(sub.capability, dev.data || {});
+    session.capabilityValueCache.set(key, value);
+    if (Object.is(value, oldValue)) continue;
+
+    session.send({
+      event: 'capabilityValueChange',
+      deviceId: logicalId,
+      capability: sub.capability,
+      value,
+      oldValue,
+      physicalId,
+    });
   }
 }
 
@@ -466,6 +550,14 @@ function readForSession(session, msg) {
   });
 }
 
+function readValueForSession(session, msg) {
+  const physIds = resolvePhysicalIds(session, msg.deviceId);
+  return physIds.map((physId) => {
+    ensureCapability(physId, msg.capability);
+    return resolveCapabilityValueForDevice(physId, msg.capability);
+  });
+}
+
 function buildReverseMap(deviceMap) {
   const rev = new Map();
   for (const [logicalId, ids] of Object.entries(deviceMap || {})) {
@@ -619,7 +711,7 @@ function runBrowserCommand(origin, action, payload = {}) {
   if (action === 'getDevices') return listDevicesWithCapabilities();
   if (action === 'getDeviceMap') return getAllDeviceMap();
 
-  const session = action === 'read'
+  const session = action === 'read' || action === 'readValue'
     ? new GameSession(null, {
       kind: 'browser-query',
       origin: String(origin || ''),
@@ -642,6 +734,8 @@ function runBrowserCommand(origin, action, payload = {}) {
       return sendMessageForSession(session, msg);
     case 'read':
       return readForSession(session, msg);
+    case 'readValue':
+      return readValueForSession(session, msg);
     default: {
       const error = new Error(`Unknown browser device action: ${action}`);
       error.code = 'UNKNOWN_BROWSER_DEVICE_ACTION';
