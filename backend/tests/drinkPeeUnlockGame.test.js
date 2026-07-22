@@ -39,6 +39,7 @@ function createDocument() {
     'cooldownRemainingSec', 'lastPunishReason', 'weight', 'pressure', 'tiptoeOk',
     'punishCountdown', 'modeCN', 'weightMin', 'weightMax', 'pressureMin',
     'pressureMax', 'weightCount', 'stableWindowSec', 'punishCooldownSec',
+    'tiptoeQtz', 'tiptoePressureText', 'tiptoePressureThreshold', 'tiptoePressureMax',
   ];
   const bindElements = bindKeys.map((key) => createElement({ 'data-bind': key }));
   const byBind = new Map(bindElements.map((el) => [el.getAttribute('data-bind'), el]));
@@ -311,5 +312,68 @@ describe('drink-pee-unlock game loop', () => {
     expect(env.shockStarts()).toHaveLength(1);
     expect(env.game.rt.state).toBe('Running');
     expect(env.game.view.punishCountdown).toBe(1);
+  });
+});
+
+describe('drink-pee-unlock CUNZHI01 tiptoe pressure', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-01-01T00:00:01.000Z'));
+  });
+  afterEach(() => { jest.useRealTimers(); });
+
+  it('punishes when tiptoe pressure exceeds threshold beyond debounce', async () => {
+    const env = await loadGame({
+      mapped: ['scale', 'punish', 'lock', 'cunzhi'],
+      params: { tiptoePressureThreshold: 100, tiptoeDebounceMs: 300, targetWeight: 9999, stableWindowSec: 9999 },
+    });
+    env.emitValue('scale', 'weight', 1001);
+    expect(env.game.rt.cunzhiMapped).toBe(true);
+    expect(env.game.view.tiptoeOk).toBe(true);
+
+    // 压力超阈值，但未过防抖 → 尚未违规
+    env.emitValue('cunzhi', 'tiptoePressure', 250);
+    jest.advanceTimersByTime(100);
+    await flushPromises();
+    expect(env.game.rt.state).toBe('Running');
+
+    // 超过防抖时长 → 判定违规并电击
+    jest.advanceTimersByTime(1000);
+    await flushPromises();
+    expect(env.game.rt.tiptoeViolated).toBe(true);
+    expect(env.game.rt.state).toBe('Punish');
+    expect(env.game.rt.lastPunishReason).toContain('脚跟落地');
+    expect(env.shockStarts()).toHaveLength(1);
+  });
+
+  it('stays running while tiptoe pressure remains below threshold', async () => {
+    const env = await loadGame({
+      mapped: ['scale', 'punish', 'lock', 'cunzhi'],
+      params: { tiptoePressureThreshold: 100, tiptoeDebounceMs: 300, targetWeight: 9999, stableWindowSec: 9999 },
+    });
+    env.emitValue('scale', 'weight', 1001);
+    env.emitValue('cunzhi', 'tiptoePressure', 30);
+    jest.advanceTimersByTime(2000);
+    await flushPromises();
+    expect(env.game.rt.tiptoeViolated).toBe(false);
+    expect(env.game.rt.state).toBe('Running');
+    expect(env.shockStarts()).toHaveLength(0);
+    expect(env.game.view.tiptoePressureText).toBe(30);
+  });
+
+  it('clears violation when pressure drops back below threshold before debounce', async () => {
+    const env = await loadGame({
+      mapped: ['scale', 'punish', 'lock', 'cunzhi'],
+      params: { tiptoePressureThreshold: 100, tiptoeDebounceMs: 300, targetWeight: 9999, stableWindowSec: 9999 },
+    });
+    env.emitValue('scale', 'weight', 1001);
+    env.emitValue('cunzhi', 'tiptoePressure', 250);
+    jest.advanceTimersByTime(100);
+    env.emitValue('cunzhi', 'tiptoePressure', 20);
+    jest.advanceTimersByTime(1000);
+    await flushPromises();
+    expect(env.game.rt.tiptoeViolated).toBe(false);
+    expect(env.game.rt.state).toBe('Running');
+    expect(env.shockStarts()).toHaveLength(0);
   });
 });

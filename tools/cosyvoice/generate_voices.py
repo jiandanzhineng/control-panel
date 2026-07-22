@@ -84,6 +84,7 @@ DRINK_PEE_LINES = [
     # === 四、惩罚执行 ===
     ("punish_pressure", "气压不足受罚。"),
     ("punish_tiptoe_qtz","脚跟落地受罚。"),
+    ("punish_tiptoe_cunzhi","脚跟落地了，压力超标。要罚一下，下次踮高一点。"),
     ("punish_drink_stall","喝水停顿受罚。"),
     ("punish_pee_stall","重量停滞受罚。"),
 

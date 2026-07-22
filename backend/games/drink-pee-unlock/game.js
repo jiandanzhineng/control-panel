@@ -4,6 +4,7 @@
   const SCALE = 'scale';   // 老版 SCALE_DEVICE
   const SENSOR = 'sensor'; // 老版 QIYA_DEVICE
   const QTZ = 'qtz';       // 老版 QTZ_DEVICE
+  const CUNZHI = 'cunzhi'; // 寸止玩法设备（tiptoePressure）
   const PUNISH = 'punish'; // 老版 DIANJI_DEVICE
   const VIBE = 'vibe';     // 老版 VIBE_DEVICE
   const LOCK = 'lock';     // 老版 ZIDONGSUO_DEVICE
@@ -13,11 +14,15 @@
     stableWindowSec: 30, punishCooldownSec: 10, shockIntensity: 24, shockDuration: 2,
     pressureThreshold: 20, tiptoePressureThreshold: 100,
     vibeStartProb: 0.05, vibeIntensity: 255, vibeDuration: 3,
+    tiptoeDebounceMs: 300,
   };
   const rt = {
     running: false, state: 'End', startTs: 0, endTs: 0, cooldownUntil: 0, forceStop: false,
-    pressure: 0, pressureMin: null, pressureMax: null, tiptoePressure: 0,
+    pressure: 0, pressureMin: null, pressureMax: null,
     qiyaMapped: false, qtzMapped: false,
+    qtzTiptoePressure: 0, cunzhiMapped: false,
+    tiptoePressure: 0, tiptoePressureMax: null,
+    tiptoeViolated: false, tiptoeViolatedSince: 0,
     weight: null, weightTs: 0, weightHistory: [], weightMin: null, weightMax: null, initialWeight: null,
     stableSinceTs: 0, stableAnchorWeight: null,
     progress: 0, lastPunishReason: '无', shockCount: 0, shockTimer: null,
@@ -28,6 +33,7 @@
     title: '喝水/憋尿解锁玩法', statusText: '初始化', remainingSec: '-', initialWeight: '-',
     progress: 0, targetWeight: 500, shockCount: 0, cooldownRemainingSec: 0, lastPunishReason: '',
     weight: '-', pressure: '-', tiptoeOk: false, punishCountdown: '-', mode: 'drink',
+    tiptoeQtz: '-', tiptoePressureText: '-', tiptoePressureThreshold: 0, tiptoePressureMax: '-',
     weightMin: '-', weightMax: '-', pressureMin: '-', pressureMax: '-', weightCount: 0,
     stableWindowSec: 0, punishCooldownSec: 0, punishDevice: '未映射',
     shockStatus: '不可用', shockIntensity: 0, shockDuration: 0,
@@ -222,6 +228,7 @@
     var r = rt.lastPunishReason;
     if (r.indexOf('气压') >= 0) return 'punish_pressure';
     if (r.indexOf('未保持双脚踮脚') >= 0) return 'punish_tiptoe_qtz';
+    if (r.indexOf('脚跟落地') >= 0 || r.indexOf('压力超阈值') >= 0) return 'punish_tiptoe_cunzhi';
     if (r.indexOf('喝水') >= 0) return 'punish_drink_stall';
     if (r.indexOf('排泄') >= 0) return 'punish_pee_stall';
     return null;
@@ -263,7 +270,7 @@
     if (now - _lastRemindTs > 45000 + Math.random() * 45000) {
       _lastRemindTs = now;
       var remindKeys = [];
-      if (rt.qtzMapped) remindKeys.push('remind_tiptoe');
+      if (rt.qtzMapped || rt.cunzhiMapped) remindKeys.push('remind_tiptoe');
       if (rt.qiyaMapped) remindKeys.push('remind_sphincter');
       if (remindKeys.length) playVoice(remindKeys[Math.floor(Math.random() * remindKeys.length)], 'info', function () { return rt.running && rt.state === 'Running'; });
     }
@@ -281,9 +288,33 @@
     if (rt.punishMapped) DeviceAPI.device(PUNISH).invoke('shock', 'stop', {});
   }
   function setLockOpen(open) { if (DeviceAPI.device(LOCK).isMapped()) DeviceAPI.device(LOCK).invoke('lock', 'setOpen', { open: !!open }); }
-  function tiptoeOk() {
+  // QTZ 的按钮差异已收敛为 tiptoePressure 能力值。
+  function tiptoeQtzOk() {
     if (!rt.qtzMapped) return true;
-    return Number(rt.tiptoePressure) <= (Number(cfg.tiptoePressureThreshold) || 0);
+    return Number(rt.qtzTiptoePressure) <= (Number(cfg.tiptoePressureThreshold) || 0);
+  }
+  // CUNZHI01 压力式踮脚：压力低于阈值(未落地)才算踮脚成功；带防抖的违规判定
+  function tiptoeCunzhiOk() { if (!rt.cunzhiMapped) return true; return !rt.tiptoeViolated; }
+  // 综合踮脚判定：两种来源都必须满足（未映射的来源视为满足）
+  function tiptoeOk() { return tiptoeQtzOk() && tiptoeCunzhiOk(); }
+  // CUNZHI01 踮脚压力评估：超阈值 + 防抖后判定为违规（落地）
+  function evalTiptoePressure(p) {
+    rt.tiptoePressure = p;
+    rt.tiptoePressureMax = rt.tiptoePressureMax === null ? p : Math.max(rt.tiptoePressureMax, p);
+    refreshTiptoeViolation();
+  }
+  // 基于当前压力与防抖窗口重算违规状态（loop 兜底调用，不依赖上报频率）
+  function refreshTiptoeViolation() {
+    if (!rt.cunzhiMapped) return;
+    const over = Number(rt.tiptoePressure) > (Number(cfg.tiptoePressureThreshold) || 0);
+    const now = Date.now();
+    if (over) {
+      if (!rt.tiptoeViolatedSince) rt.tiptoeViolatedSince = now;
+      if (!rt.tiptoeViolated && (now - rt.tiptoeViolatedSince) >= (Number(cfg.tiptoeDebounceMs) || 0)) rt.tiptoeViolated = true;
+    } else if (rt.tiptoeViolated || rt.tiptoeViolatedSince) {
+      rt.tiptoeViolated = false;
+      rt.tiptoeViolatedSince = 0;
+    }
   }
   function pressureOk() { if (!rt.qiyaMapped) return true; return Number(rt.pressure) >= (Number(cfg.pressureThreshold) || 0); }
   function remainingSec(now) { return Math.max(0, Math.ceil((rt.endTs - now) / 1000)); }
@@ -332,6 +363,10 @@
     view.weight = rt.weight === null ? '-' : round1(rt.weight);
     view.pressure = rt.qiyaMapped ? round1(rt.pressure) : '-';
     view.tiptoeOk = tiptoeOk();
+    view.tiptoeQtz = !rt.qtzMapped ? '未接' : (tiptoeQtzOk() ? '正常' : '落地');
+    view.tiptoePressureText = !rt.cunzhiMapped ? '未接' : round1(rt.tiptoePressure);
+    view.tiptoePressureThreshold = Number(cfg.tiptoePressureThreshold) || 0;
+    view.tiptoePressureMax = rt.tiptoePressureMax === null ? '-' : round1(rt.tiptoePressureMax);
     view.mode = cfg.mode;
     view.weightMin = rt.weightMin === null ? '-' : round1(rt.weightMin);
     view.weightMax = rt.weightMax === null ? '-' : round1(rt.weightMax);
@@ -407,6 +442,7 @@
     syncView(); render();
   }
   function onWeightSample(weight, ts) {
+    if (!rt.running) return; // 结束后属性回调仍在，避免结束时重复 end/重复播报
     const windowMs = Math.max(1, Number(cfg.stableWindowSec) || 0) * 1000;
     const cutoff = ts - windowMs;
     const mode = cfg.mode === 'pee' ? 'pee' : 'drink';
@@ -459,8 +495,10 @@
       syncView(); render(); return;
     }
     if (rt.state === 'Running') {
+      refreshTiptoeViolation();
       if (!pressureOk()) { enterPunish('提肛惩罚：气压不足'); return; }
-      if (!tiptoeOk()) { enterPunish('踮脚惩罚：未保持双脚踮脚'); return; }
+      if (!tiptoeQtzOk()) { enterPunish('踮脚惩罚：未保持双脚踮脚'); return; }
+      if (!tiptoeCunzhiOk()) { enterPunish('踮脚惩罚：脚跟落地(压力超阈值)'); return; }
       const countdown = punishCountdownSec(now);
       if (countdown !== null && countdown <= 0) {
         const type = cfg.mode === 'pee' ? '排泄惩罚' : '喝水惩罚';
@@ -479,9 +517,11 @@
     rt.running = true; rt.state = 'Running'; rt.startTs = now;
     rt.endTs = now + Math.max(1, Number(cfg.durationSec) || 0) * 1000;
     rt.cooldownUntil = 0; rt.forceStop = false;
-    rt.pressureMin = null; rt.pressureMax = null; rt.tiptoePressure = 0;
+    rt.pressureMin = null; rt.pressureMax = null; rt.qtzTiptoePressure = 0;
     rt.qiyaMapped = DeviceAPI.device(SENSOR).isMapped();
     rt.qtzMapped = DeviceAPI.device(QTZ).isMapped();
+    rt.cunzhiMapped = DeviceAPI.device(CUNZHI).isMapped();
+    rt.tiptoePressure = 0; rt.tiptoePressureMax = null; rt.tiptoeViolated = false; rt.tiptoeViolatedSince = 0;
     rt.punishMapped = DeviceAPI.device(PUNISH).isMapped();
     rt.weight = null; rt.weightTs = 0; rt.weightHistory = []; rt.weightMin = null; rt.weightMax = null; rt.initialWeight = null;
     rt.stableSinceTs = 0; rt.stableAnchorWeight = null;
@@ -523,7 +563,7 @@
       const tiptoeDevice = DeviceAPI.device(QTZ);
       const applyTiptoePressure = (nv) => {
         const p = Number(nv); if (Number.isNaN(p)) return;
-        rt.tiptoePressure = p;
+        rt.qtzTiptoePressure = p;
         view.tiptoeOk = tiptoeOk();
       };
       tiptoeDevice.onValue('tiptoePressure', applyTiptoePressure);
@@ -532,6 +572,17 @@
         const current = Array.isArray(values) ? values.find((value) => value !== null && value !== undefined) : values;
         if (current !== null && current !== undefined) applyTiptoePressure(current);
       }).catch((error) => addLog('warn', `读取当前踮脚压力失败: ${error && error.message || error}`));
+    }
+    if (rt.cunzhiMapped) {
+      const cunzhiDevice = DeviceAPI.device(CUNZHI);
+      try { cunzhiDevice.invoke('reporting', 'setReportDelay', { ms: 100 }); } catch (_) {}
+      cunzhiDevice.onValue('tiptoePressure', (nv) => { evalTiptoePressure(Number(nv) || 0); });
+      cunzhiDevice.readValue('tiptoePressure').then((values) => {
+        if (!rt.running) return;
+        const current = Array.isArray(values) ? values.find((value) => value !== null && value !== undefined) : values;
+        if (current !== null && current !== undefined) evalTiptoePressure(Number(current) || 0);
+      }).catch((error) => addLog('warn', `读取 CUNZHI01 踮脚压力失败: ${error && error.message || error}`));
+      addLog('info', `CUNZHI01 踮脚压力监测已启用（阈值 ${cfg.tiptoePressureThreshold}，防抖 ${cfg.tiptoeDebounceMs}ms）`);
     }
     addLog('info', `游戏启动 mode=${cfg.mode} target=${cfg.targetWeight}g`);
     playVoice(cfg.mode === 'pee' ? 'start_pee' : 'start_drink', 'intro', function () { return rt.running; });
@@ -543,6 +594,7 @@
     if (rt.vibeTimer) { clearTimeout(rt.vibeTimer); rt.vibeTimer = null; }
     setStrength(VIBE, 0); stopShockDev(); setLockOpen(true);
     try { if (DeviceAPI.device(SCALE).isMapped()) DeviceAPI.device(SCALE).invoke('reporting', 'setReportDelay', { ms: 5000 }); } catch (_) {}
+    try { if (rt.cunzhiMapped) DeviceAPI.device(CUNZHI).invoke('reporting', 'setReportDelay', { ms: 5000 }); } catch (_) {}
     if (rt.state !== 'Unlocked') rt.state = 'End';
     const reason = extra && extra.reason || '';
     addLog('info', `结束: ${reason}（进度 ${round1(rt.progress)}g）`);
