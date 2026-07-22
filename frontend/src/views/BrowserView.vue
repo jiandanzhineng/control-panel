@@ -51,6 +51,16 @@
       partition="persist:browser"
       allowpopups
     ></webview>
+
+    <div v-if="loadError" class="load-error">
+      <el-icon class="load-error__icon"><Warning /></el-icon>
+      <div class="load-error__title">页面加载失败</div>
+      <div class="load-error__desc">{{ loadErrorText }}</div>
+      <div class="load-error__hint">
+        常见原因：本地代理未开启或网络不可用。请检查代理/网络后重试。
+      </div>
+      <el-button type="primary" @click="retryLoad">重新加载</el-button>
+    </div>
   </PlayCarrierShell>
 </template>
 
@@ -58,6 +68,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
+import { Warning } from '@element-plus/icons-vue';
 import PlayCarrierShell from '../components/PlayCarrierShell.vue';
 
 interface PluginMatcher {
@@ -82,6 +93,8 @@ const canBack = ref(false);
 const canForward = ref(false);
 const detected = ref<DetectedPlay | null>(null);
 const plugins = ref<PluginMatcher[]>([]);
+const loadError = ref(false);
+const loadErrorText = ref('');
 const grantStatus = ref<{ granted: boolean; origin: string; expiresAt?: number }>({ granted: false, origin: '' });
 
 let detectTimer: number | undefined;
@@ -104,6 +117,15 @@ function goBack() { try { webviewEl.value?.goBack(); } catch {} }
 function goForward() { try { webviewEl.value?.goForward(); } catch {} }
 function reload() { try { webviewEl.value?.reload(); } catch {} }
 function goHome() { navigate(HOME); }
+
+function retryLoad() {
+  loadError.value = false;
+  const wv = webviewEl.value;
+  if (!wv) return;
+  // 加载失败后 webview 停在错误页，reload 无效，需显式重新导航到当前地址
+  const target = currentUrl.value || HOME;
+  try { wv.loadURL(target); } catch { try { wv.reload(); } catch {} }
+}
 
 function syncNavState() {
   const wv = webviewEl.value;
@@ -253,10 +275,21 @@ async function loadPlugins() {
 function bindEvents() {
   const wv = webviewEl.value;
   if (!wv) return;
-  wv.addEventListener('did-start-loading', () => { loading.value = true; });
+  wv.addEventListener('did-start-loading', () => { loading.value = true; loadError.value = false; });
   wv.addEventListener('did-stop-loading', () => { loading.value = false; });
   wv.addEventListener('did-navigate', onNavigated);
   wv.addEventListener('did-navigate-in-page', onNavigated);
+  // 主框架加载失败（代理断开、DNS 失败、超时等）时展示重试页，避免白屏。
+  // errorCode -3 = ERR_ABORTED，多为用户主动导航打断，属正常，忽略。
+  wv.addEventListener('did-fail-load', (e: any) => {
+    if (e && e.isMainFrame === false) return;
+    if (e && e.errorCode === -3) return;
+    loading.value = false;
+    loadErrorText.value = e?.errorDescription
+      ? `${e.errorDescription}（${e.validatedURL || currentUrl.value || ''}）`
+      : '无法连接到目标地址';
+    loadError.value = true;
+  });
   refreshGrantStatus();
 }
 
@@ -291,5 +324,42 @@ onBeforeUnmount(() => {
   width: 100%;
   border: 0;
   display: inline-flex;
+}
+
+.load-error {
+  position: absolute;
+  inset: 42px 0 0 0; /* 让开顶部工具栏高度 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  background: var(--el-bg-color);
+  z-index: 10;
+}
+
+.load-error__icon {
+  font-size: 44px;
+  color: var(--el-color-warning);
+}
+
+.load-error__title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.load-error__desc {
+  max-width: 560px;
+  color: var(--el-text-color-regular);
+  word-break: break-all;
+}
+
+.load-error__hint {
+  max-width: 560px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
 }
 </style>

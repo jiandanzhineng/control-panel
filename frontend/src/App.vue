@@ -65,8 +65,8 @@
 
       <!-- 主内容区域 -->
       <div class="main-container" :style="isMobile ? { marginLeft: 0 } : { marginLeft: isCollapsed ? '64px' : '200px', width: 'calc(100% - ' + (isCollapsed ? '64px' : '200px') + ')' }">
-        <!-- 顶部工具栏 -->
-        <div class="main-header">
+        <!-- 顶部工具栏：沉浸式页面（如在线游戏 webview）隐藏面包屑，避免与载体自带工具栏叠成多层 -->
+        <div v-if="!hideHeader" class="main-header">
           <div class="header-content">
             <!-- 移动端菜单按钮 -->
             <el-button 
@@ -113,6 +113,9 @@ const isMobile = ref(false)
 
 // 本地游戏相关页面（/plays、配置、运行）统一高亮「本地游戏」入口
 const menuActive = computed(() => (route.path.startsWith('/plays') ? '/plays' : route.path))
+
+// 沉浸式页面隐藏全局顶栏（面包屑），避免与页面自带工具栏叠加
+const hideHeader = computed(() => route.path === '/browser' || route.path.startsWith('/plays/game/current'))
 
 const checkMobile = () => {
   isMobile.value = window.innerWidth <= 768
@@ -273,6 +276,9 @@ html, body {
   flex: 1;
   overflow-y: auto;
   margin: 0;
+  /* 作为绝对定位子元素（如 PlayCarrierShell 的 browser 壳 inset:0）的定位基准，
+     使其相对内容区铺满而非盖到左侧 fixed 侧边栏下方 */
+  position: relative;
 }
 
 .mobile-overlay {
