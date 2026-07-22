@@ -1,10 +1,19 @@
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 
 const DEV_SERVER_URL = process.env.VITE_DEV_SERVER_URL || 'http://localhost:5173';
 const API_PROXY_TARGET = process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:5278';
 const WAIT_TIMEOUT_MS = 60_000;
 const WAIT_INTERVAL_MS = 500;
+
+// --local-registry：本地起 play-registry 静态站，并把在线游戏源指向它，方便试玩本地游戏。
+const LOCAL_REGISTRY = process.argv.includes('--local-registry') || process.env.GAME_REGISTRY_LOCAL === '1';
+const LOCAL_REGISTRY_PORT = Number(process.env.LOCAL_REGISTRY_PORT || 4178);
+const LOCAL_REGISTRY_URL = `http://127.0.0.1:${LOCAL_REGISTRY_PORT}/registry.json`;
+const REPO_ROOT = path.resolve(__dirname, '..');
+const REGISTRY_SITE_DIR = path.join(REPO_ROOT, 'play-registry', '.site');
 
 const children = new Set();
 let shuttingDown = false;
@@ -104,9 +113,73 @@ function killProcessTree(child) {
   }
 }
 
+const MIME = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.ico': 'image/x-icon',
+  '.zip': 'application/zip',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
+
+// 用内置 http 起一个只读静态站，服务 play-registry/.site（无需额外依赖）。
+function startRegistryServer() {
+  const server = http.createServer((req, res) => {
+    let rel = decodeURIComponent((req.url || '/').split('?')[0]);
+    if (rel.endsWith('/')) rel += 'index.html';
+    const resolved = path.normalize(path.join(REGISTRY_SITE_DIR, rel));
+    if (!resolved.startsWith(REGISTRY_SITE_DIR)) {
+      res.writeHead(403).end('Forbidden');
+      return;
+    }
+    fs.readFile(resolved, (err, buf) => {
+      if (err) {
+        res.writeHead(404).end('Not found');
+        return;
+      }
+      res.writeHead(200, {
+        'content-type': MIME[path.extname(resolved).toLowerCase()] || 'application/octet-stream',
+        'access-control-allow-origin': '*',
+      });
+      res.end(buf);
+    });
+  });
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(LOCAL_REGISTRY_PORT, '127.0.0.1', () => resolve(server));
+  });
+}
+
 async function main() {
   const npmCommand = process.platform === 'win32' ? 'npm' : 'npm';
   const electronPath = require('electron');
+
+  if (LOCAL_REGISTRY) {
+    console.log('[electron-dev] building play-registry site (.site)...');
+    execFileSync(npmCommand, ['--prefix', 'play-registry', 'run', 'build:site'], {
+      cwd: REPO_ROOT,
+      stdio: 'inherit',
+      shell: process.platform === 'win32',
+    });
+    if (!fs.existsSync(REGISTRY_SITE_DIR)) {
+      throw new Error(`registry site not built: ${REGISTRY_SITE_DIR}`);
+    }
+    const registryServer = await startRegistryServer();
+    registryServer.once('close', () => {});
+    process.env.GAME_REGISTRY_URL = LOCAL_REGISTRY_URL;
+    console.log(`[electron-dev] local game registry: ${LOCAL_REGISTRY_URL}`);
+  }
 
   try {
     await probeFrontend(DEV_SERVER_URL);
@@ -137,7 +210,9 @@ async function main() {
 
   console.log('[electron-dev] frontend is ready, starting Electron');
 
-  const electronArgs = [...process.argv.slice(2), 'electron/main.js'];
+  // --local-registry 是本脚本自己消费的标志，不透传给 electron。
+  const passthroughArgs = process.argv.slice(2).filter((a) => a !== '--local-registry');
+  const electronArgs = [...passthroughArgs, 'electron/main.js'];
   const electron = spawnChild(electronPath, electronArgs, {
     env: {
       VITE_DEV_SERVER_URL: DEV_SERVER_URL,
