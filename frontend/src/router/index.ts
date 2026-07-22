@@ -12,6 +12,7 @@ import LogManagement from '../views/LogManagement.vue';
 import AutoTest from '../views/AutoTest.vue';
 import FirmwareBatchUpgrade from '../views/FirmwareBatchUpgrade.vue';
 import AccountView from '../views/AccountView.vue';
+import GameDevGuideView from '../views/GameDevGuideView.vue';
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/home' },
@@ -22,6 +23,7 @@ const routes: RouteRecordRaw[] = [
 
   // 本地游戏（游戏 + 插件统一入口）
   { path: '/plays', name: 'play_library', component: PlayLibraryView, meta: { title: '本地游戏' } },
+  { path: '/plays/dev-guide', name: 'game_dev_guide', component: GameDevGuideView, meta: { title: '游戏开发指南' } },
   { path: '/plays/:type/:id/config', name: 'play_config', component: PlayConfigView, meta: { title: '玩法配置' } },
   // 运行态（全屏覆盖层，靠「启动」进入、「停止」退出，不进侧边栏）
   { path: '/plays/game/current', name: 'game_current', component: GameCurrentView, meta: { title: '玩法运行' } },

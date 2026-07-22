@@ -5,7 +5,10 @@
         <h1>本地游戏</h1>
         <p class="muted">本机已保存和内置的游戏与插件，选择一个配置并接入设备运行。</p>
       </div>
-      <el-button :icon="Refresh" :loading="busy.refresh" @click="refresh">刷新</el-button>
+      <div class="header-actions">
+        <el-button :icon="Reading" @click="$router.push('/plays/dev-guide')">开发指南</el-button>
+        <el-button :icon="Refresh" :loading="busy.refresh" @click="refresh">刷新</el-button>
+      </div>
     </div>
 
     <!-- 当前运行提示条（替代原「当前游戏」侧边栏项） -->
@@ -110,7 +113,7 @@ import { useRouter } from 'vue-router';
 import { track } from '../analytics';
 import { useActivePlay, clearActivePlay } from '../composables/useActivePlay';
 import {
-  Close, Delete, Operation, Refresh, Search, Upload, VideoPlay,
+  Close, Delete, Operation, Reading, Refresh, Search, Upload, VideoPlay,
 } from '@element-plus/icons-vue';
 
 type CarrierType = 'game' | 'plugin';
@@ -343,6 +346,12 @@ function formatLastPlayed(ts?: number | null) {
   align-items: flex-start;
   gap: 16px;
   margin-bottom: 16px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 h1 {
