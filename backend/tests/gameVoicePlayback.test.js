@@ -72,9 +72,10 @@ function createDocument() {
   };
 }
 
-function createDeviceApi(mapped, params, propertyValues = {}) {
+function createDeviceApi(mapped, params, capabilityValues = {}) {
   const mappedSet = new Set(mapped);
   const propertyHandlers = new Map();
+  const valueHandlers = new Map();
   const invocations = [];
   const keyFor = (logicalId, property) => `${logicalId}:${property}`;
   const DeviceAPI = {
@@ -93,7 +94,13 @@ function createDeviceApi(mapped, params, propertyValues = {}) {
           if (!propertyHandlers.has(key)) propertyHandlers.set(key, []);
           propertyHandlers.get(key).push(callback);
         },
-        read: (property) => Promise.resolve(propertyValues[keyFor(logicalId, property)] || []),
+        read: (property) => Promise.resolve(capabilityValues[keyFor(logicalId, property)] || []),
+        onValue: (capability, callback) => {
+          const key = keyFor(logicalId, capability);
+          if (!valueHandlers.has(key)) valueHandlers.set(key, []);
+          valueHandlers.get(key).push(callback);
+        },
+        readValue: (capability) => Promise.resolve(capabilityValues[keyFor(logicalId, capability)] || []),
       };
     },
   };
@@ -102,6 +109,10 @@ function createDeviceApi(mapped, params, propertyValues = {}) {
     invocations,
     emitProperty(logicalId, property, value) {
       const callbacks = propertyHandlers.get(keyFor(logicalId, property)) || [];
+      callbacks.forEach((callback) => callback(value));
+    },
+    emitValue(logicalId, capability, value) {
+      const callbacks = valueHandlers.get(keyFor(logicalId, capability)) || [];
       callbacks.forEach((callback) => callback(value));
     },
   };
@@ -161,7 +172,7 @@ async function loadGame(gameName, options = {}) {
   const api = createDeviceApi(
     options.mapped || definition.mapped,
     options.params || {},
-    options.propertyValues
+    options.capabilityValues
   );
   const window = {
     ...windowEvents,
@@ -222,8 +233,8 @@ describe('game voice playback lifecycle', () => {
     });
 
     expect(voiceNames(env.audio)).toEqual(['start_drink.mp3']);
-    env.emitProperty('scale', 'weight', 500);
-    env.emitProperty('scale', 'weight', 470);
+    env.emitValue('scale', 'weight', 500);
+    env.emitValue('scale', 'weight', 470);
     expect(voiceNames(env.audio)).toEqual(['start_drink.mp3']);
 
     jest.advanceTimersByTime(1000);
@@ -258,7 +269,7 @@ describe('game voice playback lifecycle', () => {
       },
     });
     await flushPromises();
-    env.emitProperty('scale', 'weight', 500);
+    env.emitValue('scale', 'weight', 500);
 
     jest.advanceTimersByTime(1000);
     await flushPromises();
@@ -272,7 +283,7 @@ describe('game voice playback lifecycle', () => {
   it('replaces a rejected intro with the latest state before gesture retry', async () => {
     const env = await loadGame('pressureV2', { playOutcomes: ['reject', 'resolve'] });
     await flushPromises();
-    env.emitProperty('sensor', 'pressure', 19.5);
+    env.emitValue('sensor', 'sphincterPressure', 19.5);
 
     expect(voiceNames(env.audio)).toEqual(['edging_start.mp3']);
     env.document.dispatch('pointerdown');
@@ -282,7 +293,7 @@ describe('game voice playback lifecycle', () => {
 
   it('releases a synchronous play failure before the next state event', async () => {
     const env = await loadGame('pressureV2', { playOutcomes: ['throw', 'resolve'] });
-    env.emitProperty('sensor', 'pressure', 19.5);
+    env.emitValue('sensor', 'sphincterPressure', 19.5);
 
     expect(env.game.rt.state).toBe('MIDDLE');
     expect(voiceNames(env.audio)).toEqual(['edging_start.mp3', 'edging_middle.mp3']);
@@ -291,7 +302,7 @@ describe('game voice playback lifecycle', () => {
   it('does not treat a media play rejection as an autoplay restriction', async () => {
     const env = await loadGame('pressureV2', { playOutcomes: ['media-reject', 'resolve'] });
     await flushPromises();
-    env.emitProperty('sensor', 'pressure', 19.5);
+    env.emitValue('sensor', 'sphincterPressure', 19.5);
 
     expect(voiceNames(env.audio)).toEqual(['edging_start.mp3', 'edging_middle.mp3']);
     env.document.dispatch('pointerdown');
@@ -320,12 +331,12 @@ describe('game voice playback lifecycle', () => {
     env.game.rt.delayStartTime = Date.now();
     env.game.cfg.lowPressureDelay = 999;
 
-    env.emitProperty('sensor', 'pressure', 18);
+    env.emitValue('sensor', 'sphincterPressure', 18);
     env.game.loop();
     env.audio[env.audio.length - 1].dispatch('ended');
-    env.emitProperty('sensor', 'pressure', 10);
+    env.emitValue('sensor', 'sphincterPressure', 10);
     env.game.loop();
-    env.emitProperty('sensor', 'pressure', 18);
+    env.emitValue('sensor', 'sphincterPressure', 18);
     env.game.loop();
 
     expect(voiceNames(env.audio).filter((name) => name === 'edging_middle.mp3')).toHaveLength(2);
@@ -333,8 +344,8 @@ describe('game voice playback lifecycle', () => {
 
   it('lets pressure v2 overload interrupt intro without changing the state transition', async () => {
     const env = await loadGame('pressureV2');
-    env.emitProperty('sensor', 'pressure', 19.5);
-    env.emitProperty('sensor', 'pressure', 20);
+    env.emitValue('sensor', 'sphincterPressure', 19.5);
+    env.emitValue('sensor', 'sphincterPressure', 20);
 
     expect(env.game.rt.state).toBe('EDGING');
     expect(env.game.rt.edgingCount).toBe(1);
@@ -347,8 +358,8 @@ describe('game voice playback lifecycle', () => {
 
   it('releases an errored intro and plays only the latest valid pressure v2 state', async () => {
     const env = await loadGame('pressureV2');
-    env.emitProperty('sensor', 'pressure', 19.5);
-    env.emitProperty('sensor', 'pressure', 10);
+    env.emitValue('sensor', 'sphincterPressure', 19.5);
+    env.emitValue('sensor', 'sphincterPressure', 10);
 
     expect(env.game.rt.state).toBe('SUB_CALM');
     expect(voiceNames(env.audio)).toEqual(['edging_start.mp3']);
