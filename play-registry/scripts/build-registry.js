@@ -170,6 +170,8 @@ function classifyResourceRef(ref, allowedOrigins, options = {}) {
   }
 
   if (value.startsWith('/')) {
+    // 单个 '/' 是 JS 里的路径分隔符字面量（如 base + '/' + key），并非资源引用，放行。
+    if (value === '/') return null;
     return `根绝对路径 ${value}`;
   }
 
