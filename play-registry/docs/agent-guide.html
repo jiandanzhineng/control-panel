@@ -175,7 +175,44 @@ DeviceAPI.onSystemLog(entry =&gt; {});            // 设备离线等系统日志
   <li>☐ 浏览器打开本地站点确认能启动、能连 Bridge。</li>
   <li>☐ 含电击/锁定等敏感能力已在 PR 描述中说明。</li>
 </ul>
-<h2>构建与自测</h2>
+<h2>获取并运行客户端</h2>
+<p>控制面板客户端就是本仓库本身——clone 后用 npm 直接跑起来，<strong>无需单独下载安装包</strong>。客户端会自带内置后端（监听 <code>127.0.0.1:5278</code>，提供 <code>/bridge</code> WebSocket 与 <code>/bridge-api/device-api-bridge.js</code>），你调试游戏时连的就是它。</p>
+<div class="copy-wrap">
+<button class="copy-btn" data-copy-target="#client-cmds">复制</button>
+<pre id="client-cmds"><code>git clone git@github.com:jiandanzhineng/control-panel.git
+cd control-panel
+npm install          # 首次，安装依赖
+npm run electron:dev # 启动客户端（自动拉起 vite + 内置后端 + Electron 窗口）</code></pre>
+</div>
+<ul>
+  <li><code>npm run electron:dev</code>：开发模式，自动复用/启动 vite（5173）并拉起 Electron。</li>
+  <li><code>npm run electron:dev:local</code>：把在线游戏源指向本地 <code>play-registry</code> 站点，用来试玩尚未上架的网站游戏。</li>
+</ul>
+
+<h2>开启开发者模式（外部本地游戏放行）</h2>
+<p>默认情况下，只有客户端内置浏览器加载的游戏能连后台控制设备。要用<strong>外部浏览器/任意本地端口</strong>调试自研游戏，需先在客户端里打开开发者放行：</p>
+<ol>
+  <li>客户端左侧进入 <strong>网络配置 / 服务</strong> 页。</li>
+  <li>找到 <strong>「开发者：外部本地游戏放行」</strong>，勾选 <strong>「允许外部本地游戏连接」</strong>。</li>
+  <li>开启后，本机 <code>localhost</code> / <code>127.0.0.1</code> 任意端口的页面即可连后台；非回环地址（如手机同局域网访问 <code>http://192.168.x.x:8080</code>）需在下方 <strong>「添加来源」</strong> 显式加入。</li>
+</ol>
+<div class="callout callout-warn">
+  <span class="callout-icon">⚠️</span>
+  <p>安全提示：开启后你浏览器访问过的本地页面就具备控制真实设备的能力，<strong>仅在本机开发调试时开启，用完请关闭</strong>。</p>
+</div>
+
+<h2>调试游戏</h2>
+<p><strong>方式 A · 外部浏览器（推荐，独立端口）</strong>：开启上面的开发者放行后，游戏页面引用后台 bridge 的绝对地址，然后用任意本地端口打开页面，F12 断点调试，和调普通网页完全一致——脚本会自动连回后台，不受页面端口影响。</p>
+<div class="copy-wrap">
+<button class="copy-btn" data-copy-target="#dev-bridge">复制</button>
+<pre id="dev-bridge"><code>&lt;!-- 外部调试时改用绝对地址引用 bridge（上架时改回 /bridge-api/...）--&gt;
+&lt;script src="http://127.0.0.1:5278/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;</code></pre>
+</div>
+<p><strong>方式 B · 放进客户端内置目录</strong>：把游戏放到 <code>backend/games/&lt;id&gt;/</code>，在客户端「本地游戏」里直接启动运行。</p>
+<p><strong>无实机时</strong>：用 <code>tools/vdev-cli</code> 起虚拟设备，注入输入并检查设备命令记录，不用真实硬件也能测。Electron 窗口内的页面调试（CDP 端口 9222 等）见仓库 <code>docs/guides/ELECTRON_DEBUG.md</code>。</p>
+
+<h2>站点构建与自测</h2>
+<p>这一步针对<strong>网站游戏</strong>（放在 <code>play-registry/games/</code>、走在线游戏中心发布）：</p>
 <div class="copy-wrap">
 <button class="copy-btn" data-copy-target="#build-cmds">复制</button>
 <pre id="build-cmds"><code>cd play-registry
@@ -184,7 +221,6 @@ npm run build        # 校验并生成 registry.json
 npm test             # 运行测试
 npm run serve        # 本地预览整站（构建产物）</code></pre>
 </div>
-<p>本地调试玩法：启动控制面板后端（监听 <code>/bridge</code> WebSocket 与 <code>/bridge-api/device-api-bridge.js</code>），浏览器直接打开玩法页面即可断点调试，与调普通网页一致。</p>
 
 <h2>下一步</h2>
 <ul>
