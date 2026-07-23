@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>玩法库 · UnderSilicon 控制面板</title>
-<meta name="description" content="UnderSilicon 控制面板的远程玩法网站。改这里即生效，无需重发 App。游戏经面板 gameProxy 同源加载、连本机 Bridge 驱动真实设备。" />
+<title>硅基之下游戏库 · UnderSilicon 控制面板</title>
+<meta name="description" content="硅基之下游戏库：控制面板的在线游戏站。游戏经面板 gameProxy 同源加载、连本机 Bridge 驱动真实设备，改站即上新，无需重发 App。" />
 <link rel="stylesheet" href="assets/css/site.css" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
 </head><body>
@@ -13,12 +13,12 @@
   <div class="nav-inner">
     <a class="brand" href="index.html">
       <span class="brand-mark">⚡</span>
-      <span>玩法库</span>
+      <span>硅基之下游戏库</span>
     </a>
     <div class="nav-links">
       <a href="games.html">游戏</a>
       <a href="control.html">设备控制</a>
-      <a href="docs/getting-started.html">开发文档</a>
+      <a href="docs/agent-guide.html">开发文档</a>
       <a href="docs/device-api.html">DeviceAPI</a>
       <a href="docs/contribute.html" class="nav-cta">投稿</a>
     </div>
@@ -27,15 +27,15 @@
 
 <header class="hero">
   <div class="container">
-    <span class="hero-eyebrow"><span class="dot"></span> 远程玩法仓库 · 实时更新</span>
-    <h1>玩法即网页，<span class="grad">改站即生效</span></h1>
-    <p class="lead">UnderSilicon 控制面板的远程游戏网站。游戏自包含 HTML+JS，经面板 <code>gameProxy</code> 同源加载、连本机 <code>/bridge</code> 驱动真实设备。无需重发安装包。</p>
+    <span class="hero-eyebrow"><span class="dot"></span> 硅基之下 · 在线游戏站</span>
+    <h1>硅基之下<span class="grad">游戏库</span></h1>
+    <p class="lead">连接你的真实设备，在浏览器里直接玩。每个游戏都是自包含网页，经控制面板同源加载、驱动本机硬件——上新即玩，无需更新 App。</p>
     <div class="hero-actions">
       <a class="btn btn-primary" href="games.html">浏览游戏 →</a>
-      <a class="btn btn-ghost" href="docs/getting-started.html">如何开发一个玩法</a>
+      <a class="btn btn-ghost" href="docs/agent-guide.html">我要做一个游戏</a>
     </div>
     <div class="stat-row" id="stats">
-      <div class="stat"><div class="stat-num" id="stat-games">—</div><div class="stat-label">在线玩法</div></div>
+      <div class="stat"><div class="stat-num" id="stat-games">—</div><div class="stat-label">在线游戏</div></div>
       <div class="stat"><div class="stat-num" id="stat-devices">—</div><div class="stat-label">支持设备类型</div></div>
       <div class="stat"><div class="stat-num" id="stat-caps">—</div><div class="stat-label">设备能力</div></div>
     </div>
@@ -44,20 +44,42 @@
 
 <section class="section">
   <div class="container">
+    <div class="prompt-card">
+      <div class="prompt-card-head">
+        <span class="prompt-card-title">🤖 想做一个自己的游戏？把这段 <span class="grad">Prompt</span> 丢给 Claude Code / Codex</span>
+        <button class="copy-btn" id="home-copy" data-copy-target="#home-prompt">复制 Prompt</button>
+      </div>
+      <pre id="home-prompt">你是「硅基之下」游戏库的玩法开发者。请先阅读开发规范：
+https://game.undersilicon.cn/docs/agent-guide.html
+
+然后 clone 仓库 git@github.com:jiandanzhineng/control-panel.git，
+参考 backend/games/ 里最接近的现有游戏，按下面的想法做一个新游戏：
+
+【玩法描述】<写清用什么设备、玩家做什么、什么条件触发反馈、如何结束>
+
+要求：新目录放 play-registry/games/<your-id>/，设备交互只走 window.DeviceAPI，
+完成后在 play-registry/ 下跑 npm run build && npm test，最后说明改了哪些文件。</pre>
+      <p style="color:var(--text-soft);font-size:14px;margin-top:14px;">改完这段描述发给 AI，它会照着规范帮你写出可上架的游戏。完整说明见 <a href="docs/agent-guide.html">Agent 开发指南</a>。</p>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container">
     <div class="contribute">
       <div class="contribute-grid">
         <div>
           <span class="hero-eyebrow"><span class="dot"></span> 玩家投稿计划</span>
-          <h2 style="font-size:30px;font-weight:800;letter-spacing:0;margin-bottom:12px;">把你的脑洞做成玩法，<br/>投稿送硬件 + Token 套餐</h2>
-          <p style="color:var(--text-soft);font-size:16px;">玩法 = 自包含网页。建议先 clone 本仓库，在 <code>games/</code> 目录参考现有游戏，用 Claude Code 或 Codex 辅助写一个新游戏。提交 PR 上架后，玩家在面板里直接看到、直接玩。</p>
+          <h2 style="font-size:30px;font-weight:800;letter-spacing:0;margin-bottom:12px;">把你的脑洞做成游戏，<br/>投稿送硬件 + Token 套餐</h2>
+          <p style="color:var(--text-soft);font-size:16px;">不用从零学写代码——clone 仓库后，用上面的 Prompt 让 AI 参考现有游戏改出你的玩法。通过审核上架后，玩家在控制面板里直接看到、直接玩。</p>
           <div class="tier-list">
-            <div class="tier"><span class="tier-icon">01</span><div class="tier-info"><div class="tier-name">推荐投稿方式</div><div class="tier-desc">clone 本仓库，参考现有游戏目录写新玩法</div></div></div>
-            <div class="tier"><span class="tier-icon">02</span><div class="tier-info"><div class="tier-name">AI 辅助开发</div><div class="tier-desc">可用 Claude Code 或 Codex 对照现有游戏快速实现</div></div></div>
+            <div class="tier"><span class="tier-icon">01</span><div class="tier-info"><div class="tier-name">AI 辅助开发</div><div class="tier-desc">复制首页 Prompt，让 Claude Code / Codex 对照现有游戏实现</div></div></div>
+            <div class="tier"><span class="tier-icon">02</span><div class="tier-info"><div class="tier-name">提交 PR 上架</div><div class="tier-desc">把新游戏目录发 PR 到 main，合并后自动发布</div></div></div>
             <div class="tier"><span class="tier-icon">03</span><div class="tier-info"><div class="tier-name">投稿奖励</div><div class="tier-desc">通过审核上架后送硬件 + Token 套餐，具体咨询客服</div></div></div>
           </div>
           <div style="margin-top:24px;display:flex;gap:12px;flex-wrap:wrap;">
             <a class="btn btn-primary" href="docs/contribute.html">查看投稿指南 →</a>
-            <a class="btn btn-ghost" href="docs/getting-started.html">先学开发</a>
+            <a class="btn btn-ghost" href="docs/agent-guide.html">Agent 开发指南</a>
           </div>
         </div>
         <div class="qr-card">
@@ -75,12 +97,12 @@
     <div class="footer-links">
       <a href="games.html">游戏</a>
       <a href="control.html">设备控制</a>
-      <a href="docs/getting-started.html">开发文档</a>
+      <a href="docs/agent-guide.html">开发文档</a>
       <a href="docs/device-api.html">DeviceAPI</a>
       <a href="docs/devices.html">设备清单</a>
       <a href="docs/contribute.html">投稿</a>
     </div>
-    <div>UnderSilicon 控制面板 · 远程玩法仓库 · 内容随仓库 <code>main</code> 分支自动发布</div>
+    <div>硅基之下游戏库 · UnderSilicon 控制面板 · 内容随仓库 <code>main</code> 分支自动发布</div>
   </div>
 </footer>
 
@@ -105,6 +127,28 @@
       document.getElementById('stat-caps').textContent = Object.keys(capSet).length;
     })
     .catch(function () {});
+
+  // 首页 Prompt 复制按钮
+  document.querySelectorAll('.copy-btn[data-copy-target]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var el = document.querySelector(btn.getAttribute('data-copy-target'));
+      if (!el) return;
+      var text = el.textContent, old = btn.textContent;
+      var done = function () {
+        btn.textContent = '✓ 已复制'; btn.classList.add('copied');
+        setTimeout(function () { btn.textContent = old; btn.classList.remove('copied'); }, 1600);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () {});
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (_) {}
+        document.body.removeChild(ta);
+      }
+    });
+  });
 })();
 </script>
 </body>

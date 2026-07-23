@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agent 开发指南 · 硅基之下游戏库</title>
+<meta name="description" content="给 AI Agent 的一站式游戏开发参考：项目结构、DeviceAPI、设备能力、manifest 规范、构建自测流程与参考 URL。" />
+<link rel="stylesheet" href="../assets/css/site.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="../index.html"><span class="brand-mark">⚡</span><span>硅基之下游戏库</span></a>
+    <div class="nav-links">
+      <a href="../games.html">游戏</a>
+      <a href="getting-started.html">开发文档</a>
+      <a href="../control.html">设备控制</a>
+      <a href="device-api.html">DeviceAPI</a>
+      <a href="contribute.html" class="nav-cta">投稿</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container">
+<div class="docs-layout">
+<aside class="docs-sidebar">
+  <h4>开发文档</h4>
+  <a href="getting-started.html">快速开始</a>
+  <a href="agent-guide.html" class="active">Agent 开发指南</a>
+  <a href="device-api.html">DeviceAPI 参考</a>
+  <a href="devices.html">设备与能力</a>
+  <a href="contribute.html">投稿与奖励</a>
+</aside>
+
+<main class="docs-body">
+<h1>Agent 开发指南</h1>
+<div class="updated">给 AI Agent 的一站式参考 · 让 Claude Code / Codex 直接读这一页即可开工</div>
+
+<p>这一页是<strong>专门写给 AI Agent</strong> 的。它把开发一个「硅基之下」玩法所需的全部上下文——项目结构、参考游戏、DeviceAPI、设备能力、manifest 规范、构建自测流程、参考 URL——收在一处。把本页 URL 或内容喂给 Agent，它就能照着做。</p>
+
+<div class="prompt-card">
+  <div class="prompt-card-head">
+    <span class="prompt-card-title">📋 一键复制 · 丢给 <span class="grad">Claude Code / Codex</span> 的起步 Prompt</span>
+    <button class="copy-btn" data-copy-target="#prompt-start">复制</button>
+  </div>
+  <pre id="prompt-start">你是「硅基之下」游戏库的玩法开发者。请先阅读开发规范：
+https://game.undersilicon.cn/docs/agent-guide.html
+以及 DeviceAPI 参考 https://game.undersilicon.cn/docs/device-api.html
+和设备能力清单 https://game.undersilicon.cn/docs/devices.html
+
+然后 clone 仓库 git@github.com:jiandanzhineng/control-panel.git，
+参考 backend/games/ 里最接近的现有游戏（例如 pressure-edging / drink-pee-unlock / pushup-detection），
+按下面的玩法想法复制其结构，做出一个新游戏：
+
+【玩法描述】<在这里写清规则：用什么设备、玩家做什么、什么条件触发强度/电击/锁、如何结束>
+
+要求：
+1. 新目录 play-registry/games/<your-id>/，至少含 index.html，manifest 内联在 <script id="game-manifest" type="application/json"> 里。
+2. 所有设备交互只走 window.DeviceAPI，先 await DeviceAPI.ready；可选设备先 isMapped() 再用。
+3. 资源引用只用相对路径或 /bridge-api/ 开头，禁止根绝对路径。
+4. 完成后在 play-registry/ 下跑 npm run build && npm test 确保通过。
+5. 最后说明改了哪些文件、玩法用到哪些设备与能力、是否含电击/锁定等敏感内容。</pre>
+</div>
+<h2>30 秒速览</h2>
+<table>
+  <tr><th>问题</th><th>答案</th></tr>
+  <tr><td>玩法是什么？</td><td>一个自包含网页（HTML + JS），经面板 <code>gameProxy</code> 同源加载。</td></tr>
+  <tr><td>怎么控制设备？</td><td>全局注入的 <code>window.DeviceAPI</code>，禁止自己开 WebSocket。</td></tr>
+  <tr><td>玩法逻辑谁驱动？</td><td>页面自己（<code>setInterval</code>/<code>rAF</code>），宿主不提供 <code>loop()</code>。</td></tr>
+  <tr><td>元数据放哪？</td><td>内联 <code>&lt;script id="game-manifest" type="application/json"&gt;</code>，不用单独 manifest.json。</td></tr>
+  <tr><td>怎么上架？</td><td>提交游戏目录，发 PR 到 <code>main</code>，合并后自动发布到 game.undersilicon.cn。</td></tr>
+  <tr><td>安全谁兜底？</td><td>会话结束/断连超 180s，宿主强制 <code>close</code> 所有设备，独立于页面逻辑。</td></tr>
+</table>
+<h2>项目结构（Agent 必读）</h2>
+<p>仓库 <code>git@github.com:jiandanzhineng/control-panel.git</code>，玩法相关只需关注这几处：</p>
+<pre><code>control-panel/
+├── backend/
+│   ├── games/                # 现有玩法源（最佳参考样例）
+│   │   ├── pressure-edging/       # 压力控制类
+│   │   ├── drink-pee-unlock/      # 多设备 + 锁类
+│   │   ├── pushup-detection/      # 传感器检测类
+│   │   └── maid-punishment/       # 惩罚/电击类
+│   └── devices/
+│       ├── registry.js       # 设备类型注册表（能力真源）
+│       ├── capabilities.js   # 能力契约定义
+│       └── capabilityValue.js# 能力可读值解释器
+└── play-registry/            # 游戏网站（本站）
+    ├── games/                # 上架玩法目录（新玩法放这里）
+    ├── docs/                 # 本套开发文档
+    └── scripts/build-*.js    # registry + 站点构建脚本</code></pre>
+<div class="callout callout-warn">
+  <span class="callout-icon">💡</span>
+  <p>Agent 提示：先读 <code>backend/games/</code> 里设备/节奏最接近的那个游戏，复制其结构，<strong>不要从空白起步</strong>。设备能力以 <code>backend/devices/registry.js</code> 为准，文档表格可能滞后。</p>
+</div>
+<h2>参考 URL 速查</h2>
+<table>
+  <tr><th>资源</th><th>URL</th></tr>
+  <tr><td>本指南（喂给 Agent）</td><td><code>https://game.undersilicon.cn/docs/agent-guide.html</code></td></tr>
+  <tr><td>快速开始</td><td><code>https://game.undersilicon.cn/docs/getting-started.html</code></td></tr>
+  <tr><td>DeviceAPI 完整参考</td><td><code>https://game.undersilicon.cn/docs/device-api.html</code></td></tr>
+  <tr><td>设备与能力清单</td><td><code>https://game.undersilicon.cn/docs/devices.html</code></td></tr>
+  <tr><td>投稿与奖励</td><td><code>https://game.undersilicon.cn/docs/contribute.html</code></td></tr>
+  <tr><td>在线游戏列表</td><td><code>https://game.undersilicon.cn/games.html</code></td></tr>
+  <tr><td>registry.json（游戏索引）</td><td><code>https://game.undersilicon.cn/registry.json</code></td></tr>
+  <tr><td>代码仓库</td><td><code>git@github.com:jiandanzhineng/control-panel.git</code></td></tr>
+</table>
+<h2>manifest 规范</h2>
+<p>元数据<strong>内联</strong>在 <code>index.html</code>，构建脚本会校验。最小可用示例：</p>
+<div class="copy-wrap">
+<button class="copy-btn" data-copy-target="#manifest-sample">复制</button>
+<pre id="manifest-sample"><code>&lt;script id="game-manifest" type="application/json"&gt;
+{
+  "id": "your-id",
+  "name": "游戏显示名",
+  "version": "1.0.0",
+  "description": "一句话玩法说明",
+  "devices": [
+    { "id": "sensor", "capabilities": ["sphincterPressure"], "required": true },
+    { "id": "motor",  "capabilities": ["strength"],          "required": true },
+    { "id": "punish", "capabilities": ["shock"],             "required": false }
+  ],
+  "params": [
+    { "key": "durationSec", "label": "时长(秒)", "type": "number", "default": 300 }
+  ]
+}
+&lt;/script&gt;</code></pre>
+</div>
+<ul>
+  <li><code>id</code> 全局唯一，<code>version</code> 合法 semver（如 <code>1.0.0</code>）。</li>
+  <li><code>devices[].id</code> 是逻辑设备名，玩法里用 <code>DeviceAPI.device('&lt;id&gt;')</code> 引用。</li>
+  <li><code>required:false</code> 的设备可选，代码里 <code>isMapped()</code> 判断后再用。</li>
+  <li><code>params</code> 是启动时用户可配的参数，运行时通过 <code>DeviceAPI.params</code> 读取。</li>
+</ul>
+<h2>DeviceAPI 核心（完整版见 <a href="device-api.html">DeviceAPI 参考</a>）</h2>
+<div class="copy-wrap">
+<button class="copy-btn" data-copy-target="#api-core">复制</button>
+<pre id="api-core"><code>// 所有设备操作前必须等通道就绪
+await DeviceAPI.ready;
+
+const dev = DeviceAPI.device('logicalId');   // 逻辑设备代理
+
+// —— 下行（推荐走能力 invoke，有校验+映射）——
+dev.invoke(capability, action, params);       // 如 ('strength','set',{value:128})
+dev.writeProps(props);                         // 低层：直接写属性
+dev.sendMessage(msg);                          // 低层：发原始消息
+
+// —— 上行订阅 ——
+dev.on(capability, event, cb);                 // 能力事件，cb(data)
+dev.onValue(capability, cb);                   // 能力标量值变化 cb(value, oldValue, physicalId)
+dev.onProperty(property, cb);                  // 低层：底层属性变化（兼容/调试用）
+dev.onMessage(cb);                             // 低层：原始消息
+
+// —— 读取（异步，返回数组，顺序同 deviceMap 物理 ID）——
+const vals = await dev.readValue(capability);  // 解析后的能力值，如 [72]
+const raw  = await dev.read(property);         // 属性缓存原始值
+
+dev.isMapped();                                // 可选设备先判断
+DeviceAPI.params;                              // 启动参数
+DeviceAPI.log('info', 'msg', { meta });        // 回传日志到宿主聚合
+DeviceAPI.onSystemLog(entry =&gt; {});            // 设备离线等系统日志</code></pre>
+</div>
+<div class="callout callout-warn">
+  <span class="callout-icon">⚠️</span>
+  <p>连续数值（压力/重量/距离）优先用 <code>readValue</code>/<code>onValue</code>（能力语义值），<strong>不要</strong>依赖 <code>read</code>/<code>onProperty</code> 的裸属性名——后者仅作兼容调试。设备离线时下行调用不抛错，只推 <code>warn</code> 系统日志。</p>
+</div>
+<h2>提交前检查清单</h2>
+<ul>
+  <li>☐ manifest 内联、<code>id</code> 唯一、<code>version</code> 合法 semver。</li>
+  <li>☐ 所有设备交互走 <code>DeviceAPI</code>，操作前 <code>await DeviceAPI.ready</code>。</li>
+  <li>☐ 可选设备（<code>required:false</code>）都 <code>isMapped()</code> 判断后再用。</li>
+  <li>☐ 资源引用仅相对路径或 <code>/bridge-api/</code>，无根绝对路径。</li>
+  <li>☐ <code>devices[].capabilities</code> 与 <code>backend/devices/registry.js</code> 对得上。</li>
+  <li>☐ 在 <code>play-registry/</code> 下 <code>npm run build &amp;&amp; npm test</code> 通过。</li>
+  <li>☐ 浏览器打开本地站点确认能启动、能连 Bridge。</li>
+  <li>☐ 含电击/锁定等敏感能力已在 PR 描述中说明。</li>
+</ul>
+<h2>构建与自测</h2>
+<div class="copy-wrap">
+<button class="copy-btn" data-copy-target="#build-cmds">复制</button>
+<pre id="build-cmds"><code>cd play-registry
+npm install          # 首次
+npm run build        # 校验并生成 registry.json
+npm test             # 运行测试
+npm run serve        # 本地预览整站（构建产物）</code></pre>
+</div>
+<p>本地调试玩法：启动控制面板后端（监听 <code>/bridge</code> WebSocket 与 <code>/bridge-api/device-api-bridge.js</code>），浏览器直接打开玩法页面即可断点调试，与调普通网页一致。</p>
+
+<h2>下一步</h2>
+<ul>
+  <li>→ <a href="getting-started.html">快速开始</a>（人类视角的分步流程）</li>
+  <li>→ <a href="device-api.html">DeviceAPI 完整参考</a>（每个方法签名与语义）</li>
+  <li>→ <a href="devices.html">设备与能力清单</a>（可用设备类型与能力表）</li>
+  <li>→ <a href="contribute.html">投稿与奖励</a>（上架流程与 Token 套餐）</li>
+</ul>
+<script>
+(function () {
+  "use strict";
+  document.querySelectorAll('.copy-btn[data-copy-target]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var el = document.querySelector(btn.getAttribute('data-copy-target'));
+      if (!el) return;
+      var text = el.textContent;
+      var done = function () {
+        var old = btn.textContent;
+        btn.textContent = '✓ 已复制';
+        btn.classList.add('copied');
+        setTimeout(function () { btn.textContent = old; btn.classList.remove('copied'); }, 1600);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(fallback);
+      } else { fallback(); }
+      function fallback() {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); done(); } catch (_) {}
+        document.body.removeChild(ta);
+      }
+    });
+  });
+})();
+</script>
+</main>
+</div>
+</div>
+</body>
+</html>
