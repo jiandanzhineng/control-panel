@@ -12,6 +12,8 @@ const WAIT_INTERVAL_MS = 500;
 const LOCAL_REGISTRY = process.argv.includes('--local-registry') || process.env.GAME_REGISTRY_LOCAL === '1';
 const LOCAL_REGISTRY_PORT = Number(process.env.LOCAL_REGISTRY_PORT || 4178);
 const LOCAL_REGISTRY_URL = `http://127.0.0.1:${LOCAL_REGISTRY_PORT}/registry.json`;
+// 本地站首页，用作「在线游戏」webview 的 home（BrowserView 读 VITE_BROWSER_HOME_URL）。
+const LOCAL_REGISTRY_HOME = `http://127.0.0.1:${LOCAL_REGISTRY_PORT}/`;
 const REPO_ROOT = path.resolve(__dirname, '..');
 const REGISTRY_SITE_DIR = path.join(REPO_ROOT, 'play-registry', '.site');
 
@@ -178,12 +180,26 @@ async function main() {
     const registryServer = await startRegistryServer();
     registryServer.once('close', () => {});
     process.env.GAME_REGISTRY_URL = LOCAL_REGISTRY_URL;
+    // 让「在线游戏」webview 首页也指向本地站，与 registry 数据源保持一致。
+    // 注意：这是 Vite 构建期变量，仅当本脚本自己启动前端 dev server 时生效；
+    // 复用已在运行的 Vite（reusing frontend dev server）不会读到它。
+    if (!process.env.VITE_BROWSER_HOME_URL) {
+      process.env.VITE_BROWSER_HOME_URL = LOCAL_REGISTRY_HOME;
+    }
     console.log(`[electron-dev] local game registry: ${LOCAL_REGISTRY_URL}`);
+    console.log(`[electron-dev] local browser home: ${process.env.VITE_BROWSER_HOME_URL}`);
   }
 
   try {
     await probeFrontend(DEV_SERVER_URL);
     console.log(`[electron-dev] reusing frontend dev server: ${DEV_SERVER_URL}`);
+    if (LOCAL_REGISTRY) {
+      console.warn(
+        '[electron-dev] WARNING: 复用了已在运行的前端 dev server，' +
+          'VITE_BROWSER_HOME_URL 不会生效，「在线游戏」webview 首页仍可能是远程。' +
+          '请先关闭现有 Vite（5173），让本脚本自己启动前端。',
+      );
+    }
   } catch {
     ownsFrontend = true;
     console.log(`[electron-dev] starting frontend dev server: ${DEV_SERVER_URL}`);
@@ -194,6 +210,9 @@ async function main() {
         shell: process.platform === 'win32',
         env: {
           VITE_API_PROXY_TARGET: API_PROXY_TARGET,
+          ...(process.env.VITE_BROWSER_HOME_URL
+            ? { VITE_BROWSER_HOME_URL: process.env.VITE_BROWSER_HOME_URL }
+            : {}),
         },
       },
     );
