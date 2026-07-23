@@ -6,6 +6,7 @@ const logService = require('./logService');
 const virtualDeviceService = require('./virtualDeviceService');
 const { BRIDGE_INTERNAL_HEADER } = require('../constants/bridgeAccess');
 const externalGameAccessService = require('./externalGameAccessService');
+const browserDeviceGrantService = require('./browserDeviceGrantService');
 
 let wss = null;
 const sessions = new Map();
@@ -82,6 +83,12 @@ function init(server) {
       // 浏览器 WS 握手无法附加自定义头，故这里是外部本地游戏试玩的关键放行点。
       try {
         if (externalGameAccessService.isTrustedDevOrigin(origin)) return true;
+      } catch (_) {}
+      // 已通过 DeviceAPI 授权（electron 内置浏览器弹窗，当天有效）的 origin 受信。
+      // 与 HTTP /api 侧 browserApiAccess 的 grant 放行对称：远程游戏页经授权后，
+      // 其 WS 桥订阅（onValue/subscribeValue）才能建立，否则重量等能力值无法同步。
+      try {
+        if (browserDeviceGrantService.isGranted(origin)) return true;
       } catch (_) {}
       try {
         if (info.req.headers[BRIDGE_INTERNAL_HEADER] !== '1') return false;

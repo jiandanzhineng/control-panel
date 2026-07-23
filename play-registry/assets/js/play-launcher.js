@@ -18,6 +18,7 @@
 
   var BACKEND_PORTS = [5278, 5277, 3000, 3010];
   var backendBase = null; // 缓存探测到的本机后端，如 http://127.0.0.1:5278
+  var backendForbidden = false; // 探测到后端在跑但拒绝本网站（403，未授权）
 
   // ---------- 工具 ----------
   function el(id) { return document.getElementById(id); }
@@ -27,24 +28,40 @@
     });
   }
 
-  // 探测本机后端：用 fetch HEAD/GET，超时短，命中即缓存
+  function deviceApi() { return window.DeviceAPI || null; }
+
+  // 探测本机后端：
+  //   命中(200) → 返回 base
+  //   后端在跑但拒绝本网站(403) → 返回 { forbidden: true }
+  //   连不上/超时 → 返回 null
   function probePort(port) {
-    var url = 'http://127.0.0.1:' + port + '/api/devices';
+    var base = 'http://127.0.0.1:' + port;
     return new Promise(function (resolve) {
       var ctrl = new AbortController();
       var t = setTimeout(function () { ctrl.abort(); }, 800);
-      fetch(url, { signal: ctrl.signal, mode: 'cors' })
-        .then(function (r) { clearTimeout(t); if (r.ok) resolve('http://127.0.0.1:' + port); else resolve(null); })
+      fetch(base + '/api/devices', { signal: ctrl.signal, mode: 'cors' })
+        .then(function (r) {
+          clearTimeout(t);
+          if (r.ok) resolve(base);
+          else if (r.status === 403) resolve({ forbidden: true, base: base });
+          else resolve(null);
+        })
         .catch(function () { clearTimeout(t); resolve(null); });
     });
   }
 
   function detectBackend(force) {
     if (backendBase && !force) return Promise.resolve(backendBase);
+    backendForbidden = false;
     return BACKEND_PORTS.reduce(function (chain, port) {
       return chain.then(function (found) {
         if (found) return found;
-        return probePort(port).then(function (b) { if (b) backendBase = b; return b; });
+        return probePort(port).then(function (b) {
+          if (b === null) return null;
+          if (b && b.forbidden) { backendForbidden = true; return null; }
+          backendBase = b;
+          return b;
+        });
       });
     }, Promise.resolve(null)).then(function (b) { return b; });
   }
@@ -132,12 +149,58 @@
     el('modal').classList.add('show');
 
     detectBackend().then(function (base) {
-      if (!base) {
-        showNoBackend();
-        return;
-      }
-      loadBackendData(base);
+      if (base) { loadBackendData(base); return; }
+      // 后端在跑但拒绝本网站：尝试走 DeviceAPI 授权
+      if (backendForbidden) { handleForbidden(); return; }
+      showNoBackend();
     });
+  }
+
+  // 后端返回 403：面板在运行，但没授权本网站。
+  //   - electron 内置浏览器（有 DeviceAPI）→ 引导申请授权，允许后重探测
+  //   - 普通浏览器（无 DeviceAPI）→ 提示在面板内打开 / 开开发者模式
+  function handleForbidden() {
+    var api = deviceApi();
+    if (!api || !api.requestAccess) { showMissingApi(); return; }
+    var status = el('modal-status');
+    status.innerHTML = '<span class="dot warn"></span> 面板已运行，本网站尚未授权';
+    status.className = 'modal-status warn';
+    el('modal-body').innerHTML =
+      '<div class="empty-block">'
+      + '<p style="font-size:16px;margin-bottom:10px;">需要授权后才能控制本机设备</p>'
+      + '<p style="color:var(--text-soft);font-size:14px;margin-bottom:16px;">点击下方按钮，并在控制面板弹窗中允许今天访问。</p>'
+      + '<button class="btn btn-primary" id="request-grant">申请授权</button>'
+      + '</div>';
+    var btn = el('request-grant');
+    if (btn) btn.onclick = function () {
+      btn.disabled = true;
+      btn.textContent = '等待面板授权…';
+      api.requestAccess().then(function () {
+        backendBase = null;
+        backendForbidden = false;
+        openModal(currentGame); // 重新探测，此时后端已放行
+      }).catch(function (err) {
+        btn.disabled = false;
+        btn.textContent = '申请授权';
+        status.innerHTML = '<span class="dot err"></span> 授权失败: ' + esc(err && err.message ? err.message : err);
+        status.className = 'modal-status error';
+      });
+    };
+  }
+
+  function showMissingApi() {
+    var status = el('modal-status');
+    status.innerHTML = '<span class="dot err"></span> 当前环境不支持授权';
+    status.className = 'modal-status error';
+    el('modal-body').innerHTML =
+      '<div class="empty-block">'
+      + '<p style="font-size:16px;margin-bottom:10px;">面板已运行，但本页无法申请授权</p>'
+      + '<p style="color:var(--text-soft);font-size:14px;margin-bottom:16px;">请在控制面板的内置浏览器中打开本站；'
+      + '或在面板「网络配置 → 开发者：外部本地游戏放行」中开启开发者模式后重试。</p>'
+      + '<button class="btn btn-ghost" id="retry-detect">重新探测</button>'
+      + '</div>';
+    var retry = el('retry-detect');
+    if (retry) retry.onclick = function () { backendBase = null; backendForbidden = false; openModal(currentGame); };
   }
 
   function showNoBackend() {
@@ -151,7 +214,7 @@
       + '<button class="btn btn-ghost" id="retry-detect">重新探测</button>'
       + '</div>';
     var retry = el('retry-detect');
-    if (retry) retry.onclick = function () { backendBase = null; openModal(currentGame); };
+    if (retry) retry.onclick = function () { backendBase = null; backendForbidden = false; openModal(currentGame); };
   }
 
   function loadBackendData(base) {

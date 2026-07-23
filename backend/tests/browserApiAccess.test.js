@@ -28,6 +28,7 @@ const mqttClient = require('../services/mqttClientService');
 const testService = require('../services/testService');
 const deviceService = require('../services/deviceService');
 const externalGameAccessService = require('../services/externalGameAccessService');
+const browserDeviceGrantService = require('../services/browserDeviceGrantService');
 const { browserApiCors } = require('../middleware/browserApiAccess');
 
 function createApp() {
@@ -162,6 +163,40 @@ describe('browser api access guard', () => {
       const res = await request(createApp())
         .post('/api/devices/ctrl_td01/operations/start')
         .set('Origin', 'http://localhost:9090')
+        .send({});
+
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe('with a live DeviceAPI grant', () => {
+    let isGrantedSpy;
+
+    beforeEach(() => {
+      isGrantedSpy = jest
+        .spyOn(browserDeviceGrantService, 'isGranted')
+        .mockImplementation((origin) => origin === 'https://game.undersilicon.cn');
+    });
+
+    afterEach(() => {
+      isGrantedSpy.mockRestore();
+    });
+
+    it('allows a granted origin to reach mutation routes', async () => {
+      const res = await request(createApp())
+        .post('/api/devices/ctrl_td01/operations/start')
+        .set('Origin', 'https://game.undersilicon.cn')
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(res.headers['access-control-allow-origin']).toBe('https://game.undersilicon.cn');
+      expect(deviceService.executeDeviceOperation).toHaveBeenCalled();
+    });
+
+    it('still blocks origins without a grant', async () => {
+      const res = await request(createApp())
+        .post('/api/devices/ctrl_td01/operations/start')
+        .set('Origin', 'https://evil.example.com')
         .send({});
 
       expect(res.status).toBe(403);

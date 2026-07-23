@@ -1,5 +1,6 @@
 const { sendError } = require('../utils/http');
 const externalGameAccessService = require('../services/externalGameAccessService');
+const browserDeviceGrantService = require('../services/browserDeviceGrantService');
 
 const DEFAULT_TRUSTED_ORIGINS = [
   'http://localhost:5173',
@@ -44,6 +45,11 @@ function getRequestOrigin(req) {
 function isTrustedBrowserOrigin(origin) {
   if (!origin) return false;
   if (getTrustedBrowserOrigins().has(origin)) return true;
+  // 已通过 DeviceAPI 授权（electron 内置浏览器弹窗，当天有效）的 origin 受信。
+  // 这让"申请授权"后的网站也能跨源直连 /api，与 IPC 侧 DeviceAPI 同权同期。
+  try {
+    if (browserDeviceGrantService.isGranted(origin)) return true;
+  } catch (_) {}
   // 开发者放行开关：开启时本地任意端口 + 白名单 origin 受信
   try {
     if (externalGameAccessService.isTrustedDevOrigin(origin)) return true;

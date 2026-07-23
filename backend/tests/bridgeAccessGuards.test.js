@@ -180,6 +180,42 @@ describe('legacy bridge access guards', () => {
     expect(result).toBe(true);
   });
 
+  it('allows browser websocket upgrades for a granted remote origin without the internal header', () => {
+    const grantService = require('../services/browserDeviceGrantService');
+    const spy = jest
+      .spyOn(grantService, 'isGranted')
+      .mockImplementation((origin) => origin === 'https://game.undersilicon.cn');
+
+    const bridgeService = require('../services/bridgeService');
+    const server = http.createServer();
+    bridgeService.init(server);
+
+    const result = MockWebSocketServer.instance.options.verifyClient({
+      origin: 'https://game.undersilicon.cn',
+      req: { headers: { host: '127.0.0.1:5278' } },
+    });
+
+    expect(result).toBe(true);
+    spy.mockRestore();
+  });
+
+  it('rejects browser websocket upgrades for an ungranted remote origin', () => {
+    const grantService = require('../services/browserDeviceGrantService');
+    const spy = jest.spyOn(grantService, 'isGranted').mockReturnValue(false);
+
+    const bridgeService = require('../services/bridgeService');
+    const server = http.createServer();
+    bridgeService.init(server);
+
+    const result = MockWebSocketServer.instance.options.verifyClient({
+      origin: 'https://game.undersilicon.cn',
+      req: { headers: { host: '127.0.0.1:5278' } },
+    });
+
+    expect(result).toBe(false);
+    spy.mockRestore();
+  });
+
   it('still allows native/plugin websocket upgrades without Origin', () => {
     const bridgeService = require('../services/bridgeService');
     const server = http.createServer();
