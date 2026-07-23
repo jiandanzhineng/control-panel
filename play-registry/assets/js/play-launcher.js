@@ -19,6 +19,7 @@
   var BACKEND_PORTS = [5278, 5277, 3000, 3010];
   var backendBase = null; // 缓存探测到的本机后端，如 http://127.0.0.1:5278
   var backendForbidden = false; // 探测到后端在跑但拒绝本网站（403，未授权）
+  var busy = false; // 同一时刻只处理一个 GameHost 请求（cache/launch）
 
   // ---------- 工具 ----------
   function el(id) { return document.getElementById(id); }
@@ -27,6 +28,22 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+
+  // 轻量 toast（复用页面 #toast，若无则降级到 modal-status）
+  function toast(msg) {
+    var t = el('toast');
+    if (t) {
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(function () { t.classList.remove('show'); }, 2200);
+      return;
+    }
+    var s = el('modal-status');
+    if (s) { s.textContent = msg; }
+  }
+
+  // 宿主（PC Electron / 手机 App）注入的统一游戏启动桥
+  function gameHost() { return window.GameHost || null; }
 
   function deviceApi() { return window.DeviceAPI || null; }
 
@@ -132,7 +149,15 @@
   }
 
   // ---------- modal 渲染 ----------
-  function openModal(game) {
+  function openModal(game, triggerButton) {
+    // feature detection：宿主存在时，委托宿主打开原生配置页并运行，
+    // 不再探测 127.0.0.1、不弹设备 modal，也不回退到网页直接运行。
+    var host = gameHost();
+    if (host && typeof host.launch === 'function') {
+      launchViaHost(game, triggerButton);
+      return;
+    }
+
     currentGame = game;
     mapping = {};
     params = {};
@@ -452,9 +477,73 @@
     el('modal').classList.remove('show');
   }
 
+  // ---------- GameHost 桥接（PC Electron / 手机 App）----------
+  // 请求体严格只含 v 和 gameId 两个字段。
+  function setActionBusy(triggerButton, active) {
+    busy = active;
+    var buttons = document.querySelectorAll('[data-cache], [data-launch]');
+    Array.prototype.forEach.call(buttons, function (button) {
+      button.disabled = active;
+    });
+    if (!triggerButton) return;
+    triggerButton.disabled = active;
+    triggerButton.setAttribute('aria-busy', active ? 'true' : 'false');
+    if (active) triggerButton.classList.add('is-loading');
+    else triggerButton.classList.remove('is-loading');
+  }
+
+  function runHostRequest(triggerButton, invoke, onSuccess, onError) {
+    setActionBusy(triggerButton, true);
+    Promise.resolve()
+      .then(invoke)
+      .then(onSuccess, onError)
+      .then(
+        function () { setActionBusy(triggerButton, false); },
+        function () { setActionBusy(triggerButton, false); },
+      );
+  }
+
+  function launchViaHost(game, triggerButton) {
+    if (busy) return; // 同一时刻只处理一个请求，重复点击忽略
+    var host = gameHost();
+    if (!host || typeof host.launch !== 'function') { toast('当前环境不支持启动'); return; }
+    toast('正在启动「' + (game.title || game.id) + '」…');
+    runHostRequest(
+      triggerButton,
+      function () { return host.launch({ v: 1, gameId: game.id }); },
+      function () {
+        toast('已受理，正在打开配置页…');
+      },
+      function (err) {
+        toast('启动失败：' + (err && err.message ? err.message : err));
+      },
+    );
+  }
+
+  function cacheGame(game, triggerButton) {
+    if (busy) return; // 同一时刻只处理一个请求，重复点击忽略
+    var host = gameHost();
+    if (!host || typeof host.cache !== 'function') {
+      toast('请在客户端/App 内使用缓存功能');
+      return;
+    }
+    toast('正在缓存「' + (game.title || game.id) + '」…');
+    runHostRequest(
+      triggerButton,
+      function () { return host.cache({ v: 1, gameId: game.id }); },
+      function () {
+        toast('已缓存「' + (game.title || game.id) + '」');
+      },
+      function (err) {
+        toast('缓存失败：' + (err && err.message ? err.message : err));
+      },
+    );
+  }
+
   // ---------- 暴露 ----------
   window.PlayLauncher = {
     open: openModal,
+    cache: cacheGame,
     detectBackend: detectBackend,
     startGame: startGame,
     closeModal: closeModal,

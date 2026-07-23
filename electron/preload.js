@@ -22,6 +22,18 @@ window.browserDeviceApi = {
   stopOriginForWebview: (webContentsId) => ipcRenderer.invoke('browser-device:stop-origin-for-webview', webContentsId),
 };
 
+// GameHost 启动导航：主进程在 launch 时 send('game-host:navigate', { path })，
+// 前端（App.vue）监听后 router.push 到原生配置页。
+window.gameHostNav = {
+  onNavigate: (cb) => {
+    const listener = (_event, data) => {
+      try { cb(data); } catch (_) {}
+    };
+    ipcRenderer.on('game-host:navigate', listener);
+    return () => ipcRenderer.removeListener('game-host:navigate', listener);
+  },
+};
+
 // 重写 fetch，将相对路径 /api/* 指向本机后端
 const origFetch = window.fetch.bind(window);
 window.fetch = (input, init) => {

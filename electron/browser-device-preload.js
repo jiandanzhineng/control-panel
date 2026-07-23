@@ -66,3 +66,15 @@ contextBridge.exposeInMainWorld('DeviceAPI', {
   getDeviceMap: () => command('getDeviceMap', {}),
   params: {},
 });
+
+// GameHost：与 DeviceAPI 分离的跨端统一游戏启动契约。
+// 仅转发到主进程，所有 origin / v / gameId 校验都在主进程按宿主侧记录的
+// origin 完成——不信任网页传入内容。
+async function gameHostInvoke(channel, req) {
+  return unwrap(await ipcRenderer.invoke(channel, req));
+}
+
+contextBridge.exposeInMainWorld('GameHost', {
+  cache: (req) => gameHostInvoke('game-host:cache', req),
+  launch: (req) => gameHostInvoke('game-host:launch', req),
+});

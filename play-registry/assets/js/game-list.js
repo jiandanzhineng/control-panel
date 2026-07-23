@@ -103,7 +103,10 @@
       + '<div class="game-meta">' + badges + '</div>'
       + '<div class="game-card-foot">'
         + '<span class="game-size">' + (g.sha256 ? ('sha ' + g.sha256.slice(0, 8)) : '') + (g.size ? ' · ' + fmtSize(g.size) : '') + '</span>'
-        + '<button class="play-link" type="button" data-launch="' + esc(g.id) + '">启动玩法 →</button>'
+        + '<span class="game-actions">'
+          + '<button class="play-link ghost" type="button" data-cache="' + esc(g.id) + '">缓存</button>'
+          + '<button class="play-link" type="button" data-launch="' + esc(g.id) + '">启动 →</button>'
+        + '</span>'
       + '</div>'
     + '</article>';
   }
@@ -164,13 +167,20 @@
 
   search.addEventListener('input', render);
 
-  // 点击"启动玩法" → 打开设备选择 modal
+  // 点击"启动" → 打开设备选择 modal（或委托宿主）；点击"缓存" → 委托宿主缓存
   grid.addEventListener('click', function (e) {
+    var cacheBtn = e.target.closest('[data-cache]');
+    if (cacheBtn) {
+      var cacheId = cacheBtn.getAttribute('data-cache');
+      var cg = allGames.find(function (x) { return x.id === cacheId; });
+      if (cg && window.PlayLauncher && window.PlayLauncher.cache) window.PlayLauncher.cache(cg, cacheBtn);
+      return;
+    }
     var btn = e.target.closest('[data-launch]');
     if (!btn) return;
     var id = btn.getAttribute('data-launch');
     var g = allGames.find(function (x) { return x.id === id; });
-    if (g && window.PlayLauncher) window.PlayLauncher.open(g);
+    if (g && window.PlayLauncher) window.PlayLauncher.open(g, btn);
   });
 
   // 绑定 modal 取消按钮

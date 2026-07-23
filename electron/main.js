@@ -6,6 +6,8 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const fs = require('fs');
 const { fileURLToPath, pathToFileURL } = require('url');
 const { BRIDGE_INTERNAL_HEADER } = require('../backend/constants/bridgeAccess.js');
+const externalGameAccessService = require('../backend/services/externalGameAccessService.js');
+const gameHost = require('./gameHost.js');
 
 let server;
 let frontendServer;
@@ -321,6 +323,52 @@ function registerBrowserDeviceIpcHandlers() {
     const origin = ensureBrowserDeviceGrant(event.sender);
     const result = getBridgeService().runBrowserCommand(origin, action, payload || {});
     return { ok: true, result };
+  }));
+}
+
+function getBackendBaseUrl() {
+  return process.env.BACKEND_URL || 'http://127.0.0.1:5278';
+}
+
+function parseAuthorizedGameHostRequest(event, req) {
+  const origin = getWebviewOrigin(event.sender);
+  const { enabled: developerModeEnabled } = externalGameAccessService.getStatus();
+  gameHost.assertAllowedOrigin(origin, { developerModeEnabled });
+  const { gameId } = gameHost.parseGameHostRequest(req);
+  return { origin, gameId };
+}
+
+// GameHost 契约：官方网站在内置浏览器 <webview> 里通过 window.GameHost
+// 调 cache/launch。origin 用宿主侧记录的 event.sender URL 校验，不信任消息内容。
+function registerGameHostIpcHandlers() {
+  ipcMain.handle('game-host:cache', (event, req) => browserDeviceResult(async () => {
+    const { origin, gameId } = parseAuthorizedGameHostRequest(event, req);
+
+    const url = gameHost.buildInstallUrl(getBackendBaseUrl(), gameId);
+    const response = await fetch(url, { method: 'POST' });
+    let body = null;
+    try { body = await response.json(); } catch (_) {}
+    if (!response.ok) {
+      const error = new Error(body?.message || `缓存安装失败(${response.status})`);
+      error.code = body?.code || 'GAME_HOST_CACHE_FAILED';
+      error.origin = origin;
+      throw error;
+    }
+    return { ok: true, gameId, origin, status: body };
+  }));
+
+  ipcMain.handle('game-host:launch', (event, req) => browserDeviceResult(async () => {
+    const { origin, gameId } = parseAuthorizedGameHostRequest(event, req);
+
+    // 启动前停掉当前浏览器 origin 的设备会话，避免与原生配置页/运行态串扰。
+    try { getBridgeService().exitBrowserOrigin(origin); } catch (_) {}
+
+    const path = gameHost.buildLaunchPath(gameId);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('game-host:navigate', { path });
+      try { mainWindow.show(); mainWindow.focus(); } catch (_) {}
+    }
+    return { ok: true, gameId, origin, path };
   }));
 }
 
@@ -648,6 +696,7 @@ app.whenReady().then(() => {
   registerUpdateIpcHandlers();
   registerPluginIpcHandlers();
   registerBrowserDeviceIpcHandlers();
+  registerGameHostIpcHandlers();
   setupWebviewHandling();
   startBackendThenWindow();
   initAutoUpdate();

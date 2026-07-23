@@ -104,12 +104,17 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass, User } from '@element-plus/icons-vue'
 import { useAuth } from './composables/useAuth'
+import { router } from './router'
 
 const { checkSession } = useAuth()
 
 const route = useRoute()
 const isCollapsed = ref(false)
 const isMobile = ref(false)
+
+// GameHost 启动导航：Electron 主进程在 window.GameHost.launch 时通过 IPC 通知，
+// 前端跳转到原生配置页（source=remote）。非 Electron 环境下 gameHostNav 不存在。
+let disposeGameHostNav: (() => void) | null = null
 
 // 本地游戏相关页面（/plays、配置、运行）统一高亮「本地游戏」入口
 const menuActive = computed(() => (route.path.startsWith('/plays') ? '/plays' : route.path))
@@ -133,10 +138,23 @@ onMounted(() => {
   window.addEventListener('resize', checkMobile)
   // 启动时校验一次账号登录态（fire-and-forget，不阻塞页面）
   checkSession()
+  // 监听 GameHost 启动导航（仅 Electron 壳注入）
+  const nav = (window as any).gameHostNav
+  if (nav && typeof nav.onNavigate === 'function') {
+    disposeGameHostNav = nav.onNavigate((data: { path?: string }) => {
+      if (data && typeof data.path === 'string' && data.path) {
+        router.push(data.path)
+      }
+    })
+  }
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
+  if (disposeGameHostNav) {
+    disposeGameHostNav()
+    disposeGameHostNav = null
+  }
 })
 </script>
 
