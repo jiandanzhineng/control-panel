@@ -14,7 +14,7 @@
     <a class="brand" href="../index.html"><span class="brand-mark">⚡</span><span>硅基之下游戏库</span></a>
     <div class="nav-links">
       <a href="../games.html">游戏</a>
-      <a href="getting-started.html">开发文档</a>
+      <a href="agent-guide.html">开发文档</a>
       <a href="../control.html">设备控制</a>
       <a href="device-api.html">DeviceAPI</a>
       <a href="contribute.html" class="nav-cta">投稿</a>
@@ -56,9 +56,9 @@ https://game.undersilicon.cn/docs/agent-guide.html
 【玩法描述】<在这里写清规则：用什么设备、玩家做什么、什么条件触发强度/电击/锁、如何结束>
 
 要求：
-1. 新目录 play-registry/games/<your-id>/，至少含 index.html，manifest 内联在 <script id="game-manifest" type="application/json"> 里。
-2. 所有设备交互只走 window.DeviceAPI，先 await DeviceAPI.ready；可选设备先 isMapped() 再用。
-3. 资源引用只用相对路径或 /bridge-api/ 开头，禁止根绝对路径。
+1. 新目录 play-registry/games/<your-id>/（目录名即游戏 id，kebab-case），至少含 index.html，manifest 内联在 <script id="game-manifest" type="application/json"> 里，且 manifest.id 必须等于目录名。
+2. index.html 必须引入桥接脚本 <script src="/bridge-api/device-api-bridge.js"></script>（它创建 window.DeviceAPI）；所有设备交互只走 DeviceAPI，先 await DeviceAPI.ready；可选设备先 isMapped() 再用。
+3. 资源引用只用相对路径或 /bridge-api/ 开头；确需请求外部服务时在 manifest.allowedOrigins 显式声明 origin。
 4. 完成后在 play-registry/ 下跑 npm run build && npm test 确保通过。
 5. 最后说明改了哪些文件、玩法用到哪些设备与能力、是否含电击/锁定等敏感内容。</pre>
 </div>
@@ -66,9 +66,10 @@ https://game.undersilicon.cn/docs/agent-guide.html
 <table>
   <tr><th>问题</th><th>答案</th></tr>
   <tr><td>玩法是什么？</td><td>一个自包含网页（HTML + JS），经面板 <code>gameProxy</code> 同源加载。</td></tr>
-  <tr><td>怎么控制设备？</td><td>全局注入的 <code>window.DeviceAPI</code>，禁止自己开 WebSocket。</td></tr>
+  <tr><td>怎么控制设备？</td><td>页面引入 <code>/bridge-api/device-api-bridge.js</code>，由它创建 <code>window.DeviceAPI</code>；禁止自己开 WebSocket。</td></tr>
   <tr><td>玩法逻辑谁驱动？</td><td>页面自己（<code>setInterval</code>/<code>rAF</code>），宿主不提供 <code>loop()</code>。</td></tr>
-  <tr><td>元数据放哪？</td><td>内联 <code>&lt;script id="game-manifest" type="application/json"&gt;</code>，不用单独 manifest.json。</td></tr>
+  <tr><td>元数据放哪？</td><td>内联 <code>&lt;script id="game-manifest" type="application/json"&gt;</code>，不用单独 manifest.json；<code>id</code> 必须等于目录名。</td></tr>
+  <tr><td>本地怎么试玩？</td><td><code>npm run electron:debug</code> 自动把客户端在线游戏源指向本地站（4178），新游戏直接出现在客户端里。</td></tr>
   <tr><td>怎么上架？</td><td>提交游戏目录，发 PR 到 <code>main</code>，合并后自动发布到 game.undersilicon.cn。</td></tr>
   <tr><td>安全谁兜底？</td><td>会话结束/断连超 180s，宿主强制 <code>close</code> 所有设备，独立于页面逻辑。</td></tr>
 </table>
@@ -76,7 +77,7 @@ https://game.undersilicon.cn/docs/agent-guide.html
 <p>仓库 <code>git@github.com:jiandanzhineng/control-panel.git</code>，玩法相关只需关注这几处：</p>
 <pre><code>control-panel/
 ├── backend/
-│   ├── games/                # 现有玩法源（最佳参考样例）
+│   ├── games/                # 内置玩法源（builtin，随客户端打包；最佳参考样例）
 │   │   ├── pressure-edging/       # 压力控制类
 │   │   ├── drink-pee-unlock/      # 多设备 + 锁类
 │   │   ├── pushup-detection/      # 传感器检测类
@@ -86,12 +87,12 @@ https://game.undersilicon.cn/docs/agent-guide.html
 │       ├── capabilities.js   # 能力契约定义
 │       └── capabilityValue.js# 能力可读值解释器
 └── play-registry/            # 游戏网站（本站）
-    ├── games/                # 上架玩法目录（新玩法放这里）
+    ├── games/                # 网站投稿玩法目录（online 源，新玩法放这里）
     ├── docs/                 # 本套开发文档
     └── scripts/build-*.js    # registry + 站点构建脚本</code></pre>
 <div class="callout callout-warn">
   <span class="callout-icon">💡</span>
-  <p>Agent 提示：先读 <code>backend/games/</code> 里设备/节奏最接近的那个游戏，复制其结构，<strong>不要从空白起步</strong>。设备能力以 <code>backend/devices/registry.js</code> 为准，文档表格可能滞后。</p>
+  <p>Agent 提示：先读 <code>backend/games/</code> 里设备/节奏最接近的那个游戏，复制其结构，<strong>不要从空白起步</strong>。设备能力以 <code>backend/devices/registry.js</code> 为准，文档表格可能滞后。构建时 <code>backend/games</code> 与 <code>play-registry/games</code> 两个源都会进 registry.json，投稿新游戏一律放 <code>play-registry/games/</code>。</p>
 </div>
 <h2>参考 URL 速查</h2>
 <table>
@@ -112,7 +113,7 @@ https://game.undersilicon.cn/docs/agent-guide.html
 <pre id="manifest-sample"><code>&lt;script id="game-manifest" type="application/json"&gt;
 {
   "id": "your-id",
-  "name": "游戏显示名",
+  "title": "游戏显示名",
   "version": "1.0.0",
   "description": "一句话玩法说明",
   "devices": [
@@ -127,12 +128,29 @@ https://game.undersilicon.cn/docs/agent-guide.html
 &lt;/script&gt;</code></pre>
 </div>
 <ul>
-  <li><code>id</code> 全局唯一，<code>version</code> 合法 semver（如 <code>1.0.0</code>）。</li>
+  <li><code>id</code> 全局唯一、kebab-case，且<strong>必须等于目录名</strong>（构建强校验）；<code>version</code> 合法 semver（如 <code>1.0.0</code>）。</li>
+  <li>显示名字段是 <code>title</code>（不是 <code>name</code>），缺省时回退为 <code>id</code>。</li>
   <li><code>devices[].id</code> 是逻辑设备名，玩法里用 <code>DeviceAPI.device('&lt;id&gt;')</code> 引用。</li>
   <li><code>required:false</code> 的设备可选，代码里 <code>isMapped()</code> 判断后再用。</li>
-  <li><code>params</code> 是启动时用户可配的参数，运行时通过 <code>DeviceAPI.params</code> 读取。</li>
+  <li>确需请求外部服务时加 <code>"allowedOrigins": ["https://api.example.com"]</code>——未声明的外部 origin 会被构建 lint 拦截；<code>permissions</code> 数组按需声明。</li>
+  <li><strong>改动已有游戏必须 bump <code>version</code></strong>：CI 会对比线上 registry 内容指纹，内容变了版本没变直接构建失败。</li>
+</ul>
+<h3>params 参数 schema</h3>
+<p><code>params</code> 是启动时用户在面板上可配的参数，运行时读 <code>DeviceAPI.params</code>（用户未配置时回落为 manifest 里的 <code>default</code>）。支持四种类型：</p>
+<table>
+  <tr><th>type</th><th>面板控件</th><th>可用额外字段</th></tr>
+  <tr><td><code>number</code></td><td>数字输入</td><td><code>min</code>、<code>max</code></td></tr>
+  <tr><td><code>string</code></td><td>文本输入</td><td><code>placeholder</code></td></tr>
+  <tr><td><code>boolean</code></td><td>开关</td><td>—</td></tr>
+  <tr><td><code>enum</code></td><td>下拉选择</td><td><code>"enum": ["drink", "pee"]</code></td></tr>
+</table>
+<ul>
+  <li><code>label</code> 是显示名（可带单位，如 <code>"电击强度(V)"</code>），<code>default</code> 给安全合理的默认值。</li>
+  <li><code>required:false</code> 的参数会收进面板「高级配置」折叠区；不设 <code>required</code> 则直接显示在主表单。</li>
 </ul>
 <h2>DeviceAPI 核心（完整版见 <a href="device-api.html">DeviceAPI 参考</a>）</h2>
+<p><code>window.DeviceAPI</code> 不是宿主隔空注入的——它由页面自己引入的桥接脚本创建。<strong>每个游戏页面都必须引入</strong>（构建 lint 放行 <code>/bridge-api/</code> 路径；经 gameProxy 加载时它解析到面板后端）：</p>
+<pre><code>&lt;script src="/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;</code></pre>
 <div class="copy-wrap">
 <button class="copy-btn" data-copy-target="#api-core">复制</button>
 <pre id="api-core"><code>// 所有设备操作前必须等通道就绪
@@ -166,13 +184,14 @@ DeviceAPI.onSystemLog(entry =&gt; {});            // 设备离线等系统日志
 </div>
 <h2>提交前检查清单</h2>
 <ul>
-  <li>☐ manifest 内联、<code>id</code> 唯一、<code>version</code> 合法 semver。</li>
-  <li>☐ 所有设备交互走 <code>DeviceAPI</code>，操作前 <code>await DeviceAPI.ready</code>。</li>
+  <li>☐ manifest 内联、<code>id</code> 唯一<strong>且等于目录名</strong>、<code>version</code> 合法 semver、显示名用 <code>title</code>。</li>
+  <li>☐ 页面已引入 <code>&lt;script src="/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;</code>，所有设备交互走 <code>DeviceAPI</code>，操作前 <code>await DeviceAPI.ready</code>。</li>
   <li>☐ 可选设备（<code>required:false</code>）都 <code>isMapped()</code> 判断后再用。</li>
-  <li>☐ 资源引用仅相对路径或 <code>/bridge-api/</code>，无根绝对路径。</li>
+  <li>☐ 资源引用仅相对路径或 <code>/bridge-api/</code>；外部 origin 已在 manifest <code>allowedOrigins</code> 声明。</li>
   <li>☐ <code>devices[].capabilities</code> 与 <code>backend/devices/registry.js</code> 对得上。</li>
+  <li>☐ 改动已有游戏时已 bump <code>version</code>（CI 漂移检查：内容变、版本不变会构建失败）。</li>
   <li>☐ 在 <code>play-registry/</code> 下 <code>npm run build &amp;&amp; npm test</code> 通过。</li>
-  <li>☐ 浏览器打开本地站点确认能启动、能连 Bridge。</li>
+  <li>☐ 用 <code>npm run electron:debug</code> 起客户端，在「在线游戏」里实际启动一局（可用虚拟设备）。</li>
   <li>☐ 含电击/锁定等敏感能力已在 PR 描述中说明。</li>
 </ul>
 <h2>获取并运行客户端</h2>
@@ -185,10 +204,14 @@ npm install            # 首次，安装依赖
 npm run electron:debug # 启动客户端并开启调试端口(推荐调试时用)</code></pre>
 </div>
 <ul>
-  <li><code>npm run electron:debug</code>：<strong>调试推荐</strong>。= <code>electron:dev</code> + 开启 CDP 端口 <code>9222</code>，可直接调 Electron 里的游戏页面（见下方「调试游戏」）。</li>
-  <li><code>npm run electron:dev</code>：普通开发模式，自动复用/启动 vite（5173）并拉起 Electron，但<strong>不开调试端口</strong>。</li>
-  <li><code>npm run electron:dev:local</code>：把在线游戏源指向本地 <code>play-registry</code> 站点，用来试玩尚未上架的网站游戏。</li>
+  <li><code>npm run electron:debug</code>：<strong>调试推荐</strong>。= <code>electron:dev</code> + 开启 CDP 端口 <code>9224</code>，可直接调 Electron 里的游戏页面（见下方「调试游戏」）。</li>
+  <li><code>npm run electron:dev</code>：普通开发模式，自动复用/启动 vite（5173）并拉起 Electron，但不开调试端口。</li>
 </ul>
+<p>两个 dev 脚本都内置 <code>--local-registry</code>：启动时自动构建 <code>play-registry/.site</code>、在本机 <code>4178</code> 端口起本地游戏站，并把客户端「在线游戏」源指向它——<strong>你在 play-registry/games/ 新写的游戏会直接出现在客户端里，可以完整走「映射设备 → 启动」流程试玩</strong>，无需先上架。要改回线上远程源：直接 <code>node tools/electron-dev.js</code>（不带 <code>--local-registry</code>），或设环境变量 <code>GAME_REGISTRY_URL</code> 指定任意 registry。</p>
+<div class="callout callout-warn">
+  <span class="callout-icon">⚠️</span>
+  <p>若启动时 5173 已被你先前开的 vite 占用，脚本会复用它，此时「在线游戏」webview 首页可能仍指向远程站（registry 数据仍是本地 4178）——先关掉已有 vite，让脚本自己拉起前端。</p>
+</div>
 
 <h2>开启开发者模式（外部本地游戏放行）</h2>
 <p>默认情况下，只有客户端内置浏览器加载的游戏能连后台控制设备。要用<strong>外部浏览器/任意本地端口</strong>调试自研游戏，需先在客户端里打开开发者放行：</p>
@@ -203,12 +226,13 @@ npm run electron:debug # 启动客户端并开启调试端口(推荐调试时用
 </div>
 
 <h2>调试游戏</h2>
-<p><strong>方式 A · 在客户端内调试（Electron 页面，CDP 9222）</strong>：游戏最终跑在 Electron 里，要调它加载的真实页面就得连 Electron 的调试端口。用 <code>npm run electron:debug</code> 启动客户端（自动开 CDP 端口 <code>9222</code>），在客户端「本地游戏」启动你的游戏后，用任一 Chrome 打开 <code>chrome://inspect</code> → Configure 加入 <code>127.0.0.1:9222</code> → 在 Remote Target 里对你的游戏页面点 <code>inspect</code>，即可得到完整 DevTools（控制台/网络/DOM/断点），与本机调网页一致。</p>
+<p><strong>方式 A · 在客户端内调试（Electron 页面，CDP 9224）</strong>：游戏最终跑在 Electron 里，要调它加载的真实页面就得连 Electron 的调试端口。用 <code>npm run electron:debug</code> 启动客户端（自动开 CDP 端口 <code>9224</code>），在客户端「在线游戏」启动你的游戏后，用任一 Chrome 打开 <code>chrome://inspect</code> → Configure 加入 <code>127.0.0.1:9224</code> → 在 Remote Target 里对你的游戏页面点 <code>inspect</code>，即可得到完整 DevTools（控制台/网络/DOM/断点），与本机调网页一致。</p>
 <div class="copy-wrap">
 <button class="copy-btn" data-copy-target="#debug-cmd">复制</button>
-<pre id="debug-cmd"><code>npm run electron:debug   # 启动客户端并开启 CDP 端口 9222
-# 浏览器打开 http://127.0.0.1:9222/json 能看到页面列表即成功
-# 再用 chrome://inspect 连 127.0.0.1:9222 调试对应页面</code></pre>
+<pre id="debug-cmd"><code>npm run electron:debug   # 启动客户端并开启 CDP 端口 9224
+# 浏览器打开 http://127.0.0.1:9224/json 能看到页面列表即成功
+# 再用 chrome://inspect 连 127.0.0.1:9224 调试对应页面
+# 打包后的 exe 调试改用 npm run electron:debug:prod（端口 9222）</code></pre>
 </div>
 <p><strong>方式 B · 外部浏览器（独立端口，改 bridge 引用）</strong>：先在客户端开启「外部本地游戏放行」(见上一节)，游戏页面改用 bridge 的绝对地址，再用任意本地端口打开页面 F12 调试——脚本会自动连回后台，不受页面端口影响。上架前记得把引用改回相对的 <code>/bridge-api/...</code>。</p>
 <div class="copy-wrap">
@@ -216,7 +240,21 @@ npm run electron:debug # 启动客户端并开启调试端口(推荐调试时用
 <pre id="dev-bridge"><code>&lt;!-- 外部调试时改用绝对地址引用 bridge（上架时改回 /bridge-api/...）--&gt;
 &lt;script src="http://127.0.0.1:5278/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;</code></pre>
 </div>
-<p><strong>无实机时</strong>：用 <code>tools/vdev-cli</code> 起虚拟设备，注入输入并检查设备命令记录，不用真实硬件也能测。Electron 调试的更多细节（主进程 Node inspector、打包后 exe 调试等）见仓库 <code>docs/guides/ELECTRON_DEBUG.md</code>。</p>
+<p>外部调试时没有面板替你传参，可用 URL query 直接注入设备映射与启动参数（bridge 脚本会自动解析，注意 URL-encode）：</p>
+<div class="copy-wrap">
+<button class="copy-btn" data-copy-target="#dev-query">复制</button>
+<pre id="dev-query"><code># deviceMap={"sensor":["vdev01"],"motor":["vdev02"]}  params={"durationSec":60}
+http://localhost:8080/index.html?deviceMap=%7B%22sensor%22%3A%5B%22vdev01%22%5D%2C%22motor%22%3A%5B%22vdev02%22%5D%7D&amp;params=%7B%22durationSec%22%3A60%7D</code></pre>
+</div>
+<p><strong>无实机时</strong>：用 <code>tools/vdev-cli</code> 起虚拟设备，注入输入并检查设备命令记录，不用真实硬件也能测；创建后在客户端启动游戏的设备映射里就能选到它。注意它默认连 <code>127.0.0.1:3000</code>，Electron 内置后端在 <code>5278</code>，要用 <code>-b</code> 指定：</p>
+<div class="copy-wrap">
+<button class="copy-btn" data-copy-target="#vdev-cmds">复制</button>
+<pre id="vdev-cmds"><code>cd tools/vdev-cli
+node cli.js create --id=vdev01 --type=QIYA -b http://127.0.0.1:5278  # 建虚拟气压传感器
+node cli.js set --id=vdev01 --pressure=25 -b http://127.0.0.1:5278   # 注入压力值
+node cli.js list -b http://127.0.0.1:5278                            # 查看全部虚拟设备</code></pre>
+</div>
+<p>Electron 调试的更多细节（主进程 Node inspector、打包后 exe 调试等）见仓库 <code>docs/guides/ELECTRON_DEBUG.md</code>。</p>
 
 <h2>站点构建与自测</h2>
 <p>这一步针对<strong>网站游戏</strong>（放在 <code>play-registry/games/</code>、走在线游戏中心发布）：</p>
@@ -224,10 +262,11 @@ npm run electron:debug # 启动客户端并开启调试端口(推荐调试时用
 <button class="copy-btn" data-copy-target="#build-cmds">复制</button>
 <pre id="build-cmds"><code>cd play-registry
 npm install          # 首次
-npm run build        # 校验并生成 registry.json
+npm run build        # 校验并生成 registry.json + packages/*.zip 离线包
 npm test             # 运行测试
-npm run serve        # 本地预览整站（构建产物）</code></pre>
+npm run serve        # 构建整站到 .site/ 并本地预览</code></pre>
 </div>
+<p>构建会校验：内联 manifest 存在且 <code>id == 目录名</code>、semver 合法、id 全局唯一、资源引用仅相对路径 / <code>/bridge-api/</code> / 已声明 <code>allowedOrigins</code>；同时产出逐文件 sha256 清单（registry schema v2）。CI 上还会做版本漂移检查（见「manifest 规范」）。</p>
 
 <h2>下一步</h2>
 <ul>

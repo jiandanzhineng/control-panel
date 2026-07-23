@@ -10,10 +10,10 @@
 <body>
 <nav class="nav">
   <div class="nav-inner">
-    <a class="brand" href="../index.html"><span class="brand-mark">⚡</span><span>玩法库</span></a>
+    <a class="brand" href="../index.html"><span class="brand-mark">⚡</span><span>硅基之下游戏库</span></a>
     <div class="nav-links">
-      <a href="../index.html">游戏</a>
-      <a href="getting-started.html" class="active">开发文档</a>
+      <a href="../games.html">游戏</a>
+      <a href="agent-guide.html" class="active">开发文档</a>
       <a href="../control.html">设备控制</a>
       <a href="device-api.html">DeviceAPI</a>
       <a href="contribute.html" class="nav-cta">投稿</a>
@@ -107,20 +107,17 @@
 
 <h2>关键规则（必须遵守）</h2>
 <ul>
-  <li><strong>元数据必须内联</strong>在 <code>index.html</code> 的 <code>&lt;script id="game-manifest"&gt;</code> 中，<code>type</code> 用 <code>application/json</code>。不用单独的 <code>manifest.json</code>。</li>
-  <li><strong>版本号必须是合法 semver</strong>（如 <code>1.0.0</code>、<code>2.1.3</code>）。构建脚本会校验。</li>
-  <li><strong>资源引用只能用相对路径或 <code>/bridge-api/</code> 开头的绝对路径</strong>。禁止根绝对路径（如 <code>/games/foo/x.js</code>）——会被面板 gameProxy 误判为本地资源，构建 lint 会拦截。</li>
-  <li><strong>设备交互一律走 <code>DeviceAPI</code></strong>，不要自己开 WebSocket 连 <code>/bridge</code>。桥接脚本已经处理好了连接、重连、属性缓存。</li>
+  <li><strong>元数据必须内联</strong>在 <code>index.html</code> 的 <code>&lt;script id="game-manifest"&gt;</code> 中，<code>type</code> 用 <code>application/json</code>。不用单独的 <code>manifest.json</code>。显示名字段是 <code>title</code>。</li>
+  <li><strong>id 必须等于目录名</strong>，kebab-case、全局唯一；<strong>版本号必须是合法 semver</strong>（如 <code>1.0.0</code>、<code>2.1.3</code>）。构建脚本都会校验。</li>
+  <li><strong>必须引入桥接脚本</strong>：<code>&lt;script src="/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;</code>——它创建 <code>window.DeviceAPI</code>。设备交互一律走 <code>DeviceAPI</code>，不要自己开 WebSocket 连 <code>/bridge</code>，桥接脚本已经处理好了连接、重连、属性缓存。</li>
+  <li><strong>资源引用只能用相对路径或 <code>/bridge-api/</code> 开头的绝对路径</strong>。禁止根绝对路径（如 <code>/games/foo/x.js</code>）——会被面板 gameProxy 误判为本地资源，构建 lint 会拦截；确需外部请求时在 manifest 加 <code>allowedOrigins</code>。</li>
   <li><strong>可选设备先 <code>isMapped()</code></strong> 再用。必填设备由宿主保证已映射，可选设备可能为空数组。</li>
+  <li><strong>改动已有游戏必须 bump <code>version</code></strong>。CI 会对比线上 registry 内容指纹，内容变了版本没变会拒绝发布。</li>
 </ul>
 
 <h2>本地调试</h2>
-<p>玩法页面可以直接浏览器打开调试——它会连到本机后端的 WebSocket Bridge。流程：</p>
-<ol>
-  <li>启动控制面板后端（它会监听 <code>/bridge</code> WebSocket 和 <code>/bridge-api/device-api-bridge.js</code> 静态资源）。</li>
-  <li>把你的玩法目录挂到能被面板扫描的位置，或在面板「玩法库」里用外部 URL 加载。</li>
-  <li>浏览器开发者工具直接断点调试页面 JS，和调试普通网页完全一样。</li>
-</ol>
+<p>最顺的试玩路径是直接用开发脚本启动客户端：<code>npm run electron:dev</code> / <code>npm run electron:debug</code> 都内置本地游戏源——启动时自动构建 <code>play-registry/.site</code> 并在本机 <code>4178</code> 端口起本地游戏站，客户端「在线游戏」里直接就能看到、启动你新写的游戏。<code>electron:debug</code> 额外开启 CDP 端口 <code>9224</code>，可以用 Chrome DevTools 调 Electron 里的游戏页面。</p>
+<p>外部浏览器调试、URL 注入参数、虚拟设备（无实机测试）等更多姿势，见 <a href="agent-guide.html">Agent 开发指南 · 调试游戏</a>。</p>
 
 <h2>下一步</h2>
 <ul>
