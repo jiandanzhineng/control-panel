@@ -108,14 +108,16 @@ function stopRuntimeServices() {
 
 function requireInternalBridgeAccess(req, res, next) {
   if (req.get(BRIDGE_INTERNAL_HEADER) === '1') return next();
-  // 开发者放行开关：受信开发 origin 直接以 <script src> 加载 bridge 脚本时，
-  // 无法带内部头。此时若来源受信则放行，并回写 CORS 头供跨端口读取。
-  const origin = req.get('Origin');
-  if (origin) {
+  // 同源 <script src> 不发送 Origin，因此开发模式需回退到浏览器控制的 Referer。
+  // 显式 Origin 始终优先，避免用可信 Referer 覆盖不受信的跨源请求。
+  const origin = externalGameAccessService.normalizeOrigin(req.get('Origin'));
+  const sourceOrigin = origin
+    || externalGameAccessService.normalizeOrigin(req.get('Referer'));
+  if (sourceOrigin) {
     try {
-      if (externalGameAccessService.isTrustedDevOrigin(origin)) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Vary', 'Origin');
+      if (externalGameAccessService.isTrustedDevOrigin(sourceOrigin)) {
+        if (origin) res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', origin ? 'Origin' : 'Referer');
         return next();
       }
     } catch (_) {}

@@ -101,6 +101,59 @@ describe('legacy bridge access guards', () => {
     expect(res.text).toContain('window.DeviceAPI');
   });
 
+  it('allows bridge-api access from a trusted dev referrer when Origin is absent', async () => {
+    const devAccessService = require('../services/externalGameAccessService');
+    const spy = jest
+      .spyOn(devAccessService, 'isTrustedDevOrigin')
+      .mockImplementation((origin) => origin === 'http://127.0.0.1:5278');
+    const request = require('supertest');
+    const backend = require('../index');
+
+    const res = await request(backend)
+      .get('/bridge-api/device-api-bridge.js')
+      .set('Referer', 'http://127.0.0.1:5278/games/cache/drink-pee-unlock/2.2.0/index.html');
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain('window.DeviceAPI');
+    expect(res.headers.vary).toContain('Referer');
+    expect(spy).toHaveBeenCalledWith('http://127.0.0.1:5278');
+    spy.mockRestore();
+  });
+
+  it('does not let a trusted referrer override an explicit untrusted Origin', async () => {
+    const devAccessService = require('../services/externalGameAccessService');
+    const spy = jest
+      .spyOn(devAccessService, 'isTrustedDevOrigin')
+      .mockImplementation((origin) => origin === 'http://127.0.0.1:5278');
+    const request = require('supertest');
+    const backend = require('../index');
+
+    const res = await request(backend)
+      .get('/bridge-api/device-api-bridge.js')
+      .set('Origin', 'https://evil.example.com')
+      .set('Referer', 'http://127.0.0.1:5278/games/cache/drink-pee-unlock/2.2.0/index.html');
+
+    expect(res.status).toBe(403);
+    expect(spy).toHaveBeenCalledWith('https://evil.example.com');
+    expect(spy).not.toHaveBeenCalledWith('http://127.0.0.1:5278');
+    spy.mockRestore();
+  });
+
+  it('rejects a referrer that developer mode does not trust', async () => {
+    const devAccessService = require('../services/externalGameAccessService');
+    const spy = jest.spyOn(devAccessService, 'isTrustedDevOrigin').mockReturnValue(false);
+    const request = require('supertest');
+    const backend = require('../index');
+
+    const res = await request(backend)
+      .get('/bridge-api/device-api-bridge.js')
+      .set('Referer', 'http://127.0.0.1:5278/games/cache/drink-pee-unlock/2.2.0/index.html');
+
+    expect(res.status).toBe(403);
+    expect(spy).toHaveBeenCalledWith('http://127.0.0.1:5278');
+    spy.mockRestore();
+  });
+
   it('rejects browser websocket upgrades without the internal proxy header', () => {
     const bridgeService = require('../services/bridgeService');
     const server = http.createServer();
