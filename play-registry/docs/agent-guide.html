@@ -240,6 +240,10 @@ npm run electron:debug # 启动客户端并开启调试端口(推荐调试时用
 <pre id="dev-bridge"><code>&lt;!-- 外部调试时改用绝对地址引用 bridge（上架时改回 /bridge-api/...）--&gt;
 &lt;script src="http://127.0.0.1:5278/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;</code></pre>
 </div>
+<div class="callout callout-warn">
+  <span class="callout-icon">⚠️</span>
+  <p>bridge 的 WebSocket 目标<strong>跟随脚本的加载来源</strong>：从 <code>127.0.0.1:5278</code> 加载就连本地后端，从别处加载就连别处。所以<strong>不要把脚本下载镜像到自己服务器、CDN 或本地静态目录用</strong>——那样 <code>DeviceAPI.ready</code> 永远不会 resolve。游戏网站上也不会放这个脚本，唯一的合法来源就是面板后端（<code>/bridge-api/</code> 相对路径或 <code>127.0.0.1:5278</code> 绝对地址）。</p>
+</div>
 <p>外部调试时没有面板替你传参，可用 URL query 直接注入设备映射与启动参数（bridge 脚本会自动解析，注意 URL-encode）：</p>
 <div class="copy-wrap">
 <button class="copy-btn" data-copy-target="#dev-query">复制</button>

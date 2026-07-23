@@ -36,7 +36,7 @@
 <h1>DeviceAPI 参考</h1>
 <div class="updated">注入到每个玩法页面的统一桥接 API · PC 与 Android 接口完全一致</div>
 
-<p>每个玩法页面通过 <code>&lt;script src="/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;</code> 引入桥接脚本，它创建全局 <code>window.DeviceAPI</code>（WebSocket 自动连回脚本来源的后端，与页面自身端口无关）。所有设备交互都通过它完成——不要自己开 WebSocket。<strong>通道就绪前调用会失败</strong>，请先 <code>await DeviceAPI.ready</code>。</p>
+<p>每个玩法页面通过 <code>&lt;script src="/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;</code> 引入桥接脚本，它创建全局 <code>window.DeviceAPI</code>（WebSocket 自动连回<strong>脚本来源</strong>的后端，与页面自身端口无关——所以不要用别处的脚本副本，务必从面板后端加载）。所有设备交互都通过它完成——不要自己开 WebSocket。<strong>通道就绪前调用会失败</strong>，请先 <code>await DeviceAPI.ready</code>。</p>
 
 <pre><code>window.DeviceAPI = {
   device(logicalId),       // 获取设备代理
