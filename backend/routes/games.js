@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { sendError } = require('../utils/http');
 const gameService = require('../services/gameService');
+const gameCacheService = require('../services/gameCacheService');
 const bridgeService = require('../services/bridgeService');
 
 // 抓取第三方游戏网页，解析内联 game-manifest，返回与本地游戏一致的结构
@@ -121,8 +122,16 @@ router.post('/reload', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const removeFile = ['1', 'true'].includes(String(req.query.removeFile || '').toLowerCase());
-    const result = gameService.deleteGameById(req.params.id, { removeFile });
-    if (result.notFound) return sendError(res, 'GAME_NOT_FOUND', '游戏不存在', 404);
+    const game = gameService.getGameById(req.params.id);
+    if (!game) return sendError(res, 'GAME_NOT_FOUND', '游戏不存在', 404);
+    if (removeFile && (
+      game.cached === true
+      || String(game.gamePath || '').startsWith('/games/cache/')
+      || String(game.localGamePath || '').startsWith('/games/cache/')
+    )) {
+      gameCacheService.deleteGameCaches(game.id);
+    }
+    gameService.deleteGameById(req.params.id, { removeFile });
     res.json({ ok: true });
   } catch (e) {
     sendError(res, 'GAME_DELETE_FAILED', e?.message || String(e), 500);

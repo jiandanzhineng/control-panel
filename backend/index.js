@@ -8,6 +8,7 @@ const mqttService = require('./services/mqttService');
 const mdnsService = require('./services/mdnsService');
 const logService = require('./services/logService');
 const bridgeService = require('./services/bridgeService');
+const gameService = require('./services/gameService');
 const gameCacheService = require('./services/gameCacheService');
 const { BRIDGE_INTERNAL_HEADER } = require('./constants/bridgeAccess');
 const { browserApiCors } = require('./middleware/browserApiAccess');
@@ -130,7 +131,7 @@ app.use('/bridge-api', requireInternalBridgeAccess, express.static(path.join(__d
 // 第三方游戏前缀反向代理（须在静态 /games 之前，避免被 static 捕获）
 app.use('/games/proxy', require('./routes/gameProxy'));
 app.use('/games/cache', express.static(gameCacheService.getCacheRoot()));
-app.use('/games', express.static(path.join(__dirname, 'games')));
+app.use('/games', express.static(gameService.getGameRoot()));
 
 // Routes
 app.use('/api/mqtt', require('./routes/mqtt'));

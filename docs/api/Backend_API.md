@@ -192,8 +192,9 @@ OTA 状态值包括：`idle`、`requested`、`start`、`downloading`、`success`
 - `POST /api/games/upload`
   - `multipart/form-data`，字段 `file`，仅支持 `.js`。
   - 保存到 `backend/game/` 根目录。
-- `DELETE /api/games/:id?removeFile=1|true|yes`
-  - 删除游戏条目；带 `removeFile` 时尝试删除物理文件。
+- `DELETE /api/games/:id?removeFile=1|true`
+  - 删除游戏条目，并持久化内置游戏的删除状态，刷新后不会被重新扫描出来。
+  - 带 `removeFile` 时删除下载缓存，并尝试删除可写的内置游戏目录；打包资源只读时仍保持游戏隐藏。
 - `POST /api/games/reload`
   - 递归扫描 `backend/game/**/*.js`，生成稳定 ID，并覆盖写入游戏列表。
 - `POST /api/games/stop-current`

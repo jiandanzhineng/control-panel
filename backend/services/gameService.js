@@ -8,9 +8,17 @@ const backendRoot = path.resolve(__dirname, '..');
 const projectRoot = path.resolve(backendRoot, '..');
 const newGameDir = path.resolve(backendRoot, 'games');
 const SAVED_GAMES_KEY = 'games';
+const REMOVED_BUILTIN_GAMES_KEY = 'removedBuiltinGames';
+
+function getGameRoot() {
+  return process.env.BACKEND_GAMES_DIR
+    ? path.resolve(process.env.BACKEND_GAMES_DIR)
+    : newGameDir;
+}
 
 function ensureGameDir() {
-  if (!fs.existsSync(newGameDir)) fs.mkdirSync(newGameDir, { recursive: true });
+  const gameRoot = getGameRoot();
+  if (!fs.existsSync(gameRoot)) fs.mkdirSync(gameRoot, { recursive: true });
 }
 
 function readGames() {
@@ -24,6 +32,21 @@ function readGames() {
 
 function writeGames(rows) {
   fileStorage.setItem(SAVED_GAMES_KEY, JSON.stringify(rows || []));
+}
+
+function readRemovedBuiltinGameIds() {
+  const raw = fileStorage.getItem(REMOVED_BUILTIN_GAMES_KEY);
+  if (!raw) return [];
+  try {
+    const ids = JSON.parse(raw);
+    return Array.isArray(ids) ? ids.map(String) : [];
+  } catch (_) { return []; }
+}
+
+function markBuiltinGameRemoved(id) {
+  const ids = new Set(readRemovedBuiltinGameIds());
+  ids.add(String(id));
+  fileStorage.setItem(REMOVED_BUILTIN_GAMES_KEY, JSON.stringify(Array.from(ids)));
 }
 
 function stableIdForPath(relPath) {
@@ -41,11 +64,12 @@ function extractManifestFromHtml(htmlContent) {
 
 function scanHtmlGames() {
   const results = [];
-  if (!fs.existsSync(newGameDir)) return results;
-  const entries = fs.readdirSync(newGameDir, { withFileTypes: true });
+  const gameRoot = getGameRoot();
+  if (!fs.existsSync(gameRoot)) return results;
+  const entries = fs.readdirSync(gameRoot, { withFileTypes: true });
   for (const ent of entries) {
     if (!ent.isDirectory()) continue;
-    const indexPath = path.join(newGameDir, ent.name, 'index.html');
+    const indexPath = path.join(gameRoot, ent.name, 'index.html');
     if (!fs.existsSync(indexPath)) continue;
     try {
       const html = fs.readFileSync(indexPath, 'utf8');
@@ -74,7 +98,8 @@ function scanHtmlGames() {
 }
 
 function listGames() {
-  const htmlGames = scanHtmlGames();
+  const removedBuiltinIds = new Set(readRemovedBuiltinGameIds());
+  const htmlGames = scanHtmlGames().filter((game) => !removedBuiltinIds.has(String(game.id)));
   const byId = new Map(htmlGames.map((g) => [g.id, { ...g, source: 'builtin' }]));
   for (const saved of readGames()) {
     const normalized = normalizeSavedGame(saved, { existing: saved, markPlayed: false });
@@ -106,7 +131,8 @@ function getGameById(id) {
 
 function reloadGames() {
   ensureGameDir();
-  const games = scanHtmlGames();
+  const removedBuiltinIds = new Set(readRemovedBuiltinGameIds());
+  const games = scanHtmlGames().filter((game) => !removedBuiltinIds.has(String(game.id)));
   return { ok: true, count: games.length, games };
 }
 
@@ -116,10 +142,21 @@ function deleteGameById(id, { removeFile } = {}) {
   const saved = readGames();
   const nextSaved = saved.filter((g) => g && String(g.id) !== String(id));
   if (nextSaved.length !== saved.length) writeGames(nextSaved);
+  if (game.folder) markBuiltinGameRemoved(id);
   if (removeFile && game.folder) {
-    const dir = path.join(newGameDir, game.folder);
+    const dir = path.join(getGameRoot(), game.folder);
     if (fs.existsSync(dir)) {
-      fs.rmSync(dir, { recursive: true });
+      try {
+        fs.rmSync(dir, { recursive: true, force: true });
+      } catch (error) {
+        // Packaged Electron resources may be read-only. The persisted removal marker
+        // still prevents the deleted game from being rediscovered on refresh.
+        logger.warn('Remove built-in game files failed; keeping game hidden', {
+          id,
+          dir,
+          err: error?.message,
+        });
+      }
     }
   }
   return { ok: true };
@@ -207,6 +244,7 @@ module.exports = {
   ensureGameDir,
   updateGameById,
   savePlayedGame,
+  getGameRoot,
   extractManifestFromHtml,
   scanHtmlGames,
 };

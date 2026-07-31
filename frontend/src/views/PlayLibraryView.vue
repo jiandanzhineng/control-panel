@@ -270,10 +270,10 @@ async function stopCurrent() {
 }
 
 async function deleteGame(item: PlayItem) {
-  const sure = confirm('确定删除该玩法？仅移除列表，不删除文件。');
+  const sure = confirm('确定删除该玩法？本地游戏文件和下载缓存将一并清理。');
   if (!sure) return;
   try {
-    const res = await fetch(`/api/games/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
+    const res = await fetch(`/api/games/${encodeURIComponent(item.id)}?removeFile=1`, { method: 'DELETE' });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data?.message || '删除失败');
     track('game_delete', { game_id: item.id });

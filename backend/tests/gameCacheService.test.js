@@ -177,4 +177,15 @@ describe('gameCacheService', () => {
     const status = await service.getStatus('demo-game');
     expect(status).toMatchObject({ installed: false, cacheable: true, version: '1.0.0' });
   });
+
+  it('deletes every cached version for a game', () => {
+    const service = require('../services/gameCacheService');
+    const gameCacheRoot = path.join(process.env.BACKEND_DATA_DIR, 'game-cache', 'demo-game');
+    fs.mkdirSync(path.join(gameCacheRoot, '1.0.0'), { recursive: true });
+    fs.mkdirSync(path.join(gameCacheRoot, '2.0.0'), { recursive: true });
+
+    expect(service.deleteGameCaches('demo-game')).toEqual({ ok: true });
+    expect(fs.existsSync(gameCacheRoot)).toBe(false);
+    expect(service.deleteGameCaches('demo-game')).toEqual({ ok: false, notFound: true });
+  });
 });

@@ -229,6 +229,13 @@ function deleteCache(id, version) {
   return { ok: true };
 }
 
+function deleteGameCaches(id) {
+  const dir = path.join(cacheRoot(), cleanPathPart(id, 'id'));
+  if (!fs.existsSync(dir)) return { ok: false, notFound: true };
+  fs.rmSync(dir, { recursive: true, force: true });
+  return { ok: true };
+}
+
 function getCacheRoot() {
   ensureDir(cacheRoot());
   return cacheRoot();
@@ -242,6 +249,7 @@ module.exports = {
   getStatus,
   installGame,
   deleteCache,
+  deleteGameCaches,
   getCacheRoot,
   resetTempRoot,
   localGamePath,
