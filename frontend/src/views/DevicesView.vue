@@ -659,31 +659,52 @@
     <el-dialog
       v-model="serialDialogVisible"
       title="选择串口"
-      width="560px"
+      width="min(560px, calc(100vw - 24px))"
       @open="loadSerialPorts"
     >
-      <el-table :data="serialPorts" size="small" v-loading="serialPortsLoading">
-        <el-table-column prop="path" label="端口" width="100" />
-        <el-table-column prop="manufacturer" label="设备" min-width="190">
-          <template #default="{ row }">{{ row.manufacturer || row.friendlyName || '未知串口设备' }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="90">
-          <template #default="{ row }">{{ getSerialPortStatus(row.status) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="90">
-          <template #default="{ row }">
+      <div class="serial-port-content" v-loading="serialPortsLoading">
+        <el-table v-if="serialPorts.length > 0" class="serial-port-table" :data="serialPorts" size="small">
+          <el-table-column prop="path" label="端口" width="100" />
+          <el-table-column prop="manufacturer" label="设备" min-width="190">
+            <template #default="{ row }">{{ row.manufacturer || row.friendlyName || '未知串口设备' }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="90">
+            <template #default="{ row }">{{ getSerialPortStatus(row.status) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="90">
+            <template #default="{ row }">
+              <el-button
+                type="primary"
+                size="small"
+                :disabled="row.status === 'connected' || row.status === 'probing'"
+                @click="connectSerialPort(row.path)"
+              >
+                连接
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <div v-if="serialPorts.length > 0" class="serial-port-list">
+          <div v-for="port in serialPorts" :key="port.path" class="serial-port-item">
+            <div class="serial-port-summary">
+              <strong>{{ port.path }}</strong>
+              <el-tag size="small" effect="plain">{{ getSerialPortStatus(port.status) }}</el-tag>
+            </div>
+            <div class="serial-port-name">
+              {{ port.manufacturer || port.friendlyName || '未知串口设备' }}
+            </div>
             <el-button
               type="primary"
               size="small"
-              :disabled="row.status === 'connected' || row.status === 'probing'"
-              @click="connectSerialPort(row.path)"
+              :disabled="port.status === 'connected' || port.status === 'probing'"
+              @click="connectSerialPort(port.path)"
             >
               连接
             </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-if="!serialPortsLoading && serialPorts.length === 0" description="未发现串口" />
+          </div>
+        </div>
+        <el-empty v-if="!serialPortsLoading && serialPorts.length === 0" description="未发现串口" />
+      </div>
     </el-dialog>
 
     <el-dialog
@@ -1939,6 +1960,14 @@ async function executeDeviceOperation(device: Device, operation: any) {
   flex-wrap: wrap;
 }
 
+.serial-port-content {
+  min-height: 120px;
+}
+
+.serial-port-list {
+  display: none;
+}
+
 /* 移动端卡片样式 */
 .mobile-device-list {
   display: none;
@@ -2074,6 +2103,42 @@ async function executeDeviceOperation(device: Device, operation: any) {
   
   .actions .el-button {
     width: 100%;
+  }
+
+  .serial-port-table {
+    display: none;
+  }
+
+  .serial-port-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .serial-port-item {
+    display: grid;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid #dcdfe6;
+    border-radius: 4px;
+  }
+
+  .serial-port-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .serial-port-name {
+    min-width: 0;
+    color: #606266;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+
+  .serial-port-item .el-button {
+    width: 100%;
+    margin: 0;
   }
   
   .mobile-device-card {
