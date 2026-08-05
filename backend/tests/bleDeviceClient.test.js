@@ -13,6 +13,7 @@ function textView(value) {
 function characteristic(uuid, {
   name,
   value = [0, 0, 0, 0],
+  text,
   read = false,
   write = false,
   notify = false,
@@ -27,6 +28,7 @@ function characteristic(uuid, {
       return [{ uuid: BLE_UUIDS.userDescription, readValue: async () => textView(name) }];
     },
     async readValue() {
+      if (text !== undefined) return textView(text);
       return name === 'device_type' ? textView('TD01') : dataView(value);
     },
     async writeValueWithResponse(bytes) {
@@ -90,6 +92,9 @@ describe('Electron BLE device client', () => {
       type: 'TD01',
       connectionType: 'ble',
       data: { power: 0 },
+      firmwareVersion: null,
+      legacyIdentity: true,
+      browserDeviceId: 'esp32-c3-browser-id',
     });
     expect(server.getPrimaryService).toHaveBeenCalledWith(BLE_UUIDS.service);
     expect(mode.writes).toEqual([[1]]);
@@ -105,6 +110,77 @@ describe('Electron BLE device client', () => {
 
     await client.disconnect();
     expect(mode.writes.at(-1)).toEqual([0]);
+    expect(device.gatt.disconnect).toHaveBeenCalled();
+  });
+
+  it('uses the firmware identity instead of the Chromium device id', async () => {
+    const mode = characteristic(BLE_UUIDS.mode, { write: true });
+    const command = characteristic(BLE_UUIDS.command, { write: true });
+    const identity = characteristic(BLE_UUIDS.identity, {
+      read: true,
+      text: JSON.stringify({
+        device_id: 'aabbccddeeff',
+        firmware_version: 'v1.1.38',
+      }),
+    });
+    const deviceType = characteristic('0000ff10-0000-1000-8000-00805f9b34fb', {
+      name: 'device_type', read: true,
+    });
+    const device = {
+      id: 'chromium-private-id',
+      name: 'BLUFI',
+      gatt: {
+        connected: false,
+        connect: jest.fn(async () => {
+          device.gatt.connected = true;
+          return {
+            getPrimaryService: async () => ({
+              getCharacteristics: async () => [mode, command, identity, deviceType],
+            }),
+          };
+        }),
+        disconnect: jest.fn(() => { device.gatt.connected = false; }),
+      },
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    };
+
+    const client = new BleDeviceClient(device, { modeSwitchDelayMs: 0 });
+    await expect(client.connect()).resolves.toMatchObject({
+      id: 'aabbccddeeff',
+      firmwareVersion: 'v1.1.38',
+      legacyIdentity: false,
+      browserDeviceId: 'chromium-private-id',
+      data: { ver: 'v1.1.38' },
+    });
+  });
+
+  it('rejects a present but malformed identity characteristic', async () => {
+    const mode = characteristic(BLE_UUIDS.mode, { write: true });
+    const command = characteristic(BLE_UUIDS.command, { write: true });
+    const identity = characteristic(BLE_UUIDS.identity, {
+      read: true,
+      text: '{"device_id":"bad"}',
+    });
+    const device = {
+      id: 'chromium-private-id',
+      name: 'BLUFI',
+      gatt: {
+        connected: true,
+        connect: jest.fn(async () => ({
+          getPrimaryService: async () => ({
+            getCharacteristics: async () => [mode, command, identity],
+          }),
+        })),
+        disconnect: jest.fn(() => { device.gatt.connected = false; }),
+      },
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+    };
+
+    const client = new BleDeviceClient(device, { modeSwitchDelayMs: 0 });
+    await expect(client.connect()).rejects.toThrow(/device_id/);
+    expect(mode.writes).toEqual([]);
     expect(device.gatt.disconnect).toHaveBeenCalled();
   });
 

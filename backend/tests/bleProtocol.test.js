@@ -4,6 +4,7 @@ const {
   encodePropertyValue,
   decodeMessage,
   encodeMessage,
+  decodeIdentity,
 } = require('../../electron/ble/protocol');
 
 describe('BLE hardware protocol', () => {
@@ -13,6 +14,7 @@ describe('BLE hardware protocol', () => {
       message: '0000ff01-0000-1000-8000-00805f9b34fb',
       mode: '0000ff02-0000-1000-8000-00805f9b34fb',
       command: '0000ff03-0000-1000-8000-00805f9b34fb',
+      identity: '0000ff04-0000-1000-8000-00805f9b34fb',
       userDescription: '00002901-0000-1000-8000-00805f9b34fb',
     });
   });
@@ -39,5 +41,20 @@ describe('BLE hardware protocol', () => {
   it('rejects messages larger than the firmware 256-byte buffer', () => {
     expect(() => encodeMessage({ method: 'action', value: 'x'.repeat(240) }))
       .toThrow(/256 bytes/);
+  });
+
+  it('decodes the shared physical-device identity contract', () => {
+    const bytes = new TextEncoder().encode(JSON.stringify({
+      device_id: 'aabbccddeeff',
+      firmware_version: 'v1.1.38',
+    }));
+    expect(decodeIdentity(bytes)).toEqual({
+      deviceId: 'aabbccddeeff',
+      firmwareVersion: 'v1.1.38',
+    });
+    expect(() => decodeIdentity(new TextEncoder().encode(JSON.stringify({
+      device_id: 'AA:BB:CC:DD:EE:FF',
+      firmware_version: '1.1.38',
+    })))).toThrow(/device_id/);
   });
 });

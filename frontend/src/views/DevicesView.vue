@@ -17,6 +17,13 @@
           >
             {{ bleBusy ? '蓝牙连接中' : '蓝牙连接' }}
           </el-button>
+          <el-button
+            :icon="Link"
+            :loading="serialBusy"
+            @click="openSerialDialog"
+          >
+            {{ serialBusy ? '串口探测中' : '串口连接' }}
+          </el-button>
           <el-button 
             type="primary" 
             :icon="Refresh" 
@@ -43,6 +50,14 @@
           <el-checkbox v-model="autoRefreshEnabled" style="margin-left: 12px;">
             自动刷新(3秒)
           </el-checkbox>
+          <div class="serial-auto-control">
+            <span>串口自动连接</span>
+            <el-switch
+              v-model="serialAutoConnect"
+              :loading="serialSettingsBusy"
+              @change="updateSerialAutoConnect"
+            />
+          </div>
         </div>
       </div>
     </el-card>
@@ -92,11 +107,19 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="连接" width="90">
+        <el-table-column label="连接" min-width="190">
           <template #default="{ row }">
-            <el-tag :type="row.connectionType === 'ble' ? 'primary' : 'info'" size="small">
-              {{ row.connectionType === 'ble' ? 'BLE' : 'MQTT' }}
-            </el-tag>
+            <div class="connection-tags">
+              <el-tag
+                v-for="connection in row.connections"
+                :key="connection.type"
+                :type="getConnectionTagType(connection.type)"
+                :effect="connection.type === row.controlConnection ? 'dark' : 'plain'"
+                size="small"
+              >
+                {{ getConnectionLabel(connection.type) }}{{ connection.legacyIdentity ? ' 旧版' : '' }}{{ connection.type === row.controlConnection ? ' 控制' : '' }}
+              </el-tag>
+            </div>
           </template>
         </el-table-column>
         
@@ -148,14 +171,6 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
-              <el-button
-                v-if="row.connectionType === 'ble'"
-                type="warning"
-                size="small"
-                @click="disconnectBleDevice(row)"
-              >
-                断开
-              </el-button>
               <el-button 
                 type="danger" 
                 size="small"
@@ -200,11 +215,19 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="连接" width="90">
+            <el-table-column label="连接" min-width="190">
               <template #default="{ row }">
-                <el-tag :type="row.connectionType === 'ble' ? 'primary' : 'info'" size="small">
-                  {{ row.connectionType === 'ble' ? 'BLE' : 'MQTT' }}
-                </el-tag>
+                <div class="connection-tags">
+                  <el-tag
+                    v-for="connection in row.connections"
+                    :key="connection.type"
+                    :type="getConnectionTagType(connection.type)"
+                    :effect="connection.type === row.controlConnection ? 'dark' : 'plain'"
+                    size="small"
+                  >
+                    {{ getConnectionLabel(connection.type) }}{{ connection.legacyIdentity ? ' 旧版' : '' }}{{ connection.type === row.controlConnection ? ' 控制' : '' }}
+                  </el-tag>
+                </div>
               </template>
             </el-table-column>
             <el-table-column prop="battery" label="电量" width="120">
@@ -284,9 +307,17 @@
             <el-tag :type="device.connected ? 'success' : 'danger'" size="small">
               {{ device.connected ? '在线' : '离线' }}
             </el-tag>
-            <el-tag :type="device.connectionType === 'ble' ? 'primary' : 'info'" size="small">
-              {{ device.connectionType === 'ble' ? 'BLE' : 'MQTT' }}
-            </el-tag>
+            <div class="connection-tags">
+              <el-tag
+                v-for="connection in device.connections"
+                :key="connection.type"
+                :type="getConnectionTagType(connection.type)"
+                :effect="connection.type === device.controlConnection ? 'dark' : 'plain'"
+                size="small"
+              >
+                {{ getConnectionLabel(connection.type) }}{{ connection.legacyIdentity ? ' 旧版' : '' }}
+              </el-tag>
+            </div>
           </div>
           
           <div class="device-card-content">
@@ -501,18 +532,48 @@
               </el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="连接方式">
-              <div style="display: flex; align-items: center; justify-content: space-between;">
-                <el-tag :type="selectedDevice.connectionType === 'ble' ? 'primary' : 'info'" size="small">
-                  {{ selectedDevice.connectionType === 'ble' ? 'BLE' : 'MQTT' }}
-                </el-tag>
-                <el-button
-                  v-if="selectedDevice.connectionType === 'ble' && selectedDevice.connected"
-                  link
-                  type="warning"
-                  @click="disconnectBleDevice(selectedDevice)"
+              <div class="connection-control">
+                <el-radio-group
+                  :model-value="selectedDevice.controlConnection"
+                  size="small"
+                  @change="(type: TransportType) => setControlConnection(selectedDevice!, type)"
                 >
-                  断开
-                </el-button>
+                  <el-radio-button
+                    v-for="connection in selectedDevice.connections"
+                    :key="connection.type"
+                    :value="connection.type"
+                  >
+                    {{ getConnectionLabel(connection.type) }}{{ connection.legacyIdentity ? ' 旧版' : '' }}
+                  </el-radio-button>
+                </el-radio-group>
+                <div
+                  v-for="connection in selectedDevice.connections"
+                  :key="`${connection.type}-details`"
+                  class="connection-meta"
+                >
+                  <span>{{ getConnectionLabel(connection.type) }}</span>
+                  <span v-if="connection.portPath">{{ connection.portPath }}</span>
+                  <span v-if="connection.firmwareVersion">{{ connection.firmwareVersion }}</span>
+                  <el-tag v-if="connection.legacyIdentity" type="warning" size="small">旧版身份</el-tag>
+                </div>
+                <div class="connection-actions">
+                  <el-button
+                    v-if="hasConnection(selectedDevice, 'serial')"
+                    link
+                    type="warning"
+                    @click="disconnectSerialDevice(selectedDevice)"
+                  >
+                    断开串口
+                  </el-button>
+                  <el-button
+                    v-if="hasConnection(selectedDevice, 'ble')"
+                    link
+                    type="warning"
+                    @click="disconnectBleDevice(selectedDevice)"
+                  >
+                    断开 BLE
+                  </el-button>
+                </div>
               </div>
             </el-descriptions-item>
             <el-descriptions-item label="最后上报">{{ formatLastReport(selectedDevice.lastReport) }}</el-descriptions-item>
@@ -594,6 +655,36 @@
     </el-card>
 
     <el-empty v-else description="请选择一个设备查看详情" style="margin-top: 20px" />
+
+    <el-dialog
+      v-model="serialDialogVisible"
+      title="选择串口"
+      width="560px"
+      @open="loadSerialPorts"
+    >
+      <el-table :data="serialPorts" size="small" v-loading="serialPortsLoading">
+        <el-table-column prop="path" label="端口" width="100" />
+        <el-table-column prop="manufacturer" label="设备" min-width="190">
+          <template #default="{ row }">{{ row.manufacturer || row.friendlyName || '未知串口设备' }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="90">
+          <template #default="{ row }">{{ getSerialPortStatus(row.status) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }">
+            <el-button
+              type="primary"
+              size="small"
+              :disabled="row.status === 'connected' || row.status === 'probing'"
+              @click="connectSerialPort(row.path)"
+            >
+              连接
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!serialPortsLoading && serialPorts.length === 0" description="未发现串口" />
+    </el-dialog>
 
     <el-dialog
       v-model="bleDialogVisible"
@@ -705,20 +796,38 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection } from '@element-plus/icons-vue'
+import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Link } from '@element-plus/icons-vue'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
 import { track } from '../analytics'
 
 interface DeviceData { [key: string]: any }
+type TransportType = 'mqtt' | 'serial' | 'ble';
+interface DeviceConnection {
+  type: TransportType;
+  connected: boolean;
+  connectedAt?: string;
+  lastActivity?: string;
+  firmwareVersion?: string;
+  portPath?: string;
+  legacyIdentity?: boolean;
+}
 interface Device {
   id: string;
   name: string;
   nickname?: string;
   type: string;
   connected: boolean;
-  connectionType: 'mqtt' | 'ble';
+  controlConnection: TransportType | null;
+  connections: DeviceConnection[];
   lastReport: string | null;
   data: DeviceData;
+}
+
+interface SerialPortInfo {
+  path: string;
+  manufacturer?: string;
+  friendlyName?: string;
+  status: 'idle' | 'probing' | 'connected' | 'backoff';
 }
 
 interface FirmwareInfo {
@@ -763,6 +872,12 @@ const bleBusy = ref(false);
 const bleDialogVisible = ref(false);
 const bleCandidates = ref<Array<{ id: string; name: string }>>([]);
 let disposeBleScanResults: (() => void) | null = null;
+const serialBusy = ref(false);
+const serialDialogVisible = ref(false);
+const serialPortsLoading = ref(false);
+const serialPorts = ref<SerialPortInfo[]>([]);
+const serialAutoConnect = ref(false);
+const serialSettingsBusy = ref(false);
 
 // 设备操作相关
 const operationLoading = ref<Record<string, boolean>>({});
@@ -814,7 +929,13 @@ const deviceMonitorConfig = computed(() => {
 });
 
 const currentFirmwareVersion = computed(() => {
-  return selectedDevice.value?.data?.ver || firmwareInfo.value?.currentVersion || '未知';
+  const control = selectedDevice.value?.connections.find(
+    connection => connection.type === selectedDevice.value?.controlConnection,
+  );
+  return selectedDevice.value?.data?.ver
+    || control?.firmwareVersion
+    || firmwareInfo.value?.currentVersion
+    || '未知';
 });
 
 const otaProgressPercentage = computed(() => {
@@ -832,7 +953,7 @@ const isFirmwareBusy = computed(() => {
 
 const canUpdateFirmware = computed(() => {
   return !!selectedDevice.value?.connected
-    && selectedDevice.value?.connectionType !== 'ble'
+    && selectedDevice.value?.controlConnection !== 'ble'
     && !!firmwareInfo.value?.supported
     && !!firmwareInfo.value?.updateAvailable
     && !firmwareLoading.value
@@ -842,7 +963,7 @@ const canUpdateFirmware = computed(() => {
 
 const firmwareActionText = computed(() => {
   if (!selectedDevice.value?.connected) return '设备离线';
-  if (selectedDevice.value?.connectionType === 'ble') return 'BLE 连接不可升级';
+  if (selectedDevice.value?.controlConnection === 'ble') return 'BLE 连接不可升级';
   if (firmwareLoading.value) return '检查中';
   if (!firmwareInfo.value?.supported) return '暂无固件';
   if (!firmwareInfo.value?.updateAvailable) return '已是最新';
@@ -893,7 +1014,12 @@ async function init() {
   loading.value = true;
   loadError.value = '';
   try {
-    await Promise.all([loadDeviceTypes(), loadDeviceTypeConfigs(), refreshDevices()]);
+    await Promise.all([
+      loadDeviceTypes(),
+      loadDeviceTypeConfigs(),
+      refreshDevices(),
+      loadSerialSettings(),
+    ]);
   } catch (e: any) {
     loadError.value = e?.message || '数据加载失败';
   } finally {
@@ -916,7 +1042,8 @@ async function loadDeviceTypeConfigs() {
 async function refreshDevices() {
   const res = await fetch('/api/devices');
   if (!res.ok) throw new Error('设备列表获取失败');
-  const list: Device[] = await res.json();
+  const rawList: Device[] = await res.json();
+  const list = rawList.map(normalizeDevice);
   // 检测离线→在线的边沿，仅对新上线设备上报 device_connect（避免轮询重复上报）
   for (const d of list) {
     if (d.connected && !connectedDeviceIds.has(d.id)) {
@@ -934,6 +1061,134 @@ async function refreshDevices() {
       closeOtaStatusConnection();
     }
   }
+}
+
+function normalizeDevice(device: Device & { connectionType?: TransportType }): Device {
+  const fallbackType = device.connectionType;
+  const connections = Array.isArray(device.connections)
+    ? device.connections
+    : (fallbackType && device.connected ? [{ type: fallbackType, connected: true }] : []);
+  return {
+    ...device,
+    connections,
+    controlConnection: device.controlConnection || connections[0]?.type || null,
+  };
+}
+
+async function readJsonResponse(res: Response, fallback: string) {
+  let data: any = null;
+  try { data = await res.json(); } catch (_) {}
+  if (!res.ok || data?.error) {
+    throw new Error(data?.message || data?.error?.message || fallback);
+  }
+  return data;
+}
+
+async function loadSerialSettings() {
+  const res = await fetch('/api/serial/settings');
+  const data = await readJsonResponse(res, '串口自动连接设置获取失败');
+  serialAutoConnect.value = data.autoConnect === true;
+}
+
+async function updateSerialAutoConnect(value: boolean | string | number) {
+  const enabled = value === true;
+  serialSettingsBusy.value = true;
+  try {
+    const res = await fetch('/api/serial/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ autoConnect: enabled }),
+    });
+    const data = await readJsonResponse(res, '串口自动连接设置失败');
+    serialAutoConnect.value = data.autoConnect === true;
+  } catch (error: any) {
+    serialAutoConnect.value = !enabled;
+    ElMessage.error(error?.message || '串口自动连接设置失败');
+  } finally {
+    serialSettingsBusy.value = false;
+  }
+}
+
+async function openSerialDialog() {
+  serialDialogVisible.value = true;
+  await loadSerialPorts();
+}
+
+async function loadSerialPorts() {
+  serialPortsLoading.value = true;
+  try {
+    const res = await fetch('/api/serial/ports');
+    const data = await readJsonResponse(res, '串口列表获取失败');
+    serialPorts.value = Array.isArray(data) ? data : (data.ports || []);
+  } catch (error: any) {
+    ElMessage.error(error?.message || '串口列表获取失败');
+  } finally {
+    serialPortsLoading.value = false;
+  }
+}
+
+async function connectSerialPort(path: string) {
+  serialBusy.value = true;
+  try {
+    const res = await fetch('/api/serial/connections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    const data = await readJsonResponse(res, '串口连接失败');
+    await refreshDevices();
+    serialDialogVisible.value = false;
+    selectedDeviceId.value = data.device?.id || data.id || selectedDeviceId.value;
+    ElMessage.success(`${path} 已连接`);
+  } catch (error: any) {
+    ElMessage.error(error?.message || '串口连接失败');
+    await loadSerialPorts();
+  } finally {
+    serialBusy.value = false;
+  }
+}
+
+async function disconnectSerialDevice(device: Device) {
+  try {
+    const res = await fetch(`/api/serial/connections/${encodeURIComponent(device.id)}`, {
+      method: 'DELETE',
+    });
+    await readJsonResponse(res, '串口断开失败');
+    await refreshDevices();
+    ElMessage.success('串口已断开');
+  } catch (error: any) {
+    ElMessage.error(error?.message || '串口断开失败');
+  }
+}
+
+async function setControlConnection(device: Device, type: TransportType) {
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(device.id)}/control-connection`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type }),
+    });
+    await readJsonResponse(res, '控制连接切换失败');
+    await refreshDevices();
+  } catch (error: any) {
+    ElMessage.error(error?.message || '控制连接切换失败');
+  }
+}
+
+function hasConnection(device: Device, type: TransportType) {
+  return device.connections.some(connection => connection.type === type && connection.connected);
+}
+
+function getConnectionLabel(type: TransportType) {
+  return { mqtt: 'MQTT', serial: '串口', ble: 'BLE' }[type];
+}
+
+function getConnectionTagType(type: TransportType): 'success' | 'primary' | 'warning' | 'info' {
+  return { mqtt: 'info', serial: 'success', ble: 'primary' }[type] as 'success' | 'primary' | 'info';
+}
+
+function getSerialPortStatus(status: SerialPortInfo['status']) {
+  return { idle: '可连接', probing: '探测中', connected: '已连接', backoff: '等待重试' }[status] || status;
 }
 
 function startAutoRefresh() {
@@ -1081,7 +1336,7 @@ async function removeDevice(id: string) {
     );
     
     const device = devices.value.find((item) => item.id === id);
-    if (device?.connectionType === 'ble') await window.bleApi?.disconnect(id);
+    if (device && hasConnection(device, 'ble')) await window.bleApi?.disconnect(id);
     const res = await fetch(`/api/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.message || '删除设备失败');
@@ -1592,6 +1847,43 @@ async function executeDeviceOperation(device: Device, operation: any) {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+.serial-auto-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.connection-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.connection-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.connection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.connection-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: #606266;
+  font-size: 12px;
 }
 
 .device-detail-header {

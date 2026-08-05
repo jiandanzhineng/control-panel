@@ -97,7 +97,7 @@ function deleteDevice(id) {
   if (!vdev) return false;
   vdev.destroy();
   virtualDevices.delete(id);
-  deviceService.deleteDeviceById(id);
+  void deviceService.deleteDeviceById(id);
   return true;
 }
 

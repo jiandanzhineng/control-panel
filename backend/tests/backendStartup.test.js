@@ -22,12 +22,20 @@ jest.mock('../services/deviceService', () => ({
   cleanup: jest.fn(),
 }));
 
+jest.mock('../services/serialConnectionService', () => ({
+  start: jest.fn(async () => ({ autoConnect: false })),
+  shutdown: jest.fn(async () => {}),
+  listPorts: jest.fn(async () => []),
+  getSettings: jest.fn(() => ({ autoConnect: false })),
+}));
+
 jest.mock('../services/bridgeService', () => ({
   init: jest.fn(),
 }));
 
 const mqttService = require('../services/mqttService');
 const mdnsService = require('../services/mdnsService');
+const serialConnectionService = require('../services/serialConnectionService');
 const backend = require('../index');
 
 describe('backend server lifecycle', () => {
@@ -52,9 +60,11 @@ describe('backend server lifecycle', () => {
 
     expect(mqttService.start).toHaveBeenCalledTimes(1);
     expect(mdnsService.publish).toHaveBeenCalledTimes(1);
+    expect(serialConnectionService.start).toHaveBeenCalledTimes(1);
     expect(result).toEqual({
       mqtt: expect.objectContaining({ running: true, port: 1883 }),
       mdns: expect.objectContaining({ running: true, ip: '192.168.1.10' }),
+      serial: { autoConnect: false },
     });
   });
 
@@ -71,5 +81,6 @@ describe('backend server lifecycle', () => {
 
     expect(mqttService.stop).toHaveBeenCalledTimes(1);
     expect(mdnsService.unpublish).toHaveBeenCalledTimes(1);
+    expect(serialConnectionService.shutdown).toHaveBeenCalledTimes(1);
   });
 });

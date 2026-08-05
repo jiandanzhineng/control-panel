@@ -30,6 +30,9 @@ interface Window {
       name: string;
       type: string;
       connectionType: 'ble';
+      firmwareVersion: string | null;
+      legacyIdentity: boolean;
+      browserDeviceId: string;
       data: Record<string, unknown>;
     }>;
     disconnect: (id: string) => Promise<{ ok: boolean; alreadyDisconnected?: boolean }>;

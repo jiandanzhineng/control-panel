@@ -13,6 +13,7 @@ const gameCacheService = require('./services/gameCacheService');
 const { BRIDGE_INTERNAL_HEADER } = require('./constants/bridgeAccess');
 const { browserApiCors } = require('./middleware/browserApiAccess');
 const externalGameAccessService = require('./services/externalGameAccessService');
+const serialConnectionService = require('./services/serialConnectionService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -78,28 +79,30 @@ function startRuntimeServices() {
         logger.warn('mDNS service start failed', error?.message || error);
         return { running: false, error: error?.message || String(error) };
       }),
-  ]).then(([mqtt, mdns]) => ({ mqtt, mdns }));
+    serialConnectionService.start()
+      .catch((error) => {
+        logger.warn('Serial connection service start failed', error?.message || error);
+        return { autoConnect: false, error: error?.message || String(error) };
+      }),
+  ]).then(([mqtt, mdns, serial]) => ({ mqtt, mdns, serial }));
 
   return runtimeServicesStartPromise;
 }
 
 function stopRuntimeServices() {
   if (runtimeServicesStopPromise) return runtimeServicesStopPromise;
-  if (!runtimeServicesStartPromise) {
-    return Promise.resolve({
-      mqtt: { running: false },
-      mdns: { running: false },
-    });
-  }
 
   runtimeServicesStopPromise = (async () => {
     if (runtimeServicesStartPromise) await runtimeServicesStartPromise;
+    const serial = await serialConnectionService.shutdown()
+      .then(() => ({ running: false }))
+      .catch((error) => ({ running: false, error: error?.message || String(error) }));
     const [mqtt, mdns] = await Promise.all([
       mqttService.stop({ onlyOwned: true }).catch(() => ({ running: false })),
       mdnsService.unpublish().catch(() => ({ running: false })),
     ]);
     runtimeServicesStartPromise = null;
-    return { mqtt, mdns };
+    return { mqtt, mdns, serial };
   })().finally(() => {
     runtimeServicesStopPromise = null;
   });
@@ -139,6 +142,7 @@ app.use('/api/network', require('./routes/network'));
 app.use('/api/mdns', require('./routes/mdns'));
 app.use('/api/mqtt-client', require('./routes/mqttClient'));
 app.use('/api/devices', require('./routes/devices'));
+app.use('/api/serial', require('./routes/serialConnections'));
 app.use('/api/device-types', require('./routes/deviceTypes'));
 app.use('/api/device-capabilities', require('./routes/deviceCapabilities'));
 app.use('/api/games', require('./routes/games'));
@@ -175,12 +179,14 @@ if (require.main === module) {
   });
 }
 
-process.on('SIGINT', async () => {
+async function handleSigint() {
   logger.info('Received SIGINT, cleaning up...');
-  deviceService.cleanup();
   await stopRuntimeServices();
+  deviceService.cleanup();
   process.exit(0);
-});
+}
+
+if (require.main === module) process.on('SIGINT', handleSigint);
 
 // 默认导出仍是 express app（supertest、api.test.js 依赖此）。
 // 额外挂上 server：它是 http.createServer(app) 且已 bridgeService.init(server) 挂好 /bridge WS。

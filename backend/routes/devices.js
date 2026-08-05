@@ -17,9 +17,9 @@ router.get('/', (req, res) => {
 });
 
 // 清空所有设备（注意顺序，避免与 :id 冲突）
-router.delete('/all', (req, res) => {
+router.delete('/all', async (req, res) => {
   try {
-    deviceService.clearDevices();
+    await deviceService.clearDevices();
     res.json({ ok: true });
   } catch (e) {
     sendError(res, 'DEVICE_CLEAR_FAILED', e.message || String(e), 500);
@@ -186,6 +186,21 @@ router.post('/:id/message', (req, res) => {
   }
 });
 
+router.put('/:id/control-connection', (req, res) => {
+  try {
+    const type = req.body?.type;
+    if (!['mqtt', 'serial', 'ble'].includes(type)) {
+      return sendError(res, 'INVALID_TRANSPORT', 'type 必须是 mqtt、serial 或 ble', 400);
+    }
+    res.json(deviceService.setControlConnection(req.params.id, type));
+  } catch (error) {
+    const status = error.code === 'DEVICE_NOT_FOUND'
+      ? 404
+      : error.code === 'CONNECTION_NOT_AVAILABLE' ? 409 : 500;
+    sendError(res, error.code || 'CONTROL_CONNECTION_FAILED', error.message || String(error), status);
+  }
+});
+
 // 更新设备元数据（例如名称），并通知设备
 router.patch('/:id', (req, res) => {
   try {
@@ -299,10 +314,10 @@ router.get('/:id/firmware/status-stream', (req, res) => {
 });
 
 // 删除单个设备
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const id = req.params.id;
-    const ok = deviceService.deleteDeviceById(id);
+    const ok = await deviceService.deleteDeviceById(id);
     if (!ok) return sendError(res, 'DEVICE_NOT_FOUND', '设备不存在', 404);
     res.json({ ok: true });
   } catch (e) {

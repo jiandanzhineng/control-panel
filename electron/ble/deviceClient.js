@@ -1,5 +1,6 @@
 const {
   BLE_UUIDS,
+  decodeIdentity,
   decodeMessage,
   decodePropertyValue,
   encodeMessage,
@@ -62,6 +63,9 @@ class BleDeviceClient {
     if (!device?.gatt) throw new TypeError('Bluetooth device requires GATT');
     this.device = device;
     this.id = `ble:${device.id}`;
+    this.browserDeviceId = device.id;
+    this.firmwareVersion = null;
+    this.legacyIdentity = true;
     this.onEvent = onEvent;
     this.modeSwitchDelayMs = modeSwitchDelayMs;
     this.type = '';
@@ -86,8 +90,21 @@ class BleDeviceClient {
       this.modeCharacteristic = characteristics.find((item) => sameUuid(item.uuid, BLE_UUIDS.mode));
       this.messageCharacteristic = characteristics.find((item) => sameUuid(item.uuid, BLE_UUIDS.message));
       this.commandCharacteristic = characteristics.find((item) => sameUuid(item.uuid, BLE_UUIDS.command));
+      const identityCharacteristic = characteristics.find((item) => sameUuid(item.uuid, BLE_UUIDS.identity));
       if (!this.modeCharacteristic) throw new Error('Characteristic 0xFF02 not found');
       if (!this.commandCharacteristic) throw new Error('Characteristic 0xFF03 not found');
+
+      if (identityCharacteristic) {
+        if (!identityCharacteristic.properties.read) {
+          throw new Error('Characteristic 0xFF04 is not readable');
+        }
+        const identity = decodeIdentity(
+          bytesFromDataView(await identityCharacteristic.readValue()),
+        );
+        this.id = identity.deviceId;
+        this.firmwareVersion = identity.firmwareVersion;
+        this.legacyIdentity = false;
+      }
 
       await writeCharacteristic(this.modeCharacteristic, Uint8Array.of(1));
       modeEnabled = true;
@@ -108,6 +125,7 @@ class BleDeviceClient {
 
       await this.subscribeMessageChannel();
       const data = await this.readInitialValues();
+      if (this.firmwareVersion) data.ver = this.firmwareVersion;
       this.connected = true;
       this.device.addEventListener('gattserverdisconnected', this.onGattDisconnected);
 
@@ -116,6 +134,9 @@ class BleDeviceClient {
         name: this.device.name || this.type,
         type: this.type,
         connectionType: 'ble',
+        firmwareVersion: this.firmwareVersion,
+        legacyIdentity: this.legacyIdentity,
+        browserDeviceId: this.browserDeviceId,
         data,
         properties: [...this.properties.values()].map((entry) => ({
           name: entry.name,
@@ -145,6 +166,7 @@ class BleDeviceClient {
         sameUuid(characteristic.uuid, BLE_UUIDS.mode)
         || sameUuid(characteristic.uuid, BLE_UUIDS.message)
         || sameUuid(characteristic.uuid, BLE_UUIDS.command)
+        || sameUuid(characteristic.uuid, BLE_UUIDS.identity)
       ) {
         continue;
       }

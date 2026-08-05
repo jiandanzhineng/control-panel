@@ -1,4 +1,4 @@
-const mqttClient = require('./mqttClientService');
+const deviceConnections = require('./deviceConnectionService');
 const logService = require('./logService');
 
 const FIRMWARE_BASE_URL = (process.env.FIRMWARE_BASE_URL || 'http://firmware.undersilicon.cn').replace(/\/+$/, '');
@@ -266,7 +266,10 @@ function updateDeviceToLatestFromManifest(device, manifest, options = {}) {
   if (!device.connected) {
     throw createServiceError('DEVICE_OFFLINE', '设备离线，无法下发 OTA 指令', 409);
   }
-  if (device.connectionType === 'ble') {
+  const controlConnection = deviceConnections.getDeviceConnections(device.id).controlConnection
+    || device.controlConnection
+    || device.connectionType;
+  if (controlConnection === 'ble') {
     throw createServiceError(
       'FIRMWARE_TRANSPORT_UNSUPPORTED',
       'BLE 模式下 WiFi 已停止，无法执行网络 OTA',
@@ -283,16 +286,15 @@ function updateDeviceToLatestFromManifest(device, manifest, options = {}) {
     throw createServiceError('ALREADY_LATEST', '当前设备已是最新固件版本', 409);
   }
 
-  const topic = `/drecv/${device.id}`;
   const message = {
     method: 'ota_update',
     url: latest.firmware.url,
   };
 
   try {
-    mqttClient.publish(topic, message);
+    deviceConnections.send(device.id, message);
   } catch (error) {
-    throw createServiceError('OTA_MQTT_PUBLISH_FAILED', error?.message || 'OTA 指令下发失败', 500);
+    throw createServiceError('OTA_PUBLISH_FAILED', error?.message || 'OTA 指令下发失败', 500);
   }
 
   const status = recordOtaStatus(device.id, {
@@ -307,7 +309,8 @@ function updateDeviceToLatestFromManifest(device, manifest, options = {}) {
 
   return {
     ok: true,
-    topic,
+    ...(controlConnection === 'mqtt' ? { topic: `/drecv/${device.id}` } : {}),
+    connectionType: controlConnection,
     message,
     firmware: latest.firmware,
     status,

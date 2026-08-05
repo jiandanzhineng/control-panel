@@ -10,7 +10,14 @@ jest.mock('../services/logService', () => ({
 }));
 
 const mqttClient = require('../services/mqttClientService');
+const deviceConnections = require('../services/deviceConnectionService');
 const firmwareOtaService = require('../services/firmwareOtaService');
+
+function connectMqtt(deviceId) {
+  deviceConnections.registerConnection(deviceId, 'mqtt', {
+    send: (message) => mqttClient.publish(`/drecv/${deviceId}`, message),
+  });
+}
 
 const manifest = {
   latest_version: 'v1.1.33',
@@ -39,12 +46,14 @@ const manifest = {
 describe('firmwareOtaService', () => {
   beforeEach(() => {
     firmwareOtaService.resetForTests();
+    deviceConnections.clear();
     mqttClient.publish.mockReset();
     firmwareOtaService.setManifestFetcher(async () => manifest);
   });
 
   afterEach(() => {
     firmwareOtaService.resetForTests();
+    deviceConnections.clear();
   });
 
   it('matches app firmware and ignores merged firmware', async () => {
@@ -97,6 +106,7 @@ describe('firmwareOtaService', () => {
   });
 
   it('publishes exact OTA payload when updating to latest', async () => {
+    connectMqtt('dev01');
     const result = await firmwareOtaService.updateDeviceToLatest({
       id: 'dev01',
       type: 'CUNZHI01',
@@ -122,6 +132,8 @@ describe('firmwareOtaService', () => {
   });
 
   it('rejects OTA while the device is connected through BLE', async () => {
+    deviceConnections.registerConnection('ble:dev01', 'ble', { send: jest.fn() });
+    deviceConnections.registerConnection('ble:dev01', 'mqtt', { send: jest.fn() });
     await expect(firmwareOtaService.updateDeviceToLatest({
       id: 'ble:dev01',
       type: 'CUNZHI01',
@@ -133,6 +145,24 @@ describe('firmwareOtaService', () => {
       status: 409,
     });
     expect(mqttClient.publish).not.toHaveBeenCalled();
+  });
+
+  it('uses the unified publisher when serial is the control connection', async () => {
+    const send = jest.fn();
+    deviceConnections.registerConnection('dev-serial', 'serial', { send });
+    const result = await firmwareOtaService.updateDeviceToLatest({
+      id: 'dev-serial',
+      type: 'CUNZHI01',
+      connected: true,
+      controlConnection: 'serial',
+      data: { ver: 'v1.1.28' },
+    });
+    expect(send).toHaveBeenCalledWith({
+      method: 'ota_update',
+      url: 'http://firmware.undersilicon.cn/firmware/latest/under_silicon_CUNZHI01_v1.1.33.bin',
+    });
+    expect(result.connectionType).toBe('serial');
+    expect(result.topic).toBeUndefined();
   });
 
   it('rejects devices already on latest version by default', async () => {
@@ -148,6 +178,8 @@ describe('firmwareOtaService', () => {
     mqttClient.publish.mockImplementation((topic) => {
       if (topic === '/drecv/dev05') throw new Error('mqtt unavailable');
     });
+    connectMqtt('dev01');
+    connectMqtt('dev05');
 
     const result = await firmwareOtaService.updateDevicesToLatest([
       { id: 'dev01', type: 'CUNZHI01', connected: true, data: { ver: 'v1.1.28' } },
@@ -164,7 +196,7 @@ describe('firmwareOtaService', () => {
     expect(result.results.find((item) => item.deviceId === 'dev02').error.code).toBe('ALREADY_LATEST');
     expect(result.results.find((item) => item.deviceId === 'dev03').error.code).toBe('FIRMWARE_NOT_SUPPORTED');
     expect(result.results.find((item) => item.deviceId === 'dev04').error.code).toBe('DEVICE_OFFLINE');
-    expect(result.results.find((item) => item.deviceId === 'dev05').error.code).toBe('OTA_MQTT_PUBLISH_FAILED');
+    expect(result.results.find((item) => item.deviceId === 'dev05').error.code).toBe('OTA_PUBLISH_FAILED');
   });
 
   it('blinks only online devices confirmed to be on latest firmware', async () => {

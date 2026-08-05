@@ -3,6 +3,7 @@ const BLE_UUIDS = Object.freeze({
   message: '0000ff01-0000-1000-8000-00805f9b34fb',
   mode: '0000ff02-0000-1000-8000-00805f9b34fb',
   command: '0000ff03-0000-1000-8000-00805f9b34fb',
+  identity: '0000ff04-0000-1000-8000-00805f9b34fb',
   userDescription: '00002901-0000-1000-8000-00805f9b34fb',
 });
 
@@ -102,6 +103,19 @@ function decodeMessage(bytes) {
   return value;
 }
 
+function decodeIdentity(bytes) {
+  const identity = decodeMessage(bytes);
+  const deviceId = identity?.device_id;
+  const firmwareVersion = identity?.firmware_version;
+  if (typeof deviceId !== 'string' || !/^[0-9a-f]{12}$/.test(deviceId)) {
+    throw new TypeError('BLE identity device_id must be 12 lowercase hexadecimal characters');
+  }
+  if (typeof firmwareVersion !== 'string' || !/^v[^\s]{1,30}$/.test(firmwareVersion)) {
+    throw new TypeError('BLE identity firmware_version must be a non-empty version starting with v');
+  }
+  return { deviceId, firmwareVersion };
+}
+
 module.exports = {
   BLE_UUIDS,
   FLOAT_PROPERTIES,
@@ -111,4 +125,5 @@ module.exports = {
   encodePropertyValue,
   decodeMessage,
   encodeMessage,
+  decodeIdentity,
 };
