@@ -1,15 +1,11 @@
-jest.mock('../services/mqttClientService', () => ({
-  publish: jest.fn(),
-}));
-
 jest.mock('../services/deviceService', () => ({
   state: { devices: [] },
   onDeviceDataChange: jest.fn(),
   connectedDevices: jest.fn(),
   getDeviceById: jest.fn(),
+  devicePublishFn: jest.fn(),
 }));
 
-const mqttClient = require('../services/mqttClientService');
 const deviceService = require('../services/deviceService');
 const testService = require('../services/testService');
 
@@ -35,12 +31,12 @@ describe('testService', () => {
     testService.startTest(device.id);
     jest.advanceTimersByTime(8000);
 
-    expect(mqttClient.publish.mock.calls).toEqual([
-      ['/drecv/cunzhi01-dev', { method: 'update', report_delay_ms: 100 }],
-      ['/drecv/cunzhi01-dev', { method: 'update', power: 255 }],
-      ['/drecv/cunzhi01-dev', { method: 'update', power: 0 }],
-      ['/drecv/cunzhi01-dev', { method: 'update', shock: 1, voltage: 24 }],
-      ['/drecv/cunzhi01-dev', { method: 'update', shock: 0, voltage: 24 }],
+    expect(deviceService.devicePublishFn.mock.calls).toEqual([
+      ['cunzhi01-dev', { method: 'update', report_delay_ms: 100 }],
+      ['cunzhi01-dev', { method: 'update', power: 255 }],
+      ['cunzhi01-dev', { method: 'update', power: 0 }],
+      ['cunzhi01-dev', { method: 'update', shock: 1, voltage: 24 }],
+      ['cunzhi01-dev', { method: 'update', shock: 0, voltage: 24 }],
     ]);
   });
 
@@ -49,14 +45,14 @@ describe('testService', () => {
     deviceService.getDeviceById.mockReturnValue(device);
 
     testService.startTest(device.id);
-    mqttClient.publish.mockClear();
+    deviceService.devicePublishFn.mockClear();
 
     testService.stopTest(device.id);
 
-    expect(mqttClient.publish.mock.calls).toEqual([
-      ['/drecv/cunzhi01-dev', { method: 'update', power: 0 }],
-      ['/drecv/cunzhi01-dev', { method: 'update', shock: 0, voltage: 0 }],
-      ['/drecv/cunzhi01-dev', { method: 'update', report_delay_ms: 5000 }],
+    expect(deviceService.devicePublishFn.mock.calls).toEqual([
+      ['cunzhi01-dev', { method: 'update', power: 0 }],
+      ['cunzhi01-dev', { method: 'update', shock: 0, voltage: 0 }],
+      ['cunzhi01-dev', { method: 'update', report_delay_ms: 5000 }],
     ]);
   });
 });

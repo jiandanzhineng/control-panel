@@ -170,6 +170,22 @@ router.get('/:id', (req, res) => {
   }
 });
 
+// 通过设备当前连接的传输发送通用消息（MQTT 或 BLE）。
+router.post('/:id/message', (req, res) => {
+  try {
+    const id = req.params.id;
+    const device = deviceService.getDeviceById(id);
+    if (!device) return sendError(res, 'DEVICE_NOT_FOUND', '设备不存在', 404);
+    const message = req.body?.message;
+    if (!message || Array.isArray(message) || typeof message !== 'object') {
+      return sendError(res, 'DEVICE_MESSAGE_REQUIRED', '请提供消息对象', 400);
+    }
+    res.json(deviceService.publishDeviceMessage(id, message));
+  } catch (e) {
+    sendError(res, e.code || 'DEVICE_MESSAGE_FAILED', e.message || String(e), 500);
+  }
+});
+
 // 更新设备元数据（例如名称），并通知设备
 router.patch('/:id', (req, res) => {
   try {

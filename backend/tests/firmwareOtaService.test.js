@@ -121,6 +121,20 @@ describe('firmwareOtaService', () => {
     })).rejects.toMatchObject({ code: 'DEVICE_OFFLINE', status: 409 });
   });
 
+  it('rejects OTA while the device is connected through BLE', async () => {
+    await expect(firmwareOtaService.updateDeviceToLatest({
+      id: 'ble:dev01',
+      type: 'CUNZHI01',
+      connected: true,
+      connectionType: 'ble',
+      data: { ver: 'v1.1.28' },
+    })).rejects.toMatchObject({
+      code: 'FIRMWARE_TRANSPORT_UNSUPPORTED',
+      status: 409,
+    });
+    expect(mqttClient.publish).not.toHaveBeenCalled();
+  });
+
   it('rejects devices already on latest version by default', async () => {
     await expect(firmwareOtaService.updateDeviceToLatest({
       id: 'dev01',

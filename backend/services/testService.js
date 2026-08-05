@@ -1,4 +1,3 @@
-const mqttClient = require('./mqttClientService');
 const deviceService = require('./deviceService');
 const deviceRegistry = require('../devices/registry');
 const { getDeviceTypeConfig } = require('../config/deviceTypes');
@@ -162,12 +161,10 @@ function stopTest(deviceId, sendStopMsg = true) {
 }
 
 /**
- * 本地下发函数：直接发布到设备接收主题
+ * 通过设备当前连接的传输下发测试消息。
  */
 function devicePublishFn(deviceId, message) {
-  const topic = `/drecv/${deviceId}`;
-  mqttClient.publish(topic, message);
-  return { ok: true, topic, message };
+  return deviceService.devicePublishFn(deviceId, message);
 }
 
 /**

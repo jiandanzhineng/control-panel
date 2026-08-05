@@ -266,6 +266,13 @@ function updateDeviceToLatestFromManifest(device, manifest, options = {}) {
   if (!device.connected) {
     throw createServiceError('DEVICE_OFFLINE', '设备离线，无法下发 OTA 指令', 409);
   }
+  if (device.connectionType === 'ble') {
+    throw createServiceError(
+      'FIRMWARE_TRANSPORT_UNSUPPORTED',
+      'BLE 模式下 WiFi 已停止，无法执行网络 OTA',
+      409,
+    );
+  }
 
   const latest = getLatestFirmwareFromManifest(device, manifest);
   if (!latest.supported || !latest.firmware) {
@@ -308,7 +315,12 @@ function updateDeviceToLatestFromManifest(device, manifest, options = {}) {
 }
 
 function isSkippableUpdateError(error) {
-  return ['DEVICE_OFFLINE', 'FIRMWARE_NOT_SUPPORTED', 'ALREADY_LATEST'].includes(error?.code);
+  return [
+    'DEVICE_OFFLINE',
+    'FIRMWARE_NOT_SUPPORTED',
+    'FIRMWARE_TRANSPORT_UNSUPPORTED',
+    'ALREADY_LATEST',
+  ].includes(error?.code);
 }
 
 function recordOtaStatus(deviceId, payload = {}, context = {}) {

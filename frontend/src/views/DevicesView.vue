@@ -9,6 +9,14 @@
           <el-statistic title="离线设备" :value="disconnectedCount" class="offline-stat" />
         </div>
         <div class="actions">
+          <el-button
+            :icon="Connection"
+            :disabled="!bleSupported || bleBusy"
+            :loading="bleBusy"
+            @click="startBleConnect"
+          >
+            {{ bleBusy ? '蓝牙连接中' : '蓝牙连接' }}
+          </el-button>
           <el-button 
             type="primary" 
             :icon="Refresh" 
@@ -83,6 +91,14 @@
             </el-tag>
           </template>
         </el-table-column>
+
+        <el-table-column label="连接" width="90">
+          <template #default="{ row }">
+            <el-tag :type="row.connectionType === 'ble' ? 'primary' : 'info'" size="small">
+              {{ row.connectionType === 'ble' ? 'BLE' : 'MQTT' }}
+            </el-tag>
+          </template>
+        </el-table-column>
         
         <el-table-column prop="battery" label="电量" width="120">
           <template #default="{ row }">
@@ -104,7 +120,7 @@
         <el-table-column label="操作" width="200">
           <template #default="{ row }">
             <div class="table-actions">
-              <el-button 
+              <el-button
                 v-if="hasMonitorData(row.type)"
                 type="primary" 
                 size="small"
@@ -132,6 +148,14 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
+              <el-button
+                v-if="row.connectionType === 'ble'"
+                type="warning"
+                size="small"
+                @click="disconnectBleDevice(row)"
+              >
+                断开
+              </el-button>
               <el-button 
                 type="danger" 
                 size="small"
@@ -173,6 +197,13 @@
               <template #default="{ row }">
                 <el-tag :type="row.connected ? 'success' : 'danger'" size="small">
                   {{ row.connected ? '在线' : '离线' }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="连接" width="90">
+              <template #default="{ row }">
+                <el-tag :type="row.connectionType === 'ble' ? 'primary' : 'info'" size="small">
+                  {{ row.connectionType === 'ble' ? 'BLE' : 'MQTT' }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -252,6 +283,9 @@
             </div>
             <el-tag :type="device.connected ? 'success' : 'danger'" size="small">
               {{ device.connected ? '在线' : '离线' }}
+            </el-tag>
+            <el-tag :type="device.connectionType === 'ble' ? 'primary' : 'info'" size="small">
+              {{ device.connectionType === 'ble' ? 'BLE' : 'MQTT' }}
             </el-tag>
           </div>
           
@@ -466,6 +500,21 @@
                 {{ selectedDevice.connected ? '在线' : '离线' }}
               </el-tag>
             </el-descriptions-item>
+            <el-descriptions-item label="连接方式">
+              <div style="display: flex; align-items: center; justify-content: space-between;">
+                <el-tag :type="selectedDevice.connectionType === 'ble' ? 'primary' : 'info'" size="small">
+                  {{ selectedDevice.connectionType === 'ble' ? 'BLE' : 'MQTT' }}
+                </el-tag>
+                <el-button
+                  v-if="selectedDevice.connectionType === 'ble' && selectedDevice.connected"
+                  link
+                  type="warning"
+                  @click="disconnectBleDevice(selectedDevice)"
+                >
+                  断开
+                </el-button>
+              </div>
+            </el-descriptions-item>
             <el-descriptions-item label="最后上报">{{ formatLastReport(selectedDevice.lastReport) }}</el-descriptions-item>
             <el-descriptions-item label="电量">
               <el-tag :type="getBatteryTagType(selectedDevice.data?.battery)" size="small">
@@ -545,6 +594,28 @@
     </el-card>
 
     <el-empty v-else description="请选择一个设备查看详情" style="margin-top: 20px" />
+
+    <el-dialog
+      v-model="bleDialogVisible"
+      title="选择蓝牙设备"
+      width="420px"
+      :before-close="closeBleDialog"
+    >
+      <el-table
+        v-if="bleCandidates.length > 0"
+        :data="bleCandidates"
+        size="small"
+        @row-click="selectBleCandidate"
+      >
+        <el-table-column prop="name" label="设备" min-width="180" />
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }">
+            <el-button type="primary" size="small" @click.stop="selectBleCandidate(row)">连接</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else description="正在扫描附近设备" />
+    </el-dialog>
 
     <div style="margin-top: 30px; text-align: center;">
       <el-button link type="info" @click="$router.push('/test')" style="opacity: 0.3;">自动化测试</el-button>
@@ -634,7 +705,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload } from '@element-plus/icons-vue'
+import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection } from '@element-plus/icons-vue'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
 import { track } from '../analytics'
 
@@ -645,6 +716,7 @@ interface Device {
   nickname?: string;
   type: string;
   connected: boolean;
+  connectionType: 'mqtt' | 'ble';
   lastReport: string | null;
   data: DeviceData;
 }
@@ -686,6 +758,11 @@ const loadError = ref('');
 const selectedDeviceId = ref('');
 const autoRefreshEnabled = ref(true);
 const autoRefreshTimer = ref<number | null>(null);
+const bleSupported = ref(false);
+const bleBusy = ref(false);
+const bleDialogVisible = ref(false);
+const bleCandidates = ref<Array<{ id: string; name: string }>>([]);
+let disposeBleScanResults: (() => void) | null = null;
 
 // 设备操作相关
 const operationLoading = ref<Record<string, boolean>>({});
@@ -755,6 +832,7 @@ const isFirmwareBusy = computed(() => {
 
 const canUpdateFirmware = computed(() => {
   return !!selectedDevice.value?.connected
+    && selectedDevice.value?.connectionType !== 'ble'
     && !!firmwareInfo.value?.supported
     && !!firmwareInfo.value?.updateAvailable
     && !firmwareLoading.value
@@ -764,6 +842,7 @@ const canUpdateFirmware = computed(() => {
 
 const firmwareActionText = computed(() => {
   if (!selectedDevice.value?.connected) return '设备离线';
+  if (selectedDevice.value?.connectionType === 'ble') return 'BLE 连接不可升级';
   if (firmwareLoading.value) return '检查中';
   if (!firmwareInfo.value?.supported) return '暂无固件';
   if (!firmwareInfo.value?.updateAvailable) return '已是最新';
@@ -791,12 +870,19 @@ const editData = ref<DeviceData>({});
 const originalData = ref<DeviceData>({});
 
 onMounted(async () => {
+  bleSupported.value = !!window.bleApi?.isSupported();
+  disposeBleScanResults = window.bleApi?.onScanResults((candidates) => {
+    bleCandidates.value = candidates;
+  }) || null;
   await init();
   if (autoRefreshEnabled.value) startAutoRefresh();
   startOtaStatusTimer();
 });
 
 onUnmounted(() => {
+  if (bleBusy.value) window.bleApi?.cancelSelection().catch(() => {});
+  disposeBleScanResults?.();
+  disposeBleScanResults = null;
   closeMonitorConnection();
   closeOtaStatusConnection();
   stopAutoRefresh();
@@ -909,6 +995,53 @@ function selectDevice(device: Device) {
   selectedDeviceId.value = device.id;
 }
 
+async function startBleConnect() {
+  const api = window.bleApi;
+  if (!api?.isSupported()) {
+    ElMessage.error('当前电脑或运行环境不支持 BLE');
+    return;
+  }
+  bleCandidates.value = [];
+  bleDialogVisible.value = true;
+  bleBusy.value = true;
+  try {
+    const device = await api.connect();
+    bleDialogVisible.value = false;
+    await refreshDevices();
+    selectedDeviceId.value = device.id;
+    ElMessage.success(`${device.name || device.type} 已通过 BLE 连接`);
+  } catch (error: any) {
+    if (error?.name !== 'NotFoundError' && !String(error?.message || '').toLowerCase().includes('cancel')) {
+      ElMessage.error(error?.message || 'BLE 连接失败');
+    }
+  } finally {
+    bleBusy.value = false;
+  }
+}
+
+async function selectBleCandidate(candidate: { id: string; name: string }) {
+  try {
+    await window.bleApi?.selectDevice(candidate.id);
+  } catch (error: any) {
+    ElMessage.error(error?.message || '选择蓝牙设备失败');
+  }
+}
+
+function closeBleDialog(done: () => void) {
+  window.bleApi?.cancelSelection().catch(() => {});
+  done();
+}
+
+async function disconnectBleDevice(device: Device) {
+  try {
+    await window.bleApi?.disconnect(device.id);
+    await refreshDevices();
+    ElMessage.success('BLE 设备已安全断开');
+  } catch (error: any) {
+    ElMessage.error(error?.message || 'BLE 断开失败');
+  }
+}
+
 async function clearAllDevices() {
   try {
     await ElMessageBox.confirm(
@@ -921,6 +1054,7 @@ async function clearAllDevices() {
       }
     );
     
+    await window.bleApi?.disconnectAll();
     const res = await fetch('/api/devices/all', { method: 'DELETE' });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.message || '清空设备失败');
@@ -946,6 +1080,8 @@ async function removeDevice(id: string) {
       }
     );
     
+    const device = devices.value.find((item) => item.id === id);
+    if (device?.connectionType === 'ble') await window.bleApi?.disconnect(id);
     const res = await fetch(`/api/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.message || '删除设备失败');
@@ -1038,8 +1174,7 @@ async function saveChanges() {
         throw error;
       }
     }
-    const topic = `/drecv/${selectedDevice.value.id}`;
-    const ok = await publishMessage(topic, updateData);
+    const ok = await publishMessage(selectedDevice.value.id, updateData);
     if (!ok) throw new Error('消息下发失败');
     // 更新本地数据与状态
     devices.value = devices.value.map(d => {
@@ -1063,11 +1198,11 @@ function isSafeModeDisabled(value: any) {
   return value === 0 || (typeof value === 'string' && value.trim() === '0');
 }
 
-async function publishMessage(topic: string, message: any) {
-  const res = await fetch('/api/mqtt-client/publish', {
+async function publishMessage(deviceId: string, message: any) {
+  const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/message`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ topic, message })
+    body: JSON.stringify({ message })
   });
   const data = await res.json();
   if (!res.ok || data.error) return false;

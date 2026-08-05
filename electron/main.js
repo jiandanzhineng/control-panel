@@ -8,6 +8,7 @@ const { fileURLToPath, pathToFileURL } = require('url');
 const { BRIDGE_INTERNAL_HEADER } = require('../backend/constants/bridgeAccess.js');
 const externalGameAccessService = require('../backend/services/externalGameAccessService.js');
 const gameHost = require('./gameHost.js');
+const { createBleMainIntegration } = require('./ble/mainIntegration.js');
 
 let server;
 let frontendServer;
@@ -15,6 +16,7 @@ let mainWindow;
 let updateInitialized = false;
 let browserDevicePreloadPath = '';
 const browserWebviewOrigins = new Map();
+let bleMainIntegration = null;
 
 const UPDATE_FEEDS = {
   stable: 'http://firmware.undersilicon.cn/control-panel/stable/',
@@ -161,6 +163,10 @@ function getAppRoot() {
 
 function getBackendModule(modulePath) {
   return require(path.join(getAppRoot(), 'backend', modulePath));
+}
+
+function getDeviceService() {
+  return getBackendModule(path.join('services', 'deviceService.js'));
 }
 
 function normalizePreloadPath(value) {
@@ -412,10 +418,29 @@ function createWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: false,
+      sandbox: false,
       webviewTag: true,
     },
   });
   mainWindow = win;
+  bleMainIntegration.attachWindow(win);
+  let bleDisconnectReady = false;
+  let bleDisconnectPending = false;
+  win.on('close', (event) => {
+    if (bleDisconnectReady || bleDisconnectPending) {
+      if (bleDisconnectPending) event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    bleDisconnectPending = true;
+    bleMainIntegration.requestDisconnectAll(win, { timeoutMs: 3000 })
+      .catch((error) => console.warn('[electron] BLE shutdown failed', error))
+      .finally(() => {
+        bleDisconnectReady = true;
+        bleDisconnectPending = false;
+        if (!win.isDestroyed()) win.close();
+      });
+  });
 
   // 外部链接（target="_blank" 或 window.open）使用系统默认浏览器打开，而非 Electron 新窗口
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -693,6 +718,12 @@ function startBackendThenWindow() {
 }
 
 app.whenReady().then(() => {
+  bleMainIntegration = createBleMainIntegration({
+    ipcMain,
+    getDeviceService,
+    logger: console,
+  });
+  bleMainIntegration.registerHandlers();
   registerUpdateIpcHandlers();
   registerPluginIpcHandlers();
   registerBrowserDeviceIpcHandlers();

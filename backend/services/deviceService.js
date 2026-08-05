@@ -23,6 +23,10 @@ const state = {
   dataChangeHandlers: [],
 };
 
+// Runtime-only transport handles. They are intentionally not persisted because
+// BLE GATT sessions and MQTT client state must be re-established after restart.
+const runtimeTransports = new Map();
+
 // ====== Getter 等价实现 ======
 function getDeviceById(id) {
   return state.devices.find(device => device.id === id);
@@ -61,7 +65,8 @@ function addDevice(deviceData) {
     type: deviceData.type,
     connected: false,
     lastReport: null,
-    data: {}
+    connectionType: deviceData.connectionType || 'mqtt',
+    data: deviceData.data || {}
   };
 
   state.devices.push(newDevice);
@@ -71,6 +76,7 @@ function addDevice(deviceData) {
 function removeDevice(deviceId) {
   const index = state.devices.findIndex(device => device.id === deviceId);
   if (index !== -1) {
+    runtimeTransports.delete(deviceId);
     state.devices.splice(index, 1);
     saveDevices();
 
@@ -81,6 +87,7 @@ function removeDevice(deviceId) {
 }
 
 function clearAllDevices() {
+  runtimeTransports.clear();
   state.devices = [];
   state.selectedDeviceId = null;
   saveDevices();
@@ -133,7 +140,8 @@ function markDeviceOffline(deviceId) {
 function checkDevicesOfflineStatus() {
   const currentTime = Date.now();
   state.devices.forEach(device => {
-    if (device.connected && device.lastReport) {
+    // BLE liveness comes from the GATT connection event, not periodic reports.
+    if (device.connectionType !== 'ble' && device.connected && device.lastReport) {
       const timeSinceLastReport = currentTime - device.lastReport;
       if (timeSinceLastReport > state.DEVICE_OFFLINE_TIMEOUT) {
         markDeviceOffline(device.id);
@@ -176,6 +184,7 @@ function saveDevices() {
 
 function cleanup() {
   stopOfflineCheck();
+  runtimeTransports.clear();
 }
 
 // ====== 数据变更回调机制 ======
@@ -298,6 +307,8 @@ async function handleDeviceMessage(message) {
     }
     // 更新最后消息时间和连接状态
     if (device) {
+      device.connectionType = 'mqtt';
+      runtimeTransports.delete(deviceId);
       device.lastReport = Date.now();
       if (!device.connected) {
         logger.info('Device', '设备已连接');
@@ -322,6 +333,7 @@ function toApiDevice(device) {
     nickname: nickname,
     type: device.type,
     connected: !!device.connected,
+    connectionType: device.connectionType || 'mqtt',
     lastReport: last,
     data: device.data || {},
   };
@@ -347,23 +359,34 @@ function updateDeviceMeta(id, patch = {}) {
   return dev;
 }
 
+function sendDeviceMessage(id, message = {}) {
+  const transport = runtimeTransports.get(id);
+  if (transport) {
+    transport.send(message || {});
+    return {
+      ok: true,
+      connectionType: transport.kind,
+      message: message || {},
+    };
+  }
+
+  const topic = `/drecv/${id}`;
+  mqttClient.publish(topic, message || {});
+  return { ok: true, topic, message: message || {} };
+}
+
 function notifyDeviceUpdate(id, patch = {}) {
   const payload = { method: 'update', ...patch };
-  const topic = `/drecv/${id}`;
-  mqttClient.publish(topic, payload);
+  return sendDeviceMessage(id, payload);
 }
 
 function publishDeviceAction(id, action, payload = {}) {
-  const topic = `/drecv/${id}`;
   const message = { method: 'action', action, ...payload };
-  mqttClient.publish(topic, message);
-  return { ok: true, topic, message };
+  return sendDeviceMessage(id, message);
 }
 
 function publishDeviceMessage(id, message = {}) {
-  const topic = `/drecv/${id}`;
-  mqttClient.publish(topic, message || {});
-  return { ok: true, topic, message };
+  return sendDeviceMessage(id, message || {});
 }
 
 function deleteDeviceById(id) {
@@ -384,9 +407,85 @@ function getDeviceTypesForApi() {
 
 // ====== 设备操作相关功能 ======
 function devicePublishFn(deviceId, message) {
-  const topic = `/drecv/${deviceId}`;
-  mqttClient.publish(topic, message);
-  return { ok: true, topic, message };
+  return sendDeviceMessage(deviceId, message);
+}
+
+function connectTransportDevice(deviceData, transport) {
+  if (!deviceData?.id || !deviceData?.type) {
+    throw new TypeError('Transport device requires id and type');
+  }
+  if (!transport || typeof transport.send !== 'function') {
+    throw new TypeError('Transport requires send(message)');
+  }
+
+  const kind = deviceData.connectionType || transport.kind;
+  if (!kind) throw new TypeError('Transport device requires connectionType');
+
+  let device = getDeviceById(deviceData.id);
+  if (!device) {
+    addDevice({
+      id: deviceData.id,
+      name: deviceData.name || `${getDeviceTypeName(deviceData.type)}-${String(deviceData.id).slice(-4)}`,
+      type: deviceData.type,
+      connectionType: kind,
+    });
+    device = getDeviceById(deviceData.id);
+  }
+
+  runtimeTransports.set(device.id, { ...transport, kind });
+  device.name = deviceData.name || device.name;
+  device.type = deviceData.type;
+  device.connectionType = kind;
+  device.connected = true;
+  device.lastReport = Date.now();
+  updateDeviceData(device.id, deviceData.data || {});
+  return toApiDevice(device);
+}
+
+function handleTransportProperty(deviceId, key, value, connectionType) {
+  const device = getDeviceById(deviceId);
+  if (!device || device.connectionType !== connectionType) return false;
+  updateDeviceData(deviceId, { [key]: value });
+  return true;
+}
+
+function handleTransportMessage(deviceId, payload, connectionType) {
+  const device = getDeviceById(deviceId);
+  if (!device || device.connectionType !== connectionType || !payload || typeof payload !== 'object') {
+    return false;
+  }
+
+  if (payload.method === 'report' || payload.method === 'update') {
+    const update = { ...payload };
+    delete update.method;
+    if (typeof update.key === 'string' && Object.prototype.hasOwnProperty.call(update, 'value')) {
+      updateDeviceData(deviceId, { [update.key]: update.value });
+    } else {
+      updateDeviceData(deviceId, update);
+    }
+  } else if (payload.method === 'ota_status') {
+    firmwareOtaService.recordOtaStatus(deviceId, payload);
+  }
+  device.lastReport = Date.now();
+  device.connected = true;
+  saveDevices();
+  emitRawMessage(deviceId, payload);
+  return true;
+}
+
+function disconnectTransportDevice(deviceId, connectionType) {
+  const device = getDeviceById(deviceId);
+  const transport = runtimeTransports.get(deviceId);
+  if (transport?.kind === connectionType) runtimeTransports.delete(deviceId);
+  if (!device || device.connectionType !== connectionType) return false;
+  device.connected = false;
+  device.lastReport = Date.now();
+  saveDevices();
+  return true;
+}
+
+function clearRuntimeTransports() {
+  runtimeTransports.clear();
 }
 
 function executeDeviceOperation(deviceId, operationKey, params = {}) {
@@ -469,6 +568,11 @@ module.exports = {
   onDeviceRawMessage,
   // 新增：MQTT消息处理
   handleDeviceMessage,
+  connectTransportDevice,
+  handleTransportProperty,
+  handleTransportMessage,
+  disconnectTransportDevice,
+  clearRuntimeTransports,
   // API 适配器与业务方法
   toApiDevice,
   listDevicesForApi,
