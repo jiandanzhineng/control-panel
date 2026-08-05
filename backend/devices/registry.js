@@ -111,7 +111,7 @@ const registeredTypes = [
         invoke: (ctx) => { ctx.writeProps({ shock: 0, voltage: 0, power: 0 }); },
       },
     ],
-    close: (ctx) => ctx.writeProps({ shock: 0, voltage: 0, power: 0, report_delay_ms: 5000 }),
+    close: (ctx) => ctx.writeProps({ shock: 0, voltage: 0, power: 0 }),
   }),
 ];
 

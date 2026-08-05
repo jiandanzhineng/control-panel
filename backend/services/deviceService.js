@@ -554,6 +554,43 @@ function invokeDeviceClose(deviceId) {
   } catch (_) {}
 }
 
+function stopExecutionDevice(deviceId) {
+  const device = getDeviceById(deviceId);
+  if (!device) {
+    const error = new Error('设备不存在');
+    error.code = 'DEVICE_NOT_FOUND';
+    throw error;
+  }
+
+  const deviceType = deviceRegistry.getDeviceType(device.type);
+  const capabilities = ['shock', 'strength'].filter((key) => deviceType.hasCapability(key));
+  if (capabilities.length === 0) {
+    return {
+      deviceId,
+      eligible: false,
+      capabilities: [],
+      commandSent: false,
+      confirmed: false,
+    };
+  }
+
+  const command = deviceType.invokeClose(deviceId, devicePublishFn);
+  if (!command) {
+    const error = new Error(`设备类型 ${device.type} 未定义执行输出复位`);
+    error.code = 'DEVICE_STOP_NOT_SUPPORTED';
+    throw error;
+  }
+
+  return {
+    deviceId,
+    eligible: true,
+    capabilities,
+    commandSent: true,
+    confirmed: false,
+    command,
+  };
+}
+
 // 获取设备类型配置
 function getDeviceTypeConfigForApi(type) {
   return getDeviceTypeConfig(type);
@@ -616,6 +653,7 @@ module.exports = {
   executeDeviceOperation,
   invokeDeviceCapability,
   invokeDeviceClose,
+  stopExecutionDevice,
   devicePublishFn,
   getDeviceTypeConfigForApi,
   deviceHasOperations,
