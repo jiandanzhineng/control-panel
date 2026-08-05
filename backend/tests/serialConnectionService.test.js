@@ -231,4 +231,53 @@ describe('SerialConnectionService', () => {
     ]);
     expect(service.portInfo.get('COM5')).toMatchObject({ failures: 0, nextRetryAt: 0 });
   });
+
+  it('reuses one pending or connected session for duplicate path requests', async () => {
+    FakeSerialPort.responseForPath.set(
+      'COM5',
+      '@DEBUG READY {"device_id":"aabbccddeeff","firmware_version":"v1.2.3"}\r\n',
+    );
+    const { service, deviceService } = createHarness();
+
+    const first = service.connect('COM5');
+    const duplicatePending = service.connect('COM5');
+    await jest.runAllTimersAsync();
+    const [firstDevice, duplicateDevice] = await Promise.all([first, duplicatePending]);
+    const duplicateConnected = await service.connect('COM5');
+
+    expect(duplicateDevice).toEqual(firstDevice);
+    expect(duplicateConnected).toEqual(firstDevice);
+    expect(FakeSerialPort.instances).toHaveLength(1);
+    expect(deviceService.connectTransportDevice).toHaveBeenCalledTimes(1);
+    await service.shutdown();
+  });
+
+  it('closes a second port that reports an already connected device identity', async () => {
+    const identity = '@DEBUG READY '
+      + '{"device_id":"aabbccddeeff","firmware_version":"v1.2.3"}\r\n';
+    FakeSerialPort.responseForPath.set('COM5', identity);
+    FakeSerialPort.responseForPath.set('COM6', identity);
+    const { service, deviceService } = createHarness({
+      ports: [{ path: 'COM5' }, { path: 'COM6' }],
+    });
+
+    const first = service.connect('COM5');
+    await jest.runAllTimersAsync();
+    await first;
+
+    const duplicate = service.connect('COM6');
+    const rejected = expect(duplicate).rejects.toMatchObject({
+      code: 'SERIAL_DEVICE_ALREADY_CONNECTED', status: 409,
+    });
+    await jest.runAllTimersAsync();
+    await rejected;
+
+    expect(FakeSerialPort.instances).toHaveLength(2);
+    expect(FakeSerialPort.instances[0].isOpen).toBe(true);
+    expect(FakeSerialPort.instances[1].isOpen).toBe(false);
+    expect(service.sessions.has('COM5')).toBe(true);
+    expect(service.sessions.has('COM6')).toBe(false);
+    expect(deviceService.connectTransportDevice).toHaveBeenCalledTimes(1);
+    await service.shutdown();
+  });
 });

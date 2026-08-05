@@ -24,7 +24,7 @@ jest.mock('../services/firmwareOtaService', () => ({
 const deviceService = require('../services/deviceService');
 const testService = require('../services/testService');
 
-describe('automatic tests over BLE transport', () => {
+describe('automatic tests over device transports', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     deviceService.state.devices = [];
@@ -48,6 +48,25 @@ describe('automatic tests over BLE transport', () => {
     }, { send: (message) => sent.push(message) });
 
     testService.startTest('ble:cunzhi');
+    jest.advanceTimersByTime(2000);
+
+    expect(sent).toEqual([
+      { method: 'update', report_delay_ms: 100 },
+      { method: 'update', power: 255 },
+    ]);
+  });
+
+  it('sends test plan messages through a serial-discovered device', () => {
+    const sent = [];
+    deviceService.connectTransportDevice({
+      id: 'aabbccddeeff',
+      name: 'Serial CUNZHI01',
+      type: 'CUNZHI01',
+      connectionType: 'serial',
+      data: {},
+    }, { send: (message) => sent.push(message) });
+
+    testService.startTest('aabbccddeeff');
     jest.advanceTimersByTime(2000);
 
     expect(sent).toEqual([
