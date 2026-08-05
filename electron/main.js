@@ -426,23 +426,7 @@ function createWindow() {
   });
   mainWindow = win;
   bleMainIntegration.attachWindow(win);
-  let bleDisconnectReady = false;
-  let bleDisconnectPending = false;
-  win.on('close', (event) => {
-    if (bleDisconnectReady || bleDisconnectPending) {
-      if (bleDisconnectPending) event.preventDefault();
-      return;
-    }
-    event.preventDefault();
-    bleDisconnectPending = true;
-    bleMainIntegration.requestDisconnectAll(win, { timeoutMs: 3000 })
-      .catch((error) => console.warn('[electron] BLE shutdown failed', error))
-      .finally(() => {
-        bleDisconnectReady = true;
-        bleDisconnectPending = false;
-        if (!win.isDestroyed()) win.close();
-      });
-  });
+  win.on('close', (event) => quitCoordinator.handleWindowClose(event));
 
   // 外部链接（target="_blank" 或 window.open）使用系统默认浏览器打开，而非 Electron 新窗口
   win.webContents.setWindowOpenHandler(({ url }) => {

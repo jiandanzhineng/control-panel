@@ -146,6 +146,23 @@ describe('device transport routing', () => {
     expect(bleSent).toEqual([]);
   });
 
+  it('does not replace a known device type with a serial identity placeholder', () => {
+    deviceService.connectTransportDevice(
+      { id: 'aabbccddeeff', name: 'Known device', type: 'CUNZHI01', connectionType: 'mqtt' },
+      { send() {} },
+    );
+    deviceService.connectTransportDevice(
+      { id: 'aabbccddeeff', type: 'base', connectionType: 'serial' },
+      { send() {} },
+    );
+
+    expect(deviceService.getDeviceForApi('aabbccddeeff')).toMatchObject({
+      type: 'CUNZHI01',
+      controlConnection: 'mqtt',
+      connections: [{ type: 'mqtt' }, { type: 'serial' }],
+    });
+  });
+
   it('expires only MQTT while serial and BLE keep the physical device online', async () => {
     await deviceService.handleDeviceMessage({
       topic: '/dpub/aabbccddeeff',

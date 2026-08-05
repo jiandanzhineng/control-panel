@@ -4,6 +4,7 @@ const { SerialConnectionService } = require('../services/serialConnectionService
 class FakeSerialPort extends EventEmitter {
   static instances = [];
   static responseForPath = new Map();
+  static hangCommandWrites = false;
 
   constructor(options) {
     super();
@@ -22,6 +23,7 @@ class FakeSerialPort extends EventEmitter {
 
   write(data, callback) {
     this.writes.push(data);
+    if (data.startsWith('@CMD ') && FakeSerialPort.hangCommandWrites) return;
     callback?.();
     const response = FakeSerialPort.responseForPath.get(this.path);
     if (data === '@DEBUG START\r\n' && response && !this.responded) {
@@ -85,6 +87,7 @@ describe('SerialConnectionService', () => {
     jest.useFakeTimers();
     FakeSerialPort.instances = [];
     FakeSerialPort.responseForPath = new Map();
+    FakeSerialPort.hangCommandWrites = false;
   });
 
   afterEach(() => {
@@ -168,5 +171,64 @@ describe('SerialConnectionService', () => {
       expect.objectContaining({ path: 'COM5', status: 'probing' }),
     ]);
     await service.setSettings({ autoConnect: false });
+  });
+
+  it('forces the port closed when a queued write never completes', async () => {
+    FakeSerialPort.responseForPath.set(
+      'COM5',
+      '@DEBUG READY {"device_id":"aabbccddeeff","firmware_version":"v1.2.3"}\r\n',
+    );
+    const { service, deviceService } = createHarness();
+    const pending = service.connect('COM5');
+    await jest.runAllTimersAsync();
+    await pending;
+
+    FakeSerialPort.hangCommandWrites = true;
+    const adapter = deviceService.connectTransportDevice.mock.calls[0][1];
+    adapter.send({ method: 'stop' });
+    await Promise.resolve();
+    const shuttingDown = service.shutdown();
+
+    await jest.advanceTimersByTimeAsync(999);
+    expect(FakeSerialPort.instances[0].isOpen).toBe(true);
+    await jest.advanceTimersByTimeAsync(1);
+    await shuttingDown;
+    expect(FakeSerialPort.instances[0].isOpen).toBe(false);
+    expect(deviceService.disconnectTransportDevice)
+      .toHaveBeenCalledWith('aabbccddeeff', 'serial');
+  });
+
+  it('cancels and releases an automatic probe as soon as its port is removed', async () => {
+    const ports = [{ path: 'COM5', manufacturer: 'Espressif' }];
+    const { service } = createHarness({ ports });
+    await service.setSettings({ autoConnect: true });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(service.pendingConnections.has('COM5')).toBe(true);
+
+    ports.splice(0, ports.length);
+    await service.pollPorts();
+    expect(FakeSerialPort.instances[0].isOpen).toBe(false);
+    expect(service.pendingConnections.size).toBe(0);
+    expect(service.serializePorts()).toEqual([]);
+    await service.setSettings({ autoConnect: false });
+  });
+
+  it('does not put a cancelled automatic probe into backoff', async () => {
+    const { service } = createHarness();
+    await service.setSettings({ autoConnect: true });
+    await Promise.resolve();
+    await Promise.resolve();
+    await service.setSettings({ autoConnect: false });
+
+    expect(service.serializePorts()).toEqual([
+      expect.objectContaining({
+        path: 'COM5',
+        status: 'idle',
+        retryAt: null,
+        lastError: null,
+      }),
+    ]);
+    expect(service.portInfo.get('COM5')).toMatchObject({ failures: 0, nextRetryAt: 0 });
   });
 });

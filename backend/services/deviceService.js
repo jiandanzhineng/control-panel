@@ -442,7 +442,9 @@ function connectTransportDevice(deviceData, transport) {
     },
   });
   device.name = deviceData.name || device.name;
-  device.type = deviceData.type;
+  if (deviceData.type !== 'base' || !device.type || device.type === 'base') {
+    device.type = deviceData.type;
+  }
   device.lastReport = Date.now();
   refreshDeviceRuntimeState(device);
   updateDeviceData(device.id, deviceData.data || {});

@@ -7,6 +7,7 @@ const SETTINGS_KEY = 'serial-connection-settings';
 const ENUMERATION_INTERVAL_MS = 1000;
 const PROBE_INTERVAL_MS = 500;
 const PROBE_TIMEOUT_MS = 3000;
+const WRITE_DRAIN_TIMEOUT_MS = 1000;
 const BACKOFF_MS = [5000, 10000, 20000, 40000, 60000];
 
 function serviceError(code, message, status = 500) {
@@ -26,6 +27,10 @@ function callbackOperation(action) {
   return new Promise((resolve, reject) => {
     action((error) => (error ? reject(error) : resolve()));
   });
+}
+
+function isProbeCancellation(error) {
+  return ['SERIAL_PROBE_CANCELLED', 'SERIAL_PORT_REMOVED'].includes(error?.code);
 }
 
 class SerialConnectionService {
@@ -168,6 +173,12 @@ class SerialConnectionService {
     for (const path of [...this.portInfo.keys()]) {
       if (present.has(path)) continue;
       this.portInfo.delete(path);
+      const probe = this.probes.get(path);
+      if (probe) {
+        probe.cancel(serviceError('SERIAL_PORT_REMOVED', 'Serial port was removed', 409));
+        const pending = this.pendingConnections.get(path);
+        if (pending) await Promise.allSettled([pending]);
+      }
       const session = this.sessions.get(path);
       if (session) await this.closeSession(session, 'removed');
     }
@@ -211,7 +222,7 @@ class SerialConnectionService {
 
     const pending = this.openAndProbe(info, options)
       .catch((error) => {
-        this.recordFailure(info, error);
+        if (!isProbeCancellation(error)) this.recordFailure(info, error);
         throw error;
       })
       .finally(() => this.pendingConnections.delete(normalizedPath));
@@ -305,7 +316,11 @@ class SerialConnectionService {
       };
       this.probes.set(info.path, {
         automatic: !!options.automatic,
-        cancel: () => finish(serviceError('SERIAL_PROBE_CANCELLED', 'Serial probe was cancelled', 409)),
+        cancel: (error = serviceError(
+          'SERIAL_PROBE_CANCELLED',
+          'Serial probe was cancelled',
+          409,
+        )) => finish(error),
       });
 
       const sendStart = () => {
@@ -397,12 +412,20 @@ class SerialConnectionService {
   }
 
   enqueueWrite(session, message) {
+    if (session.closing) {
+      return Promise.reject(serviceError(
+        'SERIAL_CONNECTION_CLOSED',
+        'Serial connection is closed',
+        409,
+      ));
+    }
     const encoded = encodeCommand(message);
     const write = async () => {
-      if (session.closing || !session.port.isOpen) {
+      if (!session.port.isOpen) {
         throw serviceError('SERIAL_CONNECTION_CLOSED', 'Serial connection is closed', 409);
       }
       await callbackOperation((done) => session.port.write(encoded, done));
+      if (session.abortWrites) return;
       if (typeof session.port.drain === 'function') {
         await callbackOperation((done) => session.port.drain(done));
       }
@@ -421,8 +444,12 @@ class SerialConnectionService {
 
   async closeSession(session, reason) {
     if (!session || session.closing) return;
-    await session.writeQueue.catch(() => {});
     session.closing = true;
+    const drained = await this.waitForWriteQueue(session);
+    if (!drained) {
+      session.abortWrites = true;
+      logger.warn('Serial', `串口 ${session.path} 写队列关闭超时，强制释放端口`);
+    }
     this.sessions.delete(session.path);
     this.devicePaths.delete(session.deviceId);
     this.deviceService.disconnectTransportDevice(session.deviceId, 'serial');
@@ -433,6 +460,20 @@ class SerialConnectionService {
       try { await callbackOperation((done) => session.port.close(done)); } catch (_) {}
     }
     logger.info('Serial', `串口 ${session.path} 已断开 (${reason})`);
+  }
+
+  async waitForWriteQueue(session) {
+    let timeoutTimer;
+    const timedOut = new Promise((resolve) => {
+      timeoutTimer = this.setTimeoutFn(() => resolve(false), WRITE_DRAIN_TIMEOUT_MS);
+      timeoutTimer?.unref?.();
+    });
+    const drained = await Promise.race([
+      session.writeQueue.then(() => true, () => true),
+      timedOut,
+    ]);
+    if (timeoutTimer) this.clearTimeoutFn(timeoutTimer);
+    return drained;
   }
 
   handlePortClosed(session) {
@@ -473,5 +514,6 @@ module.exports.constants = {
   ENUMERATION_INTERVAL_MS,
   PROBE_INTERVAL_MS,
   PROBE_TIMEOUT_MS,
+  WRITE_DRAIN_TIMEOUT_MS,
   BACKOFF_MS,
 };
