@@ -8,9 +8,11 @@ const { fileURLToPath, pathToFileURL } = require('url');
 const { BRIDGE_INTERNAL_HEADER } = require('../backend/constants/bridgeAccess.js');
 const externalGameAccessService = require('../backend/services/externalGameAccessService.js');
 const gameHost = require('./gameHost.js');
+const { createQuitCoordinator } = require('./shutdownCoordinator.js');
 
 let server;
 let frontendServer;
+let backendApp;
 let mainWindow;
 let updateInitialized = false;
 let browserDevicePreloadPath = '';
@@ -662,11 +664,11 @@ function startBackendThenWindow() {
     
     const logService = require(path.join(appPath, 'backend', 'services', 'logService.js'));
     logService.cleanOldLogs();
-    const expressApp = require(backendPath);
+    backendApp = require(backendPath);
     const BACKEND_PORT = 5278;
     // 必须 listen 后端导出的 server（已挂 /bridge WS），不能对 app 重新 listen——
     // 否则会新建一个不带 WS 的 server，插件 bridge 握手 404。回退到 app 仅为兼容旧导出。
-    const backendServer = expressApp.server || expressApp;
+    const backendServer = backendApp.server || backendApp;
     server = backendServer.listen(BACKEND_PORT, () => {
       process.env.BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
       console.log(`[electron] backend started: ${process.env.BACKEND_URL}`);
@@ -701,10 +703,32 @@ app.whenReady().then(() => {
   startBackendThenWindow();
   initAutoUpdate();
 });
-app.on('before-quit', () => { 
-  try { 
-    server && server.close(); 
-    frontendServer && frontendServer.close();
-  } catch {} 
+
+function closeServer(target) {
+  if (!target || !target.listening) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    target.close((error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+}
+
+const quitCoordinator = createQuitCoordinator({
+  app,
+  timeoutMs: 5000,
+  shutdown: async () => {
+    if (typeof backendApp?.shutdownBackend === 'function') {
+      await backendApp.shutdownBackend('electron-before-quit');
+    } else {
+      await closeServer(server);
+    }
+    await closeServer(frontendServer);
+  },
+  onError: (error) => {
+    console.error('[electron] shutdown failed:', error?.message || error);
+  },
 });
+
+app.on('before-quit', quitCoordinator.handleBeforeQuit);
 app.on('window-all-closed', () => { app.quit(); });

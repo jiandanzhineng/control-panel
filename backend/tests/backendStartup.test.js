@@ -22,12 +22,20 @@ jest.mock('../services/deviceService', () => ({
   cleanup: jest.fn(),
 }));
 
+jest.mock('../services/deviceWatchdogService', () => ({
+  heartbeat: jest.fn(),
+  stopAll: jest.fn(),
+  shutdown: jest.fn(async () => ({ ok: true })),
+}));
+
 jest.mock('../services/bridgeService', () => ({
   init: jest.fn(),
 }));
 
 const mqttService = require('../services/mqttService');
 const mdnsService = require('../services/mdnsService');
+const deviceService = require('../services/deviceService');
+const deviceWatchdogService = require('../services/deviceWatchdogService');
 const backend = require('../index');
 
 describe('backend server lifecycle', () => {
@@ -71,5 +79,23 @@ describe('backend server lifecycle', () => {
 
     expect(mqttService.stop).toHaveBeenCalledTimes(1);
     expect(mdnsService.unpublish).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for the watchdog before cleaning devices and stopping runtime services', async () => {
+    const listening = once(backend.server, 'listening');
+    backend.server.listen(0, '127.0.0.1');
+    await listening;
+    await backend.startRuntimeServices();
+
+    await backend.shutdownBackend('test-shutdown');
+
+    expect(deviceWatchdogService.shutdown).toHaveBeenCalledWith('test-shutdown');
+    expect(deviceService.cleanup).toHaveBeenCalledTimes(1);
+    expect(mqttService.stop).toHaveBeenCalledTimes(1);
+    expect(deviceWatchdogService.shutdown.mock.invocationCallOrder[0])
+      .toBeLessThan(deviceService.cleanup.mock.invocationCallOrder[0]);
+    expect(deviceService.cleanup.mock.invocationCallOrder[0])
+      .toBeLessThan(mqttService.stop.mock.invocationCallOrder[0]);
+    expect(backend.server.listening).toBe(false);
   });
 });

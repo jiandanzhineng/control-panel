@@ -11,6 +11,6 @@
 | [2026-08-04-st-iot-bridge-decoupling.md](2026-08-04-st-iot-bridge-decoupling.md) | **st-iot-bridge 解耦**：主仓仅搬入 provision 服务 + inner-tools，插件改走 WS + HTTP 调主仓，删除副仓副本 | 已被 wayfinder 取代 |
 | [wayfinder-st-iot-bridge-merge.md](wayfinder-st-iot-bridge-merge.md) | **st-iot-bridge 融入决策 map**：4 张票答案（窗口形态 / 配置归属 / 酒馆安装 / HUD 处理） | 已 resolve，可 handoff |
 | [2026-08-04-st-iot-bridge-merge-spec.md](2026-08-04-st-iot-bridge-merge-spec.md) | **st-iot-bridge 融入实施 Spec**：旧方案将小念和酒馆逻辑融入主客户端 | 已废弃，被独立仓库方案取代 |
-| [2026-08-04-external-device-watchdog.md](2026-08-04-external-device-watchdog.md) | **外部客户端设备看门狗**：小念、酒馆按客户端刷新倒计时，任一租约过期或主动退出时全设备停止 | 待实施 |
+| [2026-08-04-external-device-watchdog.md](2026-08-04-external-device-watchdog.md) | **外部客户端设备看门狗**：小念、酒馆按客户端刷新倒计时，任一租约过期或主动退出时全设备停止 | 已实施，mock-tested |
 | [2026-08-04-provision-migration-deferred.md](2026-08-04-provision-migration-deferred.md) | **provision 服务迁移（暂缓）**：详细方案 + 3 个待拍板风险点 + 验证清单，晚点另行处置 | 暂缓 |
 | [analytics-design.md](analytics-design.md) | **OpenPanel 埋点接入设计**：接入产品分析，了解功能使用率、设备数、游戏与固件升级使用情况 | 待审阅 |

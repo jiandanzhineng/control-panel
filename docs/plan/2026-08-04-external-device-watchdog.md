@@ -1,6 +1,6 @@
 # 外部客户端设备看门狗改造说明
 
-> 状态：待实施
+> 状态：已实施，证据等级 `mock-tested`
 >
 > 目标：让小念、酒馆插件等外部客户端通过心跳刷新倒计时；客户端失联、主动退出或倒计时到期时，由主客户端统一停止全部执行设备。
 
@@ -185,3 +185,16 @@ resetForTests()
 | 10 | 正常关闭后端 | 清理计时器并尽力执行一次全设备停止 |
 
 本轮只要求自动化测试和模拟设备证据。真实设备是否完成物理归零，仍需后续按设备分别验证。
+
+## 10. 实施证据（2026-08-04）
+
+- `backend/tests/deviceWatchdogService.test.js`：覆盖租约到期、重复刷新旧回调失效、多客户端任一过期、部分失败重试、输入边界。
+- `backend/tests/deviceWatchdogRoutes.test.js`：覆盖两个 HTTP interface、默认 TTL 和错误映射。
+- `backend/tests/deviceExecutionStop.test.js`：覆盖五类执行设备的归零消息，以及传感器和锁设备不被操作。
+- `backend/tests/backendStartup.test.js`：证明 watchdog 全停先于设备清理和 MQTT/mDNS 停止。
+- `backend/tests/electronShutdownCoordinator.test.js`：证明 Electron 退出只触发一次关闭、等待完成并具有 5 秒上限。
+- 完整后端回归：36 个 suite 通过、1 个跳过；203 个测试通过、1 个跳过。
+- 隔离变异：在临时副本把 `report_delay_ms: 5000` 重新加入 CUNZHI01 复位消息后，`deviceExecutionStop.test.js` 准确失败。
+- 秘密扫描未发现 API key；本轮未发送真实设备输出。
+
+Jest 完整回归仍报告一个既有 worker open-handle 警告，因此不能据此声明进程资源零泄漏。MQTT publish 只记为 `commandSent=true`，本轮所有 `confirmed` 均保持 `false`，不冒充物理设备归零。

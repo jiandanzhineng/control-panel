@@ -4,6 +4,7 @@ const http = require('http');
 const path = require('path');
 const logger = require('./utils/logger');
 const deviceService = require('./services/deviceService');
+const deviceWatchdogService = require('./services/deviceWatchdogService');
 const mqttService = require('./services/mqttService');
 const mdnsService = require('./services/mdnsService');
 const logService = require('./services/logService');
@@ -49,6 +50,7 @@ deviceService.initDeviceList();
 
 let runtimeServicesStartPromise = null;
 let runtimeServicesStopPromise = null;
+let backendShutdownPromise = null;
 
 function startRuntimeServices() {
   if (runtimeServicesStartPromise) return runtimeServicesStartPromise;
@@ -107,6 +109,31 @@ function stopRuntimeServices() {
   return runtimeServicesStopPromise;
 }
 
+function closeHttpServer() {
+  if (!server.listening) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    server.close((error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+}
+
+function shutdownBackend(reason = 'backend-shutdown', { closeServer = true } = {}) {
+  if (backendShutdownPromise) return backendShutdownPromise;
+
+  backendShutdownPromise = (async () => {
+    await deviceWatchdogService.shutdown(reason);
+    deviceService.cleanup();
+    await stopRuntimeServices();
+    if (closeServer) await closeHttpServer();
+  })().finally(() => {
+    backendShutdownPromise = null;
+  });
+
+  return backendShutdownPromise;
+}
+
 function requireInternalBridgeAccess(req, res, next) {
   if (req.get(BRIDGE_INTERNAL_HEADER) === '1') return next();
   // 同源 <script src> 不发送 Origin，因此开发模式需回退到浏览器控制的 Referer。
@@ -139,6 +166,7 @@ app.use('/api/network', require('./routes/network'));
 app.use('/api/mdns', require('./routes/mdns'));
 app.use('/api/mqtt-client', require('./routes/mqttClient'));
 app.use('/api/devices', require('./routes/devices'));
+app.use('/api/device-watchdog', require('./routes/deviceWatchdog'));
 app.use('/api/device-types', require('./routes/deviceTypes'));
 app.use('/api/device-capabilities', require('./routes/deviceCapabilities'));
 app.use('/api/games', require('./routes/games'));
@@ -165,7 +193,9 @@ server.on('listening', () => {
   startRuntimeServices();
 });
 server.on('close', () => {
-  stopRuntimeServices();
+  if (!backendShutdownPromise) {
+    void shutdownBackend('server-close', { closeServer: false });
+  }
 });
 
 if (require.main === module) {
@@ -175,12 +205,19 @@ if (require.main === module) {
   });
 }
 
-process.on('SIGINT', async () => {
-  logger.info('Received SIGINT, cleaning up...');
-  deviceService.cleanup();
-  await stopRuntimeServices();
-  process.exit(0);
-});
+async function handleTerminationSignal(signal) {
+  logger.info(`Received ${signal}, cleaning up...`);
+  try {
+    await shutdownBackend(signal.toLowerCase());
+    process.exit(0);
+  } catch (error) {
+    logger.error('Backend shutdown failed', error?.message || error);
+    process.exit(1);
+  }
+}
+
+process.on('SIGINT', () => { void handleTerminationSignal('SIGINT'); });
+process.on('SIGTERM', () => { void handleTerminationSignal('SIGTERM'); });
 
 // 默认导出仍是 express app（supertest、api.test.js 依赖此）。
 // 额外挂上 server：它是 http.createServer(app) 且已 bridgeService.init(server) 挂好 /bridge WS。
@@ -190,4 +227,5 @@ module.exports = app;
 module.exports.server = server;
 module.exports.startRuntimeServices = startRuntimeServices;
 module.exports.stopRuntimeServices = stopRuntimeServices;
+module.exports.shutdownBackend = shutdownBackend;
 module.exports.BRIDGE_INTERNAL_HEADER = BRIDGE_INTERNAL_HEADER;
