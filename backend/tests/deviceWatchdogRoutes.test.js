@@ -16,6 +16,7 @@ jest.mock('../services/nicknameService', () => ({
 
 jest.mock('../services/firmwareOtaService', () => ({}));
 
+const mqttClient = require('../services/mqttClientService');
 const deviceService = require('../services/deviceService');
 const watchdog = require('../services/deviceWatchdogService');
 
@@ -27,10 +28,11 @@ function createApp() {
 }
 
 describe('device watchdog HTTP interface', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-08-04T12:00:00.000Z'));
-    deviceService.clearAllDevices();
+    mqttClient.publish.mockReset();
+    await deviceService.clearAllDevices();
     watchdog.resetForTests();
   });
 
@@ -67,7 +69,13 @@ describe('device watchdog HTTP interface', () => {
   });
 
   it('stops all execution devices immediately', async () => {
-    deviceService.addDevice({ id: 'motor-1', name: 'motor', type: 'TD01' });
+    deviceService.connectTransportDevice(
+      { id: 'motor-1', name: 'motor', type: 'TD01', connectionType: 'mqtt' },
+      {
+        kind: 'mqtt',
+        send: (message) => mqttClient.publish('/drecv/motor-1', message),
+      },
+    );
 
     const response = await request(createApp())
       .post('/api/device-watchdog/stop-all')

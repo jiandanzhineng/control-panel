@@ -9,6 +9,7 @@ const deviceRegistry = require('../devices/registry');
 const fileStorage = require('../utils/fileStorage');
 const logger = require('./logService');
 const mqttClient = require('./mqttClientService');
+const deviceConnections = require('./deviceConnectionService');
 const nicknameService = require('./nicknameService');
 const firmwareOtaService = require('./firmwareOtaService');
 
@@ -29,11 +30,11 @@ function getDeviceById(id) {
 }
 
 function connectedDevices() {
-  return state.devices.filter(device => device.connected);
+  return state.devices.filter(device => deviceConnections.getDeviceConnections(device.id).connections.length > 0);
 }
 
 function disconnectedDevices() {
-  return state.devices.filter(device => !device.connected);
+  return state.devices.filter(device => deviceConnections.getDeviceConnections(device.id).connections.length === 0);
 }
 
 // ====== Actions 等价实现 ======
@@ -41,7 +42,15 @@ function initDeviceList() {
   const savedDevices = fileStorage.getItem('devices');
   if (savedDevices) {
     try {
-      state.devices = JSON.parse(savedDevices);
+      const parsed = JSON.parse(savedDevices);
+      state.devices = Array.isArray(parsed) ? parsed.map((device) => ({
+        id: device.id,
+        name: device.name,
+        type: device.type,
+        connected: false,
+        lastReport: device.lastReport || null,
+        data: device.data || {},
+      })) : [];
       // 检查已保存设备的离线状态
       checkDevicesOfflineStatus();
     } catch (error) {
@@ -61,16 +70,25 @@ function addDevice(deviceData) {
     type: deviceData.type,
     connected: false,
     lastReport: null,
-    data: {}
+    data: deviceData.data || {}
   };
 
   state.devices.push(newDevice);
   saveDevices();
 }
 
-function removeDevice(deviceId) {
+async function disconnectDeviceConnections(deviceId) {
+  const connections = deviceConnections.listConnectionRecords(deviceId);
+  await Promise.allSettled(connections.map(async (connection) => {
+    await connection.adapter.disconnect?.();
+    deviceConnections.unregisterConnection(deviceId, connection.type, connection.adapter);
+  }));
+}
+
+async function removeDevice(deviceId) {
   const index = state.devices.findIndex(device => device.id === deviceId);
   if (index !== -1) {
+    await disconnectDeviceConnections(deviceId);
     state.devices.splice(index, 1);
     saveDevices();
 
@@ -80,7 +98,9 @@ function removeDevice(deviceId) {
   }
 }
 
-function clearAllDevices() {
+async function clearAllDevices() {
+  await Promise.all(state.devices.map((device) => disconnectDeviceConnections(device.id)));
+  deviceConnections.clear();
   state.devices = [];
   state.selectedDeviceId = null;
   saveDevices();
@@ -106,9 +126,7 @@ function updateDeviceData(deviceId, data) {
   // 合并数据
   device.data = { ...prevData, ...incoming };
   device.lastReport = Date.now();
-  if (!device.connected) {
-    device.connected = true;
-  }
+  refreshDeviceRuntimeState(device);
   saveDevices();
 
   // 若有差异则触发回调
@@ -123,8 +141,9 @@ function updateDeviceData(deviceId, data) {
 
 function markDeviceOffline(deviceId) {
   const device = getDeviceById(deviceId);
-  if (device && device.connected) {
-    device.connected = false;
+  if (device && deviceConnections.hasConnection(deviceId, 'mqtt')) {
+    deviceConnections.unregisterConnection(deviceId, 'mqtt');
+    refreshDeviceRuntimeState(device);
     saveDevices();
     console.log(`设备 ${deviceId} 超过${state.DEVICE_OFFLINE_TIMEOUT/1000}秒未上报，已标记为离线`);
   }
@@ -133,11 +152,10 @@ function markDeviceOffline(deviceId) {
 function checkDevicesOfflineStatus() {
   const currentTime = Date.now();
   state.devices.forEach(device => {
-    if (device.connected && device.lastReport) {
-      const timeSinceLastReport = currentTime - device.lastReport;
-      if (timeSinceLastReport > state.DEVICE_OFFLINE_TIMEOUT) {
-        markDeviceOffline(device.id);
-      }
+    const mqtt = deviceConnections.listConnectionRecords(device.id)
+      .find((connection) => connection.type === 'mqtt');
+    if (mqtt && currentTime - mqtt.lastActivity > state.DEVICE_OFFLINE_TIMEOUT) {
+      markDeviceOffline(device.id);
     }
   });
 }
@@ -168,7 +186,14 @@ function selectDevice(deviceId) {
 
 function saveDevices() {
   try {
-    fileStorage.setItem('devices', JSON.stringify(state.devices));
+    const persisted = state.devices.map((device) => ({
+      id: device.id,
+      name: device.name,
+      type: device.type,
+      lastReport: device.lastReport || null,
+      data: device.data || {},
+    }));
+    fileStorage.setItem('devices', JSON.stringify(persisted));
   } catch (error) {
     console.error('Failed to save devices to fileStorage:', error);
   }
@@ -176,6 +201,17 @@ function saveDevices() {
 
 function cleanup() {
   stopOfflineCheck();
+  deviceConnections.clear();
+}
+
+function refreshDeviceRuntimeState(device) {
+  if (!device) return;
+  const runtime = deviceConnections.getDeviceConnections(device.id);
+  device.connected = runtime.connections.length > 0;
+  // Compatibility for current BLE/front-end callers; new code uses
+  // controlConnection and connections from toApiDevice().
+  device.connectionType = runtime.controlConnection;
+  device.controlConnection = runtime.controlConnection;
 }
 
 // ====== 数据变更回调机制 ======
@@ -278,35 +314,17 @@ async function handleDeviceMessage(message) {
       }
     }
 
-    // 对于 report 消息：按原样合并数据（移除 method）
-    if (payloadObj.method === 'report') {
-      const updateData = { ...payloadObj };
-      delete updateData.method; // 移除 method 字段
-      updateDeviceData(deviceId, updateData);
-    } else if (payloadObj.method === 'ota_status') {
-      firmwareOtaService.recordOtaStatus(deviceId, payloadObj);
-    } else if (payloadObj.method === 'update') {
-      // 对于 update 消息：仅按 key/value 更新对应属性
-      const { key, value } = payloadObj || {};
-      if (typeof key === 'string' && key.length > 0) {
-        updateDeviceData(deviceId, { [key]: value });
-      } else {
-        const updateData = { ...payloadObj };
-        delete updateData.method; // 移除 method 字段
-        updateDeviceData(deviceId, updateData);
-      }
-    }
-    // 更新最后消息时间和连接状态
-    if (device) {
-      device.lastReport = Date.now();
-      if (!device.connected) {
-        logger.info('Device', '设备已连接');
-        device.connected = true;
-      }
-      saveDevices();
-    }
-    // 向原始消息订阅者广播（Bridge 用于 onMessage / 消息类能力事件）
-    emitRawMessage(deviceId, payloadObj);
+    connectTransportDevice({
+      id: deviceId,
+      name: device.name,
+      type: payloadObj.device_type || device.type,
+      connectionType: 'mqtt',
+      firmwareVersion: payloadObj.ver,
+    }, {
+      kind: 'mqtt',
+      send: (outbound) => mqttClient.publish(`/drecv/${deviceId}`, outbound),
+    });
+    handleTransportMessage(deviceId, payloadObj, 'mqtt');
   } catch (error) {
     logger.error('Device', '处理设备消息失败');
   }
@@ -316,12 +334,16 @@ function toApiDevice(device) {
   if (!device) return null;
   const last = device.lastReport ? new Date(device.lastReport).toISOString() : null;
   const nickname = nicknameService.getNickname(device.id);
+  const runtime = deviceConnections.getDeviceConnections(device.id);
   return {
     id: device.id,
     name: device.name,
     nickname: nickname,
     type: device.type,
-    connected: !!device.connected,
+    connected: runtime.connections.length > 0,
+    connectionType: runtime.controlConnection,
+    controlConnection: runtime.controlConnection,
+    connections: runtime.connections,
     lastReport: last,
     data: device.data || {},
   };
@@ -347,34 +369,35 @@ function updateDeviceMeta(id, patch = {}) {
   return dev;
 }
 
+function sendDeviceMessage(id, message = {}) {
+  const result = deviceConnections.send(id, message || {});
+  if (result.connectionType === 'mqtt') result.topic = `/drecv/${id}`;
+  delete result.result;
+  return result;
+}
+
 function notifyDeviceUpdate(id, patch = {}) {
   const payload = { method: 'update', ...patch };
-  const topic = `/drecv/${id}`;
-  mqttClient.publish(topic, payload);
+  return sendDeviceMessage(id, payload);
 }
 
 function publishDeviceAction(id, action, payload = {}) {
-  const topic = `/drecv/${id}`;
   const message = { method: 'action', action, ...payload };
-  mqttClient.publish(topic, message);
-  return { ok: true, topic, message };
+  return sendDeviceMessage(id, message);
 }
 
 function publishDeviceMessage(id, message = {}) {
-  const topic = `/drecv/${id}`;
-  mqttClient.publish(topic, message || {});
-  return { ok: true, topic, message };
+  return sendDeviceMessage(id, message || {});
 }
 
-function deleteDeviceById(id) {
-  const before = state.devices.length;
-  removeDevice(id);
-  const after = state.devices.length;
-  return after < before;
+async function deleteDeviceById(id) {
+  if (!getDeviceById(id)) return false;
+  await removeDevice(id);
+  return true;
 }
 
-function clearDevices() {
-  clearAllDevices();
+async function clearDevices() {
+  await clearAllDevices();
   return true;
 }
 
@@ -384,9 +407,114 @@ function getDeviceTypesForApi() {
 
 // ====== 设备操作相关功能 ======
 function devicePublishFn(deviceId, message) {
-  const topic = `/drecv/${deviceId}`;
-  mqttClient.publish(topic, message);
-  return { ok: true, topic, message };
+  return sendDeviceMessage(deviceId, message);
+}
+
+function connectTransportDevice(deviceData, transport) {
+  if (!deviceData?.id || !deviceData?.type) {
+    throw new TypeError('Transport device requires id and type');
+  }
+  if (!transport || typeof transport.send !== 'function') {
+    throw new TypeError('Transport requires send(message)');
+  }
+
+  const kind = deviceData.connectionType || transport.kind;
+  if (!kind) throw new TypeError('Transport device requires connectionType');
+
+  let device = getDeviceById(deviceData.id);
+  if (!device) {
+    addDevice({
+      id: deviceData.id,
+      name: deviceData.name || `${getDeviceTypeName(deviceData.type)}-${String(deviceData.id).slice(-4)}`,
+      type: deviceData.type,
+      connectionType: kind,
+    });
+    device = getDeviceById(deviceData.id);
+  }
+
+  deviceConnections.registerConnection(device.id, kind, transport, {
+    firmwareVersion: deviceData.firmwareVersion,
+    metadata: {
+      ...(deviceData.transportMetadata || {}),
+      ...(deviceData.portPath ? { portPath: deviceData.portPath } : {}),
+      ...(deviceData.browserDeviceId ? { browserDeviceId: deviceData.browserDeviceId } : {}),
+      ...(deviceData.legacyIdentity !== undefined ? { legacyIdentity: !!deviceData.legacyIdentity } : {}),
+    },
+  });
+  device.name = deviceData.name || device.name;
+  if (deviceData.type !== 'base' || !device.type || device.type === 'base') {
+    device.type = deviceData.type;
+  }
+  device.lastReport = Date.now();
+  refreshDeviceRuntimeState(device);
+  updateDeviceData(device.id, deviceData.data || {});
+  return toApiDevice(device);
+}
+
+function handleTransportProperty(deviceId, key, value, connectionType) {
+  const device = getDeviceById(deviceId);
+  if (!device || !deviceConnections.hasConnection(deviceId, connectionType)) return false;
+  deviceConnections.touchConnection(deviceId, connectionType);
+  updateDeviceData(deviceId, { [key]: value });
+  return true;
+}
+
+function handleTransportMessage(deviceId, payload, connectionType) {
+  const device = getDeviceById(deviceId);
+  if (!device || !deviceConnections.hasConnection(deviceId, connectionType)
+      || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return false;
+  }
+
+  if (payload.method === 'report' || payload.method === 'update') {
+    if (payload.method === 'report' && typeof payload.device_type === 'string' && payload.device_type) {
+      device.type = payload.device_type;
+    }
+    const update = { ...payload };
+    delete update.method;
+    if (typeof update.key === 'string' && Object.prototype.hasOwnProperty.call(update, 'value')) {
+      updateDeviceData(deviceId, { [update.key]: update.value });
+    } else {
+      updateDeviceData(deviceId, update);
+    }
+  } else if (payload.method === 'ota_status') {
+    firmwareOtaService.recordOtaStatus(deviceId, payload);
+  }
+  deviceConnections.touchConnection(deviceId, connectionType, {
+    firmwareVersion: payload.ver,
+  });
+  device.lastReport = Date.now();
+  refreshDeviceRuntimeState(device);
+  saveDevices();
+  emitRawMessage(deviceId, payload);
+  return true;
+}
+
+function disconnectTransportDevice(deviceId, connectionType) {
+  const device = getDeviceById(deviceId);
+  const removed = deviceConnections.unregisterConnection(deviceId, connectionType);
+  if (!device || !removed) return false;
+  refreshDeviceRuntimeState(device);
+  device.lastReport = Date.now();
+  saveDevices();
+  return true;
+}
+
+function clearRuntimeTransports() {
+  deviceConnections.clear();
+  state.devices.forEach(refreshDeviceRuntimeState);
+}
+
+function setControlConnection(deviceId, connectionType) {
+  const device = getDeviceById(deviceId);
+  if (!device) {
+    const error = new Error('设备不存在');
+    error.code = 'DEVICE_NOT_FOUND';
+    throw error;
+  }
+  deviceConnections.setControlConnection(deviceId, connectionType);
+  refreshDeviceRuntimeState(device);
+  return toApiDevice(device);
 }
 
 function executeDeviceOperation(deviceId, operationKey, params = {}) {
@@ -506,6 +634,12 @@ module.exports = {
   onDeviceRawMessage,
   // 新增：MQTT消息处理
   handleDeviceMessage,
+  connectTransportDevice,
+  handleTransportProperty,
+  handleTransportMessage,
+  disconnectTransportDevice,
+  clearRuntimeTransports,
+  setControlConnection,
   // API 适配器与业务方法
   toApiDevice,
   listDevicesForApi,

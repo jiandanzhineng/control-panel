@@ -23,6 +23,25 @@ interface UpdateStatus {
 }
 
 interface Window {
+  bleApi?: {
+    isSupported: () => boolean;
+    connect: () => Promise<{
+      id: string;
+      name: string;
+      type: string;
+      connectionType: 'ble';
+      firmwareVersion: string | null;
+      legacyIdentity: boolean;
+      browserDeviceId: string;
+      data: Record<string, unknown>;
+    }>;
+    disconnect: (id: string) => Promise<{ ok: boolean; alreadyDisconnected?: boolean }>;
+    disconnectAll: () => Promise<{ ok: boolean }>;
+    connectedDeviceIds: () => string[];
+    selectDevice: (deviceId: string) => Promise<{ ok: boolean }>;
+    cancelSelection: () => Promise<{ ok: boolean }>;
+    onScanResults: (callback: (devices: Array<{ id: string; name: string }>) => void) => () => void;
+  };
   updateApi?: {
     getSettings: () => Promise<UpdateStatus>;
     setSettings: (settings: UpdateSettings) => Promise<UpdateStatus>;

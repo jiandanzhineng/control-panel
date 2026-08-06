@@ -1,6 +1,105 @@
 const { ipcRenderer } = require('electron');
+const { BleDeviceClient } = require('./ble/deviceClient');
+const { BLE_UUIDS } = require('./ble/protocol');
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
+const bleClients = new Map();
+
+function emitBleClientEvent(event, payload) {
+  if (event === 'property') {
+    ipcRenderer.send('ble:property', payload);
+  } else if (event === 'message') {
+    ipcRenderer.send('ble:message', payload);
+  } else if (event === 'disconnected') {
+    bleClients.delete(payload.id);
+    ipcRenderer.send('ble:disconnected', payload);
+  } else if (event === 'error') {
+    ipcRenderer.send('ble:command-error', payload);
+  }
+}
+
+async function disconnectAllBleClients() {
+  await Promise.allSettled([...bleClients.values()].map((client) => client.disconnect()));
+  bleClients.clear();
+  return { ok: true };
+}
+
+ipcRenderer.on('ble:command', async (_event, request) => {
+  const client = bleClients.get(request?.id);
+  if (!client) {
+    ipcRenderer.send('ble:command-error', {
+      id: request?.id,
+      error: 'BLE device is not connected',
+    });
+    return;
+  }
+  try {
+    await client.send(request.message);
+  } catch (error) {
+    ipcRenderer.send('ble:command-error', {
+      id: request.id,
+      error: error?.message || String(error),
+      message: request.message,
+    });
+  }
+});
+
+ipcRenderer.on('ble:disconnect-all', async (_event, request) => {
+  let ok = false;
+  try {
+    const result = await disconnectAllBleClients();
+    ok = result.ok;
+  } finally {
+    ipcRenderer.send('ble:disconnect-all-complete', {
+      requestId: request?.requestId,
+      ok,
+    });
+  }
+});
+
+window.bleApi = {
+  isSupported: () => !!navigator.bluetooth?.requestDevice,
+  connect: async () => {
+    if (!navigator.bluetooth?.requestDevice) {
+      const error = new Error('This PC does not support Web Bluetooth');
+      error.code = 'BLE_NOT_SUPPORTED';
+      throw error;
+    }
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'BLUFI' }],
+      optionalServices: [BLE_UUIDS.service],
+    });
+    const client = new BleDeviceClient(device, { onEvent: emitBleClientEvent });
+    try {
+      const metadata = await client.connect();
+      bleClients.set(metadata.id, client);
+      await ipcRenderer.invoke('ble:connected', metadata);
+      return metadata;
+    } catch (error) {
+      bleClients.delete(client.id);
+      try { await client.disconnect(); } catch (_) {}
+      throw error;
+    }
+  },
+  disconnect: async (id) => {
+    const client = bleClients.get(id);
+    if (!client) return { ok: true, alreadyDisconnected: true };
+    await client.disconnect();
+    bleClients.delete(id);
+    return { ok: true };
+  },
+  disconnectAll: disconnectAllBleClients,
+  connectedDeviceIds: () => [...bleClients.keys()],
+  selectDevice: (deviceId) => ipcRenderer.invoke('ble:select-device', deviceId),
+  cancelSelection: () => ipcRenderer.invoke('ble:cancel-selection'),
+  onScanResults: (callback) => {
+    const listener = (_event, devices) => {
+      try { callback(devices); } catch (_) {}
+    };
+    ipcRenderer.on('ble:scan-results', listener);
+    return () => ipcRenderer.removeListener('ble:scan-results', listener);
+  },
+};
 
 window.updateApi = {
   getSettings: () => ipcRenderer.invoke('update:get-settings'),

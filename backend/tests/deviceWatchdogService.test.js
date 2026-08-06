@@ -17,12 +17,22 @@ const mqttClient = require('../services/mqttClientService');
 const deviceService = require('../services/deviceService');
 const watchdog = require('../services/deviceWatchdogService');
 
+function addConnectedDevice({ id, name, type }) {
+  return deviceService.connectTransportDevice(
+    { id, name, type, connectionType: 'mqtt' },
+    {
+      kind: 'mqtt',
+      send: (message) => mqttClient.publish(`/drecv/${id}`, message),
+    },
+  );
+}
+
 describe('external device watchdog', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.useFakeTimers();
     jest.setSystemTime(new Date('2026-08-04T12:00:00.000Z'));
     mqttClient.publish.mockReset();
-    deviceService.clearAllDevices();
+    await deviceService.clearAllDevices();
     watchdog.resetForTests();
   });
 
@@ -32,7 +42,7 @@ describe('external device watchdog', () => {
   });
 
   it('stops every CUNZHI01 output without changing report delay when a lease expires', async () => {
-    deviceService.addDevice({ id: 'cunzhi-1', name: 'CUNZHI01', type: 'CUNZHI01' });
+    addConnectedDevice({ id: 'cunzhi-1', name: 'CUNZHI01', type: 'CUNZHI01' });
 
     const lease = watchdog.heartbeat({ clientId: 'xiaonian-client', ttlSeconds: 5 });
     expect(lease).toEqual({
@@ -55,7 +65,7 @@ describe('external device watchdog', () => {
   });
 
   it('ignores the old deadline after the same client refreshes its lease', async () => {
-    deviceService.addDevice({ id: 'motor-1', name: 'motor', type: 'TD01' });
+    addConnectedDevice({ id: 'motor-1', name: 'motor', type: 'TD01' });
     watchdog.heartbeat({ clientId: 'xiaonian-client', ttlSeconds: 5 });
 
     await jest.advanceTimersByTimeAsync(4000);
@@ -69,7 +79,7 @@ describe('external device watchdog', () => {
   });
 
   it('clears every lease and stops once when any registered client expires', async () => {
-    deviceService.addDevice({ id: 'motor-1', name: 'motor', type: 'TD01' });
+    addConnectedDevice({ id: 'motor-1', name: 'motor', type: 'TD01' });
     watchdog.heartbeat({ clientId: 'xiaonian-client', ttlSeconds: 5 });
     watchdog.heartbeat({ clientId: 'another-client', ttlSeconds: 10 });
 
@@ -81,8 +91,8 @@ describe('external device watchdog', () => {
   });
 
   it('retries one failing device without blocking others or touching sensors', async () => {
-    deviceService.addDevice({ id: 'good-motor', name: 'good', type: 'TD01' });
-    deviceService.addDevice({ id: 'bad-shock', name: 'bad', type: 'DIANJI' });
+    addConnectedDevice({ id: 'good-motor', name: 'good', type: 'TD01' });
+    addConnectedDevice({ id: 'bad-shock', name: 'bad', type: 'DIANJI' });
     deviceService.addDevice({ id: 'pressure', name: 'sensor', type: 'QIYA' });
     mqttClient.publish.mockImplementation((topic) => {
       if (topic === '/drecv/bad-shock') throw new Error('broker unavailable');

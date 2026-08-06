@@ -16,10 +16,20 @@ jest.mock('../services/firmwareOtaService', () => ({}));
 const mqttClient = require('../services/mqttClientService');
 const deviceService = require('../services/deviceService');
 
+function addConnectedDevice({ id, name, type }) {
+  return deviceService.connectTransportDevice(
+    { id, name, type, connectionType: 'mqtt' },
+    {
+      kind: 'mqtt',
+      send: (message) => mqttClient.publish(`/drecv/${id}`, message),
+    },
+  );
+}
+
 describe('execution device reset interface', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     mqttClient.publish.mockReset();
-    deviceService.clearAllDevices();
+    await deviceService.clearAllDevices();
   });
 
   it.each([
@@ -30,7 +40,7 @@ describe('execution device reset interface', () => {
     ['CUNZHI01', { method: 'update', shock: 0, voltage: 0, power: 0 }],
   ])('publishes the registered reset for %s', (type, expected) => {
     const deviceId = `${type.toLowerCase()}-1`;
-    deviceService.addDevice({ id: deviceId, name: type, type });
+    addConnectedDevice({ id: deviceId, name: type, type });
 
     const result = deviceService.stopExecutionDevice(deviceId);
 

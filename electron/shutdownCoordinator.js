@@ -37,7 +37,13 @@ function createQuitCoordinator({ app, shutdown, onError = () => {}, timeoutMs = 
       });
   }
 
-  return { handleBeforeQuit };
+  function handleWindowClose(event) {
+    if (allowQuit) return;
+    event.preventDefault();
+    if (!shutdownPromise) app.quit();
+  }
+
+  return { handleBeforeQuit, handleWindowClose };
 }
 
 module.exports = { createQuitCoordinator };

@@ -1,4 +1,3 @@
-const mqttClient = require('./mqttClientService');
 const deviceService = require('./deviceService');
 const deviceRegistry = require('../devices/registry');
 const { getDeviceTypeConfig } = require('../config/deviceTypes');
@@ -56,6 +55,10 @@ function startCheckLoop() {
 
     const devices = deviceService.connectedDevices();
     devices.forEach(device => {
+      const active = activeTests.get(device.id);
+      if (active?.noCapabilities && active.deviceType !== device.type) {
+        activeTests.delete(device.id);
+      }
       // 如果设备在线，且不在测试列表中，则开始测试
       if (!activeTests.has(device.id)) {
         logger.info('TestService', `轮询检测到设备 ${device.id} 在线且未测试，自动开始测试`);
@@ -95,7 +98,7 @@ function startTest(deviceId) {
   if (!hasStart && !hasLoop && !hasStop) {
     logger.info('TestService', `设备 ${deviceId} (${device.type}) 无可测试能力`);
     // 即使没有可测试能力，也标记为已测试，避免重复检查
-    activeTests.set(deviceId, { intervalId: null });
+    activeTests.set(deviceId, { intervalId: null, noCapabilities: true, deviceType: device.type });
     return;
   }
 
@@ -162,12 +165,10 @@ function stopTest(deviceId, sendStopMsg = true) {
 }
 
 /**
- * 本地下发函数：直接发布到设备接收主题
+ * 通过设备当前连接的传输下发测试消息。
  */
 function devicePublishFn(deviceId, message) {
-  const topic = `/drecv/${deviceId}`;
-  mqttClient.publish(topic, message);
-  return { ok: true, topic, message };
+  return deviceService.devicePublishFn(deviceId, message);
 }
 
 /**

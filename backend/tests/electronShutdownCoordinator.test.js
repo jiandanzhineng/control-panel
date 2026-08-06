@@ -57,4 +57,32 @@ describe('Electron quit coordinator', () => {
     expect(app.quit).toHaveBeenCalledTimes(1);
     jest.useRealTimers();
   });
+
+  it('keeps the window alive until application shutdown has finished', async () => {
+    const pending = deferred();
+    const app = { quit: jest.fn() };
+    const coordinator = createQuitCoordinator({
+      app,
+      shutdown: () => pending.promise,
+      timeoutMs: 5000,
+    });
+    const initialClose = { preventDefault: jest.fn() };
+    coordinator.handleWindowClose(initialClose);
+    expect(initialClose.preventDefault).toHaveBeenCalledTimes(1);
+    expect(app.quit).toHaveBeenCalledTimes(1);
+
+    coordinator.handleBeforeQuit({ preventDefault: jest.fn() });
+    const closeDuringShutdown = { preventDefault: jest.fn() };
+    coordinator.handleWindowClose(closeDuringShutdown);
+    expect(closeDuringShutdown.preventDefault).toHaveBeenCalledTimes(1);
+    expect(app.quit).toHaveBeenCalledTimes(1);
+
+    pending.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(app.quit).toHaveBeenCalledTimes(2);
+
+    const finalClose = { preventDefault: jest.fn() };
+    coordinator.handleWindowClose(finalClose);
+    expect(finalClose.preventDefault).not.toHaveBeenCalled();
+  });
 });
