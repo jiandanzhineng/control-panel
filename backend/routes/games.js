@@ -27,6 +27,7 @@ router.get('/external/meta', async (req, res) => {
       id: manifest.id || u.hostname,
       name: manifest.title || u.hostname,
       description: manifest.description || '',
+      howTo: typeof manifest.howTo === 'string' ? manifest.howTo : '',
       version: manifest.version || '1.0.0',
       devices: manifest.devices || [],
       params: manifest.params || [],

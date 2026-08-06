@@ -8,31 +8,244 @@
 {
   "id": "pushup-detection",
   "title": "俯卧撑检测训练",
-  "description": "基于 QTZ 距离阈值检测俯卧撑动作，支持自动锁、电击与跳蛋奖励。",
-  "version": "2.0.1",
+  "description": "用 QTZ 距离阈值识别俯卧撑上下动作。支持无动作惩罚、连击奖励（跳蛋/捶背）与自动锁。",
+  "howTo": "1. 映射 QTZ（必需）\n2. 可选：自动锁、电击、跳蛋、捶背\n3. 按身高调整下降/上升阈值\n4. 在时限内完成目标次数",
+  "version": "2.1.0",
   "devices": [
-    { "id": "qtz", "capabilities": ["distance", "buttonInput", "reporting"], "required": true },
-    { "id": "lock", "capabilities": ["lock"], "required": false },
-    { "id": "shock", "capabilities": ["shock"], "required": false },
-    { "id": "vibrator", "capabilities": ["strength"], "required": false },
-    { "id": "pj01", "capabilities": ["strength"], "required": false }
+    {
+      "id": "qtz",
+      "label": "QTZ距离传感器",
+      "capabilities": [
+        "distance",
+        "buttonInput",
+        "reporting"
+      ],
+      "required": true
+    },
+    {
+      "id": "lock",
+      "label": "自动锁",
+      "capabilities": [
+        "lock"
+      ],
+      "required": false
+    },
+    {
+      "id": "shock",
+      "label": "电击设备",
+      "capabilities": [
+        "shock"
+      ],
+      "required": false
+    },
+    {
+      "id": "vibrator",
+      "label": "跳蛋",
+      "capabilities": [
+        "strength"
+      ],
+      "required": false
+    },
+    {
+      "id": "pj01",
+      "label": "捶背器",
+      "capabilities": [
+        "strength"
+      ],
+      "required": false
+    }
   ],
   "params": [
-    { "key": "duration", "type": "number", "default": 15, "label": "游戏时长(分钟)" },
-    { "key": "targetCount", "type": "number", "default": 30, "label": "目标数量(个)" },
-    { "key": "downThreshold", "type": "number", "default": 15, "label": "下降阈值(cm)" },
-    { "key": "upThreshold", "type": "number", "default": 35, "label": "上升阈值(cm)" },
-    { "key": "idleTimeLimit", "type": "number", "default": 15, "label": "无动作触发惩罚(秒)" },
-    { "key": "shockIntensity", "type": "number", "default": 15, "label": "电击强度(V)" },
-    { "key": "shockDuration", "type": "number", "default": 3, "label": "电击时长(秒)" },
-    { "key": "randomIntensityRange", "type": "number", "default": 10, "label": "强度随机幅度(±)" },
-    { "key": "randomDurationRange", "type": "number", "default": 1, "label": "时长随机幅度(±秒)" },
-    { "key": "rewardTriggerCount", "type": "number", "default": 3, "label": "奖励触发连击数" },
-    { "key": "rewardTriggerProbability", "type": "number", "default": 100, "label": "奖励触发概率(%)" },
-    { "key": "vibratorIntensity", "type": "number", "default": 100, "label": "跳蛋强度" },
-    { "key": "vibratorDuration", "type": "number", "default": 15, "label": "跳蛋时长(秒)" },
-    { "key": "pj01Duration", "type": "number", "default": 5, "label": "捶背时长(秒)" },
-    { "key": "enableVoice", "type": "boolean", "default": true, "label": "启用语音提示" }
+    {
+      "key": "duration",
+      "type": "number",
+      "default": 15,
+      "label": "游戏时长",
+      "unit": "分钟",
+      "description": "训练总时长",
+      "group": "core",
+      "min": 1,
+      "max": 120,
+      "step": 1
+    },
+    {
+      "key": "targetCount",
+      "type": "number",
+      "default": 30,
+      "label": "目标数量",
+      "unit": "个",
+      "description": "需要完成的俯卧撑次数",
+      "group": "core",
+      "min": 1,
+      "max": 500,
+      "step": 1,
+      "recommended": "20–50"
+    },
+    {
+      "key": "downThreshold",
+      "type": "number",
+      "default": 15,
+      "label": "下降阈值",
+      "unit": "cm",
+      "description": "距离小于此值视为「下去」到位",
+      "group": "difficulty",
+      "min": 1,
+      "max": 100,
+      "step": 1,
+      "recommended": "按实测调整"
+    },
+    {
+      "key": "upThreshold",
+      "type": "number",
+      "default": 35,
+      "label": "上升阈值",
+      "unit": "cm",
+      "description": "距离大于此值视为「起来」到位，应大于下降阈值",
+      "group": "difficulty",
+      "min": 1,
+      "max": 150,
+      "step": 1
+    },
+    {
+      "key": "idleTimeLimit",
+      "type": "number",
+      "default": 15,
+      "label": "无动作惩罚时限",
+      "unit": "秒",
+      "description": "超过此秒数无有效动作则触发惩罚",
+      "group": "punish",
+      "min": 3,
+      "max": 120,
+      "step": 1
+    },
+    {
+      "key": "shockIntensity",
+      "type": "number",
+      "default": 15,
+      "label": "电击强度",
+      "unit": "V",
+      "description": "惩罚电击电压",
+      "group": "punish",
+      "min": 1,
+      "max": 50,
+      "step": 1,
+      "device": "shock"
+    },
+    {
+      "key": "shockDuration",
+      "type": "number",
+      "default": 3,
+      "label": "电击时长",
+      "unit": "秒",
+      "description": "单次电击时间",
+      "group": "punish",
+      "min": 0.5,
+      "max": 10,
+      "step": 0.5,
+      "device": "shock"
+    },
+    {
+      "key": "randomIntensityRange",
+      "type": "number",
+      "default": 10,
+      "label": "强度随机幅度",
+      "unit": "±V",
+      "description": "电击强度在基础值上下随机偏移",
+      "group": "advanced",
+      "min": 0,
+      "max": 30,
+      "step": 1,
+      "device": "shock",
+      "required": false
+    },
+    {
+      "key": "randomDurationRange",
+      "type": "number",
+      "default": 1,
+      "label": "时长随机幅度",
+      "unit": "±秒",
+      "description": "电击时长随机偏移",
+      "group": "advanced",
+      "min": 0,
+      "max": 5,
+      "step": 0.5,
+      "device": "shock",
+      "required": false
+    },
+    {
+      "key": "rewardTriggerCount",
+      "type": "number",
+      "default": 3,
+      "label": "奖励连击数",
+      "unit": "次",
+      "description": "连续完成多少个触发奖励",
+      "group": "reward",
+      "min": 1,
+      "max": 50,
+      "step": 1,
+      "device": "vibrator"
+    },
+    {
+      "key": "rewardTriggerProbability",
+      "type": "number",
+      "default": 100,
+      "label": "奖励触发概率",
+      "unit": "%",
+      "description": "达到连击后实际发放奖励的概率",
+      "group": "reward",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "device": "vibrator",
+      "required": false
+    },
+    {
+      "key": "vibratorIntensity",
+      "type": "number",
+      "default": 100,
+      "label": "跳蛋强度",
+      "description": "奖励时跳蛋强度",
+      "group": "reward",
+      "min": 0,
+      "max": 255,
+      "step": 1,
+      "device": "vibrator"
+    },
+    {
+      "key": "vibratorDuration",
+      "type": "number",
+      "default": 15,
+      "label": "跳蛋时长",
+      "unit": "秒",
+      "description": "奖励振动持续时间",
+      "group": "reward",
+      "min": 1,
+      "max": 120,
+      "step": 1,
+      "device": "vibrator"
+    },
+    {
+      "key": "pj01Duration",
+      "type": "number",
+      "default": 5,
+      "label": "捶背时长",
+      "unit": "秒",
+      "description": "奖励时捶背器工作时长",
+      "group": "reward",
+      "min": 1,
+      "max": 60,
+      "step": 1,
+      "device": "pj01",
+      "required": false
+    },
+    {
+      "key": "enableVoice",
+      "type": "boolean",
+      "default": true,
+      "label": "语音提示",
+      "description": "开启计数与惩罚语音",
+      "group": "core"
+    }
   ]
 }
 </script>

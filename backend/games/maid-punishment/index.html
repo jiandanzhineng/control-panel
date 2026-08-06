@@ -8,27 +8,191 @@
 {
   "id": "maid-punishment",
   "title": "女仆偷懒惩罚",
-  "description": "保持踮脚站立；任意按钮按下时电击；长期未电击时启动TD01逐步增强；支持自动锁。",
-  "version": "2.0.1",
+  "description": "保持踮脚站立；按下按钮会电击；长时间未受罚时 TD01 逐步增强刺激。可配合自动锁。",
+  "howTo": "1. 映射电击设备（必需）\n2. 可选：QTZ/踮脚传感器、TD01、自动锁\n3. 设置时长与电击强度\n4. 开始后保持踮脚，偷懒会被惩罚",
+  "version": "2.1.0",
   "devices": [
-    { "id": "qtz", "capabilities": ["distance", "buttonInput", "reporting"], "required": false },
-    { "id": "tiptoeSensor", "capabilities": ["tiptoePressure", "reporting"], "required": false },
-    { "id": "shock", "capabilities": ["shock"], "required": true },
-    { "id": "motor", "capabilities": ["strength"], "required": false },
-    { "id": "lock", "capabilities": ["lock"], "required": false }
+    {
+      "id": "qtz",
+      "label": "QTZ距离/按钮",
+      "capabilities": [
+        "distance",
+        "buttonInput",
+        "reporting"
+      ],
+      "required": false
+    },
+    {
+      "id": "tiptoeSensor",
+      "label": "踮脚压力传感器",
+      "capabilities": [
+        "tiptoePressure",
+        "reporting"
+      ],
+      "required": false
+    },
+    {
+      "id": "shock",
+      "label": "电击设备",
+      "capabilities": [
+        "shock"
+      ],
+      "required": true
+    },
+    {
+      "id": "motor",
+      "label": "TD01刺激器",
+      "capabilities": [
+        "strength"
+      ],
+      "required": false
+    },
+    {
+      "id": "lock",
+      "label": "自动锁",
+      "capabilities": [
+        "lock"
+      ],
+      "required": false
+    }
   ],
   "params": [
-    { "key": "duration", "type": "number", "default": 10, "label": "游戏时长(分钟)" },
-    { "key": "shockIntensity", "type": "number", "default": 24, "label": "电击强度(V)" },
-    { "key": "progressiveIntensity", "type": "boolean", "default": false, "label": "渐进强度" },
-    { "key": "maxIntensityIncrease", "type": "number", "default": 10, "label": "最大增幅" },
-    { "key": "allowUnsafeIntensity", "type": "boolean", "default": false, "label": "允许超过30V" },
-    { "key": "td01DelaySeconds", "type": "number", "default": 5, "label": "TD01延时(秒)" },
-    { "key": "td01IntensityIncrease", "type": "number", "default": 50, "label": "TD01每5秒增幅" },
-    { "key": "manualStart", "type": "boolean", "default": false, "label": "手动开启(等待锁按键)" },
-    { "key": "td01ShockProbability", "type": "number", "default": 0, "label": "TD01启动时电击概率(%)" },
-    { "key": "tiptoePressureThreshold", "type": "number", "default": 100, "label": "踮脚压力阈值(高于即视为踩住)" },
-    { "key": "tiptoeDebounceMs", "type": "number", "default": 300, "label": "压力防抖时长(毫秒)" }
+    {
+      "key": "duration",
+      "type": "number",
+      "default": 10,
+      "label": "游戏时长",
+      "unit": "分钟",
+      "description": "整局持续多久后自动结束",
+      "group": "core",
+      "min": 1,
+      "max": 120,
+      "step": 1
+    },
+    {
+      "key": "shockIntensity",
+      "type": "number",
+      "default": 24,
+      "label": "电击强度",
+      "unit": "V",
+      "description": "按钮触发时的电击电压",
+      "group": "punish",
+      "min": 1,
+      "max": 50,
+      "step": 1,
+      "device": "shock",
+      "recommended": "15–24"
+    },
+    {
+      "key": "progressiveIntensity",
+      "type": "boolean",
+      "default": false,
+      "label": "渐进强度",
+      "description": "开启后电击强度会随时间缓慢上升",
+      "group": "punish",
+      "device": "shock"
+    },
+    {
+      "key": "maxIntensityIncrease",
+      "type": "number",
+      "default": 10,
+      "label": "电击最大增幅",
+      "unit": "V",
+      "description": "渐进模式下相对基础强度的最大增加量",
+      "group": "punish",
+      "min": 0,
+      "max": 30,
+      "step": 1,
+      "device": "shock",
+      "required": false
+    },
+    {
+      "key": "allowUnsafeIntensity",
+      "type": "boolean",
+      "default": false,
+      "label": "允许超过30V",
+      "description": "关闭时强度上限 30V，开启请谨慎",
+      "group": "advanced",
+      "device": "shock",
+      "required": false
+    },
+    {
+      "key": "td01DelaySeconds",
+      "type": "number",
+      "default": 5,
+      "label": "TD01启动延时",
+      "unit": "秒",
+      "description": "多久未受电击后开始增强 TD01",
+      "group": "difficulty",
+      "min": 0,
+      "max": 300,
+      "step": 1,
+      "device": "motor"
+    },
+    {
+      "key": "td01IntensityIncrease",
+      "type": "number",
+      "default": 50,
+      "label": "TD01每5秒增幅",
+      "description": "TD01 启动后每 5 秒增加的强度",
+      "group": "difficulty",
+      "min": 1,
+      "max": 255,
+      "step": 1,
+      "device": "motor",
+      "required": false
+    },
+    {
+      "key": "td01ShockProbability",
+      "type": "number",
+      "default": 0,
+      "label": "TD01启动时电击概率",
+      "unit": "%",
+      "description": "TD01 开始增强时额外电击的概率",
+      "group": "punish",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "device": "shock",
+      "required": false
+    },
+    {
+      "key": "manualStart",
+      "type": "boolean",
+      "default": false,
+      "label": "手动开启",
+      "description": "开启后需等待锁按键才真正开始计时",
+      "group": "core",
+      "device": "lock",
+      "required": false
+    },
+    {
+      "key": "tiptoePressureThreshold",
+      "type": "number",
+      "default": 100,
+      "label": "踮脚压力阈值",
+      "description": "压力高于此值视为踩住（未踮脚）",
+      "group": "difficulty",
+      "min": 1,
+      "max": 1000,
+      "step": 1,
+      "device": "tiptoeSensor",
+      "required": false
+    },
+    {
+      "key": "tiptoeDebounceMs",
+      "type": "number",
+      "default": 300,
+      "label": "压力防抖",
+      "unit": "毫秒",
+      "description": "踮脚状态切换的防抖时间",
+      "group": "advanced",
+      "min": 0,
+      "max": 2000,
+      "step": 50,
+      "device": "tiptoeSensor",
+      "required": false
+    }
   ]
 }
 </script>

@@ -8,33 +8,269 @@
 {
   "id": "drink-pee-unlock",
   "title": "喝水/憋尿解锁玩法",
-  "description": "称重(DZC01)回调更新 + 状态机：保持提肛与双脚踮脚，同时持续变轻/变重，达成目标或超时自动解锁。踮脚支持 QTZ 双脚踏按钮或 CUNZHI01 踮脚压力两种检测。",
-  "version": "2.2.0",
+  "description": "站上称重设备，保持提肛与踮脚，同时按模式持续变重（喝水）或变轻（憋尿）。达成目标重量变化或超时后自动解锁。踮脚可用 QTZ 双脚踏或 CUNZHI01 压力检测。",
+  "howTo": "1. 映射称重设备（必需）\n2. 可选：气压传感器、踮脚检测、电击、振动、自动锁\n3. 选择喝水/憋尿模式与目标重量\n4. 开始后按提示保持动作，达标或超时解锁",
+  "version": "2.3.0",
   "devices": [
-    { "id": "scale", "capabilities": ["weight", "reporting"], "required": true },
-    { "id": "sensor", "capabilities": ["sphincterPressure", "reporting"], "required": false },
-    { "id": "qtz", "capabilities": ["tiptoePressure"], "required": false },
-    { "id": "cunzhi", "capabilities": ["tiptoePressure", "reporting"], "required": false },
-    { "id": "punish", "capabilities": ["shock"], "required": false },
-    { "id": "vibe", "capabilities": ["strength"], "required": false },
-    { "id": "lock", "capabilities": ["lock"], "required": false }
+    {
+      "id": "scale",
+      "label": "称重设备",
+      "capabilities": [
+        "weight",
+        "reporting"
+      ],
+      "required": true
+    },
+    {
+      "id": "sensor",
+      "label": "提肛气压传感器",
+      "capabilities": [
+        "sphincterPressure",
+        "reporting"
+      ],
+      "required": false
+    },
+    {
+      "id": "qtz",
+      "label": "QTZ踮脚检测",
+      "capabilities": [
+        "tiptoePressure"
+      ],
+      "required": false
+    },
+    {
+      "id": "cunzhi",
+      "label": "寸止踮脚传感器",
+      "capabilities": [
+        "tiptoePressure",
+        "reporting"
+      ],
+      "required": false
+    },
+    {
+      "id": "punish",
+      "label": "电击惩罚设备",
+      "capabilities": [
+        "shock"
+      ],
+      "required": false
+    },
+    {
+      "id": "vibe",
+      "label": "振动设备",
+      "capabilities": [
+        "strength"
+      ],
+      "required": false
+    },
+    {
+      "id": "lock",
+      "label": "自动锁",
+      "capabilities": [
+        "lock"
+      ],
+      "required": false
+    }
   ],
   "params": [
-    { "key": "mode", "type": "enum", "default": "drink", "enum": ["drink", "pee"], "label": "模式" },
-    { "key": "durationSec", "type": "number", "default": 1800, "label": "时长(秒)" },
-    { "key": "targetWeight", "type": "number", "default": 500, "label": "目标重量变化(g)" },
-    { "key": "changeThreshold", "type": "number", "default": 1, "label": "有效变化阈值(g)" },
-    { "key": "stableWindowSec", "type": "number", "default": 30, "label": "历史窗口(秒)" },
-    { "key": "punishCooldownSec", "type": "number", "default": 10, "label": "惩罚冷却(秒)" },
-    { "key": "shockIntensity", "type": "number", "default": 24, "label": "电击强度(V)" },
-    { "key": "shockDuration", "type": "number", "default": 2, "label": "电击持续(秒)" },
-    { "key": "pressureThreshold", "type": "number", "default": 20, "label": "气压阈值(kPa)" },
-    { "key": "tiptoePressureThreshold", "type": "number", "default": 100, "label": "踮脚压力阈值(CUNZHI01,高于即视为落地)" },
-    { "key": "tiptoeDebounceMs", "type": "number", "default": 300, "label": "踮脚压力防抖(毫秒)" },
-    { "key": "vibeStartProb", "type": "number", "default": 0.05, "label": "振动启动概率(每秒)" },
-    { "key": "vibeIntensity", "type": "number", "default": 255, "label": "振动强度(0-255)" },
-    { "key": "vibeDuration", "type": "number", "default": 3, "label": "振动时长(秒)" },
-    { "key": "voiceEnabled", "type": "boolean", "default": true, "label": "启用语音提示" }
+    {
+      "key": "mode",
+      "type": "enum",
+      "default": "drink",
+      "enum": [
+        "drink",
+        "pee"
+      ],
+      "enumLabels": {
+        "drink": "喝水（变重）",
+        "pee": "憋尿（变轻）"
+      },
+      "label": "玩法模式",
+      "description": "喝水：体重增加达标；憋尿：体重减轻达标",
+      "group": "core"
+    },
+    {
+      "key": "durationSec",
+      "type": "number",
+      "default": 1800,
+      "label": "最长时长",
+      "unit": "秒",
+      "description": "超时后自动结束并解锁。1800 秒 = 30 分钟",
+      "group": "core",
+      "min": 60,
+      "max": 7200,
+      "step": 30,
+      "recommended": "初学者 900–1800"
+    },
+    {
+      "key": "targetWeight",
+      "type": "number",
+      "default": 500,
+      "label": "目标重量变化",
+      "unit": "g",
+      "description": "相对起始体重需要变化的克数，达到即成功",
+      "group": "core",
+      "min": 50,
+      "max": 5000,
+      "step": 50,
+      "recommended": "500"
+    },
+    {
+      "key": "changeThreshold",
+      "type": "number",
+      "default": 1,
+      "label": "有效变化阈值",
+      "unit": "g",
+      "description": "小于此变化视为噪声，不计入进度",
+      "group": "difficulty",
+      "min": 0.1,
+      "max": 50,
+      "step": 0.1,
+      "required": false
+    },
+    {
+      "key": "stableWindowSec",
+      "type": "number",
+      "default": 30,
+      "label": "历史窗口",
+      "unit": "秒",
+      "description": "用于平滑体重趋势的历史采样窗口",
+      "group": "advanced",
+      "min": 5,
+      "max": 120,
+      "step": 1,
+      "required": false
+    },
+    {
+      "key": "pressureThreshold",
+      "type": "number",
+      "default": 20,
+      "label": "提肛气压阈值",
+      "unit": "kPa",
+      "description": "低于此值视为未提肛，可能触发惩罚（需映射气压传感器）",
+      "group": "difficulty",
+      "min": 1,
+      "max": 100,
+      "step": 0.5,
+      "device": "sensor"
+    },
+    {
+      "key": "tiptoePressureThreshold",
+      "type": "number",
+      "default": 100,
+      "label": "踮脚压力阈值",
+      "description": "CUNZHI01：压力高于此值视为脚落地（未踮脚）",
+      "group": "difficulty",
+      "min": 1,
+      "max": 1000,
+      "step": 1,
+      "device": "cunzhi",
+      "required": false
+    },
+    {
+      "key": "tiptoeDebounceMs",
+      "type": "number",
+      "default": 300,
+      "label": "踮脚防抖",
+      "unit": "毫秒",
+      "description": "压力抖动过滤时间，过小易误判",
+      "group": "advanced",
+      "min": 0,
+      "max": 2000,
+      "step": 50,
+      "device": "cunzhi",
+      "required": false
+    },
+    {
+      "key": "punishCooldownSec",
+      "type": "number",
+      "default": 10,
+      "label": "惩罚冷却",
+      "unit": "秒",
+      "description": "两次电击之间的最短间隔",
+      "group": "punish",
+      "min": 0,
+      "max": 120,
+      "step": 1,
+      "device": "punish"
+    },
+    {
+      "key": "shockIntensity",
+      "type": "number",
+      "default": 24,
+      "label": "电击强度",
+      "unit": "V",
+      "description": "惩罚电击电压，建议不超过 30V",
+      "group": "punish",
+      "min": 1,
+      "max": 50,
+      "step": 1,
+      "device": "punish",
+      "recommended": "15–24"
+    },
+    {
+      "key": "shockDuration",
+      "type": "number",
+      "default": 2,
+      "label": "电击持续",
+      "unit": "秒",
+      "description": "单次电击持续时间",
+      "group": "punish",
+      "min": 0.5,
+      "max": 10,
+      "step": 0.5,
+      "device": "punish"
+    },
+    {
+      "key": "vibeStartProb",
+      "type": "number",
+      "default": 0.05,
+      "label": "振动启动概率",
+      "unit": "每秒",
+      "description": "每秒触发振动的概率，0.05 = 约 5%",
+      "group": "reward",
+      "min": 0,
+      "max": 1,
+      "step": 0.01,
+      "device": "vibe",
+      "required": false
+    },
+    {
+      "key": "vibeIntensity",
+      "type": "number",
+      "default": 255,
+      "label": "振动强度",
+      "unit": "0-255",
+      "description": "振动设备输出强度",
+      "group": "reward",
+      "min": 0,
+      "max": 255,
+      "step": 1,
+      "device": "vibe",
+      "required": false
+    },
+    {
+      "key": "vibeDuration",
+      "type": "number",
+      "default": 3,
+      "label": "振动时长",
+      "unit": "秒",
+      "description": "单次振动持续时间",
+      "group": "reward",
+      "min": 0.5,
+      "max": 30,
+      "step": 0.5,
+      "device": "vibe",
+      "required": false
+    },
+    {
+      "key": "voiceEnabled",
+      "type": "boolean",
+      "default": true,
+      "label": "语音提示",
+      "description": "开启后播报阶段与提示音",
+      "group": "core"
+    }
   ]
 }
 </script>

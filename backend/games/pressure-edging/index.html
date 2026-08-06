@@ -8,26 +8,180 @@
 {
   "id": "pressure-edging",
   "title": "气压寸止玩法",
-  "description": "基于气压传感器(QIYA)的寸止训练，根据压力与时间窗智能调节 TD01 强度，并在超阈值时触发电击。",
-  "version": "2.0.1",
+  "description": "根据气压传感器读数智能调节 TD01 强度：压力升高时减弱刺激，超阈值电击惩罚，帮助维持在边缘状态。",
+  "howTo": "1. 映射气压传感器与 TD01（必需）\n2. 可选：电击、自动锁\n3. 先设好临界气压与最大强度\n4. 过程中可用按钮微调目标强度",
+  "version": "2.1.0",
   "devices": [
-    { "id": "sensor", "capabilities": ["sphincterPressure", "reporting"], "required": true },
-    { "id": "motor", "capabilities": ["strength"], "required": true },
-    { "id": "punish", "capabilities": ["shock"], "required": false },
-    { "id": "lock", "capabilities": ["lock"], "required": false }
+    {
+      "id": "sensor",
+      "label": "气压传感器",
+      "capabilities": [
+        "sphincterPressure",
+        "reporting"
+      ],
+      "required": true
+    },
+    {
+      "id": "motor",
+      "label": "TD01刺激器",
+      "capabilities": [
+        "strength"
+      ],
+      "required": true
+    },
+    {
+      "id": "punish",
+      "label": "电击惩罚设备",
+      "capabilities": [
+        "shock"
+      ],
+      "required": false
+    },
+    {
+      "id": "lock",
+      "label": "自动锁",
+      "capabilities": [
+        "lock"
+      ],
+      "required": false
+    }
   ],
   "params": [
-    { "key": "duration", "type": "number", "default": 20, "label": "游戏时长(分钟)" },
-    { "key": "criticalPressure", "type": "number", "default": 20, "label": "临界气压(kPa)" },
-    { "key": "maxMotorIntensity", "type": "number", "default": 50, "label": "TD01最大强度(男用td超过50可能会断联，请谨慎设置)" },
-    { "key": "lowPressureDelay", "type": "number", "default": 5, "label": "低压延迟(秒)" },
-    { "key": "rampRate", "type": "number", "default": 2, "label": "强度递增速率上限(每秒)" },
-    { "key": "sensitivity", "type": "number", "default": 1.0, "label": "压力敏感度系数" },
-    { "key": "randomPercent", "type": "number", "default": 0, "label": "强度随机扰动(%)" },
-    { "key": "gradualIncrease", "type": "number", "default": 2, "label": "延迟后逐步提升(每秒)" },
-    { "key": "shockVoltage", "type": "number", "default": 20, "label": "电击强度(V)" },
-    { "key": "shockDuration", "type": "number", "default": 3, "label": "电击时长(秒)" },
-    { "key": "voiceEnabled", "type": "boolean", "default": true, "label": "启用语音提示" }
+    {
+      "key": "duration",
+      "type": "number",
+      "default": 20,
+      "label": "游戏时长",
+      "unit": "分钟",
+      "description": "整局持续时长",
+      "group": "core",
+      "min": 1,
+      "max": 180,
+      "step": 1
+    },
+    {
+      "key": "criticalPressure",
+      "type": "number",
+      "default": 20,
+      "label": "临界气压",
+      "unit": "kPa",
+      "description": "超过此气压视为过于兴奋，会电击并回落强度",
+      "group": "core",
+      "min": 1,
+      "max": 100,
+      "step": 0.1,
+      "recommended": "按个人实测边缘点设置"
+    },
+    {
+      "key": "maxMotorIntensity",
+      "type": "number",
+      "default": 50,
+      "label": "TD01最大强度",
+      "description": "刺激强度上限。男用 TD 超过 50 可能断联，请谨慎",
+      "group": "core",
+      "min": 1,
+      "max": 255,
+      "step": 1,
+      "device": "motor",
+      "recommended": "≤50（男用）"
+    },
+    {
+      "key": "lowPressureDelay",
+      "type": "number",
+      "default": 5,
+      "label": "低压延迟",
+      "unit": "秒",
+      "description": "压力偏低多久后才开始逐步抬高强度",
+      "group": "difficulty",
+      "min": 0,
+      "max": 60,
+      "step": 1
+    },
+    {
+      "key": "rampRate",
+      "type": "number",
+      "default": 2,
+      "label": "强度递增上限",
+      "unit": "每秒",
+      "description": "强度每秒最多增加多少，防止突然过强",
+      "group": "difficulty",
+      "min": 0.1,
+      "max": 50,
+      "step": 0.1,
+      "required": false
+    },
+    {
+      "key": "sensitivity",
+      "type": "number",
+      "default": 1.0,
+      "label": "压力敏感度",
+      "description": "压力变化对强度调节的影响系数，越大反应越灵敏",
+      "group": "difficulty",
+      "min": 0.1,
+      "max": 10,
+      "step": 0.1,
+      "recommended": "1.0"
+    },
+    {
+      "key": "randomPercent",
+      "type": "number",
+      "default": 0,
+      "label": "强度随机扰动",
+      "unit": "%",
+      "description": "在目标强度上叠加随机波动，增加不可预期性",
+      "group": "advanced",
+      "min": 0,
+      "max": 50,
+      "step": 1,
+      "required": false
+    },
+    {
+      "key": "gradualIncrease",
+      "type": "number",
+      "default": 2,
+      "label": "延迟后逐步提升",
+      "unit": "每秒",
+      "description": "低压延迟结束后，强度每秒抬升的幅度",
+      "group": "difficulty",
+      "min": 0,
+      "max": 50,
+      "step": 0.5,
+      "required": false
+    },
+    {
+      "key": "shockVoltage",
+      "type": "number",
+      "default": 20,
+      "label": "电击强度",
+      "unit": "V",
+      "description": "超临界时电击电压",
+      "group": "punish",
+      "min": 1,
+      "max": 50,
+      "step": 1,
+      "device": "punish"
+    },
+    {
+      "key": "shockDuration",
+      "type": "number",
+      "default": 3,
+      "label": "电击时长",
+      "unit": "秒",
+      "description": "单次电击持续时间",
+      "group": "punish",
+      "min": 0.5,
+      "max": 10,
+      "step": 0.5,
+      "device": "punish"
+    },
+    {
+      "key": "voiceEnabled",
+      "type": "boolean",
+      "default": true,
+      "label": "语音提示",
+      "description": "开启阶段与警告语音",
+      "group": "core"
+    }
   ]
 }
 </script>
