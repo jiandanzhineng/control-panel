@@ -8,20 +8,114 @@
 {
   "id": "pelvic-training",
   "title": "提肛训练玩法",
-  "description": "基于气压传感器的提肛训练，放松与提肛阶段交替，未在设定时长内达到气压变化度则电击，否则成功次数+1。",
-  "version": "2.0.1",
+  "description": "放松与提肛交替进行。在提肛阶段需在限定时间内让气压上升达到变化度，否则电击；成功则计数 +1。",
+  "howTo": "1. 映射气压传感器（必需）\n2. 可选：电击、自动锁\n3. 设置目标次数与气压变化度\n4. 按阶段提示放松/提肛",
+  "version": "2.1.0",
   "devices": [
-    { "id": "sensor", "capabilities": ["sphincterPressure", "reporting"], "required": true },
-    { "id": "punish", "capabilities": ["shock"], "required": false },
-    { "id": "lock", "capabilities": ["lock"], "required": false }
+    {
+      "id": "sensor",
+      "label": "气压传感器",
+      "capabilities": [
+        "sphincterPressure",
+        "reporting"
+      ],
+      "required": true
+    },
+    {
+      "id": "punish",
+      "label": "电击惩罚设备",
+      "capabilities": [
+        "shock"
+      ],
+      "required": false
+    },
+    {
+      "id": "lock",
+      "label": "自动锁",
+      "capabilities": [
+        "lock"
+      ],
+      "required": false
+    }
   ],
   "params": [
-    { "key": "duration", "type": "number", "default": 20, "label": "游戏时长(分钟)" },
-    { "key": "targetCount", "type": "number", "default": 50, "label": "提肛次数目标" },
-    { "key": "pressureDelta", "type": "number", "default": 0.3, "label": "气压变化度(kPa)" },
-    { "key": "cycleTime", "type": "number", "default": 10, "label": "单个循环时间(秒)" },
-    { "key": "shockVoltage", "type": "number", "default": 20, "label": "电击强度(V)" },
-    { "key": "shockDuration", "type": "number", "default": 3, "label": "电击持续(秒)" }
+    {
+      "key": "duration",
+      "type": "number",
+      "default": 20,
+      "label": "游戏时长",
+      "unit": "分钟",
+      "description": "整局训练总时长",
+      "group": "core",
+      "min": 1,
+      "max": 120,
+      "step": 1
+    },
+    {
+      "key": "targetCount",
+      "type": "number",
+      "default": 50,
+      "label": "提肛次数目标",
+      "unit": "次",
+      "description": "成功提肛达到此次数可视为完成",
+      "group": "core",
+      "min": 1,
+      "max": 500,
+      "step": 1,
+      "recommended": "30–50"
+    },
+    {
+      "key": "pressureDelta",
+      "type": "number",
+      "default": 0.3,
+      "label": "气压变化度",
+      "unit": "kPa",
+      "description": "相对放松期最低气压需要升高多少才算成功，越大越难",
+      "group": "difficulty",
+      "min": 0.05,
+      "max": 5,
+      "step": 0.05,
+      "recommended": "0.2–0.5"
+    },
+    {
+      "key": "cycleTime",
+      "type": "number",
+      "default": 10,
+      "label": "单个循环时间",
+      "unit": "秒",
+      "description": "一次「放松+提肛」循环的总时长",
+      "group": "difficulty",
+      "min": 4,
+      "max": 60,
+      "step": 1
+    },
+    {
+      "key": "shockVoltage",
+      "type": "number",
+      "default": 20,
+      "label": "电击强度",
+      "unit": "V",
+      "description": "挑战失败时的电击电压",
+      "group": "punish",
+      "min": 1,
+      "max": 50,
+      "step": 1,
+      "device": "punish",
+      "recommended": "15–24"
+    },
+    {
+      "key": "shockDuration",
+      "type": "number",
+      "default": 3,
+      "label": "电击持续",
+      "unit": "秒",
+      "description": "单次电击持续时间",
+      "group": "punish",
+      "min": 0.5,
+      "max": 10,
+      "step": 0.5,
+      "device": "punish"
+    }
   ]
 }
 </script>
