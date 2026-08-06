@@ -50,6 +50,12 @@
 - [0003 插件发现：扫描多目录（内置 + 用户）](adr/0003-plugin-discovery-multi-directory.md)
 - [0004 玩法运行唯一性：全局同时只有一个玩法在跑](adr/0004-single-active-play-carrier.md)
 - [0005 运行状态权威：bridge 连接即真相](adr/0005-backend-authoritative-play-state.md)
+- [0006 串口握手返回统一设备身份](adr/0006-serial-handshake-device-identity.md)
+- [0007 后端设备层持有串口连接](adr/0007-backend-owns-serial-connections.md)
+- [0008 每台物理设备只有一个控制连接](adr/0008-single-control-connection-per-physical-device.md)
+- [0009 基础 MAC 是跨连接统一设备 ID](adr/0009-base-mac-is-the-device-id.md)
+- [0010 BLE 身份特征返回设备 ID 和固件版本](adr/0010-ble-identity-exposes-mac-and-firmware-version.md)
+- [0011 旧 BLE 固件回退到浏览器设备标识](adr/0011-legacy-ble-falls-back-to-browser-device-id.md)
 
 ### Requirements
 
@@ -81,6 +87,10 @@
 
 - [OpenPanel 埋点接入设计文档](plan/analytics-design.md)
 - [玩法载体统一方案设计文档](plan/unified-play-carrier-design.md)
+- [MQTT / 串口 / BLE 统一设备连接实施计划](plan/2026-08-05-unified-mqtt-serial-ble-device-connections.md)
+- [st-iot-bridge 融入决策 map](plan/wayfinder-st-iot-bridge-merge.md)
+- [provision 服务迁移（暂缓）](plan/2026-08-04-provision-migration-deferred.md)
+- 完整清单见 [plan/README.md](plan/README.md)
 
 ### Agent
 
