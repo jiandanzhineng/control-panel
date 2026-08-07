@@ -44,21 +44,23 @@ const activeTab = ref('realtime')
 
 .tabs button {
   padding: 10px 20px;
-  border: 1px solid #ddd;
-  background: #f5f5f5;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
   cursor: pointer;
   border-radius: 4px;
 }
 
 .tabs button.active {
-  background: #007bff;
-  color: white;
-  border-color: #007bff;
+  background: var(--accent);
+  color: #062026;
+  border-color: var(--accent);
+  font-weight: 600;
 }
 
 .tab-content {
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
   padding: 20px;
   min-height: 500px;
 }

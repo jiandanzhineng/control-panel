@@ -32,7 +32,7 @@
       <polyline
         :points="linePoints"
         fill="none"
-        stroke="#409eff"
+        stroke="var(--accent)"
         stroke-width="2"
         stroke-linejoin="round"
       />
@@ -44,7 +44,7 @@
         :cx="point.x"
         :cy="point.y"
         r="3"
-        fill="#409eff"
+        fill="var(--accent)"
       />
       
       <!-- Y轴标签 -->
@@ -207,7 +207,7 @@ const xLabels = computed(() => {
 .simple-chart {
   width: 100%;
   position: relative;
-  background: #fff;
+  background: var(--bg-surface);
   border-radius: 4px;
 }
 
@@ -216,7 +216,7 @@ const xLabels = computed(() => {
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #999;
+  color: var(--text-muted);
   font-size: 14px;
 }
 

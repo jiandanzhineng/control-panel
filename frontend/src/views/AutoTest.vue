@@ -200,7 +200,7 @@ function formatValue(val: any, unit?: string) {
 
 function getMonitorColor(config: any, val: any) {
   // 简单根据是否有值显示颜色，或者可以复用之前的阈值逻辑
-  return val !== undefined ? '#409EFF' : '#909399';
+  return val !== undefined ? 'var(--accent)' : 'var(--text-muted)';
 }
 </script>
 
@@ -225,13 +225,13 @@ function getMonitorColor(config: any, val: any) {
   display: flex;
   align-items: center;
   gap: 5px;
-  background: #f5f7fa;
+  background: var(--bg-app);
   padding: 4px 8px;
   border-radius: 4px;
 }
 
 .label {
-  color: #606266;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
@@ -240,7 +240,7 @@ function getMonitorColor(config: any, val: any) {
 }
 
 .no-data {
-  color: #909399;
+  color: var(--text-muted);
   font-size: 12px;
 }
 

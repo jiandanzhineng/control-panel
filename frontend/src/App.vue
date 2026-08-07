@@ -61,6 +61,11 @@
             <template #title>日志管理</template>
           </el-menu-item>
         </el-menu>
+
+        <!-- 左下角主题切换 -->
+        <div class="sidebar-footer" :class="{ 'is-collapsed': isCollapsed }">
+          <ThemeSwitch :compact="isCollapsed" />
+        </div>
       </div>
 
       <!-- 主内容区域 -->
@@ -104,9 +109,12 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass, User } from '@element-plus/icons-vue'
 import { useAuth } from './composables/useAuth'
+import { useTheme } from './composables/useTheme'
 import { router } from './router'
+import ThemeSwitch from './components/ThemeSwitch.vue'
 
 const { checkSession } = useAuth()
+const { init: initTheme, dispose: disposeTheme } = useTheme()
 
 const route = useRoute()
 const isCollapsed = ref(false)
@@ -136,6 +144,8 @@ const toggleSidebar = () => {
 onMounted(() => {
   checkMobile()
   window.addEventListener('resize', checkMobile)
+  // 主题：读取持久化选择 + 监听系统深浅色
+  initTheme()
   // 启动时校验一次账号登录态（fire-and-forget，不阻塞页面）
   checkSession()
   // 监听 GameHost 启动导航（仅 Electron 壳注入）
@@ -151,6 +161,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', checkMobile)
+  disposeTheme()
   if (disposeGameHostNav) {
     disposeGameHostNav()
     disposeGameHostNav = null
@@ -189,7 +200,8 @@ html, body {
 }
 
 .sidebar {
-  background-color: #304156;
+  background-color: var(--bg-app);
+  border-right: 1px solid var(--border-subtle);
   transition: width 0.3s ease;
   height: 100vh;
   overflow-y: auto;
@@ -209,66 +221,126 @@ html, body {
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  border-bottom: 1px solid #434a50;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .logo {
-  color: #fff;
-  font-size: 18px;
-  font-weight: bold;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   white-space: nowrap;
   overflow: hidden;
 }
 
 .toggle-btn {
-  color: #fff !important;
+  color: var(--text-muted) !important;
   padding: 8px !important;
   min-height: auto !important;
 }
 
 .toggle-btn:hover {
-  background-color: rgba(255, 255, 255, 0.1) !important;
+  color: var(--text-primary) !important;
+  background-color: rgba(255, 255, 255, 0.06) !important;
 }
 
 .sidebar-menu {
   border: none;
   background-color: transparent;
+  --el-menu-bg-color: transparent;
+  --el-menu-text-color: var(--text-muted);
+  --el-menu-hover-bg-color: rgba(255, 255, 255, 0.05);
+  --el-menu-hover-text-color: var(--text-primary);
+  --el-menu-active-color: var(--accent);
 }
 
 .sidebar-menu .el-menu-item {
-  color: #bfcbd9;
-  border-bottom: 1px solid #434a50;
+  color: var(--text-muted);
+  margin: 2px 8px;
+  border-radius: var(--radius-md);
+  position: relative;
 }
 
 .sidebar-menu .el-menu-item:hover {
-  background-color: #434a50;
-  color: #fff;
+  background-color: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
 }
 
+/* 激活态：青色高亮 + 左侧点缀条 */
 .sidebar-menu .el-menu-item.is-active {
-  background-color: #409eff;
-  color: #fff;
+  background-color: var(--accent-glow);
+  color: var(--accent);
+}
+
+.sidebar-menu .el-menu-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background-color: var(--accent);
+}
+
+/* 折叠时菜单项去掉水平边距，保持图标居中 */
+.sidebar-collapsed .sidebar-menu .el-menu-item {
+  margin: 2px 4px;
+}
+
+/* 侧边栏吸底：菜单滚它的，底部固定主题切换 */
+.sidebar {
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-menu {
+  flex: 1;
+}
+
+.sidebar-footer {
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sidebar-footer.is-collapsed :deep(.theme-switch__label) {
+  display: none;
 }
 
 .main-container {
   width: 100%;
   height: 100vh;
-  background-color: #f0f2f5;
+  background-color: var(--bg-app);
   transition: margin-left 0.3s ease;
   display: flex;
   flex-direction: column;
 }
 
 .main-header {
-  background-color: #fff;
-  border-bottom: 1px solid #e6e6e6;
+  background-color: var(--header-bg);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-subtle);
   padding: 0 16px;
   height: 60px;
   display: flex;
   align-items: center;
-  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
   flex-shrink: 0;
   margin: 0;
+}
+
+.main-header :deep(.el-breadcrumb__inner) {
+  color: var(--text-muted);
+}
+
+.main-header :deep(.el-breadcrumb__inner.is-link:hover) {
+  color: var(--accent);
+}
+
+.main-header :deep(.el-breadcrumb__item:last-child .el-breadcrumb__inner) {
+  color: var(--text-primary);
 }
 
 .header-content {
@@ -279,18 +351,19 @@ html, body {
 }
 
 .mobile-menu-btn {
-  color: #606266 !important;
+  color: var(--text-muted) !important;
   padding: 8px !important;
   min-height: auto !important;
 }
 
 .mobile-menu-btn:hover {
-  background-color: rgba(0, 0, 0, 0.05) !important;
+  color: var(--text-primary) !important;
+  background-color: rgba(255, 255, 255, 0.06) !important;
 }
 
 .main-content {
   padding: 16px;
-  background-color: #f0f2f5;
+  background-color: var(--bg-app);
   flex: 1;
   overflow-y: auto;
   margin: 0;

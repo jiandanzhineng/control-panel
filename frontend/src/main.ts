@@ -1,10 +1,11 @@
 import { createApp } from 'vue'
-import './style.css'
 import App from './App.vue'
 import { router } from './router'
 import { initAnalytics } from './analytics'
 import ElementPlus from 'element-plus'
+// EP 默认主题先加载，自定义暗色 token 后加载才能覆盖 --el-* 变量
 import 'element-plus/dist/index.css'
+import './style.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 
 const app = createApp(App)

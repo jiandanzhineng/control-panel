@@ -1765,11 +1765,11 @@ function formatMonitorValue(key: string, value: any) {
 function getMonitorValueColor(key: string, value: any) {
   const config = deviceMonitorConfig.value[key];
   if (!config || !config.thresholds || value === undefined || value === null) {
-    return '#606266';
+    return 'var(--text-secondary)';
   }
   
   const numValue = Number(value);
-  if (isNaN(numValue)) return '#606266';
+  if (isNaN(numValue)) return 'var(--text-secondary)';
   
   const { warning, danger } = config.thresholds;
   
@@ -1903,7 +1903,7 @@ async function executeDeviceOperation(device: Device, operation: any) {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  color: #606266;
+  color: var(--text-secondary);
   font-size: 12px;
 }
 
@@ -1943,7 +1943,7 @@ async function executeDeviceOperation(device: Device, operation: any) {
 }
 
 .firmware-status-message {
-  color: #606266;
+  color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.5;
   min-height: 20px;
@@ -1974,8 +1974,8 @@ async function executeDeviceOperation(device: Device, operation: any) {
 }
 
 .mobile-device-card {
-  background: #fff;
-  border: 1px solid #ebeef5;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
   border-radius: 8px;
   margin-bottom: 12px;
   padding: 16px;
@@ -1994,7 +1994,7 @@ async function executeDeviceOperation(device: Device, operation: any) {
 .device-type {
   font-weight: 600;
   font-size: 16px;
-  color: #303133;
+  color: var(--text-primary);
 }
 
 .device-card-content {
@@ -2014,13 +2014,13 @@ async function executeDeviceOperation(device: Device, operation: any) {
 }
 
 .info-label {
-  color: #606266;
+  color: var(--text-secondary);
   font-weight: 500;
   min-width: 80px;
 }
 
 .info-value {
-  color: #303133;
+  color: var(--text-primary);
   flex: 1;
   text-align: right;
   word-break: break-all;
@@ -2118,7 +2118,7 @@ async function executeDeviceOperation(device: Device, operation: any) {
     display: grid;
     gap: 8px;
     padding: 12px;
-    border: 1px solid #dcdfe6;
+    border: 1px solid var(--border-strong);
     border-radius: 4px;
   }
 
@@ -2131,7 +2131,7 @@ async function executeDeviceOperation(device: Device, operation: any) {
 
   .serial-port-name {
     min-width: 0;
-    color: #606266;
+    color: var(--text-secondary);
     font-size: 13px;
     overflow-wrap: anywhere;
   }

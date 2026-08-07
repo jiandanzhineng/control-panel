@@ -1,62 +1,82 @@
 <template>
   <div class="page">
-    <h1>服务管理</h1>
+    <header class="page-head">
+      <p class="section-label">服务管理</p>
+      <h1 class="page-title">网络与服务</h1>
+      <p class="page-desc">mDNS 发现、MQTT 服务与客户端连接的统一管理入口。</p>
+    </header>
 
-    <section class="card">
-      <h2>mDNS 服务</h2>
-      <div class="row">
-        <button @click="startMdns" :disabled="mdnsBusy">{{ mdnsBusy ? '启动中...' : '启动 mDNS' }}</button>
-        <button @click="stopMdns" :disabled="mdnsBusy">暂停 mDNS</button>
-      </div>
+    <div class="card-grid">
+      <section class="card">
+        <div class="card-head">
+          <h2>mDNS 服务</h2>
+          <el-tag size="small" :type="mdnsStatus.running ? 'success' : 'info'">{{ mdnsStatusText }}</el-tag>
+        </div>
+        <div class="stat-rows">
+          <p v-if="currentMdnsIp"><span class="k">当前 IP</span><span class="v mono">{{ currentMdnsIp }}</span></p>
+          <p v-if="mdnsError" class="error">{{ mdnsError }}</p>
+        </div>
+        <div class="row actions">
+          <el-button type="primary" size="small" :loading="mdnsBusy" @click="startMdns">启动 mDNS</el-button>
+          <el-button size="small" :disabled="mdnsBusy" @click="stopMdns">暂停</el-button>
+          <el-button size="small" text :loading="mdnsStatusLoading" @click="refreshMdnsStatus">刷新状态</el-button>
+          <span v-if="mdnsStatusError" class="error">{{ mdnsStatusError }}</span>
+          <span v-if="mdnsStatusUpdated" class="ok">已更新</span>
+        </div>
+      </section>
 
-      <div class="row">
-        <button @click="refreshMdnsStatus" :disabled="mdnsStatusLoading">{{ mdnsStatusLoading ? '刷新中...' : '刷新状态' }}</button>
-        <span v-if="mdnsStatusError" class="error">{{ mdnsStatusError }}</span>
-        <span v-if="mdnsStatusUpdated" class="ok">状态已更新</span>
-      </div>
+      <section class="card">
+        <div class="card-head">
+          <h2>MQTT 服务</h2>
+          <el-tag size="small" :type="mqttStatus.running ? 'success' : (mqttStatus.starting ? 'warning' : 'info')">
+            {{ mqttStatus.running ? '运行中' : (mqttStatus.starting ? '启动中' : '已停止') }}
+          </el-tag>
+        </div>
+        <div class="stat-rows">
+          <p v-if="mqttStatus.port"><span class="k">端口</span><span class="v mono">{{ mqttStatus.port }}</span></p>
+          <p v-if="mqttError" class="error">{{ mqttError }}</p>
+        </div>
+        <div class="row actions">
+          <el-button type="primary" size="small" :loading="mqttBusy" @click="startMqtt">启动 MQTT</el-button>
+          <el-button size="small" :disabled="mqttBusy" @click="stopMqtt">暂停</el-button>
+          <el-button size="small" text :loading="mqttStatusLoading" @click="refreshMqttStatus">刷新状态</el-button>
+          <span v-if="mqttStatusError" class="error">{{ mqttStatusError }}</span>
+          <span v-if="mqttStatusUpdated" class="ok">已更新</span>
+        </div>
+      </section>
 
-      <div class="status">
-        <p>状态：{{ mdnsStatusText }}</p>
-        <p v-if="currentMdnsIp">当前使用的 IP：{{ currentMdnsIp }}</p>
-        <p v-if="mdnsError" class="error">{{ mdnsError }}</p>
-      </div>
-    </section>
+      <section class="card">
+        <div class="card-head">
+          <h2>MQTT 客户端</h2>
+          <el-tag size="small" :type="mqttClientStatus.connected ? 'success' : (mqttClientStatus.connecting ? 'warning' : 'info')">
+            {{ mqttClientStatus.connected ? '已连接' : (mqttClientStatus.connecting ? '连接中' : '未连接') }}
+          </el-tag>
+        </div>
+        <div class="stat-rows">
+          <p v-if="mqttClientStatus.url"><span class="k">Broker</span><span class="v mono">{{ mqttClientStatus.url }}</span></p>
+          <p v-if="mqttClientStatus.clientId"><span class="k">Client ID</span><span class="v mono">{{ mqttClientStatus.clientId }}</span></p>
+          <p v-if="mqttClientStatus.subscriptions?.length"><span class="k">订阅主题</span><span class="v mono">{{ mqttClientStatus.subscriptions.join(', ') }}</span></p>
+          <p v-if="mqttClientStatus.lastError" class="error">最后错误：{{ mqttClientStatus.lastError }}</p>
+        </div>
+        <div class="row actions">
+          <el-button size="small" text :loading="mqttClientLoading" @click="loadMqttClientStatus">刷新状态</el-button>
+          <span v-if="mqttClientError" class="error">{{ mqttClientError }}</span>
+        </div>
+      </section>
+    </div>
 
-    <section class="card">
-      <h2>MQTT 服务</h2>
-      <div class="row">
-        <button @click="startMqtt" :disabled="mqttBusy">{{ mqttBusy ? '启动中...' : '启动 MQTT' }}</button>
-        <button @click="stopMqtt" :disabled="mqttBusy">暂停 MQTT</button>
+    <section class="card dev-card">
+      <div class="card-head">
+        <h2>开发者：外部本地游戏放行</h2>
+        <el-switch
+          v-model="devAccessEnabled"
+          :disabled="devAccessBusy"
+          active-text="允许"
+          inactive-text="关闭"
+          inline-prompt
+          @change="saveDevAccess"
+        />
       </div>
-      <div class="row">
-        <button @click="refreshMqttStatus" :disabled="mqttStatusLoading">{{ mqttStatusLoading ? '刷新中...' : '刷新状态' }}</button>
-        <span v-if="mqttStatusError" class="error">{{ mqttStatusError }}</span>
-        <span v-if="mqttStatusUpdated" class="ok">状态已更新</span>
-      </div>
-      <div class="status">
-        <p>状态：{{ mqttStatus.running ? '运行中' : (mqttStatus.starting ? '启动中...' : '已停止') }}</p>
-        <p v-if="mqttStatus.port">端口：{{ mqttStatus.port }}</p>
-        <p v-if="mqttError" class="error">{{ mqttError }}</p>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>MQTT 客户端</h2>
-      <div class="row">
-        <button @click="loadMqttClientStatus" :disabled="mqttClientLoading">{{ mqttClientLoading ? '刷新中...' : '刷新状态' }}</button>
-        <span v-if="mqttClientError" class="error">{{ mqttClientError }}</span>
-      </div>
-      <div class="status">
-        <p>连接状态：{{ mqttClientStatus.connected ? '已连接' : (mqttClientStatus.connecting ? '连接中...' : '未连接') }}</p>
-        <p v-if="mqttClientStatus.url">Broker：{{ mqttClientStatus.url }}</p>
-        <p v-if="mqttClientStatus.clientId">Client ID：{{ mqttClientStatus.clientId }}</p>
-        <p v-if="mqttClientStatus.subscriptions?.length">订阅主题：{{ mqttClientStatus.subscriptions.join(', ') }}</p>
-        <p v-if="mqttClientStatus.lastError" class="error">最后错误：{{ mqttClientStatus.lastError }}</p>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>开发者：外部本地游戏放行</h2>
       <p class="muted" style="margin-top:0;">
         开启后，本机浏览器里任意端口的本地网页（localhost / 127.0.0.1）以及下方显式添加的来源，
         可直接连接本机后台试玩自研游戏。关闭时仅面板自身可访问控制接口。
@@ -65,10 +85,6 @@
         ⚠ 安全提示：这会让你浏览器访问过的本地页面具备控制真实设备的能力，仅在本机开发调试时开启，用完请关闭。
       </p>
       <div class="row">
-        <label class="switch-label">
-          <input type="checkbox" v-model="devAccessEnabled" @change="saveDevAccess" :disabled="devAccessBusy" />
-          允许外部本地游戏连接
-        </label>
         <span v-if="devAccessSaved" class="ok">已保存</span>
         <span v-if="devAccessError" class="error">{{ devAccessError }}</span>
       </div>
@@ -82,11 +98,11 @@
             class="origin-input"
             @keyup.enter="addOrigin"
           />
-          <button @click="addOrigin" :disabled="devAccessBusy">添加来源</button>
+          <el-button size="small" :disabled="devAccessBusy" @click="addOrigin">添加来源</el-button>
         </div>
         <ul class="origin-list">
           <li v-for="o in devAccessOrigins" :key="o">
-            <span>{{ o }}</span>
+            <span class="mono">{{ o }}</span>
             <button class="link-btn" @click="removeOrigin(o)" :disabled="devAccessBusy">移除</button>
           </li>
           <li v-if="!devAccessOrigins.length" class="muted">（本地任意端口已自动放行，如需非回环地址可在此添加）</li>
@@ -101,8 +117,8 @@
 
     <!-- 悬浮日志组件 -->
     <div class="floating-log">
-      <RealTimeLog 
-        :module-filter="['emqx', 'mqtt', 'mdns']" 
+      <RealTimeLog
+        :module-filter="['emqx', 'mqtt', 'mdns']"
         height="120px"
         :compact="true"
       />
@@ -363,26 +379,46 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.page { max-width: 960px; margin: 40px auto; padding: 0 24px 150px 24px; text-align: left; }
-.card { margin-top: 24px; padding: 16px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
-.row { display: flex; gap: 12px; align-items: center; }
-.error { color: #e11d48; }
-.ok { color: #16a34a; }
-.muted { color: #6b7280; }
-.status p { margin: 6px 0; }
-button { padding: 6px 12px; border: 1px solid #0ea5e9; background: #0ea5e9; color: white; border-radius: 6px; cursor: pointer; }
-button:disabled { opacity: 0.6; cursor: not-allowed; }
+.page { max-width: 1080px; margin: 0 auto; padding: 8px 24px 150px; text-align: left; }
 
-.warn-text { color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; font-size: 13px; }
-.switch-label { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
-.switch-label input { width: 16px; height: 16px; }
-.dev-origins { margin-top: 12px; }
-.origin-input { flex: 1; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; }
-.origin-list { list-style: none; padding: 0; margin: 10px 0 0; }
-.origin-list li { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
-.link-btn { background: none; border: none; color: #e11d48; padding: 0; cursor: pointer; }
+.page-head { padding: 8px 0 4px; }
+.page-title { font-size: 26px; font-weight: 700; color: var(--text-primary); margin: 10px 0 0; letter-spacing: -0.01em; }
+.page-desc { margin: 8px 0 0; font-size: 13px; color: var(--text-muted); }
+
+.card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin-top: 20px; }
+
+.card {
+  padding: 18px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+.dev-card { margin-top: 16px; }
+
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.card-head h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text-primary); }
+
+.stat-rows { min-height: 20px; margin-bottom: 14px; }
+.stat-rows p { margin: 6px 0; display: flex; gap: 10px; align-items: baseline; font-size: 13px; }
+.stat-rows .k { color: var(--text-faint); flex-shrink: 0; }
+.stat-rows .v { color: var(--text-secondary); word-break: break-all; }
+
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.actions { padding-top: 12px; border-top: 1px solid var(--border-subtle); }
+
+.error { color: var(--el-color-error); font-size: 12px; }
+.ok { color: var(--el-color-success); font-size: 12px; }
+.muted { color: var(--text-muted); }
+
+.warn-text { color: var(--el-color-warning); background: rgba(251, 191, 36, 0.07); border: 1px solid rgba(251, 191, 36, 0.22); border-radius: var(--radius-md); padding: 8px 12px; font-size: 13px; }
+.dev-origins { margin-top: 14px; }
+.origin-input { flex: 1; min-width: 220px; padding: 6px 10px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-elevated); color: var(--text-primary); font-size: 13px; }
+.origin-input:focus { outline: none; border-color: var(--border-strong); }
+.origin-list { list-style: none; padding: 0; margin: 10px 0 0; font-size: 13px; }
+.origin-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); }
+.link-btn { background: none; border: none; color: var(--el-color-error); padding: 0; cursor: pointer; font-size: 12px; }
 .hint { font-size: 12px; margin-top: 10px; }
-.hint code { background: #f1f5f9; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.hint code { background: var(--bg-elevated); border: 1px solid var(--border-subtle); padding: 1px 5px; border-radius: 4px; font-size: 12px; font-family: var(--font-mono); }
 
 /* 悬浮日志组件样式 */
 .floating-log {
@@ -390,9 +426,9 @@ button:disabled { opacity: 0.6; cursor: not-allowed; }
   bottom: 0;
   left: 0;
   right: 0;
-  background: white;
-  border-top: 2px solid #0ea5e9;
-  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border-subtle);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.4);
   z-index: 1000;
   padding: 8px;
   height: 136px;

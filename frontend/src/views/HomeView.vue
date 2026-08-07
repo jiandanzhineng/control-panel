@@ -1,37 +1,51 @@
 <template>
   <div class="home-page">
-    <div class="welcome-section">
-      <h2 class="welcome-title">控制面板</h2>
-      <p class="welcome-desc">硅基之下 · 设备管理与控制中心</p>
+    <!-- Hero：大标题 + 青色标签 + 蓝色径向辉光（参考 shop.undersilicon.cn 首屏） -->
+    <section class="hero">
+      <p class="section-label">硅基之下 · 控制中心</p>
+      <h1 class="hero-title">设备管理与控制面板</h1>
+      <p class="hero-desc">管理连接设备、启动本地游戏、配置网络通信 —— 围绕控制链路的一站式入口。</p>
+    </section>
+
+    <div class="stats-strip">
+      <div class="stat">
+        <span class="stat-value mono">{{ onlineCount }}</span>
+        <span class="stat-label">在线设备</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value mono">v{{ frontendVersion }}</span>
+        <span class="stat-label">当前版本</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value mono" :class="{ 'accent-text': updateChannel === 'test' }">{{ updateChannelText }}</span>
+        <span class="stat-label">更新渠道</span>
+      </div>
     </div>
 
     <el-row :gutter="16" class="feature-cards">
       <el-col :xs="24" :sm="8">
-        <el-card shadow="hover" class="feature-card" @click="$router.push('/devices')">
-          <div class="feature-content">
-            <el-icon class="feature-icon" color="#409eff"><Monitor /></el-icon>
-            <h3>设备管理</h3>
-            <p>管理和监控所有连接的设备</p>
-          </div>
-        </el-card>
+        <div class="feature-card" @click="$router.push('/devices')">
+          <div class="feature-num mono">01</div>
+          <el-icon class="feature-icon"><Monitor /></el-icon>
+          <h3>设备管理</h3>
+          <p>管理和监控所有连接的设备</p>
+        </div>
       </el-col>
       <el-col :xs="24" :sm="8">
-        <el-card shadow="hover" class="feature-card" @click="$router.push('/plays')">
-          <div class="feature-content">
-            <el-icon class="feature-icon" color="#67c23a"><VideoPlay /></el-icon>
-            <h3>本地游戏</h3>
-            <p>启动和管理本地游戏与插件</p>
-          </div>
-        </el-card>
+        <div class="feature-card" @click="$router.push('/plays')">
+          <div class="feature-num mono">02</div>
+          <el-icon class="feature-icon"><VideoPlay /></el-icon>
+          <h3>本地游戏</h3>
+          <p>启动和管理本地游戏与插件</p>
+        </div>
       </el-col>
       <el-col :xs="24" :sm="8">
-        <el-card shadow="hover" class="feature-card" @click="$router.push('/network')">
-          <div class="feature-content">
-            <el-icon class="feature-icon" color="#e6a23c"><Connection /></el-icon>
-            <h3>网络设置</h3>
-            <p>配置网络连接和通信设置</p>
-          </div>
-        </el-card>
+        <div class="feature-card" @click="$router.push('/network')">
+          <div class="feature-num mono">03</div>
+          <el-icon class="feature-icon"><Connection /></el-icon>
+          <h3>网络设置</h3>
+          <p>配置网络连接和通信设置</p>
+        </div>
       </el-col>
     </el-row>
 
@@ -200,68 +214,145 @@ onMounted(async () => {
   padding: 0 16px;
   width: 100%;
   max-width: 960px;
-  margin: 20px auto;
+  margin: 0 auto;
   box-sizing: border-box;
 }
 
-.welcome-section {
-  text-align: center;
+/* Hero：左侧蓝色径向辉光 + 大字号标题，贴参考站首屏气质 */
+.hero {
+  position: relative;
+  padding: 56px 0 32px;
+  margin-bottom: 8px;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 78% 22%, var(--blue-glow), transparent 42%);
+  pointer-events: none;
+}
+
+.hero > * {
+  position: relative;
+}
+
+.hero-title {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  margin: 12px 0 0 0;
+}
+
+.hero-desc {
+  margin: 14px 0 0 0;
+  max-width: 560px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-muted);
+}
+
+/* 等宽数字统计条 */
+.stats-strip {
+  display: flex;
+  gap: 40px;
+  padding: 18px 0;
   margin-bottom: 24px;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.welcome-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: #303133;
-  margin: 0 0 8px 0;
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.welcome-desc {
-  font-size: 14px;
-  color: #909399;
-  margin: 0;
+.stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stat-value.accent-text {
+  color: var(--accent);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
 }
 
 .feature-cards {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
+/* 编号式入口卡片：黑玻璃 + 青色编号 + hover 边框提亮 */
 .feature-card {
+  position: relative;
   cursor: pointer;
-  transition: all 0.3s ease;
   height: 100%;
+  padding: 28px 22px 24px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  transition: border-color 0.25s ease, background-color 0.25s ease, transform 0.25s ease;
 }
 
 .feature-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  transform: translateY(-2px);
 }
 
-.feature-content {
-  text-align: center;
-  padding: 24px 10px;
+.feature-num {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--accent);
+  opacity: 0.85;
 }
 
 .feature-icon {
-  font-size: 36px;
-  margin-bottom: 14px;
+  font-size: 30px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  transition: color 0.25s ease;
 }
 
-.feature-content h3 {
+.feature-card:hover .feature-icon {
+  color: var(--accent);
+}
+
+.feature-card h3 {
   margin: 0 0 8px 0;
-  color: #303133;
+  color: var(--text-primary);
   font-size: 16px;
   font-weight: 600;
 }
 
-.feature-content p {
+.feature-card p {
   margin: 0;
-  color: #909399;
+  color: var(--text-muted);
   font-size: 13px;
+  line-height: 1.6;
 }
 
 .info-card {
   margin-bottom: 20px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+}
+
+.info-card :deep(.el-card__header) {
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .info-header {
@@ -269,20 +360,23 @@ onMounted(async () => {
   align-items: center;
   gap: 6px;
   font-weight: 600;
+  color: var(--text-primary);
 }
 
 .link-text {
-  color: #409eff;
+  color: var(--accent);
   text-decoration: none;
 }
 
 .link-text:hover {
+  color: var(--accent-strong);
   text-decoration: underline;
 }
 
 .info-text {
   font-weight: 600;
-  color: #303133;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
 }
 
 .update-channel,
@@ -296,15 +390,15 @@ onMounted(async () => {
 
 .update-message {
   font-size: 12px;
-  color: #606266;
+  color: var(--text-muted);
 }
 
 .update-message-success {
-  color: #16a34a;
+  color: var(--el-color-success);
 }
 
 .update-message-error {
-  color: #e11d48;
+  color: var(--el-color-error);
 }
 
 .update-channel :deep(.el-switch) {
@@ -318,23 +412,34 @@ onMounted(async () => {
 @media (max-width: 768px) {
   .home-page {
     padding: 0 12px;
-    margin: 12px auto;
   }
 
-  .welcome-title {
-    font-size: 20px;
+  .hero {
+    padding: 36px 0 24px;
+  }
+
+  .hero-title {
+    font-size: 28px;
+  }
+
+  .stats-strip {
+    gap: 24px;
+  }
+
+  .stat-value {
+    font-size: 18px;
   }
 
   .feature-cards .el-col {
     margin-bottom: 12px;
   }
 
-  .feature-content {
-    padding: 16px 8px;
+  .feature-card {
+    padding: 20px 16px 18px;
   }
 
   .feature-icon {
-    font-size: 28px;
+    font-size: 26px;
   }
 
   .info-list :deep(.el-descriptions__label) {

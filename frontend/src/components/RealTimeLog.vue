@@ -169,7 +169,7 @@ onUnmounted(() => {
   align-items: center;
   margin-bottom: 15px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .controls {
@@ -179,8 +179,9 @@ onUnmounted(() => {
 
 .controls button {
   padding: 5px 15px;
-  border: 1px solid #ddd;
-  background: #f5f5f5;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
   cursor: pointer;
   border-radius: 4px;
 }
@@ -188,10 +189,10 @@ onUnmounted(() => {
 .log-container {
   flex: 1;
   overflow-y: auto;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   padding: 10px;
-  background: #f8f9fa;
+  background: var(--bg-elevated);
   font-family: 'Courier New', monospace;
   font-size: 12px;
   max-height: 400px;
@@ -202,7 +203,7 @@ onUnmounted(() => {
   align-items: flex-start;
   gap: 10px;
   padding: 2px 0;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .log-entry:last-child {
@@ -216,7 +217,7 @@ onUnmounted(() => {
 }
 
 .timestamp {
-  color: #666;
+  color: var(--text-muted);
   min-width: 80px;
   text-align: left;
 }
@@ -238,7 +239,7 @@ onUnmounted(() => {
   min-width: 50px;
   max-width: 60px;
   font-size: 10px;
-  color: #6c757d;
+  color: var(--text-muted);
   flex-shrink: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -259,36 +260,36 @@ onUnmounted(() => {
 }
 
 .level-error {
-  color: #dc3545;
+  color: var(--el-color-error);
 }
 
 .level-warn {
-  color: #ffc107;
+  color: var(--el-color-warning);
 }
 
 .level-info {
-  color: #17a2b8;
+  color: var(--accent);
 }
 
 .level-debug {
-  color: #6c757d;
+  color: var(--text-muted);
 }
 
 .module {
   min-width: 120px;
-  color: #495057;
+  color: var(--text-secondary);
   text-align: left;
 }
 
 .message {
   flex: 1;
-  color: #212529;
+  color: var(--text-primary);
   text-align: left;
 }
 
 .no-logs {
   text-align: left;
-  color: #6c757d;
+  color: var(--text-muted);
   padding: 20px;
 }
 </style>

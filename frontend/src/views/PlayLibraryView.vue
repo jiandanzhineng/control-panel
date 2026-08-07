@@ -434,13 +434,13 @@ h1 {
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  background: #eef5ff;
-  color: var(--el-color-primary);
+  background: var(--accent-glow);
+  color: var(--accent);
   font-size: 20px;
 }
 
 .carrier-plugin .play-icon {
-  background: #f0f9eb;
+  background: rgba(74, 222, 128, 0.1);
   color: var(--el-color-success);
 }
 

@@ -145,12 +145,12 @@ Electron 内调试页面：见 docs/guides/ELECTRON_DEBUG.md。
 <style scoped>
 .page { max-width: 960px; margin: 40px auto; padding: 0 24px 80px; text-align: left; }
 .header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
-.muted { color: #6b7280; }
+.muted { color: var(--text-muted); }
 .inline-alert { margin: 16px 0; }
-.guide-card { margin-top: 20px; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fafafa; }
-.guide-text { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; line-height: 1.7; margin: 0; color: #1f2937; }
+.guide-card { margin-top: 20px; padding: 20px; border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); background: var(--bg-surface); }
+.guide-text { white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 13px; line-height: 1.7; margin: 0; color: var(--text-secondary); }
 .ref-list { list-style: none; padding: 0; margin: 0; }
 .ref-list li { padding: 6px 0; border-bottom: 1px solid #f1f5f9; }
-.ref-list code { background: #eef2ff; color: #3730a3; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+.ref-list code { background: var(--accent-glow); color: var(--accent); padding: 2px 6px; border-radius: 4px; font-size: 12px; }
 h2 { font-size: 16px; margin: 0 0 12px; }
 </style>

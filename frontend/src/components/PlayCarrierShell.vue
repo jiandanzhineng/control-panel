@@ -161,7 +161,7 @@ function submitNavigate() {
   border: none;
   border-radius: 24px;
   background: rgba(220, 38, 38, 0.92);
-  color: #fff;
+  color: var(--text-primary);
   font-size: 14px;
   cursor: pointer;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);

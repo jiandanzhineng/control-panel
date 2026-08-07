@@ -591,13 +591,13 @@ function formatDeviceName(device: Device) {
   margin: 0;
   font-size: 22px;
   line-height: 1.2;
-  color: #303133;
+  color: var(--text-primary);
 }
 
 .summary-title span {
   display: block;
   margin-top: 4px;
-  color: #606266;
+  color: var(--text-secondary);
   font-size: 13px;
 }
 
@@ -618,18 +618,18 @@ function formatDeviceName(device: Device) {
   border: 1px solid #e4e7ed;
   border-radius: 8px;
   padding: 14px;
-  background: #fff;
+  background: var(--bg-surface);
 }
 
 .stat-label {
   display: block;
-  color: #606266;
+  color: var(--text-secondary);
   font-size: 13px;
   margin-bottom: 8px;
 }
 
 .stat-item strong {
-  color: #303133;
+  color: var(--text-primary);
   font-size: 28px;
   line-height: 1;
 }
@@ -643,7 +643,7 @@ function formatDeviceName(device: Device) {
 }
 
 .stat-muted strong {
-  color: #909399;
+  color: var(--text-muted);
 }
 
 .page-alert {
@@ -658,13 +658,13 @@ function formatDeviceName(device: Device) {
 }
 
 .device-cell strong {
-  color: #303133;
+  color: var(--text-primary);
   font-size: 14px;
   word-break: break-all;
 }
 
 .device-cell span {
-  color: #909399;
+  color: var(--text-muted);
   font-size: 12px;
   word-break: break-all;
 }
@@ -680,7 +680,7 @@ function formatDeviceName(device: Device) {
 }
 
 .status-row span:last-child {
-  color: #606266;
+  color: var(--text-secondary);
   font-size: 13px;
   line-height: 1.4;
 }
@@ -693,7 +693,7 @@ function formatDeviceName(device: Device) {
   border: 1px solid #e4e7ed;
   border-radius: 8px;
   padding: 14px;
-  background: #fff;
+  background: var(--bg-surface);
   margin-bottom: 12px;
 }
 
@@ -707,12 +707,12 @@ function formatDeviceName(device: Device) {
   grid-template-columns: 80px 1fr;
   gap: 8px 12px;
   margin-bottom: 12px;
-  color: #606266;
+  color: var(--text-secondary);
   font-size: 13px;
 }
 
 .card-grid strong {
-  color: #303133;
+  color: var(--text-primary);
   word-break: break-all;
 }
 

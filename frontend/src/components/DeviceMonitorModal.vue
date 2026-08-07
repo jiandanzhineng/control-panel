@@ -289,13 +289,13 @@ onUnmounted(() => {
   align-items: center;
   margin-bottom: 20px;
   padding: 10px;
-  background-color: #f5f7fa;
+  background-color: var(--bg-app);
   border-radius: 4px;
 }
 
 .last-update {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-muted);
 }
 
 .charts-container {
@@ -308,7 +308,7 @@ onUnmounted(() => {
   border: 1px solid #e4e7ed;
   border-radius: 4px;
   padding: 15px;
-  background-color: #fff;
+  background-color: var(--bg-surface);
 }
 
 .chart-header {
@@ -321,12 +321,12 @@ onUnmounted(() => {
 .chart-header h4 {
   margin: 0;
   font-size: 14px;
-  color: #303133;
+  color: var(--text-primary);
 }
 
 .current-value {
   font-size: 12px;
-  color: #409eff;
+  color: var(--accent);
   font-weight: bold;
 }
 

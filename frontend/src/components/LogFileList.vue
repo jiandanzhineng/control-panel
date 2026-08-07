@@ -107,13 +107,14 @@ onMounted(() => {
   align-items: center;
   margin-bottom: 15px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .file-header button {
   padding: 5px 15px;
-  border: 1px solid #ddd;
-  background: #f5f5f5;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
   cursor: pointer;
   border-radius: 4px;
 }
@@ -125,12 +126,12 @@ onMounted(() => {
 
 .loading, .no-files {
   text-align: center;
-  color: #6c757d;
+  color: var(--text-muted);
   padding: 40px 20px;
 }
 
 .file-list {
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -139,7 +140,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   padding: 15px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--border-subtle);
   transition: background-color 0.2s;
 }
 
@@ -148,7 +149,7 @@ onMounted(() => {
 }
 
 .file-item:hover {
-  background-color: #f8f9fa;
+  background-color: rgba(255, 255, 255, 0.04);
 }
 
 .file-icon {
@@ -162,7 +163,7 @@ onMounted(() => {
 
 .file-name {
   font-weight: 500;
-  color: #212529;
+  color: var(--text-primary);
   margin-bottom: 5px;
 }
 
@@ -170,7 +171,7 @@ onMounted(() => {
   display: flex;
   gap: 15px;
   font-size: 12px;
-  color: #6c757d;
+  color: var(--text-muted);
 }
 
 .file-actions {
@@ -179,16 +180,16 @@ onMounted(() => {
 
 .download-btn {
   padding: 5px 15px;
-  border: 1px solid #007bff;
-  background: #007bff;
-  color: white;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #062026;
   cursor: pointer;
   border-radius: 4px;
   font-size: 12px;
 }
 
 .download-btn:hover {
-  background: #0056b3;
-  border-color: #0056b3;
+  background: #a2f4fd;
+  border-color: #a2f4fd;
 }
 </style>
