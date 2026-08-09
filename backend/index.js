@@ -176,6 +176,7 @@ app.use('/api/mdns', require('./routes/mdns'));
 app.use('/api/mqtt-client', require('./routes/mqttClient'));
 app.use('/api/devices', require('./routes/devices'));
 app.use('/api/serial', require('./routes/serialConnections'));
+app.use('/api/wired-flash', require('./routes/wiredFlash'));
 app.use('/api/device-watchdog', require('./routes/deviceWatchdog'));
 app.use('/api/device-types', require('./routes/deviceTypes'));
 app.use('/api/device-capabilities', require('./routes/deviceCapabilities'));

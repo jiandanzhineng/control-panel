@@ -11,6 +11,7 @@ import BrowserView from '../views/BrowserView.vue';
 import LogManagement from '../views/LogManagement.vue';
 import AutoTest from '../views/AutoTest.vue';
 import FirmwareBatchUpgrade from '../views/FirmwareBatchUpgrade.vue';
+import WiredFlashUpdate from '../views/WiredFlashUpdate.vue';
 import AccountView from '../views/AccountView.vue';
 import GameDevGuideView from '../views/GameDevGuideView.vue';
 
@@ -19,6 +20,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/home', name: 'home', component: HomeView, meta: { title: '首页' } },
   { path: '/devices', name: 'devices', component: DevicesView, meta: { title: '设备管理' } },
   { path: '/devices/firmware-batch', name: 'firmware_batch', component: FirmwareBatchUpgrade, meta: { title: '批量固件升级' } },
+  { path: '/devices/wired-flash', name: 'wired_flash', component: WiredFlashUpdate, meta: { title: '插线固件更新' } },
   { path: '/test', name: 'test', component: AutoTest, meta: { title: '自动化测试' } },
 
   // 本地游戏（游戏 + 插件统一入口）

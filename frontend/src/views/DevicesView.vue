@@ -39,6 +39,13 @@
           >
             批量升级
           </el-button>
+          <el-button
+            type="warning"
+            :icon="Link"
+            @click="$router.push('/devices/wired-flash')"
+          >
+            插线固件更新
+          </el-button>
           <el-button 
             type="danger" 
             :icon="Delete"
