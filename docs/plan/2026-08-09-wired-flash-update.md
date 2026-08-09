@@ -104,3 +104,26 @@ writeFlash({
 - 识别修正:型号解析优先取 `device_init`/`on_device_init` 行的日志标签,
   避免共享组件标签(如 `td01:` 模块)或正文偶发型号字符串误判;无 init 命中再回退全文词边界匹配。
   实测注意:日志标签跟随所刷固件类型,识别结果反映的是设备上当前固件,不代表硬件型号。
+
+## 8. 迭代(2026-08-09 晚):型号识别改走 `@DEBUG IDENTIFY` 协议
+
+- 固件侧(hardware 仓库):
+  - `device_identity` 身份 JSON 新增 `device_type` 字段(编译期 `DEVICE_TYPE_NAME` 常量),
+    `@DEBUG READY` 与新增的 `@DEBUG IDENT` 共用同一载荷。
+  - `device_serial_debug.c` 新增只读查询:`@DEBUG IDENTIFY` → `@DEBUG IDENT {json}`。
+    不开启调试会话、不触发 `device_first_ready`、任何状态下都可应答。
+    原因:`@DEBUG START` 握手以 first-ready 为前提,QTZ 样机 VL6180X 传感器故障时握手必然失败,
+    且识别不该改变设备状态;旧固件不认识该命令,静默忽略。
+- 客户端侧(`wiredFlashService.identify`):
+  - 流程:复位进 app → 采集 4 秒启动日志(兜底数据源)→ 发 `@DEBUG IDENTIFY`,
+    等最多 2.5 秒身份帧。
+  - 收到含 `device_type` 的 IDENT 帧直接采信,返回 `source:'protocol'`;
+    无帧或无 `device_type`(旧固件)回退启动日志解析,返回 `source:'bootlog'`,
+    IDENT 帧里的 MAC/版本仍合并进结果。
+  - 身份帧解析不锚定行首:上行日志若没换行,帧会黏在日志文本后面(实测踩到)。
+- 前端插线页:自动识别成功时标注来源(协议/启动日志)。
+- 真机实测(COM17,QTZ v1.1.38,传感器故障机):协议识别 4.4 秒返回
+  `{deviceType:"QTZ", version:"v1.1.38", mac:"6055f97c342c", source:"protocol"}`,
+  该机的 bootlog 兜底路径此前已验证。
+- 局限不变:`device_type` 仍是"当前固件的型号",刷错 bin 的设备会报错型号;
+  绑定硬件需出厂写独立 NVS 分区/eFuse,暂不做。

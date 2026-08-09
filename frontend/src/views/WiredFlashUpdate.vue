@@ -44,7 +44,7 @@
 
         <template v-if="selectedPort">
           <span v-if="identifying" class="inline-status">
-            <el-icon class="is-loading"><Loading /></el-icon> 正在识别设备型号（约 5 秒）...
+            <el-icon class="is-loading"><Loading /></el-icon> 正在识别设备型号（约 5~7 秒）...
           </span>
           <template v-else-if="identifyDone">
             <el-select
@@ -58,7 +58,9 @@
             </el-select>
             <span class="kv">版本 <strong>{{ currentVersion || '未知' }}</strong></span>
             <span class="kv">ID <strong>{{ deviceId || '未知' }}</strong></span>
-            <span v-if="identified" class="info-hint">已自动识别，如有误可改选</span>
+            <span v-if="identified" class="info-hint">
+              已自动识别{{ identifySource === 'protocol' ? '（协议）' : '（启动日志）' }}，如有误可改选
+            </span>
           </template>
         </template>
       </div>
@@ -244,6 +246,7 @@ const driverMissing = ref(false);
 const identifying = ref(false);
 const identifyDone = ref(false);
 const identified = ref(false);
+const identifySource = ref<'protocol' | 'bootlog' | null>(null);
 const deviceType = ref('');
 const currentVersion = ref<string | null>(null);
 const deviceId = ref<string | null>(null);
@@ -381,6 +384,7 @@ function resetIdentify() {
   identifying.value = false;
   identifyDone.value = false;
   identified.value = false;
+  identifySource.value = null;
   deviceType.value = '';
   currentVersion.value = null;
   deviceId.value = null;
@@ -408,6 +412,7 @@ async function identifyDevice() {
   try {
     const data = await apiPost('/api/wired-flash/identify', { path: selectedPort.value });
     identified.value = Boolean(data?.identified);
+    identifySource.value = data?.source === 'protocol' ? 'protocol' : 'bootlog';
     const type = data?.deviceType ?? data?.device_type ?? data?.type ?? null;
     currentVersion.value = data?.currentVersion ?? data?.current_version ?? data?.version ?? null;
     deviceId.value = data?.deviceId ?? data?.device_id ?? data?.mac ?? null;

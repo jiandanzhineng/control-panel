@@ -13,6 +13,7 @@ const { createServiceError } = manifestService;
 
 const IDENTIFY_BAUD_RATE = 115200;
 const IDENTIFY_CAPTURE_MS = 4000;
+const IDENTIFY_READY_WAIT_MS = 2500;
 const CONNECT_MAX_ATTEMPTS = 3;
 const CONNECT_RETRY_DELAY_MS = 500;
 const FLASH_STATUSES = [
@@ -187,10 +188,14 @@ class WiredFlashService {
       .sort((left, right) => left.path.localeCompare(right.path));
   }
 
-  // 通过启动日志识别设备(该机 @DEBUG START 握手因传感器故障不可用):
+  // 识别流程:
   // 115200 打开 → {dtr:true,rts:true} → 复位脉冲 {dtr:false,rts:false} 150ms
-  // → {dtr:true,rts:true} → 采集 4 秒输出并解析版本/MAC/型号。
-  // 识别不到型号不报错,返回 identified:false,由前端让用户手选。
+  // → {dtr:true,rts:true} → 采集 4 秒启动日志(兜底数据源)
+  // → 发 `@DEBUG IDENTIFY` 只读查询,等新固件回 `@DEBUG IDENT {device_id, firmware_version, device_type}`。
+  // 新固件 IDENT 帧带 device_type,直接采信(source:protocol);
+  // IDENTIFY 不开启调试会话、不触发 device_first_ready,所以部件初始化失败
+  // (如传感器故障)的设备也能识别,旧固件则静默忽略该命令。
+  // 识别不到型号不报错,回退启动日志解析(source:bootlog),再不行由前端让用户手选。
   async identify(portPath) {
     const normalizedPath = typeof portPath === 'string' ? portPath.trim() : '';
     if (!normalizedPath) {
@@ -209,7 +214,25 @@ class WiredFlashService {
     });
 
     let log = '';
-    const onData = (chunk) => { log += chunk.toString('utf8'); };
+    let lineBuffer = '';
+    let readyIdentity = null;
+    let readyResolve = null;
+    const readySeen = new Promise((resolve) => { readyResolve = resolve; });
+    const onData = (chunk) => {
+      const text = chunk.toString('utf8');
+      log += text;
+      lineBuffer += text;
+      let newlineIndex;
+      while ((newlineIndex = lineBuffer.indexOf('\n')) >= 0) {
+        const line = lineBuffer.slice(0, newlineIndex);
+        lineBuffer = lineBuffer.slice(newlineIndex + 1);
+        const identity = this.parseIdentityFrame(line);
+        if (identity && !readyIdentity) {
+          readyIdentity = identity;
+          readyResolve();
+        }
+      }
+    };
 
     try {
       await new Promise((resolve, reject) => port.open((e) => (e ? reject(e) : resolve())));
@@ -220,6 +243,10 @@ class WiredFlashService {
       await this.sleep(150);
       await this.setLines(port, { dtr: true, rts: true });
       await this.sleep(IDENTIFY_CAPTURE_MS);
+      if (!readyIdentity) {
+        await this.writeAndDrain(port, '@DEBUG IDENTIFY\r\n');
+        await Promise.race([readySeen, this.sleep(IDENTIFY_READY_WAIT_MS)]);
+      }
     } catch (error) {
       if (error?.code) throw error;
       throw createServiceError('SERIAL_IDENTIFY_FAILED', error?.message || '串口识别失败', 409);
@@ -227,7 +254,57 @@ class WiredFlashService {
       if (port.isOpen) await new Promise((resolve) => port.close(() => resolve()));
     }
 
-    return { path: normalizedPath, ...this.parseBootLog(log) };
+    const bootResult = this.parseBootLog(log);
+    const readyVersion = typeof readyIdentity?.firmware_version === 'string' && readyIdentity.firmware_version
+      ? readyIdentity.firmware_version
+      : null;
+    const readyMac = typeof readyIdentity?.device_id === 'string' && readyIdentity.device_id
+      ? readyIdentity.device_id.toLowerCase()
+      : null;
+    const readyType = typeof readyIdentity?.device_type === 'string' && readyIdentity.device_type
+      ? readyIdentity.device_type
+      : null;
+
+    if (readyType) {
+      return {
+        path: normalizedPath,
+        identified: true,
+        deviceType: readyType,
+        version: readyVersion || bootResult.version,
+        mac: readyMac || bootResult.mac,
+        source: 'protocol',
+      };
+    }
+    return {
+      path: normalizedPath,
+      identified: bootResult.identified,
+      deviceType: bootResult.deviceType,
+      version: readyVersion || bootResult.version,
+      mac: readyMac || bootResult.mac,
+      source: 'bootlog',
+    };
+  }
+
+  // 解析 `@DEBUG IDENT {...}` / `@DEBUG READY {...}` 身份帧,非法行返回 null。
+  // 不做行首锚定:上一行日志若没换行,身份帧会黏在日志文本后面。
+  parseIdentityFrame(line) {
+    const match = String(line || '').match(/@DEBUG (?:IDENT|READY)\s+(\{.*\})\s*$/);
+    if (!match) return null;
+    try {
+      const parsed = JSON.parse(match[1]);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  writeAndDrain(port, data) {
+    return new Promise((resolve, reject) => {
+      port.write(data, (writeError) => {
+        if (writeError) return reject(writeError);
+        port.drain((drainError) => (drainError ? reject(drainError) : resolve()));
+      });
+    });
   }
 
   setLines(port, flags) {
@@ -546,6 +623,7 @@ module.exports.WiredFlashService = WiredFlashService;
 module.exports.constants = {
   IDENTIFY_BAUD_RATE,
   IDENTIFY_CAPTURE_MS,
+  IDENTIFY_READY_WAIT_MS,
   CONNECT_MAX_ATTEMPTS,
   KNOWN_DEVICE_TYPES,
 };

@@ -15,14 +15,17 @@ const { WiredFlashService } = require('../services/wiredFlashService');
 
 const sleep = () => Promise.resolve();
 
-// ---- mock 串口:open 后注册 data 监听时立即回放启动日志 ----
+// ---- mock 串口:open 后注册 data 监听时立即回放启动日志;
+// 写入 @DEBUG IDENTIFY 时若配置了 readyFrame 则回放 @DEBUG IDENT 帧 ----
 class MockSerialPort {
   constructor(opts) {
     this.path = opts.path;
     this.baudRate = opts.baudRate;
     this.isOpen = false;
     this.setCalls = [];
+    this.writes = [];
     this.bootLog = MockSerialPort.bootLog;
+    this.readyFrame = MockSerialPort.readyFrame;
     MockSerialPort.instances.push(this);
   }
 
@@ -53,7 +56,14 @@ class MockSerialPort {
     return this;
   }
 
-  write(data, cb) { setImmediate(() => cb(null)); }
+  write(data, cb) {
+    this.writes.push(String(data));
+    if (String(data).startsWith('@DEBUG IDENTIFY') && this.readyFrame && this.dataHandler) {
+      // 同步回放:服务在 write 后立即 race 超时(mock sleep 为微任务),异步回放会错过
+      this.dataHandler(Buffer.from(`@DEBUG IDENT ${this.readyFrame}\r\n`));
+    }
+    setImmediate(() => cb(null));
+  }
 
   drain(cb) { setImmediate(() => cb(null)); }
 }
@@ -61,6 +71,7 @@ class MockSerialPort {
 MockSerialPort.instances = [];
 MockSerialPort.listResult = [];
 MockSerialPort.bootLog = null;
+MockSerialPort.readyFrame = null;
 
 const BOOT_LOG = [
   'I (407) cpu_start: App version:      v1.1.38',
@@ -174,6 +185,7 @@ beforeEach(async () => {
   MockSerialPort.instances = [];
   MockSerialPort.listResult = [];
   MockSerialPort.bootLog = null;
+  MockSerialPort.readyFrame = null;
   cacheDir = await fs.mkdtemp(path.join(os.tmpdir(), 'wired-flash-test-'));
   manifestService.setManifestFetcher(jest.fn(async () => manifest));
 });
@@ -196,6 +208,7 @@ describe('identify 启动日志解析', () => {
       deviceType: 'QTZ',
       version: 'v1.1.38',
       mac: '6055f97c342c',
+      source: 'bootlog',
     });
     const port = MockSerialPort.instances[0];
     expect(port.setCalls).toEqual([
@@ -203,6 +216,7 @@ describe('identify 启动日志解析', () => {
       { dtr: false, rts: false },
       { dtr: true, rts: true },
     ]);
+    expect(port.writes).toEqual(['@DEBUG IDENTIFY\r\n']);
     expect(port.isOpen).toBe(false);
   });
 
@@ -266,6 +280,66 @@ describe('identify 启动日志解析', () => {
   test('缺少 path 报 400', async () => {
     const { service } = makeService({ cacheDir });
     await expect(service.identify()).rejects.toMatchObject({ code: 'SERIAL_PATH_REQUIRED', status: 400 });
+  });
+});
+
+describe('identify @DEBUG IDENT 协议识别', () => {
+  test('IDENT 帧带 device_type 时直接采信(source:protocol)', async () => {
+    MockSerialPort.bootLog = BOOT_LOG;
+    MockSerialPort.readyFrame = '{"device_id":"6055f97c342c","firmware_version":"v1.1.39","device_type":"QTZ"}';
+    const { service } = makeService({ cacheDir });
+
+    const result = await service.identify('COM17');
+
+    expect(result).toEqual({
+      path: 'COM17',
+      identified: true,
+      deviceType: 'QTZ',
+      version: 'v1.1.39',
+      mac: '6055f97c342c',
+      source: 'protocol',
+    });
+    expect(MockSerialPort.instances[0].writes).toEqual(['@DEBUG IDENTIFY\r\n']);
+  });
+
+  test('IDENT 帧的型号优先于启动日志里的误导内容', async () => {
+    MockSerialPort.bootLog = [
+      'I (706) base_device: device_init',
+      'I (776) td01: on_device_init property num:4',
+    ].join('\r\n');
+    MockSerialPort.readyFrame = '{"device_id":"6055f97c342c","firmware_version":"v1.1.39","device_type":"QTZ"}';
+    const { service } = makeService({ cacheDir });
+
+    const result = await service.identify('COM17');
+    expect(result.deviceType).toBe('QTZ');
+    expect(result.source).toBe('protocol');
+  });
+
+  test('IDENT 帧无 device_type:型号走日志兜底,MAC/版本用 IDENT 的', async () => {
+    MockSerialPort.bootLog = BOOT_LOG;
+    MockSerialPort.readyFrame = '{"device_id":"6055F97C342C","firmware_version":"v1.1.38"}';
+    const { service } = makeService({ cacheDir });
+
+    const result = await service.identify('COM17');
+
+    expect(result).toEqual({
+      path: 'COM17',
+      identified: true,
+      deviceType: 'QTZ',
+      version: 'v1.1.38',
+      mac: '6055f97c342c',
+      source: 'bootlog',
+    });
+  });
+
+  test('IDENT 帧 JSON 非法时按无 IDENT 处理', async () => {
+    MockSerialPort.bootLog = BOOT_LOG;
+    MockSerialPort.readyFrame = '{not json';
+    const { service } = makeService({ cacheDir });
+
+    const result = await service.identify('COM17');
+    expect(result.source).toBe('bootlog');
+    expect(result.deviceType).toBe('QTZ');
   });
 });
 
