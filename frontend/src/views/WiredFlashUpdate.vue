@@ -1,21 +1,5 @@
 <template>
   <div class="wired-flash-page">
-    <el-card class="summary-card" shadow="never">
-      <div class="summary-header">
-        <div class="summary-title">
-          <h2>插线固件更新</h2>
-          <span>通过 USB 串口为设备烧录最新固件</span>
-        </div>
-
-        <div class="summary-actions">
-          <el-button :icon="Back" @click="$router.push('/devices')">返回设备管理</el-button>
-          <el-button :icon="Refresh" :loading="portsLoading" :disabled="flashing" @click="loadPorts">
-            {{ portsLoading ? '刷新中...' : '刷新串口' }}
-          </el-button>
-        </div>
-      </div>
-    </el-card>
-
     <el-alert
       v-if="pageError"
       :title="pageError"
@@ -25,16 +9,21 @@
       class="page-alert"
     />
 
-    <!-- 1. 串口选择 -->
+    <!-- 1. 连接与识别 -->
     <el-card shadow="never" class="step-card">
       <template #header>
         <div class="step-header">
-          <span>1. 选择串口</span>
-          <el-tag v-if="selectedPort" type="success" size="small">已选择 {{ selectedPort }}</el-tag>
+          <span>1. 连接与识别</span>
+          <div class="header-actions">
+            <el-tag v-if="selectedPort" type="success" size="small">已选择 {{ selectedPort }}</el-tag>
+            <el-button size="small" :icon="Refresh" :loading="portsLoading" :disabled="flashing" @click="loadPorts">
+              刷新串口
+            </el-button>
+          </div>
         </div>
       </template>
 
-      <div class="port-row">
+      <div class="connect-row">
         <el-select
           v-model="selectedPort"
           placeholder="请选择设备串口"
@@ -52,7 +41,36 @@
             :disabled="port.busy"
           />
         </el-select>
+
+        <template v-if="selectedPort">
+          <span v-if="identifying" class="inline-status">
+            <el-icon class="is-loading"><Loading /></el-icon> 正在识别设备型号（约 5 秒）...
+          </span>
+          <template v-else-if="identifyDone">
+            <el-select
+              v-model="deviceType"
+              placeholder="设备型号"
+              :disabled="flashing"
+              class="type-select"
+              @change="handleDeviceTypeChange"
+            >
+              <el-option v-for="type in DEVICE_TYPES" :key="type" :label="type" :value="type" />
+            </el-select>
+            <span class="kv">版本 <strong>{{ currentVersion || '未知' }}</strong></span>
+            <span class="kv">ID <strong>{{ deviceId || '未知' }}</strong></span>
+            <span v-if="identified" class="info-hint">已自动识别，如有误可改选</span>
+          </template>
+        </template>
       </div>
+
+      <el-alert
+        v-if="identifyDone && !identified"
+        title="未能自动识别型号，请手动选择"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="step-alert"
+      />
 
       <el-alert
         v-if="!portsLoading && ports.length === 0"
@@ -62,86 +80,30 @@
         show-icon
         class="step-alert"
       />
+
+      <el-alert v-if="driverMissing" type="error" :closable="false" show-icon class="step-alert">
+        <template #title>
+          检测到 CH34x 设备但驱动未安装，请先
+          <el-link type="danger" href="https://www.wch.cn/downloads/ch341ser_exe.html" target="_blank" :underline="false">
+            下载并安装驱动
+          </el-link>
+          ，安装完成后点击「刷新串口」
+        </template>
+      </el-alert>
     </el-card>
 
-    <!-- 2. 识别设备 -->
-    <el-card v-if="selectedPort" shadow="never" class="step-card">
-      <template #header>
-        <div class="step-header">
-          <span>2. 识别设备</span>
-          <el-button
-            size="small"
-            :icon="Search"
-            :loading="identifying"
-            :disabled="flashing"
-            @click="identifyDevice"
-          >
-            {{ identifying ? '识别中（约需 5 秒）...' : '重新识别' }}
-          </el-button>
-        </div>
-      </template>
-
-      <div v-if="identifying" class="identify-loading" v-loading="true" element-loading-text="正在识别设备型号，请稍候..." />
-
-      <template v-else-if="identifyDone">
-        <el-alert
-          v-if="!identified"
-          title="未能自动识别型号，请手动选择"
-          type="warning"
-          :closable="false"
-          show-icon
-          class="step-alert"
-        />
-
-        <div class="device-info">
-          <div class="info-item">
-            <span class="info-label">设备型号</span>
-            <el-select
-              v-model="deviceType"
-              placeholder="请选择设备型号"
-              :disabled="flashing"
-              class="type-select"
-              @change="handleDeviceTypeChange"
-            >
-              <el-option
-                v-for="type in DEVICE_TYPES"
-                :key="type"
-                :label="type"
-                :value="type"
-              />
-            </el-select>
-            <span v-if="identified" class="info-hint">已自动识别，如识别有误可手动改选</span>
-          </div>
-          <div class="info-item">
-            <span class="info-label">当前版本</span>
-            <strong>{{ currentVersion || '未知' }}</strong>
-          </div>
-          <div class="info-item">
-            <span class="info-label">设备 ID</span>
-            <strong>{{ deviceId || '未知' }}</strong>
-          </div>
-        </div>
-      </template>
-    </el-card>
-
-    <!-- 3. 固件版本信息 -->
+    <!-- 2. 固件与烧录 -->
     <el-card v-if="deviceType" shadow="never" class="step-card">
       <template #header>
         <div class="step-header">
-          <span>3. 固件版本</span>
-          <el-button
-            size="small"
-            :icon="Refresh"
-            :loading="firmwareLoading"
-            :disabled="flashing"
-            @click="loadFirmwareInfo"
-          >
+          <span>2. 固件与烧录</span>
+          <el-button size="small" :icon="Refresh" :loading="firmwareLoading" :disabled="flashing" @click="loadFirmwareInfo">
             重新检查
           </el-button>
         </div>
       </template>
 
-      <div v-if="firmwareLoading" class="identify-loading" v-loading="true" element-loading-text="正在获取固件信息..." />
+      <div v-if="firmwareLoading" class="fw-loading" v-loading="true" element-loading-text="正在获取固件信息..." />
 
       <template v-else-if="firmwareInfo">
         <el-alert
@@ -161,28 +123,18 @@
           class="step-alert"
         />
 
-        <div class="stat-grid">
-          <div class="stat-item">
-            <span class="stat-label">当前版本</span>
-            <strong>{{ currentVersion || '未知' }}</strong>
-          </div>
-          <div class="stat-item" :class="firmwareInfo.updateAvailable ? 'stat-warning' : 'stat-success'">
-            <span class="stat-label">最新版本</span>
-            <strong>{{ firmwareInfo.latestVersion || '-' }}</strong>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">固件文件</span>
-            <strong class="filename">{{ firmwareInfo.firmware?.filename || '-' }}</strong>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">固件大小</span>
-            <strong>{{ formatSize(firmwareInfo.firmware?.sizeBytes) }}</strong>
-          </div>
-        </div>
-
-        <div class="flash-action">
+        <div class="fw-row">
+          <span class="kv">当前 <strong>{{ currentVersion || '未知' }}</strong></span>
+          <span class="kv">最新
+            <strong :class="firmwareInfo.updateAvailable ? 'text-warning' : 'text-success'">
+              {{ firmwareInfo.latestVersion || '-' }}
+            </strong>
+          </span>
+          <span class="kv">文件 <strong>{{ firmwareInfo.firmware?.filename || '-' }}</strong></span>
+          <span class="kv">大小 <strong>{{ formatSize(firmwareInfo.firmware?.sizeBytes) }}</strong></span>
           <el-button
             type="primary"
+            class="flash-btn"
             :icon="Upload"
             :disabled="!canFlash"
             :loading="flashing"
@@ -190,6 +142,47 @@
           >
             {{ firmwareInfo.updateAvailable ? '更新固件' : '重新刷入' }}
           </el-button>
+        </div>
+
+        <div v-if="flashing || flashStatus" class="flash-block">
+          <div class="flash-line">
+            <el-tag :type="flashTagType" size="small">{{ flashStatusLabel }}</el-tag>
+            <el-progress
+              class="flash-bar"
+              :percentage="flashPercent"
+              :status="flashProgressStatus"
+              :indeterminate="flashing && flashStatus !== 'flashing'"
+              :stroke-width="14"
+            />
+          </div>
+          <span v-if="flashMsg" class="flash-msg">{{ flashMsg }}</span>
+
+          <el-alert
+            v-if="flashing"
+            title="烧录过程中请勿拔下 USB 线或关闭页面"
+            type="warning"
+            :closable="false"
+            show-icon
+            class="step-alert"
+          />
+          <el-alert
+            v-if="flashStatus === 'success'"
+            title="固件烧录成功！设备已重启，请重新配网"
+            type="success"
+            :closable="false"
+            show-icon
+            class="step-alert"
+          />
+          <template v-if="flashStatus === 'failed'">
+            <el-alert
+              :title="flashError || '烧录失败'"
+              type="error"
+              :closable="false"
+              show-icon
+              class="step-alert"
+            />
+            <el-button type="primary" size="small" :icon="Refresh" @click="confirmAndFlash">重试烧录</el-button>
+          </template>
         </div>
       </template>
 
@@ -202,64 +195,13 @@
         class="step-alert"
       />
     </el-card>
-
-    <!-- 4. 烧录进度与结果 -->
-    <el-card v-if="flashing || flashStatus" shadow="never" class="step-card">
-      <template #header>
-        <div class="step-header">
-          <span>4. 烧录</span>
-          <el-tag :type="flashTagType" size="small">{{ flashStatusLabel }}</el-tag>
-        </div>
-      </template>
-
-      <el-alert
-        v-if="flashing"
-        title="烧录过程中请勿拔下 USB 线或关闭页面"
-        type="warning"
-        :closable="false"
-        show-icon
-        class="step-alert"
-      />
-
-      <div class="flash-progress">
-        <el-progress
-          :percentage="flashPercent"
-          :status="flashProgressStatus"
-          :indeterminate="flashing && flashStatus !== 'flashing'"
-          :stroke-width="16"
-        />
-        <span v-if="flashMsg" class="flash-msg">{{ flashMsg }}</span>
-      </div>
-
-      <el-alert
-        v-if="flashStatus === 'success'"
-        title="固件烧录成功！设备已重启，请重新配网"
-        type="success"
-        :closable="false"
-        show-icon
-        class="step-alert"
-      />
-
-      <template v-if="flashStatus === 'failed'">
-        <el-alert
-          :title="flashError || '烧录失败'"
-          type="error"
-          :closable="false"
-          show-icon
-          class="step-alert"
-        />
-        <div class="flash-action">
-          <el-button type="primary" :icon="Refresh" @click="confirmAndFlash">重试烧录</el-button>
-        </div>
-      </template>
-    </el-card>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Back, Refresh, Search, Upload } from '@element-plus/icons-vue';
+import { Loading, Refresh, Upload } from '@element-plus/icons-vue';
 import { track } from '../analytics';
 
 interface SerialPort {
@@ -297,6 +239,7 @@ const ports = ref<SerialPort[]>([]);
 const portsLoading = ref(false);
 const selectedPort = ref('');
 const pageError = ref('');
+const driverMissing = ref(false);
 
 const identifying = ref(false);
 const identifyDone = ref(false);
@@ -379,9 +322,19 @@ async function apiPost(url: string, body: Record<string, any>) {
   return data;
 }
 
+async function checkDriverStatus() {
+  try {
+    const data = await apiGet('/api/wired-flash/driver-status');
+    driverMissing.value = Boolean(data?.driverMissing ?? data?.driver_missing);
+  } catch {
+    driverMissing.value = false;
+  }
+}
+
 async function loadPorts() {
   portsLoading.value = true;
   pageError.value = '';
+  driverMissing.value = false;
   try {
     const data = await apiGet('/api/wired-flash/ports');
     const list = Array.isArray(data) ? data : (data.ports || data.list || []);
@@ -398,6 +351,9 @@ async function loadPorts() {
       })
       .filter((port): port is SerialPort => !!port);
 
+    // 一个串口都没有时检查是不是驱动没装
+    if (ports.value.length === 0) checkDriverStatus();
+
     // 只有一个可用串口时自动选中
     const available = ports.value.filter((port) => !port.busy);
     if (!selectedPort.value && available.length === 1) {
@@ -407,6 +363,7 @@ async function loadPorts() {
   } catch (error: any) {
     pageError.value = error?.message || '串口列表获取失败';
     ports.value = [];
+    checkDriverStatus();
   } finally {
     portsLoading.value = false;
   }
@@ -591,18 +548,21 @@ function formatSize(sizeBytes?: number) {
 
 <style scoped>
 .wired-flash-page {
-  padding: 20px;
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
   box-sizing: border-box;
 }
 
-.summary-card {
-  margin-bottom: 16px;
+.page-alert,
+.step-alert {
+  margin-bottom: 12px;
 }
 
-.summary-header,
+.step-card {
+  margin-bottom: 12px;
+}
+
 .step-header {
   display: flex;
   align-items: center;
@@ -611,71 +571,43 @@ function formatSize(sizeBytes?: number) {
   flex-wrap: wrap;
 }
 
-.summary-title h2 {
-  margin: 0;
-  font-size: 22px;
-  line-height: 1.2;
-  color: var(--text-primary);
-}
-
-.summary-title span {
-  display: block;
-  margin-top: 4px;
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-
-.summary-actions {
+.header-actions {
   display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.page-alert,
-.step-alert {
-  margin-bottom: 16px;
-}
-
-.step-card {
-  margin-bottom: 16px;
-}
-
-.port-row {
-  display: flex;
-  gap: 12px;
   align-items: center;
+  gap: 10px;
+}
+
+.connect-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
 .port-select {
-  width: 420px;
+  width: 380px;
   max-width: 100%;
 }
 
-.identify-loading {
-  height: 80px;
+.type-select {
+  width: 160px;
 }
 
-.device-info {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.info-item {
-  display: flex;
+.inline-status {
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.info-label {
-  width: 70px;
+  gap: 6px;
   color: var(--text-secondary);
   font-size: 13px;
-  flex-shrink: 0;
 }
 
-.info-item strong {
+.kv {
+  color: var(--text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.kv strong {
   color: var(--text-primary);
   font-size: 14px;
   word-break: break-all;
@@ -686,59 +618,44 @@ function formatSize(sizeBytes?: number) {
   font-size: 12px;
 }
 
-.type-select {
-  width: 220px;
+.fw-loading {
+  height: 60px;
 }
 
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
-  gap: 12px;
+.fw-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
 }
 
-.stat-item {
-  min-height: 76px;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  padding: 14px;
-  background: var(--bg-surface);
-}
-
-.stat-label {
-  display: block;
-  color: var(--text-secondary);
-  font-size: 13px;
-  margin-bottom: 8px;
-}
-
-.stat-item strong {
-  color: var(--text-primary);
-  font-size: 24px;
-  line-height: 1.2;
-  word-break: break-all;
-}
-
-.stat-item strong.filename {
-  font-size: 14px;
-}
-
-.stat-warning strong {
+.text-warning {
   color: #e6a23c;
 }
 
-.stat-success strong {
+.text-success {
   color: #67c23a;
 }
 
-.flash-action {
-  margin-top: 16px;
+.flash-btn {
+  margin-left: auto;
 }
 
-.flash-progress {
+.flash-block {
+  margin-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 16px;
+}
+
+.flash-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.flash-bar {
+  flex: 1;
 }
 
 .flash-msg {
@@ -747,38 +664,14 @@ function formatSize(sizeBytes?: number) {
 }
 
 @media (max-width: 768px) {
-  .wired-flash-page {
-    padding: 12px;
-  }
-
-  .summary-header,
-  .summary-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .summary-actions .el-button {
-    width: 100%;
-    margin-left: 0;
-  }
-
-  .stat-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .port-select,
   .type-select {
     width: 100%;
   }
-}
 
-@media (max-width: 480px) {
-  .wired-flash-page {
-    padding: 8px;
-  }
-
-  .stat-grid {
-    grid-template-columns: 1fr;
+  .flash-btn {
+    margin-left: 0;
+    width: 100%;
   }
 }
 </style>

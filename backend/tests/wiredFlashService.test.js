@@ -229,6 +229,30 @@ describe('identify 启动日志解析', () => {
     expect(result.deviceType).toBe('QTZ');
   });
 
+  test('init 行标签优先:正文出现其他型号字符串不误判', async () => {
+    // 真实日志形态:base_device 通用 init + td01 共享组件标签,
+    // init 标签里的 td01 是有效型号
+    MockSerialPort.bootLog = [
+      'I (706) base_device: device_init',
+      'I (776) td01: on_device_init property num:4',
+    ].join('\r\n');
+    const { service } = makeService({ cacheDir });
+
+    const result = await service.identify('COM17');
+    expect(result.deviceType).toBe('TD01');
+  });
+
+  test('init 行标签优先:init 是 QTZ 时正文里的 TD01 不抢答', async () => {
+    MockSerialPort.bootLog = [
+      'I (610) QTZ: device_init',
+      'I (700) note: compatible with TD01 hardware revision',
+    ].join('\r\n');
+    const { service } = makeService({ cacheDir });
+
+    const result = await service.identify('COM17');
+    expect(result.deviceType).toBe('QTZ');
+  });
+
   test('串口被占用时报 SERIAL_PORT_BUSY', async () => {
     const { service, serialConnectionService } = makeService({ cacheDir });
     serialConnectionService.sessions.set('COM17', { deviceId: 'dev-1' });
@@ -259,6 +283,55 @@ describe('listPorts', () => {
     ]);
   });
 });
+
+describe('getDriverStatus', () => {
+  test('非 Windows 平台直接返回 checked:false', async () => {
+    const { service } = makeService({ cacheDir });
+    if (process.platform === 'win32') return; // 仅在非 Windows 环境断言
+    const status = await service.getDriverStatus();
+    expect(status).toMatchObject({ checked: false, driverMissing: false, problemDevices: [] });
+  });
+
+  test('存在错误码非 0 的 WCH 设备时判定驱动缺失', async () => {
+    const { service } = makeService({
+      cacheDir,
+      runCommand: async () => JSON.stringify([
+        { Name: 'USB-SERIAL CH340 (COM17)', DeviceID: 'USB\\VID_1A86&PID_7523\\A', Status: 'OK', ConfigManagerErrorCode: 0 },
+        { Name: 'USB2.0-Serial', DeviceID: 'USB\\VID_1A86&PID_7523\\B', Status: 'Error', ConfigManagerErrorCode: 28 },
+      ]),
+    });
+    if (process.platform !== 'win32') {
+      // 非 Windows 不会执行命令,跳过
+      return;
+    }
+    const status = await service.getDriverStatus();
+    expect(status.checked).toBe(true);
+    expect(status.driverMissing).toBe(true);
+    expect(status.problemDevices).toHaveLength(1);
+    expect(status.problemDevices[0]).toMatchObject({ name: 'USB2.0-Serial', errorCode: 28 });
+  });
+
+  test('全部 WCH 设备正常时 driverMissing 为 false', async () => {
+    const { service } = makeService({
+      cacheDir,
+      runCommand: async () => JSON.stringify(
+        { Name: 'USB-SERIAL CH343 (COM17)', DeviceID: 'USB\\VID_1A86&PID_55D3\\A', Status: 'OK', ConfigManagerErrorCode: 0 },
+      ),
+    });
+    if (process.platform !== 'win32') return;
+    const status = await service.getDriverStatus();
+    expect(status.driverMissing).toBe(false);
+    expect(status.deviceCount).toBe(1);
+  });
+
+  test('没有 WCH 设备(空输出)时 driverMissing 为 false', async () => {
+    const { service } = makeService({ cacheDir, runCommand: async () => '' });
+    if (process.platform !== 'win32') return;
+    const status = await service.getDriverStatus();
+    expect(status).toMatchObject({ checked: true, driverMissing: false, problemDevices: [], deviceCount: 0 });
+  });
+});
+
 
 describe('getFirmwareForDevice', () => {
   test('取 kind=merged 条目并计算 updateAvailable', async () => {

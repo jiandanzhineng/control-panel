@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs/promises');
 const crypto = require('crypto');
+const { execFile } = require('child_process');
 const logService = require('./logService');
 const defaultSerialConnectionService = require('./serialConnectionService');
 const manifestService = require('./firmwareManifestService');
@@ -35,6 +36,17 @@ const silentTerminal = {
   write() {},
 };
 
+function runPowerShell(script, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', script],
+      { timeout: timeoutMs, windowsHide: true, maxBuffer: 1024 * 1024 },
+      (error, stdout) => (error ? reject(error) : resolve(stdout)),
+    );
+  });
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -68,6 +80,7 @@ class WiredFlashService {
     this.sleep = options.sleep || sleep;
     this.createFlashId = options.createFlashId || (() => crypto.randomUUID());
     this.createDevice = options.createDevice || ((portPath) => new NodeSerialDevice(portPath));
+    this.runCommand = options.runCommand || runPowerShell;
 
     this.flashStatusMap = new Map();
     this.statusHandlers = new Map();
@@ -97,6 +110,49 @@ class WiredFlashService {
     }
     if (!Array.isArray(types) || types.length === 0) return KNOWN_DEVICE_TYPES;
     return types;
+  }
+
+  // WCH(沁恒) CH340/CH341/CH343/CH344 的 USB VID 均为 1A86。
+  // 驱动未装时设备不进串口列表,而是作为带错误码的 PnP 设备存在,
+  // 只能通过 Win32_PnPEntity 的 ConfigManagerErrorCode 检测(非 0 即异常)。
+  async getDriverStatus() {
+    if (process.platform !== 'win32') {
+      return { checked: false, reason: '仅支持 Windows 驱动检测', driverMissing: false, problemDevices: [] };
+    }
+    let stdout;
+    try {
+      stdout = await this.runCommand(
+        "Get-CimInstance Win32_PnPEntity | Where-Object { $_.DeviceID -match 'VID_1A86' } " +
+          '| Select-Object Name, DeviceID, Status, ConfigManagerErrorCode | ConvertTo-Json -Compress',
+      );
+    } catch (error) {
+      throw createServiceError('DRIVER_CHECK_FAILED', `驱动状态检测失败: ${error?.message || error}`, 500);
+    }
+
+    let parsed = [];
+    const text = String(stdout || '').trim();
+    if (text) {
+      try {
+        const json = JSON.parse(text);
+        parsed = Array.isArray(json) ? json : [json];
+      } catch (_) {
+        parsed = [];
+      }
+    }
+
+    const devices = parsed.map((item) => ({
+      name: String(item?.Name || ''),
+      deviceId: String(item?.DeviceID || ''),
+      status: String(item?.Status || ''),
+      errorCode: Number(item?.ConfigManagerErrorCode ?? 0),
+    }));
+    const problemDevices = devices.filter((device) => device.errorCode !== 0);
+    return {
+      checked: true,
+      driverMissing: problemDevices.length > 0,
+      problemDevices,
+      deviceCount: devices.length,
+    };
   }
 
   isPortBusy(path) {
@@ -193,14 +249,27 @@ class WiredFlashService {
       if (staMatch) mac = staMatch[1].replace(/:/g, '').toLowerCase();
     }
 
-    // 型号以日志标签形式出现(如 `I (610) QTZ: device_init`),词边界 + 大小写不敏感;
-    // 长的先匹配,避免短型号成为长型号的前缀时误判
+    // 型号优先用 device_init/on_device_init 行的日志标签识别(如 `I (610) QTZ: device_init`),
+    // 避免正文里偶然出现的型号字符串(如共享组件的 `td01:` 模块标签)误判;
+    // init 行没有命中再回退到全文词边界匹配。长的型号先匹配,避免短型号成为长型号前缀时误判。
     let deviceType = null;
     const candidates = [...this.getKnownDeviceTypes()].sort((a, b) => b.length - a.length);
+    const initTags = new Set();
+    for (const match of text.matchAll(/\b([A-Za-z0-9_]+):\s*(?:on_)?device_init\b/g)) {
+      initTags.add(match[1].toUpperCase());
+    }
     for (const type of candidates) {
-      if (new RegExp(`\\b${escapeRegExp(type)}\\b`, 'i').test(text)) {
+      if (initTags.has(type.toUpperCase())) {
         deviceType = type;
         break;
+      }
+    }
+    if (!deviceType) {
+      for (const type of candidates) {
+        if (new RegExp(`\\b${escapeRegExp(type)}\\b`, 'i').test(text)) {
+          deviceType = type;
+          break;
+        }
       }
     }
 

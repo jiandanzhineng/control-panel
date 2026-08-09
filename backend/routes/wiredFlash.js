@@ -12,6 +12,14 @@ router.get('/ports', async (req, res) => {
   }
 });
 
+router.get('/driver-status', async (req, res) => {
+  try {
+    res.json(await wiredFlashService.getDriverStatus());
+  } catch (error) {
+    sendError(res, error.code || 'DRIVER_CHECK_FAILED', error.message || String(error), error.status || 500);
+  }
+});
+
 router.post('/identify', async (req, res) => {
   try {
     res.json(await wiredFlashService.identify(req.body?.path));

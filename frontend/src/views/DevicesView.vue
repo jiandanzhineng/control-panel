@@ -35,16 +35,9 @@
           <el-button
             type="success"
             :icon="Upload"
-            @click="$router.push('/devices/firmware-batch')"
+            @click="$router.push('/devices/firmware')"
           >
-            批量升级
-          </el-button>
-          <el-button
-            type="warning"
-            :icon="Link"
-            @click="$router.push('/devices/wired-flash')"
-          >
-            插线固件更新
+            固件更新
           </el-button>
           <el-button 
             type="danger" 
@@ -824,7 +817,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Link } from '@element-plus/icons-vue'
+import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection } from '@element-plus/icons-vue'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
 import { track } from '../analytics'
 

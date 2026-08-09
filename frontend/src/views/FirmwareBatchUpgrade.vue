@@ -2,13 +2,7 @@
   <div class="firmware-batch-page">
     <el-card class="summary-card" shadow="never">
       <div class="summary-header">
-        <div class="summary-title">
-          <h2>批量固件升级</h2>
-          <span>在线设备升级检查</span>
-        </div>
-
         <div class="summary-actions">
-          <el-button :icon="Back" @click="$router.push('/devices')">返回设备管理</el-button>
           <el-button :icon="Refresh" :loading="loading" @click="loadBatchFirmware">
             {{ loading ? '检查中...' : '刷新检查' }}
           </el-button>
@@ -197,7 +191,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Back, Refresh, Sunny, Upload } from '@element-plus/icons-vue';
+import { Refresh, Sunny, Upload } from '@element-plus/icons-vue';
 import { track } from '../analytics';
 
 interface Device {
@@ -561,7 +555,6 @@ function formatDeviceName(device: Device) {
 
 <style scoped>
 .firmware-batch-page {
-  padding: 20px;
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
@@ -722,10 +715,6 @@ function formatDeviceName(device: Device) {
 }
 
 @media (max-width: 768px) {
-  .firmware-batch-page {
-    padding: 12px;
-  }
-
   .summary-header,
   .summary-actions {
     align-items: stretch;
@@ -751,10 +740,6 @@ function formatDeviceName(device: Device) {
 }
 
 @media (max-width: 480px) {
-  .firmware-batch-page {
-    padding: 8px;
-  }
-
   .stat-grid {
     grid-template-columns: 1fr;
   }

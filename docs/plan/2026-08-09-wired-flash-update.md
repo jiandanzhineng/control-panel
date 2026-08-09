@@ -90,3 +90,17 @@ writeFlash({
   需要重新验证(原生 USB 在 esptool-js 走 UsbJtagSerialReset 路径)。
 - CH340/CH343 驱动依赖系统自动安装,当前不做安装包集成。
 - 烧录耗时约 80 秒(115200),后续可评估提高到 460800 波特率。
+
+## 7. 迭代(2026-08-09 下午):页面合并 + 驱动检测 + 识别修正
+
+- 页面合并:新增 `FirmwareUpdate.vue` 外壳(`/devices/firmware`,el-tabs),
+  OTA(`FirmwareBatchUpgrade`)与插线烧录(`WiredFlashUpdate`)作为子路由页签;
+  旧路由 `/devices/firmware-batch`、`/devices/wired-flash` 重定向到新页签,
+  设备管理页两个入口按钮合并为「固件更新」。
+- 插线页压缩:四卡片合并为「连接与识别」「固件与烧录」两卡片,一屏可读完。
+- 驱动检测:`GET /api/wired-flash/driver-status`(Windows 下查 Win32_PnPEntity 中
+  VID_1A86 且 ConfigManagerErrorCode≠0 的设备)。前端串口列表为空时自动检测,
+  发现驱动缺失引导用户到 wch.cn 下载 CH341SER。不做自动安装(需 UAC,静默参数不可靠)。
+- 识别修正:型号解析优先取 `device_init`/`on_device_init` 行的日志标签,
+  避免共享组件标签(如 `td01:` 模块)或正文偶发型号字符串误判;无 init 命中再回退全文词边界匹配。
+  实测注意:日志标签跟随所刷固件类型,识别结果反映的是设备上当前固件,不代表硬件型号。
