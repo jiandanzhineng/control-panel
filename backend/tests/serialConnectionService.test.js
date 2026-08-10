@@ -280,4 +280,58 @@ describe('SerialConnectionService', () => {
     expect(deviceService.connectTransportDevice).toHaveBeenCalledTimes(1);
     await service.shutdown();
   });
+
+  it('emits port-added / port-removed as ports appear and disappear', async () => {
+    const ports = [{ path: 'COM5' }];
+    const { service } = createHarness({ ports });
+    const added = [];
+    const removed = [];
+    service.on('port-added', (port) => added.push(port.path));
+    service.on('port-removed', ({ path }) => removed.push(path));
+
+    await service.refreshPortList();
+    expect(added).toEqual(['COM5']);
+
+    ports.push({ path: 'COM6' });
+    await service.refreshPortList();
+    expect(added).toEqual(['COM5', 'COM6']);
+
+    ports.splice(0, 1);
+    await service.refreshPortList();
+    expect(removed).toEqual(['COM5']);
+    await service.shutdown();
+  });
+
+  it('skips reserved ports during auto polling but allows the holder through', async () => {
+    FakeSerialPort.responseForPath.set('COM5', '@DEBUG READY {"device_id":"aabbccddeeff","firmware_version":"v1.2.3"}\r\n');
+    const { service } = createHarness();
+    const token = Symbol('holder');
+    service.settings.autoConnect = true;
+    const release = service.reservePort('COM5', token);
+
+    await service.pollPorts();
+    await jest.runAllTimersAsync();
+    expect(service.sessions.has('COM5')).toBe(false);
+
+    await expect(service.connect('COM5', { automatic: false })).rejects.toMatchObject({
+      code: 'SERIAL_PORT_RESERVED', status: 409,
+    });
+
+    const pending = service.connect('COM5', { reservationToken: token });
+    await jest.runAllTimersAsync();
+    await expect(pending).resolves.toMatchObject({ id: 'aabbccddeeff' });
+
+    release();
+    expect(service.reservations.has('COM5')).toBe(false);
+    await service.shutdown();
+  });
+
+  it('rejects a reservation held by another owner and ignores foreign releases', () => {
+    const { service } = createHarness();
+    const first = Symbol('first');
+    service.reservePort('COM5', first);
+    expect(() => service.reservePort('COM5', Symbol('second'))).toThrow(/已被其他流程预留/);
+    expect(service.releasePort('COM5', Symbol('other'))).toBe(false);
+    expect(service.releasePort('COM5', first)).toBe(true);
+  });
 });

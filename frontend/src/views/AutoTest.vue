@@ -1,5 +1,76 @@
 <template>
   <div class="auto-test-page">
+    <el-card shadow="never" class="provision-card">
+      <template #header>
+        <div class="header">
+          <span>串口自动供给</span>
+          <div class="provision-options">
+            <el-switch
+              v-model="autoFlash"
+              active-text="连接失败时自动烧录"
+              @change="saveProvisionSettings"
+            />
+            <el-select
+              v-model="flashDeviceType"
+              placeholder="烧录型号"
+              size="small"
+              class="type-select"
+              :disabled="!autoFlash"
+              @change="saveProvisionSettings"
+            >
+              <el-option v-for="type in DEVICE_TYPES" :key="type" :label="type" :value="type" />
+            </el-select>
+          </div>
+        </div>
+      </template>
+
+      <el-alert
+        v-if="autoFlash && !flashDeviceType"
+        title="已开启自动烧录但未选择型号，握手失败的端口不会被烧录"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="provision-alert"
+      />
+
+      <el-table :data="provisionPorts" style="width: 100%" empty-text="暂无串口">
+        <el-table-column prop="path" label="串口" width="110" />
+        <el-table-column prop="friendlyName" label="名称" min-width="180" show-overflow-tooltip />
+        <el-table-column label="阶段" width="120">
+          <template #default="{ row }">
+            <el-tag :type="stageTagType(row.stage)" size="small">{{ stageLabel(row.stage) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="进展" min-width="240">
+          <template #default="{ row }">
+            <el-progress
+              v-if="row.stage === 'flashing' && row.flashProgress !== null"
+              :percentage="row.flashProgress"
+              :stroke-width="10"
+            />
+            <span :class="{ 'text-danger': row.stage === 'failed' }">{{ row.message }}</span>
+            <span v-if="row.error" class="error-code">（{{ row.error.code }}: {{ row.error.message }}）</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="设备ID" width="150">
+          <template #default="{ row }">{{ row.deviceId || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="100" align="center">
+          <template #default="{ row }">
+            <el-button
+              v-if="row.stage === 'failed'"
+              type="primary"
+              size="small"
+              :loading="retryLoading[row.path]"
+              @click="retryPort(row)"
+            >
+              重试
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
+
     <el-card shadow="never">
       <template #header>
         <div class="header">
@@ -70,11 +141,37 @@ interface Device {
   data: Record<string, any>;
 }
 
+interface ProvisionPort {
+  path: string;
+  friendlyName: string;
+  vendorId: string | null;
+  ch34x: boolean;
+  stage: 'pending' | 'probing' | 'flashing' | 'connected' | 'failed';
+  message: string;
+  deviceId: string | null;
+  flashProgress: number | null;
+  error: { code: string; message: string } | null;
+}
+
+const DEVICE_TYPES = ['TD01', 'DIANJI', 'QTZ', 'ZIDONGSUO', 'PJ01', 'QIYA', 'DZC01', 'CUNZHI01'];
+
+const STAGE_LABELS: Record<string, string> = {
+  pending: '等待',
+  probing: '连接中',
+  flashing: '烧录中',
+  connected: '已连接',
+  failed: '失败',
+};
+
 const devices = ref<Device[]>([]);
 const deviceTypeMap = ref<Record<string, string>>({});
 const deviceTypeConfigs = ref<Record<string, any>>({});
 const eventSource = ref<EventSource | null>(null);
 const blinkLoading = ref<Record<string, boolean>>({});
+const provisionPorts = ref<ProvisionPort[]>([]);
+const autoFlash = ref(false);
+const flashDeviceType = ref('');
+const retryLoading = ref<Record<string, boolean>>({});
 
 const onlineDevices = computed(() => devices.value.filter(d => d.connected));
 
@@ -82,8 +179,9 @@ onMounted(async () => {
   try {
     // 1. 加载配置和设备列表
     await Promise.all([loadDeviceTypes(), loadDeviceTypeConfigs(), refreshDevices()]);
-    
-    // 2. 启动测试平台
+
+    // 2. 读取自动供给设置（后端持久化），再启动测试平台+串口自动供给
+    await loadProvisionState();
     await startPlatform();
 
     // 3. 建立 SSE 连接
@@ -124,7 +222,64 @@ async function refreshDevices() {
 }
 
 async function startPlatform() {
-  await fetch('/api/test/start', { method: 'POST' });
+  const res = await fetch('/api/test/start', { method: 'POST' });
+  const data = await res.json().catch(() => null);
+  if (data?.provision) applyProvisionState(data.provision);
+}
+
+async function loadProvisionState() {
+  const res = await fetch('/api/test/provision');
+  applyProvisionState(await res.json());
+}
+
+function applyProvisionState(state: any) {
+  if (!state) return;
+  provisionPorts.value = Array.isArray(state.ports) ? state.ports : [];
+  autoFlash.value = state.settings?.autoFlash === true;
+  flashDeviceType.value = state.settings?.deviceType || '';
+}
+
+async function saveProvisionSettings() {
+  try {
+    const res = await fetch('/api/test/provision/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ autoFlash: autoFlash.value, deviceType: flashDeviceType.value }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error?.message || '设置保存失败');
+    applyProvisionState(data);
+  } catch (error: any) {
+    ElMessage.error(error?.message || '设置保存失败');
+    await loadProvisionState();
+  }
+}
+
+async function retryPort(port: ProvisionPort) {
+  retryLoading.value[port.path] = true;
+  try {
+    const res = await fetch(`/api/test/provision/ports/${encodeURIComponent(port.path)}/retry`, {
+      method: 'POST',
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error?.message || '重试失败');
+    applyProvisionState(data);
+  } catch (error: any) {
+    ElMessage.error(error?.message || '重试失败');
+  } finally {
+    retryLoading.value[port.path] = false;
+  }
+}
+
+function stageLabel(stage: string) {
+  return STAGE_LABELS[stage] || stage;
+}
+
+function stageTagType(stage: string) {
+  if (stage === 'connected') return 'success';
+  if (stage === 'failed') return 'danger';
+  if (stage === 'flashing') return 'warning';
+  return 'info';
 }
 
 function connectSSE() {
@@ -135,6 +290,10 @@ function connectSSE() {
       const msg = JSON.parse(event.data);
       if (msg.type === 'update') {
         updateDeviceData(msg.deviceId, msg.data);
+      } else if (msg.type === 'provision') {
+        applyProvisionState(msg.state);
+        // 端口刚连上时设备列表还没这台设备，拉一次让它出现在下面的测试表里
+        if (msg.state?.ports?.some((p: ProvisionPort) => p.stage === 'connected')) refreshDevices();
       }
     } catch (e) {
       console.error('SSE 解析失败', e);
@@ -213,6 +372,34 @@ function getMonitorColor(config: any, val: any) {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.provision-card {
+  margin-bottom: 16px;
+}
+
+.provision-options {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.type-select {
+  width: 140px;
+}
+
+.provision-alert {
+  margin-bottom: 12px;
+}
+
+.error-code {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-left: 4px;
+}
+
+.text-danger {
+  color: var(--el-color-danger);
 }
 
 .monitor-data {

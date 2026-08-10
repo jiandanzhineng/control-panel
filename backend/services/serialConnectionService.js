@@ -1,3 +1,4 @@
+const { EventEmitter } = require('events');
 const fileStorage = require('../utils/fileStorage');
 const logger = require('./logService');
 const deviceService = require('./deviceService');
@@ -33,8 +34,10 @@ function isProbeCancellation(error) {
   return ['SERIAL_PROBE_CANCELLED', 'SERIAL_PORT_REMOVED'].includes(error?.code);
 }
 
-class SerialConnectionService {
+class SerialConnectionService extends EventEmitter {
   constructor(options = {}) {
+    super();
+    this.setMaxListeners(0);
     this.SerialPortClass = options.SerialPortClass || null;
     this.listPortsImpl = options.listPorts || null;
     this.deviceService = options.deviceService || deviceService;
@@ -51,6 +54,9 @@ class SerialConnectionService {
     this.devicePaths = new Map();
     this.pendingConnections = new Map();
     this.probes = new Map();
+    // 端口预留：编排器（自动化测试）独占某端口时登记在此。
+    // 预留期间自动轮询跳过该端口，避免与烧录/受控探测抢口。
+    this.reservations = new Map();
     this.pollTimer = null;
     this.polling = false;
     this.stopping = false;
@@ -82,6 +88,32 @@ class SerialConnectionService {
 
   getSettings() {
     return { ...this.settings };
+  }
+
+  // 预留端口给外部编排器独占使用。返回释放函数。
+  // 预留只阻止“自动”连接（pollPorts / connect({automatic:true})）,
+  // 持有者自己用 connect(path, { reservationToken }) 做受控探测。
+  reservePort(path, token) {
+    const normalized = typeof path === 'string' ? path.trim() : '';
+    if (!normalized) throw serviceError('SERIAL_PATH_REQUIRED', 'Serial port path is required', 400);
+    const existing = this.reservations.get(normalized);
+    if (existing && existing !== token) {
+      throw serviceError('SERIAL_PORT_RESERVED', `串口 ${normalized} 已被其他流程预留`, 409);
+    }
+    this.reservations.set(normalized, token);
+    return () => this.releasePort(normalized, token);
+  }
+
+  releasePort(path, token) {
+    const normalized = typeof path === 'string' ? path.trim() : '';
+    if (this.reservations.get(normalized) !== token) return false;
+    this.reservations.delete(normalized);
+    return true;
+  }
+
+  isPortReserved(path, token) {
+    const holder = this.reservations.get(path);
+    return holder !== undefined && holder !== token;
   }
 
   async setSettings(patch = {}) {
@@ -157,10 +189,12 @@ class SerialConnectionService {
     }
 
     const present = new Set();
+    const added = [];
     for (const port of ports) {
       if (!port?.path) continue;
       present.add(port.path);
       const previous = this.portInfo.get(port.path);
+      if (!previous) added.push({ ...port, path: port.path });
       this.portInfo.set(port.path, {
         path: port.path,
         port: { ...port },
@@ -170,8 +204,10 @@ class SerialConnectionService {
       });
     }
 
+    const removed = [];
     for (const path of [...this.portInfo.keys()]) {
       if (present.has(path)) continue;
+      removed.push(path);
       this.portInfo.delete(path);
       const probe = this.probes.get(path);
       if (probe) {
@@ -182,6 +218,9 @@ class SerialConnectionService {
       const session = this.sessions.get(path);
       if (session) await this.closeSession(session, 'removed');
     }
+
+    for (const port of added) this.emit('port-added', port);
+    for (const path of removed) this.emit('port-removed', { path });
     return ports;
   }
 
@@ -193,6 +232,7 @@ class SerialConnectionService {
       const now = this.now();
       for (const info of this.portInfo.values()) {
         if (this.sessions.has(info.path) || this.pendingConnections.has(info.path)) continue;
+        if (this.reservations.has(info.path)) continue;
         if (info.nextRetryAt > now) continue;
         this.connect(info.path, { automatic: true }).catch(() => {});
       }
@@ -209,6 +249,9 @@ class SerialConnectionService {
     const existing = this.sessions.get(normalizedPath);
     if (existing) return this.deviceService.getDeviceForApi(existing.deviceId);
     if (this.pendingConnections.has(normalizedPath)) return this.pendingConnections.get(normalizedPath);
+    if (this.isPortReserved(normalizedPath, options.reservationToken)) {
+      throw serviceError('SERIAL_PORT_RESERVED', `串口 ${normalizedPath} 已被其他流程预留`, 409);
+    }
 
     const info = this.portInfo.get(normalizedPath) || {
       path: normalizedPath,
@@ -501,6 +544,8 @@ class SerialConnectionService {
     this.devicePaths.clear();
     this.pendingConnections.clear();
     this.probes.clear();
+    this.reservations.clear();
+    this.removeAllListeners();
     this.stopping = false;
   }
 }

@@ -1,5 +1,6 @@
 const deviceService = require('./deviceService');
 const deviceRegistry = require('../devices/registry');
+const autoProvisionService = require('./autoProvisionService');
 const { getDeviceTypeConfig } = require('../config/deviceTypes');
 const logger = require('./logService');
 
@@ -43,11 +44,16 @@ deviceService.onDeviceDataChange(({ device, changes }) => {
   }
 });
 
+// 串口自动供给状态经同一条 SSE 通道推给测试页
+autoProvisionService.on('update', (state) => {
+  if (sseClients.size === 0) return;
+  broadcastSSE({ type: 'provision', state });
+});
+
 /**
  * 启动轮询检查
  * 检测在线设备是否已开始测试，未开始则自动开始
- */
-function startCheckLoop() {
+ */function startCheckLoop() {
   if (checkInterval) return;
   
   checkInterval = setInterval(() => {
@@ -246,8 +252,8 @@ function handleSSE(req, res) {
 
   sseClients.add(res);
 
-  // 发送初始数据（可选）
   res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
+  res.write(`data: ${JSON.stringify({ type: 'provision', state: autoProvisionService.getState() })}\n\n`);
 
   req.on('close', () => {
     sseClients.delete(res);
