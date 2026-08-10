@@ -6,7 +6,7 @@
         <p class="muted">本机已保存和内置的游戏与插件，选择一个配置并接入设备运行。</p>
       </div>
       <div class="header-actions">
-        <el-button :icon="Reading" @click="$router.push('/plays/dev-guide')">开发指南</el-button>
+        <el-button :icon="Reading" @click="openDevGuide">开发指南</el-button>
         <el-button :icon="Refresh" :loading="busy.refresh" @click="refresh">刷新</el-button>
       </div>
     </div>
@@ -194,6 +194,10 @@ async function loadAll() {
   } catch (e: any) {
     error.value = e?.message || '插件列表获取失败';
   }
+}
+
+function openDevGuide() {
+  window.open('https://game.undersilicon.cn/docs/agent-guide.html', '_blank');
 }
 
 async function refresh() {
