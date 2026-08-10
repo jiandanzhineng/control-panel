@@ -159,6 +159,9 @@
       sendMessage: function (msg) {
         return sendRequest({ action: 'sendMessage', deviceId: logicalId, msg: msg });
       },
+      operate: function (operationKey, params) {
+        return sendRequest({ action: 'operate', deviceId: logicalId, operationKey: operationKey, params: params || {} });
+      },
       on: function (capability, event, callback) {
         var key = logicalId + ':' + capability + ':' + event;
         if (!subCallbacks.has(key)) subCallbacks.set(key, []);

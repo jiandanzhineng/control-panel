@@ -31,6 +31,18 @@ describe('device control connection route', () => {
     expect(response.body.controlConnection).toBe('serial');
   });
 
+  it('accepts a remote control connection', async () => {
+    deviceService.setControlConnection.mockReturnValue({
+      id: 'aabbccddeeff', controlConnection: 'remote', connections: [{ type: 'remote' }],
+    });
+    const response = await request(createApp())
+      .put('/api/devices/aabbccddeeff/control-connection')
+      .send({ type: 'remote' });
+    expect(response.status).toBe(200);
+    expect(response.body.controlConnection).toBe('remote');
+    expect(deviceService.setControlConnection).toHaveBeenCalledWith('aabbccddeeff', 'remote');
+  });
+
   it('returns 400 for invalid types and 409 for offline connections', async () => {
     expect((await request(createApp())
       .put('/api/devices/aabbccddeeff/control-connection')

@@ -189,8 +189,8 @@ router.post('/:id/message', (req, res) => {
 router.put('/:id/control-connection', (req, res) => {
   try {
     const type = req.body?.type;
-    if (!['mqtt', 'serial', 'ble'].includes(type)) {
-      return sendError(res, 'INVALID_TRANSPORT', 'type 必须是 mqtt、serial 或 ble', 400);
+    if (!['mqtt', 'serial', 'ble', 'remote'].includes(type)) {
+      return sendError(res, 'INVALID_TRANSPORT', 'type 必须是 mqtt、serial、ble 或 remote', 400);
     }
     res.json(deviceService.setControlConnection(req.params.id, type));
   } catch (error) {

@@ -1,6 +1,8 @@
 <template>
   <div class="devices-page">
 
+    <el-tabs v-model="activeTab" class="devices-tabs">
+      <el-tab-pane label="设备列表" name="devices">
     <el-card class="stats-card" shadow="never">
       <div class="stats-header">
         <div class="stats-info">
@@ -806,11 +808,17 @@
     </el-dialog>
 
     <!-- 数据监控弹窗 -->
-    <DeviceMonitorModal 
+    <DeviceMonitorModal
       :visible="monitorModalVisible"
       :device-info="monitorDevice"
       @close="closeMonitorModal"
     />
+      </el-tab-pane>
+
+      <el-tab-pane label="远程连接" name="remote">
+        <RemoteProjectionPanel />
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
@@ -819,10 +827,11 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection } from '@element-plus/icons-vue'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
+import RemoteProjectionPanel from '../components/RemoteProjectionPanel.vue'
 import { track } from '../analytics'
 
 interface DeviceData { [key: string]: any }
-type TransportType = 'mqtt' | 'serial' | 'ble';
+type TransportType = 'mqtt' | 'serial' | 'ble' | 'remote';
 interface DeviceConnection {
   type: TransportType;
   connected: boolean;
@@ -880,6 +889,7 @@ interface OtaStatus {
   url: string | null;
 }
 
+const activeTab = ref<'devices' | 'remote'>('devices');
 const devices = ref<Device[]>([]);
 const deviceTypeMap = ref<Record<string, string>>({});
 const deviceTypeConfigs = ref<Record<string, any>>({});
@@ -1201,11 +1211,11 @@ function hasConnection(device: Device, type: TransportType) {
 }
 
 function getConnectionLabel(type: TransportType) {
-  return { mqtt: 'MQTT', serial: '串口', ble: 'BLE' }[type];
+  return { mqtt: 'MQTT', serial: '串口', ble: 'BLE', remote: '远程' }[type];
 }
 
 function getConnectionTagType(type: TransportType): 'success' | 'primary' | 'warning' | 'info' {
-  return { mqtt: 'info', serial: 'success', ble: 'primary' }[type] as 'success' | 'primary' | 'info';
+  return { mqtt: 'info', serial: 'success', ble: 'primary', remote: 'warning' }[type] as 'success' | 'primary' | 'warning' | 'info';
 }
 
 function getSerialPortStatus(status: SerialPortInfo['status']) {
@@ -1836,6 +1846,10 @@ async function executeDeviceOperation(device: Device, operation: any) {
   max-width: 1200px;
   margin: 0 auto;
   box-sizing: border-box;
+}
+
+.devices-tabs :deep(.el-tabs__header) {
+  margin-bottom: 16px;
 }
 
 .stats-card {

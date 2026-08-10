@@ -15,6 +15,7 @@ const { BRIDGE_INTERNAL_HEADER } = require('./constants/bridgeAccess');
 const { browserApiCors } = require('./middleware/browserApiAccess');
 const externalGameAccessService = require('./services/externalGameAccessService');
 const serialConnectionService = require('./services/serialConnectionService');
+const remoteProjectionService = require('./services/remoteProjectionService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -130,6 +131,7 @@ function shutdownBackend(reason = 'backend-shutdown', {
 
   backendShutdownPromise = (async () => {
     await deviceWatchdogService.shutdown(reason);
+    await remoteProjectionService.shutdown();
     if (typeof beforeTransportShutdown === 'function') {
       await beforeTransportShutdown();
     }
@@ -188,6 +190,7 @@ app.use('/api/logs', require('./routes/logs'));
 app.use('/api/test', require('./routes/test'));
 app.use('/api/virtual-devices', require('./routes/virtualDevices'));
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/remote-projection', require('./routes/remoteProjection'));
 app.use('/api/dev-access', require('./routes/devAccess'));
 
 app.get('/api/hello', (req, res) => { res.json({ message: 'Hello from Express backend!' }); });

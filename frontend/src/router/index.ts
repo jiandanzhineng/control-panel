@@ -33,6 +33,8 @@ const routes: RouteRecordRaw[] = [
   // 旧路径重定向（合并前的独立页面地址）
   { path: '/devices/firmware-batch', redirect: '/devices/firmware/ota' },
   { path: '/devices/wired-flash', redirect: '/devices/firmware/wired' },
+  // 远程投影已并入设备管理页的「远程连接」标签
+  { path: '/remote-projection', redirect: '/devices' },
   { path: '/test', name: 'test', component: AutoTest, meta: { title: '自动化测试' } },
 
   // 本地游戏（游戏 + 插件统一入口）
