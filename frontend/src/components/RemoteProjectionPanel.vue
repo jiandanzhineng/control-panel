@@ -1,5 +1,5 @@
 <template>
-  <div class="projection-page">
+  <div class="projection-panel">
     <div class="panel-toolbar">
       <div class="status-line">
         <span class="status-dot" :class="statusTone"></span>
@@ -23,43 +23,42 @@
     <el-alert v-if="error" type="error" :closable="true" :title="error" show-icon @close="error = ''" />
 
     <template v-if="token && !status.active">
-      <div class="mode-row">
-        <el-radio-group v-model="mode" size="large">
-          <el-radio-button value="owner">持有方</el-radio-button>
-          <el-radio-button value="operator">操作方</el-radio-button>
-        </el-radio-group>
+      <el-radio-group v-model="mode" size="large" class="mode-switch">
+        <el-radio-button value="owner">共享本地设备</el-radio-button>
+        <el-radio-button value="operator">控制远程设备</el-radio-button>
+      </el-radio-group>
+
+      <div v-if="mode === 'owner'" class="card">
+        <div class="card-title">共享我的本地设备</div>
+        <div class="card-desc">创建一个投影房间，把本机在线设备授权给对方远程控制。</div>
+        <el-form label-position="top" class="limit-form">
+          <el-form-item label="控制时长（分钟）">
+            <el-input-number v-model="ttlMinutes" :min="1" :max="1440" :step="5" class="full-width" controls-position="right" />
+          </el-form-item>
+          <el-form-item label="电压上限（V）">
+            <el-input-number v-model="maxVoltage" :min="0" :max="100" class="full-width" controls-position="right" />
+          </el-form-item>
+          <el-form-item label="强度上限（0-255）">
+            <el-input-number v-model="maxPower" :min="0" :max="255" class="full-width" controls-position="right" />
+          </el-form-item>
+        </el-form>
+        <el-button type="primary" :icon="Link" :loading="busy" class="action-btn" @click="createRoom">创建投影房间</el-button>
       </div>
 
-      <section v-if="mode === 'owner'" class="form-band">
-        <div class="field-grid">
-          <label>
-            <span>控制时长</span>
-            <el-input-number v-model="ttlMinutes" :min="1" :max="1440" :step="5" controls-position="right" />
-            <small>分钟</small>
-          </label>
-          <label>
-            <span>电压上限</span>
-            <el-input-number v-model="maxVoltage" :min="0" :max="100" controls-position="right" />
-            <small>V</small>
-          </label>
-          <label>
-            <span>强度上限</span>
-            <el-input-number v-model="maxPower" :min="0" :max="255" controls-position="right" />
-          </label>
+      <div v-else class="card">
+        <div class="card-title">控制远程设备</div>
+        <div class="card-desc">输入对方分享的房间码，即可远程控制对方共享的设备。</div>
+        <div class="join-row">
+          <el-input v-model="joinCode" placeholder="请输入房间码" maxlength="64" clearable @keyup.enter="joinRoom" />
+          <el-button type="primary" :icon="LogIn" :loading="busy" @click="joinRoom">加入房间</el-button>
         </div>
-        <el-button type="primary" :icon="Link" :loading="busy" @click="createRoom">创建投影房间</el-button>
-      </section>
-
-      <section v-else class="join-band">
-        <el-input v-model="joinCode" placeholder="输入房间码" maxlength="64" clearable @keyup.enter="joinRoom" />
-        <el-button type="primary" :icon="LogIn" :loading="busy" @click="joinRoom">加入房间</el-button>
-      </section>
+      </div>
     </template>
 
     <template v-else-if="status.active">
-      <section class="session-band">
-        <div class="session-main">
-          <span class="role-label">{{ status.role === 'owner' ? '持有方' : '操作方' }}</span>
+      <div class="card session-card">
+        <div class="session-top">
+          <span class="role-label">{{ status.role === 'owner' ? '共享本地设备' : '控制远程设备' }}</span>
           <div v-if="status.joinCode" class="join-code">
             <span>{{ status.joinCode }}</span>
             <el-button :icon="CopyDocument" text circle title="复制房间码" @click="copyCode" />
@@ -67,18 +66,30 @@
           <span v-else class="room-id">房间 {{ status.roomId }}</span>
         </div>
         <div class="session-meta">
-          <span>剩余 {{ remainingText }}</span>
-          <span v-if="status.role === 'owner'">操作方 {{ status.operatorCount || 0 }}</span>
-          <span>电压 ≤ {{ status.limits?.voltage ?? '-' }} V</span>
-          <span>强度 ≤ {{ status.limits?.power ?? '-' }}</span>
+          <div class="meta-item">
+            <span class="meta-label">剩余时间</span>
+            <span class="meta-value">{{ remainingText }}</span>
+          </div>
+          <div v-if="status.role === 'owner'" class="meta-item">
+            <span class="meta-label">在线操作方</span>
+            <span class="meta-value">{{ status.operatorCount || 0 }} 人</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">电压上限</span>
+            <span class="meta-value">{{ status.limits?.voltage ?? '-' }} V</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">强度上限</span>
+            <span class="meta-value">{{ status.limits?.power ?? '-' }}</span>
+          </div>
         </div>
-        <el-button type="danger" plain :icon="CircleClose" :loading="busy" @click="stopRoom">结束投影</el-button>
-      </section>
+        <el-button type="danger" plain :icon="CircleClose" :loading="busy" class="action-btn" @click="stopRoom">结束投影</el-button>
+      </div>
 
-      <section class="device-band">
+      <div class="card">
         <div class="section-head">
-          <h2>{{ status.role === 'owner' ? '已投影设备' : '远程设备' }}</h2>
-          <span>{{ devices.length }} 台</span>
+          <div class="card-title">{{ status.role === 'owner' ? '已共享的设备' : '可控制的远程设备' }}</div>
+          <span class="section-count">{{ devices.length }} 台</span>
         </div>
         <el-empty v-if="devices.length === 0" description="暂无在线设备" :image-size="72" />
         <el-table v-else :data="devices" stripe>
@@ -97,7 +108,7 @@
             </template>
           </el-table-column>
         </el-table>
-      </section>
+      </div>
     </template>
   </div>
 </template>
@@ -233,36 +244,59 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.projection-page { display: flex; flex-direction: column; gap: 20px; }
+.projection-panel { display: flex; flex-direction: column; gap: 16px; }
 .panel-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .status-line { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 13px; }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
 .status-dot.online { background: var(--el-color-success); }
 .status-dot.expired { background: var(--el-color-danger); }
-.mode-row { display: flex; justify-content: center; padding-top: 8px; }
-.form-band, .join-band, .session-band, .device-band { border-top: 1px solid var(--border-subtle); padding-top: 20px; }
-.form-band { display: flex; align-items: end; justify-content: space-between; gap: 20px; }
-.field-grid { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 16px; flex: 1; }
-.field-grid label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 13px; }
-.field-grid label > span { grid-column: 1 / -1; }
-.field-grid small { color: var(--text-muted); }
-.join-band { display: flex; gap: 12px; max-width: 560px; margin: 0 auto; width: 100%; }
-.session-band { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px 20px; }
-.session-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.role-label { font-size: 12px; color: var(--accent); border: 1px solid var(--accent); padding: 3px 7px; border-radius: 4px; }
+
+.mode-switch { display: flex; }
+.mode-switch :deep(.el-radio-button) { flex: 1; }
+.mode-switch :deep(.el-radio-button__inner) { width: 100%; }
+
+.card {
+  background: var(--bg-card, var(--el-bg-color-overlay));
+  border: 1px solid var(--border-subtle, var(--el-border-color));
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.card-title { font-size: 15px; font-weight: 600; color: var(--text-primary); letter-spacing: 0; }
+.card-desc { font-size: 13px; color: var(--text-muted); margin-top: -8px; }
+
+.limit-form { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.limit-form :deep(.el-form-item) { margin-bottom: 0; }
+.limit-form :deep(.el-form-item__label) { padding-bottom: 4px; color: var(--text-secondary); }
+.full-width { width: 100%; }
+.full-width :deep(.el-input__wrapper) { width: 100%; }
+
+.action-btn { align-self: flex-start; }
+
+.join-row { display: flex; gap: 12px; }
+.join-row .el-input { flex: 1; }
+
+.session-card { gap: 16px; }
+.session-top { display: flex; align-items: center; gap: 12px; min-width: 0; flex-wrap: wrap; }
+.role-label { font-size: 12px; color: var(--accent); border: 1px solid var(--accent); padding: 3px 8px; border-radius: 4px; white-space: nowrap; }
 .join-code { display: flex; align-items: center; gap: 4px; font: 700 22px/1.2 ui-monospace, monospace; color: var(--text-primary); overflow-wrap: anywhere; }
 .room-id { color: var(--text-primary); overflow-wrap: anywhere; }
-.session-meta { display: flex; flex-wrap: wrap; gap: 8px 18px; color: var(--text-muted); font-size: 13px; }
-.section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-.section-head h2 { margin: 0; font-size: 16px; letter-spacing: 0; color: var(--text-primary); }
-.section-head span { color: var(--text-muted); font-size: 13px; }
+
+.session-meta { display: flex; flex-wrap: wrap; gap: 12px 28px; padding: 12px 0; border-top: 1px solid var(--border-subtle, var(--el-border-color)); border-bottom: 1px solid var(--border-subtle, var(--el-border-color)); }
+.meta-item { display: flex; flex-direction: column; gap: 2px; }
+.meta-label { font-size: 12px; color: var(--text-muted); }
+.meta-value { font-size: 15px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+
+.section-head { display: flex; align-items: center; justify-content: space-between; }
+.section-count { color: var(--text-muted); font-size: 13px; }
 .device-name { color: var(--text-primary); font-weight: 600; }
 .device-id { color: var(--text-muted); font: 11px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
+
 @media (max-width: 760px) {
-  .form-band { align-items: stretch; flex-direction: column; }
-  .field-grid { grid-template-columns: 1fr; width: 100%; }
-  .join-band { flex-direction: column; }
-  .session-band { grid-template-columns: 1fr; }
-  .session-band > .el-button { width: 100%; }
+  .limit-form { grid-template-columns: 1fr; }
+  .join-row { flex-direction: column; }
+  .action-btn { align-self: stretch; }
 }
 </style>
