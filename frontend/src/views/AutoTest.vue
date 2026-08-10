@@ -3,7 +3,7 @@
     <el-card shadow="never" class="provision-card">
       <template #header>
         <div class="header">
-          <span>串口自动供给</span>
+          <span>串口设备接入</span>
           <div class="provision-options">
             <el-switch
               v-model="autoFlash"
@@ -33,7 +33,7 @@
         class="provision-alert"
       />
 
-      <el-table :data="provisionPorts" style="width: 100%" empty-text="暂无串口">
+      <el-table :data="devicePorts" style="width: 100%" empty-text="暂无串口">
         <el-table-column prop="path" label="串口" width="110" />
         <el-table-column prop="friendlyName" label="名称" min-width="180" show-overflow-tooltip />
         <el-table-column label="阶段" width="120">
@@ -55,7 +55,7 @@
         <el-table-column label="设备ID" width="150">
           <template #default="{ row }">{{ row.deviceId || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="100" align="center">
+        <el-table-column label="操作" width="110" align="center">
           <template #default="{ row }">
             <el-button
               v-if="row.stage === 'failed'"
@@ -69,6 +69,19 @@
           </template>
         </el-table-column>
       </el-table>
+
+      <div v-if="otherPorts.length" class="other-ports">
+        <button class="other-ports-toggle" @click="showOtherPorts = !showOtherPorts">
+          <span class="arrow" :class="{ open: showOtherPorts }">▸</span>
+          非设备串口（{{ otherPorts.length }}）
+        </button>
+        <div v-show="showOtherPorts" class="other-ports-list">
+          <div v-for="port in otherPorts" :key="port.path" class="other-port-row">
+            <span class="other-port-path">{{ port.path }}</span>
+            <span class="other-port-name">{{ port.friendlyName || '-' }}</span>
+          </div>
+        </div>
+      </div>
     </el-card>
 
     <el-card shadow="never">
@@ -172,6 +185,14 @@ const provisionPorts = ref<ProvisionPort[]>([]);
 const autoFlash = ref(false);
 const flashDeviceType = ref('');
 const retryLoading = ref<Record<string, boolean>>({});
+const showOtherPorts = ref(false);
+
+// 名称带 CH（CH340/CH343 等）或有 USB VID 的视为设备串口；COM1 这类主板串口折叠到下面的分组里
+function isDevicePort(port: ProvisionPort) {
+  return port.ch34x === true || /CH/i.test(port.friendlyName || '') || !!port.vendorId;
+}
+const devicePorts = computed(() => provisionPorts.value.filter(isDevicePort));
+const otherPorts = computed(() => provisionPorts.value.filter((p) => !isDevicePort(p)));
 
 const onlineDevices = computed(() => devices.value.filter(d => d.connected));
 
@@ -354,6 +375,8 @@ function getMonitorData(device: Device) {
 
 function formatValue(val: any, unit?: string) {
   if (val === undefined || val === null) return '-';
+  // 浮点数保留两位小数，整数/字符串原样显示
+  if (typeof val === 'number' && !Number.isInteger(val)) val = val.toFixed(2);
   return unit ? `${val} ${unit}` : val;
 }
 
@@ -390,6 +413,54 @@ function getMonitorColor(config: any, val: any) {
 
 .provision-alert {
   margin-bottom: 12px;
+}
+
+.other-ports {
+  margin-top: 8px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+  padding-top: 6px;
+}
+
+.other-ports-toggle {
+  background: none;
+  border: none;
+  padding: 2px 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.other-ports-toggle:hover {
+  color: var(--text-secondary);
+}
+
+.other-ports-toggle .arrow {
+  display: inline-block;
+  transition: transform 0.15s;
+}
+
+.other-ports-toggle .arrow.open {
+  transform: rotate(90deg);
+}
+
+.other-ports-list {
+  margin-top: 4px;
+}
+
+.other-port-row {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 2px 0 2px 18px;
+}
+
+.other-port-path {
+  min-width: 60px;
+  font-family: monospace;
 }
 
 .error-code {

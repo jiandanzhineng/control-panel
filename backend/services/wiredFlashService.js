@@ -12,6 +12,10 @@ const { getAllDeviceTypes } = require('../config/deviceTypes');
 const { createServiceError } = manifestService;
 
 const IDENTIFY_BAUD_RATE = 115200;
+// 烧录波特率：ROM 引导固定 115200，先按 romBaudrate 握手，
+// 之后由 esptool 的 changeBaud 把 ROM/主机一起切到 FLASH_BAUD_RATE。
+// CH343/CH340 都能稳定跑 921600，比 115200 快约 8 倍。
+const FLASH_BAUD_RATE = 921600;
 const IDENTIFY_CAPTURE_MS = 4000;
 const IDENTIFY_READY_WAIT_MS = 2500;
 const CONNECT_MAX_ATTEMPTS = 3;
@@ -494,7 +498,7 @@ class WiredFlashService {
         transport = new esptool.Transport(device, false);
         const esploader = new esptool.ESPLoader({
           transport,
-          baudrate: 115200,
+          baudrate: FLASH_BAUD_RATE,
           romBaudrate: 115200,
           terminal: silentTerminal,
         });
