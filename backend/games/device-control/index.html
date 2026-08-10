@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>设备控制台</title>
+<script type="application/json" id="game-manifest">
+{
+  "id": "device-control",
+  "title": "设备控制台",
+  "description": "集中查看并控制当前在线的本地和远程设备。",
+  "howTo": "打开后自动列出在线设备。",
+  "version": "1.0.2",
+  "devices": [],
+  "params": []
+}
+</script>
+<script src="/bridge-api/device-api-bridge.js"></script>
+<style>
+  :root { color-scheme: dark; --bg:#101214; --surface:#181b1f; --surface2:#20242a; --line:#343a42; --text:#f4f5f6; --muted:#9ca3ad; --cyan:#51d7e8; --green:#5fd38d; --red:#ee6b76; --amber:#e9b95c; }
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, "Microsoft YaHei", sans-serif; }
+  button, input { font: inherit; }
+  .toolbar { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; background: rgba(16,18,20,.96); border-bottom: 1px solid var(--line); }
+  .title h1 { margin: 0; font-size: 20px; letter-spacing: 0; }
+  .status { margin-top: 3px; color: var(--muted); font-size: 12px; }
+  .actions { display: flex; gap: 8px; }
+  .btn { min-height: 34px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface2); color: var(--text); cursor: pointer; }
+  .btn:hover { border-color: var(--cyan); }
+  .btn:disabled { opacity: .5; cursor: wait; }
+  .btn.primary { background: #176d78; border-color: #248f9d; }
+  .btn.danger { background: #6f2730; border-color: #a43c48; }
+  .btn.quiet { background: transparent; }
+  main { padding: 18px; }
+  .device-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+  .device-card { min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); overflow: hidden; }
+  .device-card.offline { opacity: .6; }
+  .device-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px; border-bottom: 1px solid var(--line); }
+  .device-name { font-weight: 700; overflow-wrap: anywhere; }
+  .device-id { margin-top: 3px; color: var(--muted); font: 11px/1.4 ui-monospace, monospace; overflow-wrap: anywhere; }
+  .tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+  .tag { padding: 3px 6px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+  .tag.remote { color: var(--amber); border-color: #725d31; }
+  .section { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .section:last-child { border-bottom: 0; }
+  .section-title { margin-bottom: 10px; color: var(--muted); font-size: 11px; text-transform: uppercase; }
+  .control-row { display: grid; grid-template-columns: minmax(80px, 1fr) minmax(90px, 1.5fr) auto; align-items: center; gap: 8px; margin-top: 8px; }
+  .control-row:first-of-type { margin-top: 0; }
+  .control-row input[type="range"] { width: 100%; accent-color: var(--cyan); }
+  .control-row input[type="number"] { width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface2); color: var(--text); }
+  .button-row { display: flex; flex-wrap: wrap; gap: 7px; }
+  .data-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(95px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+  .datum { min-width: 0; padding: 8px; background: var(--surface2); }
+  .datum-key { color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+  .datum-value { margin-top: 3px; font: 600 14px/1.3 ui-monospace, monospace; color: var(--green); overflow-wrap: anywhere; }
+  .empty { display: grid; place-items: center; min-height: 55vh; color: var(--muted); text-align: center; }
+  .toast { position: fixed; right: 18px; bottom: 18px; max-width: min(420px, calc(100vw - 36px)); padding: 10px 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface2); opacity: 0; pointer-events: none; transform: translateY(8px); transition: .16s ease; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.error { border-color: var(--red); }
+  @media (max-width: 600px) { .toolbar { align-items: flex-start; } .actions { flex-direction: column; } main { padding: 10px; } .device-grid { grid-template-columns: 1fr; } .control-row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+  <header class="toolbar">
+    <div class="title">
+      <h1>设备控制台</h1>
+      <div class="status" id="status">正在连接设备通道</div>
+    </div>
+    <div class="actions">
+      <button class="btn quiet" id="refresh" title="刷新设备">刷新</button>
+      <button class="btn danger" id="stop-all">全部停止</button>
+    </div>
+  </header>
+  <main>
+    <div class="device-grid" id="devices"></div>
+    <div class="empty" id="empty" hidden>暂无在线设备</div>
+  </main>
+  <div class="toast" id="toast"></div>
+  <script src="game.js"></script>
+</body>
+</html>
