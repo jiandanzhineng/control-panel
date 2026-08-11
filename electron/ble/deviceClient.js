@@ -8,14 +8,6 @@ const {
   propertyType,
 } = require('./protocol');
 
-const INITIAL_READ_PROPERTIES = new Set([
-  'battery', 'pressure', 'pressure1', 'temperature', 'weight', 'distance',
-  'button0', 'button1', 'button2', 'power', 'voltage', 'shock', 'open',
-  'report_delay_ms', 'game_mode', 'game_cz_count',
-]);
-
-const NOTIFY_PROPERTIES = new Set(INITIAL_READ_PROPERTIES);
-
 const SAFE_DISCONNECT_PROPERTIES = Object.freeze({
   PJ01: { power: 0 },
   TD01: { power: 0 },
@@ -74,6 +66,7 @@ class BleDeviceClient {
     this.messageCharacteristic = null;
     this.commandCharacteristic = null;
     this.properties = new Map();
+    this.reportedValues = {};
     this.notificationListeners = [];
     this.writeChain = Promise.resolve();
     this.disconnectPromise = null;
@@ -82,6 +75,7 @@ class BleDeviceClient {
 
   async connect() {
     let modeEnabled = false;
+    this.reportedValues = {};
     try {
       const server = await this.device.gatt.connect();
       const service = await server.getPrimaryService(BLE_UUIDS.service);
@@ -183,7 +177,10 @@ class BleDeviceClient {
       if (!name) continue;
 
       this.properties.set(name, { name, characteristic });
-      if (characteristic.properties.notify && NOTIFY_PROPERTIES.has(name)) {
+      // Firmware emits per-property notifications in BLE mode rather than an
+      // aggregate report, so every readable/notifiable property participates
+      // in the client-side report snapshot.
+      if (characteristic.properties.notify) {
         await this.subscribeProperty(name, characteristic);
       }
     }
@@ -193,6 +190,7 @@ class BleDeviceClient {
     const listener = (event) => {
       try {
         const value = decodePropertyValue(name, bytesFromDataView(event.target.value));
+        this.reportedValues[name] = value;
         this.onEvent('property', { id: this.id, key: name, value });
       } catch (error) {
         this.onEvent('error', { id: this.id, operation: 'property-notification', error: error.message });
@@ -231,8 +229,7 @@ class BleDeviceClient {
 
   async readInitialValues() {
     const data = {};
-    for (const name of INITIAL_READ_PROPERTIES) {
-      const entry = this.properties.get(name);
+    for (const [name, entry] of this.properties) {
       if (!entry?.characteristic.properties.read) continue;
       try {
         data[name] = decodePropertyValue(
@@ -243,6 +240,11 @@ class BleDeviceClient {
         this.onEvent('error', { id: this.id, operation: 'initial-read', property: name, error: error.message });
       }
     }
+    // Notifications can arrive before the backend has registered the device,
+    // and a busy sensor can make a concurrent GATT read fail. Preserve those
+    // values in the initial report, preferring the newer notification value.
+    Object.assign(data, this.reportedValues);
+    this.reportedValues = { ...data };
     return data;
   }
 
@@ -325,7 +327,5 @@ class BleDeviceClient {
 
 module.exports = {
   BleDeviceClient,
-  INITIAL_READ_PROPERTIES,
-  NOTIFY_PROPERTIES,
   SAFE_DISCONNECT_PROPERTIES,
 };

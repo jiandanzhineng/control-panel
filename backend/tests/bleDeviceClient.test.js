@@ -14,6 +14,8 @@ function characteristic(uuid, {
   name,
   value = [0, 0, 0, 0],
   text,
+  readError,
+  notifyValue,
   read = false,
   write = false,
   notify = false,
@@ -28,6 +30,7 @@ function characteristic(uuid, {
       return [{ uuid: BLE_UUIDS.userDescription, readValue: async () => textView(name) }];
     },
     async readValue() {
+      if (readError) throw readError;
       if (text !== undefined) return textView(text);
       return name === 'device_type' ? textView('TD01') : dataView(value);
     },
@@ -41,6 +44,7 @@ function characteristic(uuid, {
       listeners.delete(event);
     },
     async startNotifications() {
+      if (notifyValue) this.emit(notifyValue);
       return this;
     },
     emit(bytes) {
@@ -60,7 +64,24 @@ describe('Electron BLE device client', () => {
     const power = characteristic('0000ff11-0000-1000-8000-00805f9b34fb', {
       name: 'power', value: [0, 0, 0, 0], read: true, write: true, notify: true,
     });
-    const service = { getCharacteristics: async () => [message, mode, command, deviceType, power] };
+    const gameDuration = characteristic('0000ff12-0000-1000-8000-00805f9b34fb', {
+      name: 'game_duration', value: [30, 0, 0, 0], read: true, notify: true,
+    });
+    const line1Text = characteristic('0000ff13-0000-1000-8000-00805f9b34fb', {
+      name: 'line1_text', text: 'Ready', read: true, notify: true,
+    });
+    const pressure1 = characteristic('0000ff14-0000-1000-8000-00805f9b34fb', {
+      name: 'pressure1',
+      read: true,
+      notify: true,
+      readError: new Error('GATT busy'),
+      notifyValue: [0, 0, 32, 64],
+    });
+    const service = {
+      getCharacteristics: async () => [
+        message, mode, command, deviceType, power, gameDuration, line1Text, pressure1,
+      ],
+    };
     const server = { getPrimaryService: jest.fn(async () => service) };
     const disconnectListeners = new Map();
     const device = {
@@ -91,7 +112,13 @@ describe('Electron BLE device client', () => {
       name: 'BLUFI',
       type: 'TD01',
       connectionType: 'ble',
-      data: { power: 0 },
+      data: {
+        device_type: 'TD01',
+        power: 0,
+        game_duration: 30,
+        line1_text: 'Ready',
+        pressure1: 2.5,
+      },
       firmwareVersion: null,
       legacyIdentity: true,
       browserDeviceId: 'esp32-c3-browser-id',
@@ -103,9 +130,19 @@ describe('Electron BLE device client', () => {
     expect(power.writes).toEqual([[128, 0, 0, 0]]);
 
     power.emit([64, 0, 0, 0]);
+    gameDuration.emit([45, 0, 0, 0]);
+    line1Text.emit(new TextEncoder().encode('Running'));
     expect(events).toContainEqual({
       event: 'property',
       payload: { id: 'ble:esp32-c3-browser-id', key: 'power', value: 64 },
+    });
+    expect(events).toContainEqual({
+      event: 'property',
+      payload: { id: 'ble:esp32-c3-browser-id', key: 'game_duration', value: 45 },
+    });
+    expect(events).toContainEqual({
+      event: 'property',
+      payload: { id: 'ble:esp32-c3-browser-id', key: 'line1_text', value: 'Running' },
     });
 
     await client.disconnect();

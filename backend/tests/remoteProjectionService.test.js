@@ -201,6 +201,7 @@ describe('RemoteProjectionService', () => {
       role: 'operator',
       devices: [expect.objectContaining({ id: 'dev-1', connectionType: 'remote' })],
     });
+    expect(operatorDevices.getDeviceForApi('dev-1').data).toEqual({ pressure: 1 });
 
     ownerDevices.addLocal({
       id: 'dev-2', name: 'Later device', type: 'CUNZHI01', connected: true,
