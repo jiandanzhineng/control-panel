@@ -60,6 +60,50 @@ describe('device transport routing', () => {
     expect(sent).toEqual([{ method: 'update', power: 255 }]);
   });
 
+  it('waits for the selected control transport before confirming an operation', async () => {
+    const sent = [];
+    deviceService.connectTransportDevice({
+      id: 'remote-device',
+      name: 'Remote motor',
+      type: 'TD01',
+      connectionType: 'remote',
+    }, {
+      async send(message) {
+        sent.push(message);
+      },
+    });
+
+    await expect(deviceService.executeDeviceOperationAndWait(
+      'remote-device',
+      'stop',
+    )).resolves.toEqual({ success: true, message: '操作执行成功' });
+    expect(sent).toEqual([{ method: 'update', power: 0 }]);
+  });
+
+  it('emits device list changes as local transports connect and disconnect', () => {
+    const events = [];
+    const unsubscribe = deviceService.onDeviceListChange((event) => events.push(event));
+    deviceService.connectTransportDevice({
+      id: 'dynamic-device',
+      name: 'Dynamic motor',
+      type: 'TD01',
+      connectionType: 'ble',
+    }, { send() {} });
+    deviceService.connectTransportDevice({
+      id: 'dynamic-device',
+      name: 'Dynamic motor',
+      type: 'TD01',
+      connectionType: 'ble',
+    }, { send() {} });
+    deviceService.disconnectTransportDevice('dynamic-device', 'ble');
+    unsubscribe();
+
+    expect(events).toEqual([
+      { reason: 'connected', deviceId: 'dynamic-device' },
+      { reason: 'disconnected', deviceId: 'dynamic-device' },
+    ]);
+  });
+
   it('ignores persisted runtime connection fields from old records', () => {
     fileStorage.getItem.mockReturnValue(JSON.stringify([{
       id: 'old-device', name: 'saved', type: 'TD01', data: { power: 3 },

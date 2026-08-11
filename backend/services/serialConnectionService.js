@@ -404,10 +404,12 @@ class SerialConnectionService extends EventEmitter {
     session.adapter = {
       kind: 'serial',
       send: (message) => {
-        this.enqueueWrite(session, message).catch((error) => {
+        const pending = this.enqueueWrite(session, message);
+        pending.catch((error) => {
           logger.warn('Serial', `串口 ${session.path} 写入失败: ${error?.message || error}`);
           this.closeSession(session, 'write-error').catch(() => {});
         });
+        return pending;
       },
       disconnect: () => this.closeSession(session, 'device-removed'),
     };

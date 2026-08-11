@@ -11,7 +11,7 @@ const device = {
 
 jest.mock('../services/deviceService', () => ({
   getDeviceById: jest.fn((id) => id === device.id ? device : null),
-  publishDeviceMessage: jest.fn(() => ({ ok: true, connectionType: 'ble' })),
+  sendDeviceMessageAndWait: jest.fn(async () => ({ ok: true, connectionType: 'ble' })),
 }));
 
 jest.mock('../services/nicknameService', () => ({}));
@@ -36,6 +36,6 @@ describe('device message route', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true, connectionType: 'ble' });
-    expect(deviceService.publishDeviceMessage).toHaveBeenCalledWith(device.id, message);
+    expect(deviceService.sendDeviceMessageAndWait).toHaveBeenCalledWith(device.id, message);
   });
 });

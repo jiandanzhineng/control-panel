@@ -171,7 +171,7 @@ router.get('/:id', (req, res) => {
 });
 
 // 通过设备当前连接的传输发送通用消息（MQTT 或 BLE）。
-router.post('/:id/message', (req, res) => {
+router.post('/:id/message', async (req, res) => {
   try {
     const id = req.params.id;
     const device = deviceService.getDeviceById(id);
@@ -180,7 +180,7 @@ router.post('/:id/message', (req, res) => {
     if (!message || Array.isArray(message) || typeof message !== 'object') {
       return sendError(res, 'DEVICE_MESSAGE_REQUIRED', '请提供消息对象', 400);
     }
-    res.json(deviceService.publishDeviceMessage(id, message));
+    res.json(await deviceService.sendDeviceMessageAndWait(id, message));
   } catch (e) {
     sendError(res, e.code || 'DEVICE_MESSAGE_FAILED', e.message || String(e), 500);
   }
@@ -326,7 +326,7 @@ router.delete('/:id', async (req, res) => {
 });
 
 // 执行设备操作
-router.post('/:id/operations/:operationKey', (req, res) => {
+router.post('/:id/operations/:operationKey', async (req, res) => {
   const { id, operationKey } = req.params;
   
   // 详细检查请求体
@@ -349,7 +349,7 @@ router.post('/:id/operations/:operationKey', (req, res) => {
   });
   
   try {
-    const result = deviceService.executeDeviceOperation(id, operationKey, params);
+    const result = await deviceService.executeDeviceOperationAndWait(id, operationKey, params);
     logger.info('设备操作成功', { 
       deviceId: id, 
       operationKey, 
@@ -388,11 +388,11 @@ function getCapabilityRouteStatus(code) {
 // distance.configure、strength.set(任意值)、shock.start(任意电压) 等全部参数，
 // 走这条路由（复用 deviceService.invokeDeviceCapability，有 hasCapability 校验）。
 // 请求体：{ input: { ...动作参数 } }（也兼容裸对象或 { params } 写法）。
-router.post('/:id/capabilities/:capability/actions/:action', (req, res) => {
+router.post('/:id/capabilities/:capability/actions/:action', async (req, res) => {
   const { id, capability, action } = req.params;
   const input = (req.body && req.body.input) || (req.body && req.body.params) || req.body || {};
   try {
-    const result = deviceService.invokeDeviceCapability(id, capability, action, input);
+    const result = await deviceService.invokeDeviceCapabilityAndWait(id, capability, action, input);
     res.json({ success: true, ...(result || {}) });
   } catch (e) {
     sendError(

@@ -1,7 +1,9 @@
 function createBleMainIntegration({ ipcMain, getDeviceService, logger = console }) {
   const selections = new Map();
   const deviceOwners = new Map();
+  const commandRequests = new Map();
   const disconnectRequests = new Map();
+  let commandRequestSequence = 0;
   let disconnectRequestSequence = 0;
   let handlersRegistered = false;
 
@@ -19,6 +21,44 @@ function createBleMainIntegration({ ipcMain, getDeviceService, logger = console 
     disconnectRequests.delete(requestId);
     clearTimeout(pending.timer);
     pending.resolve(result);
+  }
+
+  function finishCommandRequest(requestId, result) {
+    const pending = commandRequests.get(requestId);
+    if (!pending) return;
+    commandRequests.delete(requestId);
+    clearTimeout(pending.timer);
+    if (result?.ok === true) {
+      pending.resolve({ ok: true });
+      return;
+    }
+    const error = new Error(result?.error || 'BLE command failed');
+    error.code = result?.code || 'BLE_COMMAND_FAILED';
+    pending.reject(error);
+  }
+
+  function sendCommand(sender, deviceId, message, { timeoutMs = 8000 } = {}) {
+    if (sender.isDestroyed()) {
+      return Promise.reject(new Error(`BLE renderer is unavailable: ${deviceId}`));
+    }
+    const requestId = `ble-command-${Date.now()}-${++commandRequestSequence}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        finishCommandRequest(requestId, {
+          ok: false,
+          code: 'BLE_COMMAND_TIMEOUT',
+          error: 'BLE command execution timed out',
+        });
+      }, timeoutMs);
+      commandRequests.set(requestId, {
+        ownerId: sender.id,
+        deviceId,
+        resolve,
+        reject,
+        timer,
+      });
+      sender.send('ble:command', { id: deviceId, message, requestId });
+    });
   }
 
   function registerHandlers() {
@@ -53,10 +93,7 @@ function createBleMainIntegration({ ipcMain, getDeviceService, logger = console 
       return getDeviceService().connectTransportDevice(metadata, {
         kind: 'ble',
         send(message) {
-          if (sender.isDestroyed()) {
-            throw new Error(`BLE renderer is unavailable: ${metadata.id}`);
-          }
-          sender.send('ble:command', { id: metadata.id, message });
+          return sendCommand(sender, metadata.id, message);
         },
       });
     });
@@ -84,7 +121,20 @@ function createBleMainIntegration({ ipcMain, getDeviceService, logger = console 
 
     ipcMain.on('ble:command-error', (event, payload) => {
       if (!payload?.id || !isOwner(event.sender, payload.id)) return;
+      if (payload.requestId) finishCommandRequest(payload.requestId, {
+        ok: false,
+        code: payload.code,
+        error: payload.error,
+      });
       logger.warn?.('[electron] BLE command failed', payload);
+    });
+
+    ipcMain.on('ble:command-result', (event, payload) => {
+      const pending = commandRequests.get(payload?.requestId);
+      if (!pending || pending.ownerId !== event.sender.id
+          || pending.deviceId !== payload?.id) return;
+      if (payload.ok !== true) logger.warn?.('[electron] BLE command failed', payload);
+      finishCommandRequest(payload.requestId, payload);
     });
 
     ipcMain.on('ble:disconnect-all-complete', (event, payload) => {
@@ -140,6 +190,15 @@ function createBleMainIntegration({ ipcMain, getDeviceService, logger = console 
       for (const [requestId, pending] of [...disconnectRequests.entries()]) {
         if (pending.ownerId === contents.id) {
           finishDisconnectRequest(requestId, { ok: false, rendererDestroyed: true });
+        }
+      }
+      for (const [requestId, pending] of [...commandRequests.entries()]) {
+        if (pending.ownerId === contents.id) {
+          finishCommandRequest(requestId, {
+            ok: false,
+            code: 'BLE_RENDERER_DESTROYED',
+            error: 'BLE renderer was destroyed',
+          });
         }
       }
       for (const [deviceId, ownerId] of [...deviceOwners.entries()]) {

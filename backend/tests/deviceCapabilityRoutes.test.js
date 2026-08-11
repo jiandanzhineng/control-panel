@@ -2,7 +2,7 @@ const express = require('express');
 const request = require('supertest');
 
 jest.mock('../services/deviceService', () => ({
-  invokeDeviceCapability: jest.fn(),
+  invokeDeviceCapabilityAndWait: jest.fn(),
 }));
 
 jest.mock('../services/firmwareOtaService', () => ({
@@ -40,7 +40,7 @@ describe('device capability routes', () => {
   });
 
   it('invokes a capability action with input body', async () => {
-    deviceService.invokeDeviceCapability.mockReturnValue({ ok: true });
+    deviceService.invokeDeviceCapabilityAndWait.mockResolvedValue({ ok: true });
 
     const res = await request(createApp())
       .post('/api/devices/dev01/capabilities/strength/actions/set')
@@ -48,7 +48,7 @@ describe('device capability routes', () => {
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ success: true, ok: true });
-    expect(deviceService.invokeDeviceCapability).toHaveBeenCalledWith(
+    expect(deviceService.invokeDeviceCapabilityAndWait).toHaveBeenCalledWith(
       'dev01',
       'strength',
       'set',
@@ -57,14 +57,14 @@ describe('device capability routes', () => {
   });
 
   it('accepts params alias for capability action input', async () => {
-    deviceService.invokeDeviceCapability.mockReturnValue({ ok: true });
+    deviceService.invokeDeviceCapabilityAndWait.mockResolvedValue({ ok: true });
 
     const res = await request(createApp())
       .post('/api/devices/dev01/capabilities/reporting/actions/setReportDelay')
       .send({ params: { ms: 250 } });
 
     expect(res.status).toBe(200);
-    expect(deviceService.invokeDeviceCapability).toHaveBeenCalledWith(
+    expect(deviceService.invokeDeviceCapabilityAndWait).toHaveBeenCalledWith(
       'dev01',
       'reporting',
       'setReportDelay',
@@ -75,9 +75,7 @@ describe('device capability routes', () => {
   it('maps missing device to 404', async () => {
     const error = new Error('设备不存在');
     error.code = 'DEVICE_NOT_FOUND';
-    deviceService.invokeDeviceCapability.mockImplementation(() => {
-      throw error;
-    });
+    deviceService.invokeDeviceCapabilityAndWait.mockRejectedValue(error);
 
     const res = await request(createApp())
       .post('/api/devices/missing/capabilities/strength/actions/set')
@@ -93,9 +91,7 @@ describe('device capability routes', () => {
   it('maps unsupported capability action to 400', async () => {
     const error = new Error('设备类型 TD01 不支持能力动作: strength.boost');
     error.code = 'DEVICE_CAPABILITY_ACTION_NOT_SUPPORTED';
-    deviceService.invokeDeviceCapability.mockImplementation(() => {
-      throw error;
-    });
+    deviceService.invokeDeviceCapabilityAndWait.mockRejectedValue(error);
 
     const res = await request(createApp())
       .post('/api/devices/dev01/capabilities/strength/actions/boost')

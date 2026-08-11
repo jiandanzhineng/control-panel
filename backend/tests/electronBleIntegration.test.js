@@ -71,17 +71,64 @@ describe('Electron BLE main integration', () => {
     );
 
     const transport = deviceService.connectTransportDevice.mock.calls[0][1];
-    transport.send({ method: 'update', power: 128 });
-    expect(webContents.send).toHaveBeenCalledWith('ble:command', {
+    const sending = transport.send({ method: 'update', power: 128 });
+    expect(webContents.send).toHaveBeenCalledWith('ble:command', expect.objectContaining({
       id: 'ble:esp32',
       message: { method: 'update', power: 128 },
+      requestId: expect.any(String),
+    }));
+    const request = webContents.send.mock.calls.find(([channel]) => channel === 'ble:command')[1];
+    ipcMain.emit('ble:command-result', { sender: webContents }, {
+      id: 'ble:esp32', requestId: request.requestId, ok: true,
     });
+    await expect(sending).resolves.toEqual({ ok: true });
 
     ipcMain.emit('ble:property', { sender: webContents }, {
       id: 'ble:esp32', key: 'power', value: 64,
     });
     expect(deviceService.handleTransportProperty)
       .toHaveBeenCalledWith('ble:esp32', 'power', 64, 'ble');
+  });
+
+  it('returns renderer BLE write failures to the caller', async () => {
+    const ipcMain = createIpcMain();
+    const deviceService = {
+      connectTransportDevice: jest.fn(),
+      handleTransportProperty: jest.fn(),
+      handleTransportMessage: jest.fn(),
+      disconnectTransportDevice: jest.fn(),
+    };
+    const webContents = {
+      id: 8,
+      send: jest.fn(),
+      on: jest.fn(),
+      isDestroyed: jest.fn(() => false),
+    };
+    const integration = createBleMainIntegration({
+      ipcMain,
+      getDeviceService: () => deviceService,
+    });
+    integration.registerHandlers();
+    const metadata = {
+      id: 'ble:esp32', type: 'TD01', connectionType: 'ble', data: {},
+    };
+    await ipcMain.invoke('ble:connected', { sender: webContents }, metadata);
+    const transport = deviceService.connectTransportDevice.mock.calls[0][1];
+
+    const sending = transport.send({ method: 'update', power: 128 });
+    const request = webContents.send.mock.calls[0][1];
+    ipcMain.emit('ble:command-result', { sender: webContents }, {
+      id: 'ble:esp32',
+      requestId: request.requestId,
+      ok: false,
+      code: 'BLE_PROPERTY_NOT_WRITABLE',
+      error: 'power is not writable',
+    });
+
+    await expect(sending).rejects.toMatchObject({
+      code: 'BLE_PROPERTY_NOT_WRITABLE',
+      message: 'power is not writable',
+    });
   });
 
   it('waits for the BLE renderer to safely disconnect every device', async () => {

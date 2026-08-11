@@ -10,6 +10,7 @@ const DEFAULT_LIMITS = Object.freeze({ voltage: 20, power: 128 });
 const HEARTBEAT_MS = 10000;
 const CREDENTIAL_REFRESH_EARLY_MS = 2 * 60 * 1000;
 const MAX_SEEN_MESSAGE_IDS = 1024;
+const WRITE_ACK_TIMEOUT_MS = 8000;
 
 function normalizePositiveInt(value, fallback, min, max) {
   const parsed = Number(value);
@@ -55,6 +56,7 @@ class RemoteProjectionService {
 
     this.devices.onDeviceDataChange?.((event) => this._onLocalDataChange(event));
     this.devices.onDeviceRawMessage?.((event) => this._onLocalRawMessage(event));
+    this.devices.onDeviceListChange?.(() => this._onLocalDeviceListChange());
   }
 
   getStatus() {
@@ -147,6 +149,7 @@ class RemoteProjectionService {
     if (!session) return { active: false };
     this.session = null;
     this._clearTimers(session);
+    this._failPendingWrites(session, this._error('ROOM_DISCONNECTED', '房间连接不可用'));
     if (session.role === 'owner') await this._safeStop(session, 'projection-stop');
     await this._publishPresence(session, 'offline').catch(() => {});
     await this._endClient(session);
@@ -184,6 +187,7 @@ class RemoteProjectionService {
       seenMessageIds: new Set(),
       remoteDeviceIds: new Set(),
       operatorsOnline: new Map(),
+      pendingWrites: new Map(),
       timers: { ttl: null, heartbeat: null, credential: null },
     };
   }
@@ -220,6 +224,7 @@ class RemoteProjectionService {
         if (session.role === 'owner') {
           void this._safeStop(session, 'mqtt-disconnected');
         } else {
+          this._failPendingWrites(session, this._error('ROOM_DISCONNECTED', '房间连接不可用'));
           this._removeRemoteDevices(session);
         }
       });
@@ -269,13 +274,13 @@ class RemoteProjectionService {
     });
   }
 
-  _publishEnvelope(session, suffix, type, payload) {
+  _publishEnvelope(session, suffix, type, payload, messageId = randomUUID()) {
     const sequence = (session.sequences.get(suffix) || 0) + 1;
     session.sequences.set(suffix, sequence);
     const envelope = {
       protocolVersion: PROTOCOL_VERSION,
       roomSessionId: session.roomSessionId,
-      messageId: randomUUID(),
+      messageId,
       type,
       senderConnectionEpoch: session.credential.clientId,
       sequence,
@@ -325,7 +330,7 @@ class RemoteProjectionService {
       session.seenMessageIds.delete(session.seenMessageIds.values().next().value);
     }
     if (session.role === 'owner' && suffix.startsWith('commands/')) {
-      this._onOwnerCommand(session, suffix.slice('commands/'.length), envelope);
+      void this._onOwnerCommand(session, suffix.slice('commands/'.length), envelope);
     } else if (session.role === 'operator' && suffix === 'events') {
       this._onOperatorEvent(session, envelope);
     }
@@ -346,7 +351,7 @@ class RemoteProjectionService {
     }
   }
 
-  _onOwnerCommand(session, userId, envelope) {
+  async _onOwnerCommand(session, userId, envelope) {
     if (!userId) return;
     if (envelope.type === 'projection.device-list.request') {
       void this._publishDeviceList(session).catch(() => {});
@@ -359,19 +364,60 @@ class RemoteProjectionService {
       if (this._expireOwnerSession(session, 'control-ttl-expired-on-write')) {
         void this._publishEnvelope(session, 'events', 'projection.expired', {}).catch(() => {});
       }
+      await this._publishWriteResult(session, envelope.messageId, {
+        ok: false,
+        code: 'CONTROL_EXPIRED',
+        message: '远程控制已过期',
+      }).catch(() => {});
       return;
     }
     const input = envelope.payload;
     if (!input || typeof input !== 'object' || typeof input.deviceId !== 'string'
-        || !input.message || typeof input.message !== 'object' || Array.isArray(input.message)) return;
+        || !input.message || typeof input.message !== 'object' || Array.isArray(input.message)) {
+      await this._publishWriteResult(session, envelope.messageId, {
+        ok: false,
+        code: 'INVALID_WRITE',
+        message: '远程控制指令格式无效',
+      }).catch(() => {});
+      return;
+    }
     const device = this.devices.getDeviceForApi?.(input.deviceId);
-    if (!device || !this._hasLocalConnection(device)) return;
+    if (!device || !this._hasLocalConnection(device)) {
+      await this._publishWriteResult(session, envelope.messageId, {
+        deviceId: input.deviceId,
+        ok: false,
+        code: 'DEVICE_OFFLINE',
+        message: '共享设备已离线',
+      }).catch(() => {});
+      return;
+    }
     const message = this._clampMessage(input.message, session.limits);
     try {
-      this.devices.publishDeviceMessage(input.deviceId, message);
+      if (typeof this.devices.sendDeviceMessageAndWait === 'function') {
+        await this.devices.sendDeviceMessageAndWait(input.deviceId, message);
+      } else {
+        await Promise.resolve(this.devices.publishDeviceMessage(input.deviceId, message));
+      }
+      await this._publishWriteResult(session, envelope.messageId, {
+        deviceId: input.deviceId,
+        ok: true,
+      });
     } catch (error) {
       session.lastError = error?.message || String(error);
+      await this._publishWriteResult(session, envelope.messageId, {
+        deviceId: input.deviceId,
+        ok: false,
+        code: error?.code || 'DEVICE_WRITE_FAILED',
+        message: error?.message || String(error),
+      }).catch(() => {});
     }
+  }
+
+  _publishWriteResult(session, requestId, result) {
+    return this._publishEnvelope(session, 'events', 'projection.write-result', {
+      requestId,
+      ...result,
+    });
   }
 
   _onOperatorEvent(session, envelope) {
@@ -388,6 +434,20 @@ class RemoteProjectionService {
     } else if (envelope.type === 'projection.device-message') {
       if (!payload || !session.remoteDeviceIds.has(payload.deviceId)) return;
       this.devices.handleTransportMessage(payload.deviceId, payload.message, 'remote');
+    } else if (envelope.type === 'projection.write-result') {
+      if (!payload || typeof payload.requestId !== 'string') return;
+      if (payload.ok === true) {
+        this._finishPendingWrite(session, payload.requestId);
+      } else {
+        this._finishPendingWrite(
+          session,
+          payload.requestId,
+          this._error(
+            typeof payload.code === 'string' ? payload.code : 'DEVICE_WRITE_FAILED',
+            typeof payload.message === 'string' ? payload.message : '远程设备执行失败',
+          ),
+        );
+      }
     } else if (envelope.type === 'projection.expired') {
       session.expired = true;
       this._removeRemoteDevices(session);
@@ -410,23 +470,7 @@ class RemoteProjectionService {
       nextIds.add(item.deviceId);
       const adapter = {
         kind: 'remote',
-        send: (message) => {
-          if (this.session !== session || !session.connected) {
-            throw this._error('ROOM_DISCONNECTED', '房间连接不可用');
-          }
-          if (session.expired || this.now() >= session.controlExpiresAt) {
-            session.expired = true;
-            this._removeRemoteDevices(session);
-            throw this._error('CONTROL_EXPIRED', '远程控制已过期');
-          }
-          void this._publishEnvelope(
-            session,
-            `commands/${session.credential.userId}`,
-            'projection.write',
-            { deviceId: item.deviceId, message },
-          ).catch(() => {});
-          return { queued: true };
-        },
+        send: (message) => this._sendRemoteWrite(session, item.deviceId, message),
       };
       this.devices.connectTransportDevice({
         id: item.deviceId,
@@ -488,6 +532,58 @@ class RemoteProjectionService {
       output[key] = Number.isFinite(value) ? Math.min(maximum, Math.max(0, value)) : 0;
     }
     return output;
+  }
+
+  _sendRemoteWrite(session, deviceId, message) {
+    if (this.session !== session || !session.connected) {
+      throw this._error('ROOM_DISCONNECTED', '房间连接不可用');
+    }
+    if (session.expired || this.now() >= session.controlExpiresAt) {
+      session.expired = true;
+      this._removeRemoteDevices(session);
+      throw this._error('CONTROL_EXPIRED', '远程控制已过期');
+    }
+    const requestId = randomUUID();
+    return new Promise((resolve, reject) => {
+      const timer = this.setTimer(() => {
+        this._finishPendingWrite(
+          session,
+          requestId,
+          this._error('DEVICE_WRITE_TIMEOUT', '等待共享设备执行结果超时'),
+        );
+      }, WRITE_ACK_TIMEOUT_MS);
+      session.pendingWrites.set(requestId, { resolve, reject, timer });
+      this._publishEnvelope(
+        session,
+        `commands/${session.credential.userId}`,
+        'projection.write',
+        { deviceId, message },
+        requestId,
+      ).catch((error) => this._finishPendingWrite(session, requestId, error));
+    });
+  }
+
+  _finishPendingWrite(session, requestId, error = null) {
+    const pending = session.pendingWrites.get(requestId);
+    if (!pending) return;
+    session.pendingWrites.delete(requestId);
+    this.clearTimer(pending.timer);
+    if (error) pending.reject(error);
+    else pending.resolve({ ok: true });
+  }
+
+  _failPendingWrites(session, error) {
+    for (const requestId of [...session.pendingWrites.keys()]) {
+      this._finishPendingWrite(session, requestId, error);
+    }
+  }
+
+  _onLocalDeviceListChange() {
+    const session = this.session;
+    if (!session || session.role !== 'owner' || !session.connected || session.expired) return;
+    void this._publishDeviceList(session).catch((error) => {
+      session.lastError = error?.message || String(error);
+    });
   }
 
   _onLocalDataChange({ deviceId, device, nextData }) {

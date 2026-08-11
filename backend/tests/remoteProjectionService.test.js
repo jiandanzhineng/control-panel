@@ -58,10 +58,13 @@ class FakeDevices {
     this.closed = [];
     this.dataHandlers = [];
     this.rawHandlers = [];
+    this.listHandlers = [];
+    this.sendError = null;
   }
 
   onDeviceDataChange(handler) { this.dataHandlers.push(handler); }
   onDeviceRawMessage(handler) { this.rawHandlers.push(handler); }
+  onDeviceListChange(handler) { this.listHandlers.push(handler); }
   listDevicesForApi() { return [...this.rows.values()].map((row) => structuredClone(row)); }
   getDeviceForApi(id) { return this.rows.has(id) ? structuredClone(this.rows.get(id)) : null; }
 
@@ -93,7 +96,21 @@ class FakeDevices {
   }
 
   publishDeviceMessage(id, message) { this.sent.push({ id, message }); }
+  async sendDeviceMessageAndWait(id, message) {
+    if (this.sendError) throw this.sendError;
+    this.sent.push({ id, message });
+  }
   invokeDeviceClose(id) { this.closed.push(id); }
+
+  addLocal(device) {
+    this.rows.set(device.id, structuredClone(device));
+    for (const handler of this.listHandlers) handler({ reason: 'connected', deviceId: device.id });
+  }
+
+  removeLocal(id) {
+    this.rows.delete(id);
+    for (const handler of this.listHandlers) handler({ reason: 'disconnected', deviceId: id });
+  }
 
   handleTransportMessage(id, payload, type) {
     const row = this.rows.get(id);
@@ -185,12 +202,11 @@ describe('RemoteProjectionService', () => {
       devices: [expect.objectContaining({ id: 'dev-1', connectionType: 'remote' })],
     });
 
-    ownerDevices.rows.set('dev-2', {
+    ownerDevices.addLocal({
       id: 'dev-2', name: 'Later device', type: 'CUNZHI01', connected: true,
       connectionType: 'mqtt', controlConnection: 'mqtt',
       connections: [{ type: 'mqtt', connected: true }], data: {},
     });
-    owner.session.timers.heartbeat.fn();
     await flush();
     expect(operator.getStatus().devices).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'dev-1' }),
@@ -216,6 +232,12 @@ describe('RemoteProjectionService', () => {
     ownerDevices.emitData('dev-1', { pressure: 42 });
     await flush();
     expect(operatorDevices.getDeviceForApi('dev-1').data.pressure).toBe(42);
+
+    ownerDevices.removeLocal('dev-2');
+    await flush();
+    expect(operator.getStatus().devices).toEqual([
+      expect.objectContaining({ id: 'dev-1' }),
+    ]);
 
     owner.session.timers.ttl.fn();
     await flush();
@@ -257,6 +279,37 @@ describe('RemoteProjectionService', () => {
     await flush();
 
     expect(ownerDevices.closed).toContain('dev-1');
+    await owner.stop();
+  });
+
+  test('returns owner transport failures to the operator', async () => {
+    const broker = new FakeBroker();
+    const api = createRoomApi();
+    const ownerDevices = new FakeDevices([{
+      id: 'dev-1', name: 'Owner device', type: 'CUNZHI01', connected: true,
+      connectionType: 'ble', controlConnection: 'ble',
+      connections: [{ type: 'ble', connected: true }], data: {},
+    }]);
+    const operatorDevices = new FakeDevices();
+    const owner = new RemoteProjectionService({
+      devices: ownerDevices, api, mqttConnect: broker.connect, ...timers(),
+    });
+    const operator = new RemoteProjectionService({
+      devices: operatorDevices, api, mqttConnect: broker.connect, ...timers(),
+    });
+
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await flush();
+    ownerDevices.sendError = Object.assign(new Error('BLE write failed'), {
+      code: 'BLE_WRITE_FAILED',
+    });
+
+    await expect(operatorDevices.adapters.get('dev-1').send({
+      method: 'update', power: 10,
+    })).rejects.toMatchObject({ code: 'BLE_WRITE_FAILED' });
+
+    await operator.stop();
     await owner.stop();
   });
 

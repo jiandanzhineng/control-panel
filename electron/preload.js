@@ -27,17 +27,28 @@ async function disconnectAllBleClients() {
 ipcRenderer.on('ble:command', async (_event, request) => {
   const client = bleClients.get(request?.id);
   if (!client) {
-    ipcRenderer.send('ble:command-error', {
+    ipcRenderer.send('ble:command-result', {
       id: request?.id,
+      requestId: request?.requestId,
+      ok: false,
+      code: 'BLE_DEVICE_NOT_CONNECTED',
       error: 'BLE device is not connected',
     });
     return;
   }
   try {
     await client.send(request.message);
-  } catch (error) {
-    ipcRenderer.send('ble:command-error', {
+    ipcRenderer.send('ble:command-result', {
       id: request.id,
+      requestId: request.requestId,
+      ok: true,
+    });
+  } catch (error) {
+    ipcRenderer.send('ble:command-result', {
+      id: request.id,
+      requestId: request.requestId,
+      ok: false,
+      code: error?.code || 'BLE_COMMAND_FAILED',
       error: error?.message || String(error),
       message: request.message,
     });

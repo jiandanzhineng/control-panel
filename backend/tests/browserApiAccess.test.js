@@ -14,8 +14,8 @@ jest.mock('../services/testService', () => ({
 }));
 
 jest.mock('../services/deviceService', () => ({
-  executeDeviceOperation: jest.fn(() => ({ success: true })),
-  invokeDeviceCapability: jest.fn(() => ({ ok: true })),
+  executeDeviceOperationAndWait: jest.fn(async () => ({ success: true })),
+  invokeDeviceCapabilityAndWait: jest.fn(async () => ({ ok: true })),
 }));
 
 jest.mock('../utils/logger', () => ({
@@ -57,7 +57,7 @@ describe('browser api access guard', () => {
       code: 'BROWSER_API_FORBIDDEN',
       message: '当前网页不能直接访问本机控制接口',
     });
-    expect(deviceService.executeDeviceOperation).not.toHaveBeenCalled();
+    expect(deviceService.executeDeviceOperationAndWait).not.toHaveBeenCalled();
   });
 
   it('blocks untrusted browser origins from capability mutation routes', async () => {
@@ -71,7 +71,7 @@ describe('browser api access guard', () => {
       code: 'BROWSER_API_FORBIDDEN',
       message: '当前网页不能直接访问本机控制接口',
     });
-    expect(deviceService.invokeDeviceCapability).not.toHaveBeenCalled();
+    expect(deviceService.invokeDeviceCapabilityAndWait).not.toHaveBeenCalled();
   });
 
   it('blocks untrusted browser origins from mqtt publish routes', async () => {
@@ -102,7 +102,7 @@ describe('browser api access guard', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers['access-control-allow-origin']).toBe('http://localhost:5173');
-    expect(deviceService.executeDeviceOperation).toHaveBeenCalledWith('ctrl_td01', 'start', {});
+    expect(deviceService.executeDeviceOperationAndWait).toHaveBeenCalledWith('ctrl_td01', 'start', {});
   });
 
   it('allows native requests without Origin', async () => {
@@ -156,7 +156,7 @@ describe('browser api access guard', () => {
 
       expect(res.status).toBe(200);
       expect(res.headers['access-control-allow-origin']).toBe('http://localhost:8080');
-      expect(deviceService.executeDeviceOperation).toHaveBeenCalled();
+      expect(deviceService.executeDeviceOperationAndWait).toHaveBeenCalled();
     });
 
     it('still blocks origins that are not trusted dev origins', async () => {
@@ -190,7 +190,7 @@ describe('browser api access guard', () => {
 
       expect(res.status).toBe(200);
       expect(res.headers['access-control-allow-origin']).toBe('https://game.undersilicon.cn');
-      expect(deviceService.executeDeviceOperation).toHaveBeenCalled();
+      expect(deviceService.executeDeviceOperationAndWait).toHaveBeenCalled();
     });
 
     it('still blocks origins without a grant', async () => {
