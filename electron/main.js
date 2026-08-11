@@ -417,6 +417,9 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
     height: 800,
+    // 默认收起原生菜单栏（File/Edit/View/...），按 Alt 可临时唤出；
+    // 菜单本身保留，故 Ctrl+Shift+I 等默认快捷键仍可用
+    autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: false,
