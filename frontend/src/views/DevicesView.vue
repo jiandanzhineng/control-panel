@@ -142,7 +142,7 @@
           </template>
         </el-table-column>
         
-        <el-table-column label="操作" width="200">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
               <el-button
@@ -247,7 +247,7 @@
                 {{ formatLastReport(row.lastReport) }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="200">
+            <el-table-column label="操作" width="240" fixed="right">
               <template #default="{ row }">
                 <div class="table-actions">
                   <el-button 
@@ -1971,7 +1971,7 @@ async function executeDeviceOperation(device: Device, operation: any) {
 .table-actions {
   display: flex;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .serial-port-content {
