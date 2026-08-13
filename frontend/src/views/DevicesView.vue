@@ -19,21 +19,30 @@
           >
             {{ bleBusy ? '蓝牙连接中' : '蓝牙连接' }}
           </el-button>
-          <el-button
-            type="warning"
-            :icon="SetUp"
-            :disabled="!provisionSupported || provisionBusy || bleBusy"
-            @click="openProvisionDialog"
-          >
-            设备配网
-          </el-button>
-          <el-button
-            :icon="Link"
-            :loading="serialBusy"
-            @click="openSerialDialog"
-          >
-            {{ serialBusy ? '串口探测中' : '串口连接' }}
-          </el-button>
+          <el-dropdown trigger="click" @command="handleDeviceToolCommand">
+            <el-button>
+              <el-icon><Tools /></el-icon>
+              设备工具
+              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  command="provision"
+                  :icon="SetUp"
+                  :disabled="!provisionSupported || provisionBusy || bleBusy"
+                >
+                  设备配网
+                </el-dropdown-item>
+                <el-dropdown-item command="serial" :icon="Link" :disabled="serialBusy">
+                  {{ serialBusy ? '串口探测中' : '串口连接' }}
+                </el-dropdown-item>
+                <el-dropdown-item command="firmware" :icon="Upload">
+                  固件更新
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-button 
             type="primary" 
             :icon="Refresh" 
@@ -41,13 +50,6 @@
             @click="refreshDevices"
           >
             {{ loading ? '刷新中...' : '刷新列表' }}
-          </el-button>
-          <el-button
-            type="success"
-            :icon="Upload"
-            @click="$router.push('/devices/firmware')"
-          >
-            固件更新
           </el-button>
           <el-button 
             type="danger" 
@@ -938,7 +940,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Link, Loading, SetUp } from '@element-plus/icons-vue'
+import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Link, Loading, SetUp, Tools } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
 import RemoteProjectionPanel from '../components/RemoteProjectionPanel.vue'
 import { track } from '../analytics'
@@ -1001,6 +1004,8 @@ interface OtaStatus {
   filename: string | null;
   url: string | null;
 }
+
+const router = useRouter();
 
 const activeTab = ref<'devices' | 'remote'>('devices');
 const devices = ref<Device[]>([]);
@@ -1277,6 +1282,16 @@ async function updateSerialAutoConnect(value: boolean | string | number) {
     ElMessage.error(error?.message || '串口自动连接设置失败');
   } finally {
     serialSettingsBusy.value = false;
+  }
+}
+
+function handleDeviceToolCommand(command: 'provision' | 'serial' | 'firmware') {
+  if (command === 'provision') {
+    openProvisionDialog();
+  } else if (command === 'serial') {
+    openSerialDialog();
+  } else if (command === 'firmware') {
+    router.push('/devices/firmware');
   }
 }
 

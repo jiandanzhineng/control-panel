@@ -137,7 +137,7 @@ class BlufiProvisionClient {
       const sendControl = (subtype, payload) => sendFrame(FRAME_TYPE_CONTROL, subtype, payload);
       const sendData = (subtype, payload) => sendFrame(FRAME_TYPE_DATA, subtype, payload);
 
-      this.status('writing', `正在写入 Wi-Fi「${ssid}」`);
+      this.status('writing', '正在写入 Wi-Fi 配置');
       await sendControl(CONTROL_SET_SEC_MODE, Uint8Array.of(0x00));
       await sendControl(CONTROL_SET_OP_MODE, Uint8Array.of(0x01));
       await sendData(DATA_STA_SSID, ssidBytes);

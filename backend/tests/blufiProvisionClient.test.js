@@ -64,7 +64,7 @@ describe('BLUFI provision client', () => {
       retryDelayMs: 0,
     });
 
-    await expect(client.provision({ ssid: 'Firesuiry', password: '11111111' }))
+    await expect(client.provision({ ssid: 'ExampleWiFi', password: '11111111' }))
       .resolves.toEqual({ ok: true, deviceName: 'BLUFI_DEVICE', stationIp: '192.168.5.31' });
     expect(requestDevice).toHaveBeenCalledWith({
       filters: [{ namePrefix: 'BLUFI' }],
@@ -74,6 +74,8 @@ describe('BLUFI provision client', () => {
     expect(statuses.map((status) => status.stage)).toEqual([
       'selecting', 'connecting', 'writing', 'joining', 'success',
     ]);
+    expect(statuses.find((status) => status.stage === 'writing').message)
+      .toBe('正在写入 Wi-Fi 配置');
     expect(server.disconnect).toHaveBeenCalled();
   });
 });
