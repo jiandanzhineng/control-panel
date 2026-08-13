@@ -611,6 +611,19 @@ async function executeDeviceOperationAndWait(deviceId, operationKey, params = {}
   }
 }
 
+// 虚拟设备没有订阅 /drecv 的 MQTT 端，直接把能力指令落到模拟器
+// （记 commandLog + 反映 properties），否则测试里看不到电击真的发生。
+// 真实设备照旧走 MQTT。返回 true 表示已被虚拟设备拦截。
+function _interceptVirtualWrite(deviceId, message) {
+  let vds = null;
+  try { vds = require('./virtualDeviceService'); } catch (_) {}
+  if (!vds || !vds.isVirtualDevice(deviceId)) return false;
+  const props = { ...(message || {}) };
+  delete props.method;
+  vds.interceptCommand(deviceId, { action: 'writeProps', props });
+  return true;
+}
+
 function invokeDeviceCapability(deviceId, capabilityKey, actionName, input = {}) {
   const device = getDeviceById(deviceId);
   if (!device) {
@@ -619,7 +632,10 @@ function invokeDeviceCapability(deviceId, capabilityKey, actionName, input = {})
     throw error;
   }
   const deviceType = deviceRegistry.getDeviceType(device.type);
-  deviceType.invokeCapability(deviceId, capabilityKey, actionName, input || {}, devicePublishFn);
+  deviceType.invokeCapability(deviceId, capabilityKey, actionName, input || {}, (id, message) => {
+    if (_interceptVirtualWrite(id, message)) return message;
+    return sendDeviceMessage(id, message);
+  });
   return { ok: true };
 }
 
@@ -633,6 +649,7 @@ async function invokeDeviceCapabilityAndWait(deviceId, capabilityKey, actionName
   const pending = [];
   const deviceType = deviceRegistry.getDeviceType(device.type);
   deviceType.invokeCapability(deviceId, capabilityKey, actionName, input || {}, (id, message) => {
+    if (_interceptVirtualWrite(id, message)) return message;
     pending.push(sendDeviceMessageAndWait(id, message));
     return message;
   });

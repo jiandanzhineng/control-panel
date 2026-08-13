@@ -220,6 +220,13 @@ function interceptCommand(deviceId, cmd) {
   if (!vdev) return false;
   vdev.recordCommand(cmd);
 
+  // 直接能力指令（shock/start -> writeProps {shock:1, voltage}）：
+  // 反映到 properties，让模拟器像真设备一样可被 monitor-data 读到。
+  if (cmd.action === 'writeProps' && cmd.props && typeof cmd.props === 'object') {
+    vdev.setProperties(cmd.props);
+    return true;
+  }
+
   if (vdev.type === 'DIANJI' && cmd.action === 'sendMessage' && cmd.msg?.method === 'dian') {
     const time = cmd.msg.time || 3000;
     vdev.setProperties({ shock: 1, voltage: cmd.msg.voltage || 0 });
