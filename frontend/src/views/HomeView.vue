@@ -23,7 +23,7 @@
     </div>
 
     <el-row :gutter="16" class="feature-cards">
-      <el-col :xs="24" :sm="8">
+      <el-col :xs="24" :sm="12" :md="6">
         <div class="feature-card" @click="$router.push('/devices')">
           <div class="feature-num mono">01</div>
           <el-icon class="feature-icon"><Monitor /></el-icon>
@@ -31,7 +31,7 @@
           <p>管理和监控所有连接的设备</p>
         </div>
       </el-col>
-      <el-col :xs="24" :sm="8">
+      <el-col :xs="24" :sm="12" :md="6">
         <div class="feature-card" @click="$router.push('/plays')">
           <div class="feature-num mono">02</div>
           <el-icon class="feature-icon"><VideoPlay /></el-icon>
@@ -39,12 +39,20 @@
           <p>启动和管理本地游戏与插件</p>
         </div>
       </el-col>
-      <el-col :xs="24" :sm="8">
+      <el-col :xs="24" :sm="12" :md="6">
         <div class="feature-card" @click="$router.push('/network')">
           <div class="feature-num mono">03</div>
           <el-icon class="feature-icon"><Connection /></el-icon>
           <h3>网络设置</h3>
           <p>配置网络连接和通信设置</p>
+        </div>
+      </el-col>
+      <el-col :xs="24" :sm="12" :md="6">
+        <div class="feature-card" @click="$router.push('/support')">
+          <div class="feature-num mono">04</div>
+          <el-icon class="feature-icon"><Service /></el-icon>
+          <h3>客服与反馈</h3>
+          <p>微信 / QQ 人工客服与建议反馈</p>
         </div>
       </el-col>
     </el-row>
@@ -108,7 +116,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Monitor, VideoPlay, Connection, InfoFilled } from '@element-plus/icons-vue'
+import { Monitor, VideoPlay, Connection, InfoFilled, Service } from '@element-plus/icons-vue'
 import packageInfo from '../../package.json'
 
 const frontendVersion = packageInfo.version
@@ -288,6 +296,10 @@ onMounted(async () => {
 
 .feature-cards {
   margin-bottom: 24px;
+}
+
+.feature-cards .el-col {
+  margin-bottom: 16px;
 }
 
 /* 编号式入口卡片：黑玻璃 + 青色编号 + hover 边框提亮 */

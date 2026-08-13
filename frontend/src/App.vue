@@ -62,8 +62,12 @@
           </el-menu-item>
         </el-menu>
 
-        <!-- 左下角主题切换 -->
+        <!-- 左下角：客服入口 + 主题切换 -->
         <div class="sidebar-footer" :class="{ 'is-collapsed': isCollapsed }">
+          <div class="support-entry" @click="router.push('/support')">
+            <el-icon><Service /></el-icon>
+            <span v-if="!isCollapsed" class="support-entry__label">客服</span>
+          </div>
           <ThemeSwitch :compact="isCollapsed" />
         </div>
       </div>
@@ -107,7 +111,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass, User } from '@element-plus/icons-vue'
+import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass, User, Service } from '@element-plus/icons-vue'
 import { useAuth } from './composables/useAuth'
 import { useTheme } from './composables/useTheme'
 import { router } from './router'
@@ -302,8 +306,37 @@ html, body {
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border-subtle);
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
   flex-shrink: 0;
+}
+
+.support-entry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.support-entry:hover {
+  color: var(--accent);
+  background-color: var(--accent-glow);
+}
+
+.support-entry__label {
+  white-space: nowrap;
+}
+
+.sidebar-footer.is-collapsed .support-entry {
+  padding: 8px 0;
 }
 
 .sidebar-footer.is-collapsed :deep(.theme-switch__label) {

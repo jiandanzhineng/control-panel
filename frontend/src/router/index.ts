@@ -14,6 +14,7 @@ import FirmwareBatchUpgrade from '../views/FirmwareBatchUpgrade.vue';
 import FirmwareUpdate from '../views/FirmwareUpdate.vue';
 import WiredFlashUpdate from '../views/WiredFlashUpdate.vue';
 import AccountView from '../views/AccountView.vue';
+import CustomerServiceView from '../views/CustomerServiceView.vue';
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/home' },
@@ -47,6 +48,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/network', name: 'network', component: ServicesView, meta: { title: '网络设置' } },
   { path: '/account', name: 'account', component: AccountView, meta: { title: '账号' } },
   { path: '/logs', name: 'logs', component: LogManagement, meta: { title: '日志管理' } },
+  { path: '/support', name: 'support', component: CustomerServiceView, meta: { title: '客服' } },
 
   // 旧路径重定向（沿用 /gamelist→/games 的做法，保留外链/书签可用）
   { path: '/games', redirect: '/plays' },
