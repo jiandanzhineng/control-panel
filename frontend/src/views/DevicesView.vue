@@ -98,20 +98,20 @@
         empty-text="暂无在线设备"
         class="desktop-table"
       >
-        <el-table-column prop="type" label="类型" width="120">
+        <el-table-column prop="type" label="类型" width="96">
           <template #default="{ row }">
             {{ deviceTypeMap[row.type] || row.type }}
           </template>
         </el-table-column>
         
-        <el-table-column label="设备" min-width="150">
+        <el-table-column label="设备" min-width="120">
           <template #default="{ row }">
             <span v-if="row.nickname">{{ row.nickname }}-{{ String(row.id).slice(-4) }}</span>
             <span v-else>{{ row.name || row.id }}</span>
           </template>
         </el-table-column>
         
-        <el-table-column prop="connected" label="状态" width="100">
+        <el-table-column prop="connected" label="状态" width="80">
           <template #default="{ row }">
             <el-tag :type="row.connected ? 'success' : 'danger'" size="small">
               {{ row.connected ? '在线' : '离线' }}
@@ -119,23 +119,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="连接" min-width="190">
-          <template #default="{ row }">
-            <div class="connection-tags">
-              <el-tag
-                v-for="connection in row.connections"
-                :key="connection.type"
-                :type="getConnectionTagType(connection.type)"
-                :effect="connection.type === row.controlConnection ? 'dark' : 'plain'"
-                size="small"
-              >
-                {{ getConnectionLabel(connection.type) }}{{ connection.legacyIdentity ? ' 旧版' : '' }}{{ connection.type === row.controlConnection ? ' 控制' : '' }}
-              </el-tag>
-            </div>
-          </template>
-        </el-table-column>
-        
-        <el-table-column prop="battery" label="电量" width="120">
+        <el-table-column prop="battery" label="电量" width="80">
           <template #default="{ row }">
             <el-tag 
               :type="getBatteryTagType(row.data?.battery)" 
@@ -146,7 +130,7 @@
           </template>
         </el-table-column>
         
-        <el-table-column prop="lastReport" label="最后上报" width="150">
+        <el-table-column prop="lastReport" label="最后上报" width="128">
           <template #default="{ row }">
             {{ formatLastReport(row.lastReport) }}
           </template>
@@ -209,40 +193,25 @@
             @current-change="handleCurrentChange"
             empty-text="暂无离线设备"
           >
-            <el-table-column prop="type" label="类型" width="120">
+            <el-table-column prop="type" label="类型" width="96">
               <template #default="{ row }">
                 {{ deviceTypeMap[row.type] || row.type }}
               </template>
             </el-table-column>
-            <el-table-column label="设备" min-width="150">
+            <el-table-column label="设备" min-width="120">
               <template #default="{ row }">
                 <span v-if="row.nickname">{{ row.nickname }}-{{ String(row.id).slice(-4) }}</span>
                 <span v-else>{{ row.name || row.id }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="connected" label="状态" width="100">
+            <el-table-column prop="connected" label="状态" width="80">
               <template #default="{ row }">
                 <el-tag :type="row.connected ? 'success' : 'danger'" size="small">
                   {{ row.connected ? '在线' : '离线' }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="连接" min-width="190">
-              <template #default="{ row }">
-                <div class="connection-tags">
-                  <el-tag
-                    v-for="connection in row.connections"
-                    :key="connection.type"
-                    :type="getConnectionTagType(connection.type)"
-                    :effect="connection.type === row.controlConnection ? 'dark' : 'plain'"
-                    size="small"
-                  >
-                    {{ getConnectionLabel(connection.type) }}{{ connection.legacyIdentity ? ' 旧版' : '' }}{{ connection.type === row.controlConnection ? ' 控制' : '' }}
-                  </el-tag>
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column prop="battery" label="电量" width="120">
+            <el-table-column prop="battery" label="电量" width="80">
               <template #default="{ row }">
                 <el-tag 
                   :type="getBatteryTagType(row.data?.battery)" 
@@ -252,7 +221,7 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="lastReport" label="最后上报" width="150">
+            <el-table-column prop="lastReport" label="最后上报" width="128">
               <template #default="{ row }">
                 {{ formatLastReport(row.lastReport) }}
               </template>
@@ -2212,6 +2181,11 @@ async function executeDeviceOperation(device: Device, operation: any) {
   display: flex;
   gap: 8px;
   flex-wrap: nowrap;
+}
+
+/* fixed 操作列背景不透明，避免横向滚动时其他列内容透到按钮下方 */
+.desktop-table :deep(.el-table__fixed-right) {
+  background-color: var(--bg-surface);
 }
 
 .serial-port-content {

@@ -18,7 +18,7 @@ const activeIndex = computed(() => OPTIONS.findIndex(o => o.value === mode.value
 
 <template>
   <div class="theme-switch" :class="{ 'is-compact': props.compact }" role="group" aria-label="主题切换">
-    <span class="theme-switch__thumb" :style="{ transform: `translateX(${activeIndex * 100}%)` }" />
+    <span class="theme-switch__thumb" :style="{ '--idx': activeIndex }" />
     <button
       v-for="opt in OPTIONS"
       :key="opt.value"
@@ -56,6 +56,7 @@ const activeIndex = computed(() => OPTIONS.findIndex(o => o.value === mode.value
   border: 1px solid var(--accent);
   transition: transform 0.25s ease;
   pointer-events: none;
+  transform: translateX(calc(var(--idx, 0) * 100%));
 }
 
 .theme-switch__btn {
@@ -87,9 +88,24 @@ const activeIndex = computed(() => OPTIONS.findIndex(o => o.value === mode.value
   color: var(--accent);
 }
 
-/* 紧凑模式：只显示图标，按钮等宽 */
+/* 紧凑模式：只显示图标，竖排以适配折叠侧边栏 */
+.theme-switch.is-compact {
+  flex-direction: column;
+}
+
 .theme-switch.is-compact .theme-switch__btn {
+  width: 100%;
   padding: 5px 6px;
+}
+
+.theme-switch.is-compact .theme-switch__thumb {
+  top: 3px;
+  left: 3px;
+  right: 3px;
+  bottom: auto;
+  width: calc(100% - 6px);
+  height: calc((100% - 6px) / 3);
+  transform: translateY(calc(var(--idx, 0) * 100%));
 }
 
 @media (max-width: 768px) {
