@@ -2,6 +2,7 @@ jest.mock('electron', () => ({
   ipcRenderer: {
     invoke: jest.fn(),
     on: jest.fn(),
+    removeListener: jest.fn(),
     send: jest.fn(),
   },
 }));
@@ -13,6 +14,7 @@ describe('Electron BLE preload API', () => {
   const originalNavigator = Object.getOwnPropertyDescriptor(global, 'navigator');
 
   afterEach(() => {
+    jest.clearAllMocks();
     jest.resetModules();
     if (originalWindow === undefined) delete global.window;
     else global.window = originalWindow;
@@ -37,5 +39,32 @@ describe('Electron BLE preload API', () => {
       filters: [{ namePrefix: 'BLUFI' }],
       optionalServices: [BLE_UUIDS.service],
     });
+  });
+
+  it('exposes provisioning device selection and scan result IPC', async () => {
+    const { ipcRenderer } = require('electron');
+    global.window = { fetch: jest.fn() };
+    Object.defineProperty(global, 'navigator', {
+      configurable: true,
+      value: { bluetooth: { requestDevice: jest.fn() } },
+    });
+    ipcRenderer.invoke.mockResolvedValue({ ok: true });
+
+    require('../../electron/preload');
+
+    expect(global.window.provisionApi.isSupported()).toBe(true);
+    await global.window.provisionApi.selectDevice('device-1');
+    await global.window.provisionApi.cancelSelection();
+    expect(ipcRenderer.invoke).toHaveBeenNthCalledWith(1, 'ble:select-device', 'device-1');
+    expect(ipcRenderer.invoke).toHaveBeenNthCalledWith(2, 'ble:cancel-selection');
+
+    const callback = jest.fn();
+    const dispose = global.window.provisionApi.onScanResults(callback);
+    const listener = ipcRenderer.on.mock.calls.find(([channel]) => channel === 'ble:scan-results')[1];
+    listener({}, [{ id: 'device-1', name: 'BLUFI_DEVICE' }]);
+    expect(callback).toHaveBeenCalledWith([{ id: 'device-1', name: 'BLUFI_DEVICE' }]);
+
+    dispose();
+    expect(ipcRenderer.removeListener).toHaveBeenCalledWith('ble:scan-results', listener);
   });
 });

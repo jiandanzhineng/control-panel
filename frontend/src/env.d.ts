@@ -23,6 +23,16 @@ interface UpdateStatus {
 }
 
 interface Window {
+  provisionApi?: {
+    isSupported: () => boolean;
+    provision: (
+      credentials: { ssid: string; password: string },
+      onStatus: (status: { stage: string; message: string; detail?: string }) => void,
+    ) => Promise<{ ok: boolean; deviceName: string; stationIp: string }>;
+    selectDevice: (deviceId: string) => Promise<{ ok: boolean }>;
+    cancelSelection: () => Promise<{ ok: boolean }>;
+    onScanResults: (callback: (devices: Array<{ id: string; name: string }>) => void) => () => void;
+  };
   bleApi?: {
     isSupported: () => boolean;
     connect: () => Promise<{

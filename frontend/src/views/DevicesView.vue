@@ -20,6 +20,14 @@
             {{ bleBusy ? '蓝牙连接中' : '蓝牙连接' }}
           </el-button>
           <el-button
+            type="warning"
+            :icon="SetUp"
+            :disabled="!provisionSupported || provisionBusy || bleBusy"
+            @click="openProvisionDialog"
+          >
+            设备配网
+          </el-button>
+          <el-button
             :icon="Link"
             :loading="serialBusy"
             @click="openSerialDialog"
@@ -731,6 +739,111 @@
       <el-empty v-else description="正在扫描附近设备" />
     </el-dialog>
 
+    <el-dialog
+      v-model="provisionDialogVisible"
+      title="设备配网"
+      width="min(520px, calc(100vw - 24px))"
+      :close-on-click-modal="false"
+      :close-on-press-escape="!provisionBusy"
+      :show-close="!provisionBusy"
+      :before-close="closeProvisionDialog"
+    >
+      <el-form
+        v-if="provisionView === 'form'"
+        label-position="top"
+        class="provision-form"
+        @submit.prevent="startProvision"
+      >
+        <el-alert
+          title="设备仅支持 2.4G Wi-Fi"
+          type="info"
+          :closable="false"
+          show-icon
+        />
+        <el-form-item label="Wi-Fi 名称（SSID）">
+          <el-input
+            v-model="provisionForm.ssid"
+            maxlength="32"
+            autocomplete="off"
+            placeholder="请输入 2.4G Wi-Fi 名称"
+          />
+        </el-form-item>
+        <el-form-item label="Wi-Fi 密码">
+          <el-input
+            v-model="provisionForm.password"
+            type="password"
+            maxlength="64"
+            show-password
+            autocomplete="new-password"
+            placeholder="请输入 Wi-Fi 密码"
+            @keyup.enter="startProvision"
+          />
+        </el-form-item>
+      </el-form>
+
+      <div v-else-if="provisionView === 'selecting'" class="provision-content">
+        <el-alert
+          :title="provisionStatus.message || '正在扫描附近设备'"
+          type="info"
+          :closable="false"
+          show-icon
+        />
+        <el-table
+          v-if="provisionCandidates.length > 0"
+          :data="provisionCandidates"
+          size="small"
+          class="provision-device-table"
+          @row-click="selectProvisionCandidate"
+        >
+          <el-table-column prop="name" label="设备" min-width="220" />
+          <el-table-column label="操作" width="90">
+            <template #default="{ row }">
+              <el-button type="primary" size="small" @click.stop="selectProvisionCandidate(row)">
+                选择
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="正在扫描名称包含 BLUFI 的设备" :image-size="100" />
+      </div>
+
+      <div v-else-if="provisionView === 'running'" class="provision-result">
+        <el-icon class="provision-spinner" :size="42"><Loading /></el-icon>
+        <h3>{{ provisionStatus.message }}</h3>
+        <p v-if="provisionStatus.detail">{{ provisionStatus.detail }}</p>
+      </div>
+
+      <el-result
+        v-else-if="provisionView === 'success'"
+        icon="success"
+        title="配网成功"
+        :sub-title="provisionSuccessText"
+      />
+
+      <el-result
+        v-else
+        icon="error"
+        title="配网失败"
+        :sub-title="provisionStatus.message"
+      />
+
+      <template #footer>
+        <template v-if="provisionView === 'form'">
+          <el-button @click="provisionDialogVisible = false">取消</el-button>
+          <el-button type="primary" :disabled="!canStartProvision" @click="startProvision">
+            开始配网
+          </el-button>
+        </template>
+        <template v-else-if="provisionView === 'selecting'">
+          <el-button @click="cancelProvisionSelection">取消配网</el-button>
+        </template>
+        <template v-else-if="provisionView === 'success' || provisionView === 'error'">
+          <el-button v-if="provisionView === 'error'" @click="provisionView = 'form'">重新配网</el-button>
+          <el-button type="primary" @click="provisionDialogVisible = false">完成</el-button>
+        </template>
+      </template>
+    </el-dialog>
+
     <div style="margin-top: 30px; text-align: center;">
       <el-button link type="info" @click="$router.push('/test')" style="opacity: 0.3;">自动化测试</el-button>
     </div>
@@ -825,7 +938,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Link } from '@element-plus/icons-vue'
+import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Link, Loading, SetUp } from '@element-plus/icons-vue'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
 import RemoteProjectionPanel from '../components/RemoteProjectionPanel.vue'
 import { track } from '../analytics'
@@ -903,6 +1016,16 @@ const bleBusy = ref(false);
 const bleDialogVisible = ref(false);
 const bleCandidates = ref<Array<{ id: string; name: string }>>([]);
 let disposeBleScanResults: (() => void) | null = null;
+type ProvisionView = 'form' | 'selecting' | 'running' | 'success' | 'error';
+const provisionSupported = ref(false);
+const provisionDialogVisible = ref(false);
+const provisionBusy = ref(false);
+const provisionView = ref<ProvisionView>('form');
+const provisionForm = ref({ ssid: '', password: '' });
+const provisionCandidates = ref<Array<{ id: string; name: string }>>([]);
+const provisionStatus = ref({ stage: 'idle', message: '', detail: '' });
+const provisionResult = ref<{ deviceName: string; stationIp: string } | null>(null);
+let disposeProvisionScanResults: (() => void) | null = null;
 const serialBusy = ref(false);
 const serialDialogVisible = ref(false);
 const serialPortsLoading = ref(false);
@@ -938,6 +1061,16 @@ const selectedDevice = computed<Device | null>(() => {
 });
 const connectedCount = computed(() => devices.value.filter(d => d.connected).length);
 const disconnectedCount = computed(() => devices.value.filter(d => !d.connected).length);
+const canStartProvision = computed(() => {
+  return provisionForm.value.ssid.trim().length > 0 && !provisionBusy.value;
+});
+const provisionSuccessText = computed(() => {
+  const result = provisionResult.value;
+  if (!result) return '设备已连接到 Wi-Fi';
+  return result.stationIp
+    ? `${result.deviceName} 已连接到 Wi-Fi，IP：${result.stationIp}`
+    : `${result.deviceName} 已连接到 Wi-Fi`;
+});
 // 已上报 device_connect 的在线设备 id 集合，用于检测离线→在线边沿
 let connectedDeviceIds = new Set<string>();
 const onlineDevices = computed(() => devices.value.filter(d => d.connected));
@@ -1023,8 +1156,12 @@ const originalData = ref<DeviceData>({});
 
 onMounted(async () => {
   bleSupported.value = !!window.bleApi?.isSupported();
+  provisionSupported.value = !!window.provisionApi?.isSupported();
   disposeBleScanResults = window.bleApi?.onScanResults((candidates) => {
     bleCandidates.value = candidates;
+  }) || null;
+  disposeProvisionScanResults = window.provisionApi?.onScanResults((candidates) => {
+    if (provisionView.value === 'selecting') provisionCandidates.value = candidates;
   }) || null;
   await init();
   if (autoRefreshEnabled.value) startAutoRefresh();
@@ -1033,8 +1170,11 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (bleBusy.value) window.bleApi?.cancelSelection().catch(() => {});
+  if (provisionView.value === 'selecting') window.provisionApi?.cancelSelection().catch(() => {});
   disposeBleScanResults?.();
   disposeBleScanResults = null;
+  disposeProvisionScanResults?.();
+  disposeProvisionScanResults = null;
   closeMonitorConnection();
   closeOtaStatusConnection();
   stopAutoRefresh();
@@ -1303,6 +1443,91 @@ async function startBleConnect() {
   } finally {
     bleBusy.value = false;
   }
+}
+
+function openProvisionDialog() {
+  if (!window.provisionApi?.isSupported()) {
+    ElMessage.error('当前电脑或运行环境不支持蓝牙配网');
+    return;
+  }
+  provisionCandidates.value = [];
+  provisionStatus.value = { stage: 'idle', message: '', detail: '' };
+  provisionResult.value = null;
+  provisionView.value = 'form';
+  provisionDialogVisible.value = true;
+}
+
+async function startProvision() {
+  const api = window.provisionApi;
+  if (!api || !canStartProvision.value) return;
+
+  provisionBusy.value = true;
+  provisionCandidates.value = [];
+  provisionResult.value = null;
+  provisionView.value = 'selecting';
+  try {
+    const result = await api.provision({
+      ssid: provisionForm.value.ssid.trim(),
+      password: provisionForm.value.password,
+    }, (status) => {
+      provisionStatus.value = {
+        stage: status.stage,
+        message: status.message,
+        detail: status.detail || '',
+      };
+      provisionView.value = status.stage === 'selecting' ? 'selecting'
+        : status.stage === 'success' ? 'success'
+          : 'running';
+    });
+    provisionResult.value = result;
+    provisionView.value = 'success';
+    refreshDevices().catch(() => {});
+    ElMessage.success('设备配网成功');
+  } catch (error: any) {
+    const cancelled = error?.name === 'NotFoundError'
+      || String(error?.message || '').toLowerCase().includes('cancel');
+    if (cancelled) {
+      provisionView.value = 'form';
+      provisionStatus.value = { stage: 'idle', message: '', detail: '' };
+    } else {
+      provisionView.value = 'error';
+      provisionStatus.value = {
+        stage: 'error',
+        message: error?.message || '设备配网失败',
+        detail: '',
+      };
+    }
+  } finally {
+    provisionBusy.value = false;
+  }
+}
+
+async function selectProvisionCandidate(candidate: { id: string; name: string }) {
+  try {
+    provisionStatus.value = {
+      stage: 'connecting',
+      message: `正在连接 ${candidate.name}`,
+      detail: '',
+    };
+    provisionView.value = 'running';
+    await window.provisionApi?.selectDevice(candidate.id);
+  } catch (error: any) {
+    provisionView.value = 'error';
+    provisionStatus.value = {
+      stage: 'error',
+      message: error?.message || '选择蓝牙设备失败',
+      detail: '',
+    };
+  }
+}
+
+function cancelProvisionSelection() {
+  window.provisionApi?.cancelSelection().catch(() => {});
+}
+
+function closeProvisionDialog(done: () => void) {
+  if (provisionBusy.value) return;
+  done();
 }
 
 async function selectBleCandidate(candidate: { id: string; name: string }) {
@@ -1980,6 +2205,53 @@ async function executeDeviceOperation(device: Device, operation: any) {
 
 .serial-port-list {
   display: none;
+}
+
+.provision-form,
+.provision-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 220px;
+}
+
+.provision-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.provision-device-table {
+  width: 100%;
+}
+
+.provision-result {
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 12px;
+}
+
+.provision-result h3,
+.provision-result p {
+  margin: 0;
+}
+
+.provision-result p {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.provision-spinner {
+  color: var(--el-color-primary);
+  animation: provision-spin 1.2s linear infinite;
+}
+
+@keyframes provision-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 移动端卡片样式 */

@@ -1,6 +1,7 @@
 const { ipcRenderer } = require('electron');
 const { BleDeviceClient } = require('./ble/deviceClient');
 const { BLE_UUIDS } = require('./ble/protocol');
+const { BlufiProvisionClient } = require('./blufi/provisionClient');
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
 const bleClients = new Map();
@@ -101,6 +102,26 @@ window.bleApi = {
   },
   disconnectAll: disconnectAllBleClients,
   connectedDeviceIds: () => [...bleClients.keys()],
+  selectDevice: (deviceId) => ipcRenderer.invoke('ble:select-device', deviceId),
+  cancelSelection: () => ipcRenderer.invoke('ble:cancel-selection'),
+  onScanResults: (callback) => {
+    const listener = (_event, devices) => {
+      try { callback(devices); } catch (_) {}
+    };
+    ipcRenderer.on('ble:scan-results', listener);
+    return () => ipcRenderer.removeListener('ble:scan-results', listener);
+  },
+};
+
+window.provisionApi = {
+  isSupported: () => !!navigator.bluetooth?.requestDevice,
+  provision: (credentials, onStatus) => {
+    const client = new BlufiProvisionClient({
+      bluetooth: navigator.bluetooth,
+      onStatus,
+    });
+    return client.provision(credentials);
+  },
   selectDevice: (deviceId) => ipcRenderer.invoke('ble:select-device', deviceId),
   cancelSelection: () => ipcRenderer.invoke('ble:cancel-selection'),
   onScanResults: (callback) => {
