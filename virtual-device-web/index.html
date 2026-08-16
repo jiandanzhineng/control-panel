@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>虚拟设备 CUNZHI01 · 调试台</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>虚拟 CUNZHI01</h1>
+  <div class="conn">
+    <span id="dot" class="dot"></span>
+    <span id="connText">未连接</span>
+  </div>
+</header>
+
+<main>
+  <section class="card" id="cfgCard">
+    <h2>接入</h2>
+    <div class="row">
+      <label>Broker</label>
+      <input id="broker" value="ws://127.0.0.1:8083/mqtt">
+    </div>
+    <div class="row">
+      <label>设备 ID</label>
+      <input id="devId" value="v-web-cunzhi">
+    </div>
+    <div class="row">
+      <label>上报间隔</label>
+      <input id="reportMs" type="number" value="500" min="100" step="100">
+      <span class="unit">ms</span>
+    </div>
+    <div class="row btns">
+      <button id="btnConnect" class="primary">连接</button>
+      <button id="btnDisconnect" disabled>断开</button>
+    </div>
+    <p class="hint" id="cfgHint"></p>
+  </section>
+
+  <section class="card">
+    <h2>踮脚压力 <span class="sub">pressure1 → tiptoePressure</span></h2>
+    <div class="gauge">
+      <div class="gauge-fill" id="pFill"></div>
+      <div class="gauge-mark" id="pMark" title="弧阈值 30"></div>
+    </div>
+    <input id="pressure" class="slider" type="range" min="0" max="100" step="1" value="0">
+    <div class="readout">
+      <span id="pVal">0</span><span class="unit">kPa</span>
+      <span class="spacer"></span>
+      <label class="chk"><input id="autoFall" type="checkbox"> 松手回落到 0</label>
+    </div>
+    <div class="row btns">
+      <button data-preset="0">放下 0</button>
+      <button data-preset="20">轻踮 20</button>
+      <button data-preset="45">踩实 45</button>
+      <button data-preset="80">用力 80</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>电击状态 <span class="sub">来自 /drecv 下行</span></h2>
+    <div id="shockBox" class="shock off">
+      <div class="shock-state" id="shockState">未通电</div>
+      <div class="shock-volt"><span id="shockVolt">0</span><span class="unit">V</span></div>
+    </div>
+    <div class="stats">
+      <div><span class="k">累计次数</span><span class="v" id="shockCount">0</span></div>
+      <div><span class="k">最近一次</span><span class="v" id="shockLast">—</span></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>跳蛋强度 <span class="sub">power → strength</span></h2>
+    <div id="vibeBox" class="vibe off">
+      <div class="vibe-state" id="vibeState">停止</div>
+      <div class="vibe-num"><span id="vibeVal">0</span><span class="unit">/ 255</span></div>
+    </div>
+    <div class="gauge">
+      <div class="gauge-fill vfill" id="vFill"></div>
+    </div>
+    <div class="stats">
+      <div><span class="k">百分比</span><span class="v" id="vibePct">0%</span></div>
+      <div><span class="k">变更次数</span><span class="v" id="vibeCount">0</span></div>
+      <div><span class="k">最近一次</span><span class="v" id="vibeLast">—</span></div>
+    </div>
+  </section>
+
+  <section class="card wide">
+    <h2>报文日志 <button id="btnClear" class="mini">清空</button></h2>
+    <div id="log" class="log"></div>
+  </section>
+</main>
+
+<script src="/vendor/mqtt.min.js"></script>
+<script src="device.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

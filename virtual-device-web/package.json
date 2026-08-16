@@ -1,0 +1,13 @@
+{
+  "name": "virtual-device-web",
+  "version": "0.2.0",
+  "private": true,
+  "description": "浏览器虚拟设备（CUNZHI01）：滑块调踮脚压力，页面显示电击状态和跳蛋强度。经 MQTT 直接接入 control-panel，不依赖其代码。",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node selftest.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
