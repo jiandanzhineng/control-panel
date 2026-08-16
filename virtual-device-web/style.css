@@ -59,6 +59,7 @@ h2 {
 }
 .dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(53,208,127,.6); }
 .dot.err { background: var(--hot); }
+.dot.wait { background: #e0b84a; }
 
 main {
   display: grid;

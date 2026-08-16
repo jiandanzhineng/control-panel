@@ -31,7 +31,8 @@ $env:PORT=3200; node server.js # 换端口
 | 上报间隔 | 500ms | 周期发 pressure/pressure1/battery/game_cz_count（固件默认 5s） |
 
 连上后 control-panel 会自动注册这台设备（`report` 报文触发），
-在设备列表里和真设备一样可见、可控。
+在设备列表里和真设备一样可见、可控。断线（Keepalive timeout 等）会
+按 1s/2s/4s…最多 15s 自动重连；点「断开」才停。页签回前台立刻重试。
 
 ## 协议
 

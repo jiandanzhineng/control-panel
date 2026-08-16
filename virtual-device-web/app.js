@@ -4,6 +4,7 @@
 'use strict';
 
 const D = window.CunzhiDevice;
+const C = window.CunzhiConn;
 const $ = (id) => document.getElementById(id);
 
 const ARC_THRESHOLD = 30;  // 数字人侧 tiptoe-punish 弧的阈值，画一条参考线
@@ -36,6 +37,10 @@ let state = D.initialState();
 let reportTimer = null;
 let heartbeatTimer = null;
 let autoStopTimer = null;
+let reconnectTimer = null;
+let reconnectAttempt = 0;
+let wantConnected = false;
+let userEnded = false;
 let shockCount = 0;
 let vibeCount = 0;
 
@@ -49,7 +54,8 @@ function log(kind, text) {
 }
 
 function setConn(status, text) {
-  ui.dot.className = 'dot' + (status ? ' ' + status : '');
+  const wait = /重连|连接中|掉线/.test(text);
+  ui.dot.className = 'dot' + (status ? ' ' + status : wait ? ' wait' : '');
   ui.connText.textContent = text;
 }
 
@@ -128,6 +134,103 @@ function onCommand(topic, payloadBuf) {
 
 function currentId() { return ui.devId.value.trim(); }
 
+function clearReconnect() {
+  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+}
+
+function scheduleReconnect(reason) {
+  if (!C.shouldReconnect({ wantConnected, userEnded }) || reconnectTimer) return;
+  const ms = C.nextBackoff(reconnectAttempt);
+  reconnectAttempt += 1;
+  setConn('', `重连中… ${Math.round(ms / 1000)}s`);
+  log('sys', `${reason}，${ms}ms 后重连 (#${reconnectAttempt})`);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    openSocket();
+  }, ms);
+}
+
+function disposeClient() {
+  stopReport();
+  stopHeartbeat();
+  if (!client) return;
+  const c = client;
+  client = null;
+  c.removeAllListeners();
+  try { c.end(true); } catch (_) { /* 已断 */ }
+}
+
+function subscribeTopics(id) {
+  const topics = [D.recvTopic(id), D.allTopic()];
+  const trySub = () => {
+    if (!C.canSubscribe(client)) return;
+    client.subscribe(topics, (err) => {
+      if (!err) { log('sys', `订阅 ${topics.join(' ')}`); return; }
+      if (!C.shouldReconnect({ wantConnected, userEnded })) return;
+      if (!C.canSubscribe(client)) {
+        log('sys', `订阅推迟: ${err.message}`);
+        return;
+      }
+      log('sys', `订阅失败，${C.SUBSCRIBE_RETRY_MS}ms 后重试: ${err.message}`);
+      setTimeout(trySub, C.SUBSCRIBE_RETRY_MS);
+    });
+  };
+  trySub();
+}
+
+function openSocket() {
+  if (!C.shouldReconnect({ wantConnected, userEnded })) return;
+  const url = ui.broker.value.trim();
+  const id = currentId();
+  if (!url || !id || !window.mqtt) return;
+
+  disposeClient();
+  setConn('', reconnectAttempt ? '重连中…' : '连接中…');
+  ui.btnConnect.disabled = true;
+  ui.btnDisconnect.disabled = false;
+
+  client = window.mqtt.connect(url, C.mqttOptions(C.makeClientId(id)));
+
+  client.on('connect', () => {
+    reconnectAttempt = 0;
+    clearReconnect();
+    setConn('on', `已连接 · ${id}`);
+    ui.cfgHint.className = 'hint';
+    ui.cfgHint.textContent = '';
+    log('sys', `已连接 ${url}`);
+    subscribeTopics(id);
+    publish(D.pubTopic(id), D.reportMessage(state));
+    startReport();
+    startHeartbeat();
+  });
+
+  client.on('message', onCommand);
+
+  client.on('error', (err) => {
+    if (C.isReconnectNoise(err)) return;
+    setConn('err', '错误');
+    log('sys', `错误: ${err.message}`);
+    ui.cfgHint.className = 'hint err';
+    ui.cfgHint.textContent = err.message;
+  });
+
+  client.on('close', () => {
+    stopReport();
+    stopHeartbeat();
+    if (!C.shouldReconnect({ wantConnected, userEnded })) {
+      setConn('', '未连接');
+      return;
+    }
+    scheduleReconnect('连接断开');
+  });
+
+  client.on('offline', () => {
+    stopReport();
+    stopHeartbeat();
+    if (C.shouldReconnect({ wantConnected, userEnded })) setConn('', '掉线');
+  });
+}
+
 function connect() {
   const url = ui.broker.value.trim();
   const id = currentId();
@@ -141,59 +244,21 @@ function connect() {
     ui.cfgHint.textContent = 'mqtt.min.js 没加载到，检查 server.js 的日志';
     return;
   }
-
+  userEnded = false;
+  wantConnected = true;
+  reconnectAttempt = 0;
+  clearReconnect();
   ui.cfgHint.className = 'hint';
   ui.cfgHint.textContent = '';
-  setConn('', '连接中…');
-  ui.btnConnect.disabled = true;
-
-  client = window.mqtt.connect(url, {
-    clientId: `vweb_${id}_${Math.random().toString(16).slice(2, 8)}`,
-    clean: true,
-    reconnectPeriod: 2000,
-    connectTimeout: 5000,
-  });
-
-  client.on('connect', () => {
-    setConn('on', `已连接 · ${id}`);
-    ui.btnDisconnect.disabled = false;
-    log('sys', `已连接 ${url}`);
-    const topics = [D.recvTopic(id), D.allTopic()];
-    client.subscribe(topics, (err) => {
-      if (err) log('sys', `订阅失败: ${err.message}`);
-      else log('sys', `订阅 ${topics.join(' ')}`);
-    });
-    // report 让 control-panel 自动注册这台设备（deviceService.js:321）
-    publish(D.pubTopic(id), D.reportMessage(state));
-    startReport();
-    startHeartbeat();
-  });
-
-  client.on('message', onCommand);
-
-  client.on('error', (err) => {
-    setConn('err', '错误');
-    log('sys', `错误: ${err.message}`);
-    ui.cfgHint.className = 'hint err';
-    ui.cfgHint.textContent = err.message;
-  });
-
-  client.on('close', () => {
-    setConn('', '未连接');
-    ui.btnConnect.disabled = false;
-    ui.btnDisconnect.disabled = true;
-    stopReport();
-    stopHeartbeat();
-  });
-
-  client.on('reconnect', () => setConn('', '重连中…'));
+  openSocket();
 }
 
 function disconnect() {
-  stopReport();
-  stopHeartbeat();
+  userEnded = true;
+  wantConnected = false;
+  clearReconnect();
   if (autoStopTimer) { clearTimeout(autoStopTimer); autoStopTimer = null; }
-  if (client) { client.end(true); client = null; }
+  disposeClient();
   setConn('', '未连接');
   ui.btnConnect.disabled = false;
   ui.btnDisconnect.disabled = true;
@@ -248,6 +313,16 @@ ui.btnConnect.addEventListener('click', connect);
 ui.btnDisconnect.addEventListener('click', disconnect);
 ui.btnClear.addEventListener('click', () => { ui.log.innerHTML = ''; });
 ui.reportMs.addEventListener('change', () => { if (reportTimer) startReport(); });
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  if (!C.shouldReconnect({ wantConnected, userEnded })) return;
+  if (client && client.connected) return;
+  clearReconnect();
+  reconnectAttempt = 0;
+  log('sys', '页签回到前台，立刻重连');
+  openSocket();
+});
 
 // 阈值参考线
 ui.pMark.style.left = ARC_THRESHOLD + '%';

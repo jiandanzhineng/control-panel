@@ -137,3 +137,41 @@ it('set/update 只改状态不 MQTT 回显', () => {
 });
 
 console.log(`\n协议逻辑 ${pass} 项通过`);
+
+const C = require('./conn.js');
+console.log('\nconn.js 重连策略');
+const before = pass;
+
+it('keepalive 显式开启，库内置重连关掉', () => {
+  const o = C.mqttOptions('vweb_x');
+  assert.strictEqual(o.keepalive, 30);
+  assert.strictEqual(o.reconnectPeriod, 0);
+  assert.strictEqual(o.resubscribe, false);
+});
+
+it('退避 1s/2s/4s…封顶 15s', () => {
+  assert.strictEqual(C.nextBackoff(0), 1000);
+  assert.strictEqual(C.nextBackoff(1), 2000);
+  assert.strictEqual(C.nextBackoff(4), 15000);
+  assert.strictEqual(C.nextBackoff(9), 15000);
+});
+
+it('用户点断开就不再重连', () => {
+  assert.strictEqual(C.shouldReconnect({ wantConnected: true, userEnded: false }), true);
+  assert.strictEqual(C.shouldReconnect({ wantConnected: false, userEnded: true }), false);
+  assert.strictEqual(C.shouldReconnect({ wantConnected: true, userEnded: true }), false);
+});
+
+it('Keepalive timeout / client disconnecting 当噪声', () => {
+  assert.ok(C.isReconnectNoise({ message: 'Keepalive timeout' }));
+  assert.ok(C.isReconnectNoise({ message: 'client disconnecting' }));
+  assert.ok(!C.isReconnectNoise({ message: 'mqtt.min.js 没加载到' }));
+});
+
+it('disconnecting 时不订阅', () => {
+  assert.strictEqual(C.canSubscribe({ connected: true, disconnecting: true }), false);
+  assert.strictEqual(C.canSubscribe({ connected: true, disconnecting: false }), true);
+  assert.strictEqual(C.canSubscribe(null), false);
+});
+
+console.log(`重连策略 ${pass - before} 项通过`);
