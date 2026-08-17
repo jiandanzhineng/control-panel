@@ -52,7 +52,7 @@ async function waitReady(dir, child, timeoutMs = 120000) {
     try {
       const inst = JSON.parse(fs.readFileSync(instancePath, 'utf8'));
       const port = Number(inst.port);
-      if (port > 0) {
+      if (port > 0 && Number(inst.pid) === Number(child.pid)) {
         const infoUrl = `http://127.0.0.1:${port}/api/info`;
         const response = await fetch(infoUrl);
         if (response.ok) {
@@ -112,6 +112,7 @@ async function startApp(id) {
   const exe = path.resolve(dir, launch.exe);
   const args = Array.isArray(launch.args) ? launch.args.slice() : [];
   const cwd = path.resolve(dir, launch.cwd || '.');
+  fs.rmSync(path.join(cwd, 'data', 'instance.json'), { force: true });
   const child = spawn(exe, args, {
     cwd,
     env: launchEnv(launch),
