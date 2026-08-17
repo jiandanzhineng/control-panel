@@ -1,0 +1,1 @@
+- 本地测更新用的 1.0.33 未打包安装版：`E:\smart\project\control-panel\.tmp\1.0.33-win\win-unpacked\UnderSilicon.exe`（含检查更新反馈和测试渠道推荐更高正式版）。源码版本仍是 1.0.34-beta.1，不要提交这次临时改号。
