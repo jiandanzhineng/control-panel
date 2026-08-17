@@ -42,23 +42,25 @@ function launchEnv(launch) {
   };
 }
 
-async function waitReady(dir, child, fallbackUrl, timeoutMs = 120000) {
+async function waitReady(dir, child, timeoutMs = 120000) {
   const deadline = Date.now() + timeoutMs;
   const instancePath = path.join(dir, 'data', 'instance.json');
   while (Date.now() < deadline) {
     if (child.exitCode != null) {
       throw procError('LOCAL_APP_EXITED', `进程提前退出 (${child.exitCode})`, 500);
     }
-    let url = fallbackUrl;
     try {
       const inst = JSON.parse(fs.readFileSync(instancePath, 'utf8'));
-      if (inst.port) url = `http://127.0.0.1:${inst.port}/api/info`;
-    } catch (_) {}
-    try {
-      const response = await fetch(url);
-      if (response.ok) {
-        const page = String(url).replace(/\/api\/info$/, '/');
-        return { url: page, info: await response.json() };
+      const port = Number(inst.port);
+      if (port > 0) {
+        const infoUrl = `http://127.0.0.1:${port}/api/info`;
+        const response = await fetch(infoUrl);
+        if (response.ok) {
+          const info = await response.json();
+          if (info && info.avatar && info.model) {
+            return { url: `http://127.0.0.1:${port}/`, info };
+          }
+        }
       }
     } catch (_) {}
     await sleep(400);
@@ -116,14 +118,13 @@ async function startApp(id) {
     windowsHide: true,
     stdio: 'ignore',
   });
-  const fallback = launch.readyUrl || 'http://127.0.0.1:8020/api/info';
-  running.set(id, { child, url: fallback, startedAt: Date.now() });
+  running.set(id, { child, url: null, startedAt: Date.now() });
   child.on('exit', () => {
     const current = running.get(id);
     if (current && current.child === child) running.delete(id);
   });
   try {
-    const ready = await waitReady(cwd, child, fallback);
+    const ready = await waitReady(cwd, child);
     running.set(id, { child, url: ready.url, startedAt: Date.now() });
     return { id, running: true, url: ready.url, pid: child.pid, info: ready.info };
   } catch (error) {

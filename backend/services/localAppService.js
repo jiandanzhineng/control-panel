@@ -3,7 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { pipeline } = require('stream/promises');
 
-const DEFAULT_FEED = 'http://firmware.undersilicon.cn/apps';
+const DEFAULT_FEED = 'https://ezs-firmware.oss-cn-shanghai.aliyuncs.com/apps';
 const CATALOG = {
   'digital-human': {
     id: 'digital-human',

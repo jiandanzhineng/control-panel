@@ -1,3 +1,3 @@
 - 本地测更新用的 1.0.33 未打包安装版：`E:\smart\project\control-panel\.tmp\1.0.33-win\win-unpacked\UnderSilicon.exe`
 - 当前源码版本：1.0.34-beta.2（测试渠道）
-- 数字人本机应用清单：`LOCAL_APP_FEED` 默认 `http://firmware.undersilicon.cn/apps`，渠道 `LOCAL_APP_CHANNEL`（test/stable）。`runtime`+`ffmpeg` 一个 zip，模型一个 zip，其余按文件增量。安装目录 `%APPDATA%\UnderSilicon\data\apps\digital-human\current`。OSS 密钥在 `E:\smart\.env`。
+- 数字人本机应用清单：`LOCAL_APP_FEED` 默认走 OSS 源 `https://ezs-firmware.oss-cn-shanghai.aliyuncs.com/apps`（`firmware.undersilicon.cn` 有时还缓存旧的 182 文件清单）。三层 zip：runtime / models / app。开发态安装目录 `%APPDATA%\Electron\data\apps\digital-human\current`。OSS 密钥在 `E:\smart\.env`。

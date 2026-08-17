@@ -43,11 +43,16 @@ describe('localAppProcessService', () => {
     const current = path.join(process.env.BACKEND_DATA_DIR, 'apps', 'digital-human', 'current');
     fs.mkdirSync(current, { recursive: true });
     fs.writeFileSync(path.join(current, 'server.js'), [
+      "const fs = require('fs');",
+      "const path = require('path');",
       "const http = require('http');",
-      `http.createServer((req, res) => {`,
+      `const port = ${port};`,
+      "fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });",
+      "fs.writeFileSync(path.join(__dirname, 'data', 'instance.json'), JSON.stringify({ port, pid: process.pid }));",
+      "http.createServer((req, res) => {",
       "  res.setHeader('content-type', 'application/json');",
-      "  res.end(JSON.stringify({ ok: true }));",
-      `}).listen(${port}, '127.0.0.1');`,
+      "  res.end(JSON.stringify({ avatar: 'xiaoya_wide', model: '256', ep: 'DmlExecutionProvider' }));",
+      "}).listen(port, '127.0.0.1');",
       '',
     ].join('\n'));
     fs.writeFileSync(path.join(current, '.app-meta.json'), JSON.stringify({
@@ -69,5 +74,49 @@ describe('localAppProcessService', () => {
 
     await service.stopApp('digital-human');
     expect(service.getRunning('digital-human').running).toBe(false);
+  });
+
+  it('does not treat a foreign readyUrl occupant as the installed app', async () => {
+    const decoyPort = await freePort();
+    const realPort = await freePort();
+    const decoy = require('http').createServer((req, res) => {
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ avatar: 'foreign', model: '256', ep: 'CPUExecutionProvider' }));
+    });
+    await new Promise((resolve) => decoy.listen(decoyPort, '127.0.0.1', resolve));
+    const current = path.join(process.env.BACKEND_DATA_DIR, 'apps', 'digital-human', 'current');
+    fs.mkdirSync(current, { recursive: true });
+    fs.writeFileSync(path.join(current, 'server.js'), [
+      "const fs = require('fs');",
+      "const path = require('path');",
+      "const http = require('http');",
+      `const port = ${realPort};`,
+      "fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });",
+      "fs.writeFileSync(path.join(__dirname, 'data', 'instance.json'), JSON.stringify({ port, pid: process.pid }));",
+      "http.createServer((req, res) => {",
+      "  res.setHeader('content-type', 'application/json');",
+      "  res.end(JSON.stringify({ avatar: 'xiaoya_wide', model: '256', ep: 'DmlExecutionProvider' }));",
+      "}).listen(port, '127.0.0.1');",
+      '',
+    ].join('\n'));
+    fs.writeFileSync(path.join(current, '.app-meta.json'), JSON.stringify({
+      id: 'digital-human',
+      version: 'test',
+      launch: {
+        cwd: '.',
+        exe: process.execPath,
+        args: ['server.js'],
+        readyUrl: `http://127.0.0.1:${decoyPort}/api/info`,
+      },
+    }));
+    const service = require('../services/localAppProcessService');
+    try {
+      const started = await service.startApp('digital-human');
+      expect(started.url).toContain(String(realPort));
+      expect(started.url).not.toContain(String(decoyPort));
+      expect(started.info.avatar).toBe('xiaoya_wide');
+    } finally {
+      decoy.close();
+    }
   });
 });
