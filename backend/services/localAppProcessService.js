@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 const localAppService = require('./localAppService');
 const localSessionService = require('./localSessionService');
@@ -41,15 +42,24 @@ function launchEnv(launch) {
   };
 }
 
-async function waitReady(url, child, timeoutMs = 120000) {
+async function waitReady(dir, child, fallbackUrl, timeoutMs = 120000) {
   const deadline = Date.now() + timeoutMs;
+  const instancePath = path.join(dir, 'data', 'instance.json');
   while (Date.now() < deadline) {
     if (child.exitCode != null) {
       throw procError('LOCAL_APP_EXITED', `进程提前退出 (${child.exitCode})`, 500);
     }
+    let url = fallbackUrl;
+    try {
+      const inst = JSON.parse(fs.readFileSync(instancePath, 'utf8'));
+      if (inst.port) url = `http://127.0.0.1:${inst.port}/api/info`;
+    } catch (_) {}
     try {
       const response = await fetch(url);
-      if (response.ok) return await response.json();
+      if (response.ok) {
+        const page = String(url).replace(/\/api\/info$/, '/');
+        return { url: page, info: await response.json() };
+      }
     } catch (_) {}
     await sleep(400);
   }
@@ -106,19 +116,20 @@ async function startApp(id) {
     windowsHide: true,
     stdio: 'ignore',
   });
-  const url = launch.readyUrl || 'http://127.0.0.1:8020/';
-  running.set(id, { child, url, startedAt: Date.now() });
+  const fallback = launch.readyUrl || 'http://127.0.0.1:8020/api/info';
+  running.set(id, { child, url: fallback, startedAt: Date.now() });
   child.on('exit', () => {
     const current = running.get(id);
     if (current && current.child === child) running.delete(id);
   });
   try {
-    await waitReady(url, child);
+    const ready = await waitReady(cwd, child, fallback);
+    running.set(id, { child, url: ready.url, startedAt: Date.now() });
+    return { id, running: true, url: ready.url, pid: child.pid, info: ready.info };
   } catch (error) {
     await stopApp(id);
     throw error;
   }
-  return { id, running: true, url, pid: child.pid };
 }
 
 function _resetForTests() {
