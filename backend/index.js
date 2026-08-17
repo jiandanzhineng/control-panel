@@ -11,6 +11,7 @@ const logService = require('./services/logService');
 const bridgeService = require('./services/bridgeService');
 const gameService = require('./services/gameService');
 const gameCacheService = require('./services/gameCacheService');
+const localAppProcessService = require('./services/localAppProcessService');
 const { BRIDGE_INTERNAL_HEADER } = require('./constants/bridgeAccess');
 const { browserApiCors } = require('./middleware/browserApiAccess');
 const externalGameAccessService = require('./services/externalGameAccessService');
@@ -131,6 +132,7 @@ function shutdownBackend(reason = 'backend-shutdown', {
 
   backendShutdownPromise = (async () => {
     await deviceWatchdogService.shutdown(reason);
+    await localAppProcessService.stopAll().catch(() => ({ ok: false }));
     await remoteProjectionService.shutdown();
     if (typeof beforeTransportShutdown === 'function') {
       await beforeTransportShutdown();
@@ -185,6 +187,7 @@ app.use('/api/device-capabilities', require('./routes/deviceCapabilities'));
 app.use('/api/games', require('./routes/games'));
 app.use('/api/game-registry', require('./routes/gameRegistry'));
 app.use('/api/game-cache', require('./routes/gameCache'));
+app.use('/api/local-apps', require('./routes/localApps'));
 app.use('/api/plugins', require('./routes/plugins'));
 app.use('/api/logs', require('./routes/logs'));
 app.use('/api/test', require('./routes/test'));

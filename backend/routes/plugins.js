@@ -21,8 +21,10 @@ router.get('/:id', (req, res) => {
   }
 });
 
-router.post('/:id/activate', (req, res) => {
+router.post('/:id/activate', async (req, res) => {
   try {
+    const localAppProcessService = require('../services/localAppProcessService');
+    await localAppProcessService.stopAll();
     const result = pluginService.activate(req.params.id, req.body || {});
     res.json(result);
   } catch (error) {

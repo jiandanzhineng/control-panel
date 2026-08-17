@@ -4,7 +4,7 @@
       v-if="iframeSrc"
       :src="iframeSrc"
       class="game-frame"
-      allow="fullscreen; autoplay; gyroscope; accelerometer"
+      allow="fullscreen; autoplay; gyroscope; accelerometer; microphone"
       allowfullscreen
     ></iframe>
 
@@ -56,6 +56,10 @@ async function stopCurrentBridge() {
   if (stopped) return;
   stopped = true;
   try {
+    const localApp = String(route.query.localApp || '');
+    if (localApp) {
+      await fetch(`/api/local-apps/${encodeURIComponent(localApp)}/stop`, { method: 'POST' });
+    }
     await fetch('/api/games/stop-current', { method: 'POST' });
   } catch (_) {}
 }

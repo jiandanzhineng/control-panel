@@ -84,8 +84,10 @@ router.get('/:id/meta', (req, res) => {
   }
 });
 
-router.post('/:id/start', (req, res) => {
+router.post('/:id/start', async (req, res) => {
   try {
+    const localAppProcessService = require('../services/localAppProcessService');
+    await localAppProcessService.stopAll();
     const g = gameService.getGameById(req.params.id);
     if (!g) return sendError(res, 'GAME_NOT_FOUND', '游戏不存在', 404);
     const { deviceMapping = {}, parameters = {} } = req.body || {};
@@ -104,8 +106,10 @@ router.post('/:id/start', (req, res) => {
   }
 });
 
-router.post('/stop-current', (req, res) => {
+router.post('/stop-current', async (req, res) => {
   try {
+    const localAppProcessService = require('../services/localAppProcessService');
+    await localAppProcessService.stopAll();
     res.json(bridgeService.exitCurrent());
   } catch (e) {
     sendError(res, 'GAME_STOP_FAILED', e?.message || String(e), 500);

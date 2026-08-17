@@ -9,7 +9,7 @@ import type { RouteLocationRaw } from 'vue-router';
  * 刷新即丢失）。这里延续同一语义：在玩法启动时 set、显式停止时 clear，供玩法库页顶部
  * 「当前运行」提示条使用。
  */
-export type CarrierType = 'game' | 'plugin';
+export type CarrierType = 'game' | 'plugin' | 'local-app';
 
 export interface ActivePlay {
   carrierType: CarrierType;

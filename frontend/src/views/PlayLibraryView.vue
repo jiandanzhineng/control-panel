@@ -53,9 +53,15 @@
       />
     </section>
 
-    <el-empty v-if="!busy.refresh && filteredItems.length === 0" description="暂无本地游戏或插件" />
+    <el-empty v-if="!busy.refresh && filteredItems.length === 0 && localApps.length === 0" description="暂无本地游戏或插件" />
 
     <div class="play-grid">
+      <LocalAppCard
+        v-for="app in localApps"
+        :key="`local-app:${app.id}`"
+        :app="app"
+        @refresh="loadAll"
+      />
       <article
         v-for="item in filteredItems"
         :key="`${item.carrierType}:${item.id}`"
@@ -112,6 +118,7 @@ import { ref, computed, onMounted, markRaw } from 'vue';
 import { useRouter } from 'vue-router';
 import { track } from '../analytics';
 import { useActivePlay, clearActivePlay } from '../composables/useActivePlay';
+import LocalAppCard from '../components/LocalAppCard.vue';
 import {
   Close, Delete, Operation, Reading, Refresh, Search, Upload, VideoPlay,
 } from '@element-plus/icons-vue';
@@ -147,6 +154,7 @@ const { activePlay } = useActivePlay();
 
 const games = ref<PlayItem[]>([]);
 const plugins = ref<PlayItem[]>([]);
+const localApps = ref<Record<string, any>[]>([]);
 const search = ref('');
 const error = ref('');
 const busy = ref({ refresh: false, upload: false, stop: false });
@@ -172,10 +180,12 @@ onMounted(loadAll);
 
 async function loadAll() {
   error.value = '';
-  const [gRes, pRes] = await Promise.all([
+  const [gRes, pRes, aRes] = await Promise.all([
     fetch('/api/games').then((r) => r.json()).catch(() => null),
     fetch('/api/plugins').then((r) => r.json()).catch(() => null),
+    fetch('/api/local-apps').then((r) => r.json()).catch(() => null),
   ]);
+  localApps.value = Array.isArray(aRes) ? aRes : [];
 
   try {
     const localGames: PlayItem[] = (gRes && Array.isArray(gRes))
