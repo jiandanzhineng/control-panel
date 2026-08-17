@@ -13,6 +13,9 @@ pnpm-debug.log*
 **/out/
 **/coverage/
 
+# 本机寄存的账号 JWT，给数字人走 mimo-relay，绝不能入库
+backend/data/local-session.json
+
 # Environment files
 .env
 .env.*

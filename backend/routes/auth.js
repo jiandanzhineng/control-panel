@@ -2,6 +2,7 @@
 // token 不落本地后端，由前端持有，受保护接口从这里透传 Authorization 头。
 const express = require('express');
 const accountService = require('../services/accountService');
+const localSession = require('../services/localSessionService');
 const { sendError } = require('../utils/http');
 
 const router = express.Router();
@@ -116,6 +117,54 @@ router.delete('/me', async (req, res) => {
 // 诊断用：当前配置的账号服务地址
 router.get('/status', (req, res) => {
   res.json({ baseUrl: accountService.getBaseUrl() });
+});
+
+function userFromMe(data) {
+  return (data && data.user) || data || {};
+}
+
+// 面板前端登录后寄存 JWT，给本机数字人走 mimo-relay。
+router.post('/local-session', async (req, res) => {
+  const token = requireToken(req, res);
+  if (!token) return;
+  try {
+    const { data } = await accountService.getMe(token);
+    const user = userFromMe(data);
+    localSession.deposit(token, user);
+    res.json({ ok: true, user: { id: user.id || null, email: user.email || null } });
+  } catch (e) {
+    handleUpstreamError(res, e);
+  }
+});
+
+router.delete('/local-session', (_req, res) => {
+  localSession.clear();
+  res.status(204).end();
+});
+
+// 只许本机读取。JWT 能在公网 relay 花额度。
+router.get('/relay-credential', async (req, res) => {
+  if (!localSession.isLoopback(req)) {
+    return sendError(res, 'LOCAL_ONLY', '仅本机可读取登录凭据', 403);
+  }
+  const session = localSession.get();
+  if (!session || !session.token) {
+    return sendError(res, 'NOT_SIGNED_IN', '控制面板未登录', 401);
+  }
+  try {
+    const { data } = await accountService.getMe(session.token);
+    const user = userFromMe(data);
+    localSession.deposit(session.token, user);
+    res.json({
+      relay_url: localSession.getRelayUrl(),
+      token: session.token,
+      user: { id: user.id || session.user?.id || null,
+              email: user.email || session.user?.email || null },
+    });
+  } catch (e) {
+    localSession.clear();
+    handleUpstreamError(res, e);
+  }
 });
 
 module.exports = router;

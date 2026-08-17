@@ -30,6 +30,7 @@ function persistSession(token: string, user: AuthUser): void {
   state.token = token;
   state.user = user;
   state.status = 'authed';
+  void authApi.depositLocalSession(token).catch(() => { /* 不挡登录 */ });
 }
 
 function clearSession(): void {
@@ -37,6 +38,7 @@ function clearSession(): void {
   state.token = null;
   state.user = null;
   state.status = 'guest';
+  void authApi.clearLocalSession().catch(() => { /* 后端没开也照清本地 */ });
 }
 
 async function checkSession(): Promise<void> {
@@ -48,6 +50,7 @@ async function checkSession(): Promise<void> {
     const { user } = await authApi.fetchMe(state.token);
     state.user = user;
     state.status = 'authed';
+    void authApi.depositLocalSession(state.token).catch(() => { /* 不挡启动 */ });
   } catch (e) {
     if (e instanceof authApi.ApiError && e.status === 401) {
       clearSession();

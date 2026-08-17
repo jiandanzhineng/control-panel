@@ -97,3 +97,11 @@ export function fetchMe(token: string): Promise<{ user: AuthUser }> {
 export function deleteAccount(token: string): Promise<void> {
   return request<void>('/me', { method: 'DELETE', token });
 }
+
+export function depositLocalSession(token: string): Promise<void> {
+  return request<void>('/local-session', { method: 'POST', token });
+}
+
+export function clearLocalSession(): Promise<void> {
+  return request<void>('/local-session', { method: 'DELETE' });
+}
