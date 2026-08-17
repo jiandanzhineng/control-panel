@@ -10,6 +10,12 @@ const externalGameAccessService = require('../backend/services/externalGameAcces
 const gameHost = require('./gameHost.js');
 const { createBleMainIntegration } = require('./ble/mainIntegration.js');
 const { createQuitCoordinator } = require('./shutdownCoordinator.js');
+const {
+  UPDATE_FEEDS,
+  parseLatestYmlVersion,
+  pickUpdateFeed,
+  isNewerVersion,
+} = require('./updateFeed.js');
 
 let server;
 let frontendServer;
@@ -19,11 +25,6 @@ let updateInitialized = false;
 let browserDevicePreloadPath = '';
 const browserWebviewOrigins = new Map();
 let bleMainIntegration = null;
-
-const UPDATE_FEEDS = {
-  stable: 'http://firmware.undersilicon.cn/control-panel/stable/',
-  test: 'http://firmware.undersilicon.cn/control-panel/test/',
-};
 
 function getUpdateSettingsPath() {
   return path.join(app.getPath('userData'), 'update-settings.json');
@@ -79,11 +80,43 @@ function getUpdateStatus(settings = readUpdateSettings()) {
   };
 }
 
-function configureAutoUpdate(settings = readUpdateSettings()) {
-  if (!app.isPackaged) return getUpdateStatus(settings);
+async function fetchFeedVersion(feedUrl) {
+  try {
+    const res = await fetch(new URL('latest.yml', feedUrl).toString(), {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return null;
+    return parseLatestYmlVersion(await res.text());
+  } catch {
+    return null;
+  }
+}
 
-  const status = getUpdateStatus(settings);
-  autoUpdater.allowPrerelease = status.channel === 'test';
+async function resolveUpdateStatus(settings = readUpdateSettings()) {
+  const base = getUpdateStatus(settings);
+  if (base.channel !== 'test') {
+    return { ...base, recommendedChannel: 'stable' };
+  }
+  const [testVersion, stableVersion] = await Promise.all([
+    fetchFeedVersion(UPDATE_FEEDS.test),
+    fetchFeedVersion(UPDATE_FEEDS.stable),
+  ]);
+  const picked = pickUpdateFeed({ channel: 'test', testVersion, stableVersion });
+  return {
+    ...base,
+    feedUrl: picked.feedUrl,
+    recommendedChannel: picked.channel,
+    testVersion,
+    stableVersion,
+    latestVersion: picked.version,
+  };
+}
+
+async function configureAutoUpdate(settings = readUpdateSettings()) {
+  if (!app.isPackaged) return getUpdateStatus(settings);
+  const status = await resolveUpdateStatus(settings);
+
+  autoUpdater.allowPrerelease = status.recommendedChannel === 'test';
   try {
     autoUpdater.setFeedURL({ provider: 'generic', url: status.feedUrl });
   } catch (error) {
@@ -101,19 +134,29 @@ function registerUpdateIpcHandlers() {
   });
 
   ipcMain.handle('update:check', async () => {
+    const currentVersion = app.getVersion();
     if (!app.isPackaged) {
-      return { skipped: true, reason: 'not-packaged', ...getUpdateStatus() };
+      return { skipped: true, reason: 'not-packaged', currentVersion, ...getUpdateStatus() };
     }
 
-    const status = configureAutoUpdate();
+    const status = await configureAutoUpdate();
     try {
-      const result = await autoUpdater.checkForUpdatesAndNotify();
-      return { skipped: false, result: !!result, ...status };
+      const result = await autoUpdater.checkForUpdates();
+      const latestVersion = result?.updateInfo?.version || status.latestVersion || null;
+      return {
+        ...status,
+        skipped: false,
+        available: isNewerVersion(latestVersion, currentVersion),
+        currentVersion,
+        latestVersion,
+      };
     } catch (error) {
       return {
-        skipped: false,
-        error: error?.message || String(error),
         ...status,
+        skipped: false,
+        available: false,
+        currentVersion,
+        error: error?.message || String(error),
       };
     }
   });
@@ -545,16 +588,16 @@ function setupWebviewHandling() {
   });
 }
 
-function initAutoUpdate() {
+async function initAutoUpdate() {
   if (!app.isPackaged) return;
 
   if (updateInitialized) {
-    configureAutoUpdate();
+    await configureAutoUpdate();
     return;
   }
   updateInitialized = true;
 
-  configureAutoUpdate();
+  await configureAutoUpdate();
 
   autoUpdater.on('update-available', () => {});
 
@@ -577,8 +620,7 @@ function initAutoUpdate() {
     }
   });
 
-  // 最简调用：检查并提示
-  try { autoUpdater.checkForUpdatesAndNotify(); } catch {}
+  try { autoUpdater.checkForUpdates(); } catch {}
 }
 
 function startFrontendServer(callback) {
@@ -719,7 +761,9 @@ app.whenReady().then(() => {
   registerGameHostIpcHandlers();
   setupWebviewHandling();
   startBackendThenWindow();
-  initAutoUpdate();
+  initAutoUpdate().catch((error) => {
+    console.error('[electron] Auto update init failed:', error);
+  });
 });
 
 function closeServer(target) {

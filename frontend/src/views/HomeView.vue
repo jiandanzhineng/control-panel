@@ -177,6 +177,14 @@ async function saveUpdateSettings() {
   }
 }
 
+function showUpdateResult(type: 'info' | 'success' | 'error', message: string) {
+  updateMessageType.value = type
+  updateMessage.value = message
+  if (type === 'error') ElMessage.error(message)
+  else if (type === 'success') ElMessage.success(message)
+  else ElMessage.info(message)
+}
+
 async function checkForUpdates() {
   if (!window.updateApi) return
   checkingUpdates.value = true
@@ -185,20 +193,21 @@ async function checkForUpdates() {
     const status = await window.updateApi.checkForUpdates()
     applyUpdateStatus(status)
     if (status.error) {
-      updateMessageType.value = 'error'
-      updateMessage.value = status.error
+      showUpdateResult('error', status.error)
       return
     }
     if (status.skipped) {
-      updateMessageType.value = 'info'
-      updateMessage.value = '开发环境不可用'
+      showUpdateResult('info', '开发环境不检查更新')
       return
     }
-    updateMessageType.value = 'success'
-    updateMessage.value = '已开始检查'
+    if (status.available) {
+      const versionText = status.latestVersion ? ` v${status.latestVersion}` : ''
+      showUpdateResult('success', `发现新版本${versionText}，开始下载`)
+      return
+    }
+    showUpdateResult('success', '已是最新版本')
   } catch (error: any) {
-    updateMessageType.value = 'error'
-    updateMessage.value = error?.message || '检查更新失败'
+    showUpdateResult('error', error?.message || '检查更新失败')
   } finally {
     checkingUpdates.value = false
   }

@@ -20,6 +20,10 @@ interface UpdateStatus {
   reason?: string;
   result?: boolean;
   error?: string;
+  available?: boolean;
+  currentVersion?: string;
+  latestVersion?: string;
+  recommendedChannel?: UpdateChannel;
 }
 
 interface Window {
