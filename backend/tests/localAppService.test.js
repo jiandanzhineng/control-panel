@@ -55,8 +55,8 @@ describe('localAppService', () => {
         args: ['-B', 'launcher.py'],
         readyUrl: 'http://127.0.0.1:8020/api/info',
       },
-      files: files.map(({ path: rel, sha256: digest, size }) => ({
-        path: rel, sha256: digest, size,
+      files: files.map(({ path: rel, sha256: digest, size, extract }) => ({
+        path: rel, sha256: digest, size, ...(extract ? { extract: true } : {}),
       })),
     };
     const byHash = new Map(files.map((file) => [file.sha256, file.buffer]));
@@ -75,8 +75,8 @@ describe('localAppService', () => {
 
   it('syncs only missing files and reuses cas objects', async () => {
     const web = fileEntry('web/app.js', 'hello\n');
-    const model = fileEntry('models/a.bin', 'MODEL');
-    mockFeed([web, model]);
+    const exe = fileEntry('runtime/python.exe', 'PY');
+    mockFeed([web, exe]);
     const service = require('../services/localAppService');
 
     const first = await service.syncApp('digital-human');
@@ -92,13 +92,13 @@ describe('localAppService', () => {
 
   it('downloads only changed files on version bump', async () => {
     const web = fileEntry('web/app.js', 'hello\n');
-    const model = fileEntry('models/a.bin', 'MODEL');
-    mockFeed([web, model], '1.0.0');
+    const exe = fileEntry('runtime/python.exe', 'PY');
+    mockFeed([web, exe], '1.0.0');
     const service = require('../services/localAppService');
     await service.syncApp('digital-human');
 
     const web2 = fileEntry('web/app.js', 'hello2\n');
-    mockFeed([web2, model], '1.0.1');
+    mockFeed([web2, exe], '1.0.1');
     const updated = await service.syncApp('digital-human');
     expect(updated.version).toBe('1.0.1');
     const casCalls = global.fetch.mock.calls.filter((c) => String(c[0]).includes('/cas/'));
@@ -114,5 +114,27 @@ describe('localAppService', () => {
   it('rejects unknown app ids', async () => {
     const service = require('../services/localAppService');
     await expect(service.getStatus('nope')).rejects.toMatchObject({ code: 'LOCAL_APP_NOT_FOUND' });
+  });
+
+  it('extracts runtime zip layer into the install dir', async () => {
+    const AdmZip = require('adm-zip');
+    const zip = new AdmZip();
+    zip.addFile('runtime/python.exe', Buffer.from('PY'));
+    zip.addFile('bin/ffmpeg.exe', Buffer.from('FF'));
+    const buffer = zip.toBuffer();
+    const layer = {
+      path: 'runtime-ffmpeg.zip',
+      sha256: sha256(buffer),
+      size: buffer.length,
+      buffer,
+      extract: true,
+    };
+    mockFeed([layer]);
+    const service = require('../services/localAppService');
+    const result = await service.syncApp('digital-human');
+    expect(result.installed).toBe(true);
+    const root = path.join(process.env.BACKEND_DATA_DIR, 'apps', 'digital-human', 'current');
+    expect(fs.readFileSync(path.join(root, 'runtime', 'python.exe'), 'utf8')).toBe('PY');
+    expect(fs.readFileSync(path.join(root, 'bin', 'ffmpeg.exe'), 'utf8')).toBe('FF');
   });
 });

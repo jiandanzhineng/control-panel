@@ -1,3 +1,3 @@
 - 本地测更新用的 1.0.33 未打包安装版：`E:\smart\project\control-panel\.tmp\1.0.33-win\win-unpacked\UnderSilicon.exe`
 - 当前源码版本：1.0.34-beta.2（测试渠道）
-- 数字人本机应用清单：`LOCAL_APP_FEED` 默认 `http://firmware.undersilicon.cn/apps`，渠道 `LOCAL_APP_CHANNEL`（test/stable）。本地调试可把 feed 指到一个静态目录的 HTTP 服务，目录里放 `digital-human/test/latest.json` 和 `cas/<前2位>/<sha256>`。安装目录 `%APPDATA%\UnderSilicon\data\apps\digital-human\current`
+- 数字人本机应用清单：`LOCAL_APP_FEED` 默认 `http://firmware.undersilicon.cn/apps`，渠道 `LOCAL_APP_CHANNEL`（test/stable）。`runtime`+`ffmpeg` 一个 zip，模型一个 zip，其余按文件增量。安装目录 `%APPDATA%\UnderSilicon\data\apps\digital-human\current`。OSS 密钥在 `E:\smart\.env`。

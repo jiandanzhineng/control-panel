@@ -151,15 +151,18 @@ function planSync(manifest) {
   return { missing, bytesToDownload };
 }
 
+function fileShaList(files) {
+  return (files || []).map((file) => String(file.sha256).toLowerCase()).sort();
+}
+
 function installedMatches(id, manifest) {
   const dir = currentDir(id);
   const meta = readMeta(dir);
   if (!meta || meta.version !== manifest.version) return false;
-  for (const file of manifest.files) {
-    const dest = path.join(dir, file.path);
-    if (!fs.existsSync(dest) || fs.statSync(dest).size !== file.size) return false;
-  }
-  return true;
+  const expected = fileShaList(manifest.files).join(',');
+  const actual = fileShaList((meta.files || []).map((sha256) => ({ sha256 }))).join(',');
+  if (expected !== actual) return false;
+  return fs.existsSync(path.join(dir, manifest.launch.exe));
 }
 
 async function fetchLatest(id) {
@@ -283,9 +286,25 @@ function replaceDirectory(source, target) {
   try {
     fs.renameSync(source, target);
   } catch (error) {
-    if (error.code !== 'EXDEV') throw error;
+    if (error.code !== 'EXDEV' && error.code !== 'EPERM') throw error;
     fs.cpSync(source, target, { recursive: true });
     fs.rmSync(source, { recursive: true, force: true });
+  }
+}
+
+function extractZip(zipPath, targetDir) {
+  const AdmZip = require('adm-zip');
+  const zip = new AdmZip(zipPath);
+  for (const entry of zip.getEntries()) {
+    const rel = assertSafeRelPath(entry.entryName.replace(/\\/g, '/'));
+    if (entry.isDirectory) continue;
+    const outPath = path.resolve(targetDir, rel);
+    const root = path.resolve(targetDir);
+    if (!(outPath === root || outPath.startsWith(root + path.sep))) {
+      throw appError('LOCAL_APP_UNSAFE_PATH', '压缩包路径越界');
+    }
+    ensureDir(path.dirname(outPath));
+    fs.writeFileSync(outPath, entry.getData());
   }
 }
 
@@ -293,11 +312,19 @@ function materialize(id, manifest) {
   const staging = path.join(appRoot(id), `staging-${Date.now()}`);
   ensureDir(staging);
   for (const file of manifest.files) {
+    if (file.extract) {
+      extractZip(casPath(file.sha256), staging);
+      continue;
+    }
     const rel = assertSafeRelPath(file.path);
     linkOrCopy(casPath(file.sha256), path.join(staging, rel));
   }
   fs.writeFileSync(path.join(staging, '.app-meta.json'), `${JSON.stringify({
-    id, version: manifest.version, launch: manifest.launch, installedAt: Date.now(),
+    id,
+    version: manifest.version,
+    launch: manifest.launch,
+    files: fileShaList(manifest.files),
+    installedAt: Date.now(),
   }, null, 2)}\n`);
   replaceDirectory(staging, currentDir(id));
 }
