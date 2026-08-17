@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const DEFAULT_RELAY = 'https://mqtt.undersilicon.cn:8790';
+const DEFAULT_RELAY = 'https://mqtt.undersilicon.cn:8790/v1';
 
 let memory = undefined;
 

@@ -162,7 +162,9 @@ router.get('/relay-credential', async (req, res) => {
               email: user.email || session.user?.email || null },
     });
   } catch (e) {
-    localSession.clear();
+    if (e instanceof accountService.UpstreamError && e.status === 401) {
+      localSession.clear();
+    }
     handleUpstreamError(res, e);
   }
 });
