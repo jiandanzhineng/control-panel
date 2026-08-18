@@ -8,7 +8,7 @@
         </div>
         <p class="desc">{{ app.description || '' }}</p>
         <div class="meta">
-          <el-tag size="small" type="info">版本：{{ app.version || '-' }}</el-tag>
+          <el-tag size="small" type="info">{{ versionLabel }}</el-tag>
           <el-tag v-if="app.installed && !app.needsUpdate" size="small" type="success">已安装</el-tag>
           <el-tag v-else-if="app.needsUpdate && app.installed" size="small" type="warning">有更新</el-tag>
           <el-tag v-else size="small">未安装</el-tag>
@@ -23,7 +23,9 @@
       </div>
     </div>
     <div class="play-actions">
-      <el-button type="primary" :loading="busy" @click="launch">{{ actionLabel }}</el-button>
+      <el-button v-if="!app.installed" type="primary" :loading="busy" @click="syncOnly">安装</el-button>
+      <el-button v-if="app.needsUpdate && app.installed" :loading="busy" @click="syncOnly">更新</el-button>
+      <el-button v-if="app.installed" type="primary" :loading="busy" @click="startOnly">启动</el-button>
     </div>
   </article>
 </template>
@@ -43,11 +45,11 @@ const progress = ref({ doneBytes: 0, totalBytes: 0, phase: 'idle' });
 let pollTimer: number | null = null;
 let launching = false;
 
-const actionLabel = computed(() => {
-  if (busy.value) return '处理中...';
-  if (!props.app.installed) return '安装并启动';
-  if (props.app.needsUpdate) return '更新并启动';
-  return '启动';
+const versionLabel = computed(() => {
+  const latest = props.app.version || '-';
+  const local = props.app.installedVersion;
+  if (props.app.installed && local && local !== latest) return `本地 ${local} / 最新 ${latest}`;
+  return `版本：${latest}`;
 });
 
 const percent = computed(() => {
@@ -96,46 +98,51 @@ async function confirmGuestLaunch() {
   }
 }
 
-async function launch() {
+async function withBusy(work: () => Promise<void>, failText: string) {
   if (launching || busy.value) return;
   launching = true;
-  try {
-    if (!(await confirmGuestLaunch())) return;
-  } finally {
-    launching = false;
-  }
   busy.value = true;
   error.value = '';
   try {
     pollTimer = window.setInterval(() => { void readStatus(); }, 800);
-    const syncRes = await fetch(`/api/local-apps/${encodeURIComponent(props.app.id)}/sync`, { method: 'POST' });
-    const synced = await syncRes.json();
-    if (!syncRes.ok) throw new Error(synced?.error?.message || '安装失败');
+    await work();
+    emit('refresh');
+  } catch (e: any) {
+    error.value = e?.message || failText;
+  } finally {
+    stopPoll();
+    busy.value = false;
+    launching = false;
+  }
+}
+
+async function syncOnly() {
+  await withBusy(async () => {
+    const res = await fetch(`/api/local-apps/${encodeURIComponent(props.app.id)}/sync`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error?.message || '同步失败');
+  }, '同步失败');
+}
+
+async function startOnly() {
+  if (!(await confirmGuestLaunch())) return;
+  await withBusy(async () => {
     const startRes = await fetch(`/api/local-apps/${encodeURIComponent(props.app.id)}/start`, { method: 'POST' });
     const started = await startRes.json();
     if (!startRes.ok) throw new Error(started?.error?.message || '启动失败');
     const url = String(started.url || 'http://127.0.0.1:8020/').replace(/\/api\/info$/, '/');
     const title = props.app.title || props.app.id;
     setActivePlay({
-      carrierType: 'local-app',
-      id: props.app.id,
-      title,
-      resume: { name: 'plays' },
-      resumeWindow: true,
+      carrierType: 'local-app', id: props.app.id, title,
+      resume: { name: 'plays' }, resumeWindow: true,
     });
-    emit('refresh');
     if (window.localAppWindowApi) {
       const opened = await window.localAppWindowApi.open({ url, id: props.app.id, title });
       if (!opened?.ok) throw new Error(opened?.error || '打开窗口失败');
     } else {
       window.open(url, 'local-app-xiaoya');
     }
-  } catch (e: any) {
-    error.value = e?.message || '启动失败';
-  } finally {
-    stopPoll();
-    busy.value = false;
-  }
+  }, '启动失败');
 }
 
 onBeforeUnmount(stopPoll);
@@ -156,5 +163,5 @@ onBeforeUnmount(stopPoll);
 .title-row h2 { margin: 0; font-size: 18px; }
 .desc { margin: 0 0 12px; line-height: 1.5; color: var(--el-text-color-secondary); }
 .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.play-actions { display: flex; align-items: flex-start; }
+.play-actions { display: flex; align-items: flex-start; gap: 8px; }
 </style>

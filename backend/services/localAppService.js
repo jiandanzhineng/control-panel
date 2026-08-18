@@ -155,14 +155,22 @@ function fileShaList(files) {
   return (files || []).map((file) => String(file.sha256).toLowerCase()).sort();
 }
 
-function installedMatches(id, manifest) {
+function localInstall(id) {
   const dir = currentDir(id);
   const meta = readMeta(dir);
-  if (!meta || meta.version !== manifest.version) return false;
+  const exe = meta && meta.launch && meta.launch.exe;
+  if (!meta || !exe) return null;
+  if (!fs.existsSync(path.join(dir, exe))) return null;
+  return { dir, meta };
+}
+
+function installedMatches(id, manifest) {
+  const local = localInstall(id);
+  if (!local || local.meta.version !== manifest.version) return false;
   const expected = fileShaList(manifest.files).join(',');
-  const actual = fileShaList((meta.files || []).map((sha256) => ({ sha256 }))).join(',');
+  const actual = fileShaList((local.meta.files || []).map((sha256) => ({ sha256 }))).join(',');
   if (expected !== actual) return false;
-  return fs.existsSync(path.join(dir, manifest.launch.exe));
+  return true;
 }
 
 async function fetchLatest(id) {
@@ -202,29 +210,33 @@ async function getStatus(id) {
   try {
     const manifest = await fetchLatest(appId);
     const plan = planSync(manifest);
-    const installed = installedMatches(appId, manifest);
+    const local = localInstall(appId);
+    const installed = !!local;
+    const upToDate = installedMatches(appId, manifest);
     return {
       ...entry,
       version: manifest.version,
+      installedVersion: local ? local.meta.version : null,
       installed,
-      needsUpdate: !installed,
-      bytesToDownload: installed ? 0 : plan.bytesToDownload,
-      filesToDownload: installed ? 0 : plan.missing.length,
-      currentDir: installed ? currentDir(appId) : null,
-      launch: manifest.launch,
+      needsUpdate: installed ? !upToDate : false,
+      bytesToDownload: upToDate ? 0 : plan.bytesToDownload,
+      filesToDownload: upToDate ? 0 : plan.missing.length,
+      currentDir: installed ? local.dir : null,
+      launch: (local && local.meta.launch) || manifest.launch,
       progress: jobSnapshot(appId),
     };
   } catch (error) {
-    const meta = readMeta(currentDir(appId));
+    const local = localInstall(appId);
     return {
       ...entry,
-      version: meta?.version || null,
-      installed: !!meta,
-      needsUpdate: true,
+      version: local ? local.meta.version : null,
+      installedVersion: local ? local.meta.version : null,
+      installed: !!local,
+      needsUpdate: false,
       bytesToDownload: null,
       filesToDownload: null,
-      currentDir: meta ? currentDir(appId) : null,
-      launch: meta?.launch || null,
+      currentDir: local ? local.dir : null,
+      launch: local ? local.meta.launch : null,
       progress: jobSnapshot(appId),
       error: error.message,
       errorCode: error.code || 'LOCAL_APP_STATUS_FAILED',

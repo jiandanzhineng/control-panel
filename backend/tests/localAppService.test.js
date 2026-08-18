@@ -137,4 +137,19 @@ describe('localAppService', () => {
     expect(fs.readFileSync(path.join(root, 'runtime', 'python.exe'), 'utf8')).toBe('PY');
     expect(fs.readFileSync(path.join(root, 'bin', 'ffmpeg.exe'), 'utf8')).toBe('FF');
   });
+
+  it('keeps a local older install startable and marks an update', async () => {
+    const web = fileEntry('web/app.js', 'hello\n');
+    const exe = fileEntry('runtime/python.exe', 'PY');
+    mockFeed([web, exe], '1.0.0');
+    const service = require('../services/localAppService');
+    await service.syncApp('digital-human');
+    const web2 = fileEntry('web/app.js', 'hello2\n');
+    mockFeed([web2, exe], '1.0.1');
+    const status = await service.getStatus('digital-human');
+    expect(status.installed).toBe(true);
+    expect(status.needsUpdate).toBe(true);
+    expect(status.installedVersion).toBe('1.0.0');
+    expect(status.version).toBe('1.0.1');
+  });
 });
