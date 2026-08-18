@@ -1,4 +1,4 @@
-- 本地测更新用的 1.0.33 未打包安装版：`E:\smart\project\control-panel\.tmp\1.0.33-win\win-unpacked\UnderSilicon.exe`
+- 本地测更新用的 1.0.34-beta.2 未打包安装版：`E:\smart\project\control-panel\.tmp\1.0.34-beta.2-win\win-unpacked\UnderSilicon.exe`
 - 当前源码版本：1.0.34-beta.2（测试渠道）
 - 查本机 MQTT 客户端：`C:\easysmart\tools\emqx\bin\emqx_ctl.cmd clients list`。虚拟网页设备 clientId 形如 `vweb_v-web-cunzhi_xxxxxx`，面板 clientId 形如 `fb-client-DESKTOP-...`。
 - 查面板在线设备：`GET http://127.0.0.1:5278/api/devices`（Electron 内置后端）。进程内虚拟设备另走 `GET /api/virtual-devices`。
