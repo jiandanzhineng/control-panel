@@ -59,14 +59,6 @@
           >
             清空设备
           </el-button>
-          <div class="serial-auto-control">
-            <span>串口自动连接</span>
-            <el-switch
-              v-model="serialAutoConnect"
-              :loading="serialSettingsBusy"
-              @change="updateSerialAutoConnect"
-            />
-          </div>
         </div>
       </div>
     </el-card>
@@ -640,6 +632,14 @@
       width="min(560px, calc(100vw - 24px))"
       @open="loadSerialPorts"
     >
+      <div class="serial-auto-control">
+        <span>串口自动连接</span>
+        <el-switch
+          v-model="serialAutoConnect"
+          :loading="serialSettingsBusy"
+          @change="updateSerialAutoConnect"
+        />
+      </div>
       <div class="serial-port-content" v-loading="serialPortsLoading">
         <el-table v-if="serialPorts.length > 0" class="serial-port-table" :data="serialPorts" size="small">
           <el-table-column prop="path" label="端口" width="100" />
@@ -2085,9 +2085,10 @@ async function executeDeviceOperation(device: Device, operation: any) {
 }
 
 .serial-auto-control {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 12px;
   white-space: nowrap;
 }
 
