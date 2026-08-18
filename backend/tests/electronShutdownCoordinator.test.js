@@ -85,4 +85,22 @@ describe('Electron quit coordinator', () => {
     coordinator.handleWindowClose(finalClose);
     expect(finalClose.preventDefault).not.toHaveBeenCalled();
   });
+
+  it('hides to tray instead of quitting when close-to-tray is enabled', () => {
+    const app = { quit: jest.fn() };
+    const onHideToTray = jest.fn();
+    const coordinator = createQuitCoordinator({
+      app,
+      shutdown: jest.fn(),
+      shouldHideToTray: () => true,
+      onHideToTray,
+    });
+    const event = { preventDefault: jest.fn() };
+
+    coordinator.handleWindowClose(event);
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    expect(onHideToTray).toHaveBeenCalledTimes(1);
+    expect(app.quit).not.toHaveBeenCalled();
+  });
 });

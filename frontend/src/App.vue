@@ -55,6 +55,11 @@
             <el-icon><User /></el-icon>
             <template #title>账号</template>
           </el-menu-item>
+
+          <el-menu-item index="/settings">
+            <el-icon><Setting /></el-icon>
+            <template #title>设置</template>
+          </el-menu-item>
           
           <el-menu-item index="/logs">
             <el-icon><Document /></el-icon>
@@ -111,7 +116,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass, User, Service } from '@element-plus/icons-vue'
+import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass, User, Service, Setting } from '@element-plus/icons-vue'
 import { useAuth } from './composables/useAuth'
 import { useTheme } from './composables/useTheme'
 import { router } from './router'

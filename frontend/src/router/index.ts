@@ -15,6 +15,7 @@ import FirmwareUpdate from '../views/FirmwareUpdate.vue';
 import WiredFlashUpdate from '../views/WiredFlashUpdate.vue';
 import AccountView from '../views/AccountView.vue';
 import CustomerServiceView from '../views/CustomerServiceView.vue';
+import SettingsView from '../views/SettingsView.vue';
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/home' },
@@ -47,6 +48,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/browser', name: 'browser', component: BrowserView, meta: { title: '在线游戏' } },
   { path: '/network', name: 'network', component: ServicesView, meta: { title: '网络设置' } },
   { path: '/account', name: 'account', component: AccountView, meta: { title: '账号' } },
+  { path: '/settings', name: 'settings', component: SettingsView, meta: { title: '设置' } },
   { path: '/logs', name: 'logs', component: LogManagement, meta: { title: '日志管理' } },
   { path: '/support', name: 'support', component: CustomerServiceView, meta: { title: '客服' } },
 

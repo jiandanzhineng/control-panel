@@ -1,5 +1,10 @@
 const path = require('path');
 const { app, BrowserWindow, dialog, ipcMain, shell, webContents } = require('electron');
+
+const userDataArg = process.argv.find((arg) => arg.startsWith('--user-data-dir='));
+if (userDataArg) {
+  app.setPath('userData', userDataArg.slice('--user-data-dir='.length));
+}
 const { autoUpdater } = require('electron-updater');
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
@@ -10,6 +15,7 @@ const externalGameAccessService = require('../backend/services/externalGameAcces
 const gameHost = require('./gameHost.js');
 const { createBleMainIntegration } = require('./ble/mainIntegration.js');
 const { createQuitCoordinator } = require('./shutdownCoordinator.js');
+const { createAppTray } = require('./tray.js');
 const {
   UPDATE_FEEDS,
   parseLatestYmlVersion,
@@ -25,6 +31,8 @@ let updateInitialized = false;
 let browserDevicePreloadPath = '';
 const browserWebviewOrigins = new Map();
 let bleMainIntegration = null;
+let appTray = null;
+let closeAskInFlight = false;
 
 function getUpdateSettingsPath() {
   return path.join(app.getPath('userData'), 'update-settings.json');
@@ -61,6 +69,35 @@ function writeUpdateSettings(settings) {
   fs.mkdirSync(path.dirname(getUpdateSettingsPath()), { recursive: true });
   fs.writeFileSync(
     getUpdateSettingsPath(),
+    JSON.stringify(normalized, null, 2) + '\n',
+    'utf-8',
+  );
+  return normalized;
+}
+
+function getWindowSettingsPath() {
+  return path.join(app.getPath('userData'), 'window-settings.json');
+}
+
+function normalizeWindowSettings(settings = {}) {
+  if (settings.closeToTray === true) return { closeToTray: true };
+  if (settings.closeToTray === false) return { closeToTray: false };
+  return { closeToTray: null };
+}
+
+function readWindowSettings() {
+  try {
+    return normalizeWindowSettings(JSON.parse(fs.readFileSync(getWindowSettingsPath(), 'utf-8')));
+  } catch {
+    return { closeToTray: null };
+  }
+}
+
+function writeWindowSettings(settings) {
+  const normalized = normalizeWindowSettings(settings);
+  fs.mkdirSync(path.dirname(getWindowSettingsPath()), { recursive: true });
+  fs.writeFileSync(
+    getWindowSettingsPath(),
     JSON.stringify(normalized, null, 2) + '\n',
     'utf-8',
   );
@@ -456,6 +493,74 @@ function stopIfWebviewLeavesOrigin(webviewContents, nextUrl) {
   }
 }
 
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function hideMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.hide();
+}
+
+function destroyAppTray() {
+  if (!appTray) return;
+  appTray.destroy();
+  appTray = null;
+}
+
+function ensureAppTray() {
+  if (appTray) return;
+  appTray = createAppTray({
+    onShow: showMainWindow,
+    onQuit: () => app.quit(),
+  });
+}
+
+function applyWindowSettings(settings = readWindowSettings()) {
+  if (settings.closeToTray === true) ensureAppTray();
+  else destroyAppTray();
+  return settings;
+}
+
+function registerWindowIpcHandlers() {
+  ipcMain.handle('window:get-settings', () => readWindowSettings());
+  ipcMain.handle('window:set-settings', (_event, settings = {}) => {
+    return applyWindowSettings(writeWindowSettings(settings));
+  });
+}
+
+async function askCloseBehavior() {
+  if (closeAskInFlight) return;
+  closeAskInFlight = true;
+  try {
+    const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    const { response } = await dialog.showMessageBox(parent, {
+      type: 'question',
+      title: '关闭窗口',
+      message: '关闭窗口时如何处理？',
+      detail: '最小化到托盘后，设备连接和后台服务会继续运行。之后可在设置中更改。',
+      buttons: ['最小化到托盘', '直接退出', '取消'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    });
+    if (response === 0) {
+      applyWindowSettings(writeWindowSettings({ closeToTray: true }));
+      hideMainWindow();
+    } else if (response === 1) {
+      applyWindowSettings(writeWindowSettings({ closeToTray: false }));
+      app.quit();
+    }
+  } finally {
+    closeAskInFlight = false;
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1200,
@@ -511,6 +616,8 @@ function createWindow() {
       win.loadURL('data:text/html,<h1>Frontend files not found</h1>');
     }
   }
+
+  applyWindowSettings();
 }
 
 // 内置浏览器 <webview> 的导航与安全处理。
@@ -604,6 +711,9 @@ async function initAutoUpdate() {
   autoUpdater.on('update-downloaded', () => {
     // 下载完成，询问是否重启安装
     try {
+      if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+        showMainWindow();
+      }
       dialog
         .showMessageBox(mainWindow || undefined, {
           type: 'question',
@@ -748,7 +858,17 @@ function startBackendThenWindow() {
   }
 }
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    showMainWindow();
+  });
+}
+
 app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return;
   bleMainIntegration = createBleMainIntegration({
     ipcMain,
     getDeviceService,
@@ -756,6 +876,7 @@ app.whenReady().then(() => {
   });
   bleMainIntegration.registerHandlers();
   registerUpdateIpcHandlers();
+  registerWindowIpcHandlers();
   registerPluginIpcHandlers();
   registerBrowserDeviceIpcHandlers();
   registerGameHostIpcHandlers();
@@ -779,6 +900,19 @@ function closeServer(target) {
 const quitCoordinator = createQuitCoordinator({
   app,
   timeoutMs: 5000,
+  shouldHideToTray: () => {
+    if (closeAskInFlight) return true;
+    const closeToTray = readWindowSettings().closeToTray;
+    return closeToTray === true || closeToTray == null;
+  },
+  onHideToTray: () => {
+    if (closeAskInFlight) return;
+    if (readWindowSettings().closeToTray === true) {
+      hideMainWindow();
+      return;
+    }
+    askCloseBehavior();
+  },
   shutdown: async () => {
     if (typeof backendApp?.shutdownBackend === 'function') {
       await backendApp.shutdownBackend('electron-before-quit', {
@@ -792,6 +926,7 @@ const quitCoordinator = createQuitCoordinator({
       await closeServer(server);
     }
     await closeServer(frontendServer);
+    destroyAppTray();
   },
   onError: (error) => {
     console.error('[electron] shutdown failed:', error?.message || error);
@@ -799,4 +934,7 @@ const quitCoordinator = createQuitCoordinator({
 });
 
 app.on('before-quit', quitCoordinator.handleBeforeQuit);
-app.on('window-all-closed', () => { app.quit(); });
+app.on('window-all-closed', () => {
+  if (appTray) return;
+  app.quit();
+});

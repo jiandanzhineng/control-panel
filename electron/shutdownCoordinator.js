@@ -4,7 +4,14 @@ function timeoutError(timeoutMs) {
   return error;
 }
 
-function createQuitCoordinator({ app, shutdown, onError = () => {}, timeoutMs = 5000 }) {
+function createQuitCoordinator({
+  app,
+  shutdown,
+  onError = () => {},
+  timeoutMs = 5000,
+  shouldHideToTray = () => false,
+  onHideToTray = () => {},
+}) {
   let allowQuit = false;
   let shutdownPromise = null;
 
@@ -40,6 +47,10 @@ function createQuitCoordinator({ app, shutdown, onError = () => {}, timeoutMs = 
   function handleWindowClose(event) {
     if (allowQuit) return;
     event.preventDefault();
+    if (shouldHideToTray()) {
+      onHideToTray();
+      return;
+    }
     if (!shutdownPromise) app.quit();
   }
 

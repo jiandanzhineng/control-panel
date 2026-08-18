@@ -133,6 +133,11 @@ window.provisionApi = {
   },
 };
 
+window.windowApi = {
+  getSettings: () => ipcRenderer.invoke('window:get-settings'),
+  setSettings: (settings) => ipcRenderer.invoke('window:set-settings', settings),
+};
+
 window.updateApi = {
   getSettings: () => ipcRenderer.invoke('update:get-settings'),
   setSettings: (settings) => ipcRenderer.invoke('update:set-settings', settings),

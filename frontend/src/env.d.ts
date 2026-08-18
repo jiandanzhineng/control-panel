@@ -8,6 +8,10 @@ declare module '*.vue' {
 
 type UpdateChannel = 'stable' | 'test';
 
+interface WindowSettings {
+  closeToTray: boolean | null;
+}
+
 interface UpdateSettings {
   receiveTestUpdates: boolean;
 }
@@ -27,6 +31,10 @@ interface UpdateStatus {
 }
 
 interface Window {
+  windowApi?: {
+    getSettings: () => Promise<WindowSettings>;
+    setSettings: (settings: WindowSettings) => Promise<WindowSettings>;
+  };
   provisionApi?: {
     isSupported: () => boolean;
     provision: (
