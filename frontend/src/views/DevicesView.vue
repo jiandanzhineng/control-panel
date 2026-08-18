@@ -59,9 +59,6 @@
           >
             清空设备
           </el-button>
-          <el-checkbox v-model="autoRefreshEnabled" style="margin-left: 12px;">
-            自动刷新(3秒)
-          </el-checkbox>
           <div class="serial-auto-control">
             <span>串口自动连接</span>
             <el-switch
@@ -983,7 +980,6 @@ const deviceTypeConfigs = ref<Record<string, any>>({});
 const loading = ref(false);
 const loadError = ref('');
 const selectedDeviceId = ref('');
-const autoRefreshEnabled = ref(true);
 const autoRefreshTimer = ref<number | null>(null);
 const bleSupported = ref(false);
 const bleBusy = ref(false);
@@ -1138,7 +1134,7 @@ onMounted(async () => {
     if (provisionView.value === 'selecting') provisionCandidates.value = candidates;
   }) || null;
   await init();
-  if (autoRefreshEnabled.value) startAutoRefresh();
+  startAutoRefresh();
   startOtaStatusTimer();
 });
 
@@ -1373,11 +1369,6 @@ function stopOtaStatusTimer() {
     otaStatusTimer.value = null;
   }
 }
-
-watch(autoRefreshEnabled, (enabled) => {
-  if (enabled) startAutoRefresh();
-  else stopAutoRefresh();
-});
 
 watch(selectedDeviceId, (deviceId) => {
   showFirmwareDialog.value = false;
