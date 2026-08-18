@@ -144,6 +144,19 @@ window.pluginApi = {
   stopCurrent: () => ipcRenderer.invoke('plugin:stop-current'),
 };
 
+window.localAppWindowApi = {
+  open: (payload) => ipcRenderer.invoke('local-app:open-window', payload),
+  close: () => ipcRenderer.invoke('local-app:close-window'),
+  focus: () => ipcRenderer.invoke('local-app:focus-window'),
+  onClosed: (cb) => {
+    const listener = (_event, data) => {
+      try { cb(data); } catch (_) {}
+    };
+    ipcRenderer.on('local-app:window-closed', listener);
+    return () => ipcRenderer.removeListener('local-app:window-closed', listener);
+  },
+};
+
 window.browserDeviceApi = {
   getGrantStatus: () => ipcRenderer.invoke('browser-device:get-grant-status'),
   getGrantStatusForWebview: (webContentsId) => ipcRenderer.invoke('browser-device:get-grant-status-for-webview', webContentsId),
