@@ -1,3 +1,23 @@
+const TITLE_HINT = '按F11全屏 ESC退出全屏';
+
+function withTitleHint(title) {
+  const base = String(title || '小雅').replace(/\s*按F11全屏 ESC退出全屏\s*$/, '').trim() || '小雅';
+  return `${base}  ${TITLE_HINT}`;
+}
+
+function handleLocalAppHotkey(win, input) {
+  if (!win || win.isDestroyed() || input.type !== 'keyDown') return false;
+  if (input.key === 'F11') {
+    win.setFullScreen(!win.isFullScreen());
+    return true;
+  }
+  if (input.key === 'Escape' && win.isFullScreen()) {
+    win.setFullScreen(false);
+    return true;
+  }
+  return false;
+}
+
 function isLocalAppUrl(url) {
   try {
     const parsed = new URL(String(url || ''));
@@ -60,11 +80,18 @@ function createLocalAppWindowController({
     win = new BrowserWindow({
       width: 1280,
       height: 800,
-      title,
+      title: withTitleHint(title),
       autoHideMenuBar: true,
       webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
     });
     current = { id, url, title };
+    win.on('page-title-updated', (event, next) => {
+      event.preventDefault();
+      if (win && !win.isDestroyed()) win.setTitle(withTitleHint(next));
+    });
+    win.webContents.on('before-input-event', (event, input) => {
+      if (handleLocalAppHotkey(win, input)) event.preventDefault();
+    });
     win.webContents.setWindowOpenHandler(({ url: next }) => (
       isLocalAppUrl(next) ? { action: 'allow' } : { action: 'deny' }
     ));
@@ -102,4 +129,10 @@ function createLocalAppWindowController({
   };
 }
 
-module.exports = { isLocalAppUrl, createLocalAppWindowController };
+module.exports = {
+  TITLE_HINT,
+  withTitleHint,
+  handleLocalAppHotkey,
+  isLocalAppUrl,
+  createLocalAppWindowController,
+};

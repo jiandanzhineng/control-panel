@@ -30,14 +30,18 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue';
+import { ElMessageBox } from 'element-plus';
 import { setActivePlay } from '../composables/useActivePlay';
+import { useAuth } from '../composables/useAuth';
 
 const props = defineProps<{ app: Record<string, any> }>();
 const emit = defineEmits<{ (e: 'refresh'): void }>();
+const { authState, checkSession } = useAuth();
 const busy = ref(false);
 const error = ref('');
 const progress = ref({ doneBytes: 0, totalBytes: 0, phase: 'idle' });
 let pollTimer: number | null = null;
+let launching = false;
 
 const actionLabel = computed(() => {
   if (busy.value) return '处理中...';
@@ -77,7 +81,29 @@ async function readStatus() {
   return data;
 }
 
+async function confirmGuestLaunch() {
+  await checkSession();
+  if (authState.status === 'authed') return true;
+  try {
+    await ElMessageBox.confirm('未登录可能部分功能不可用，是否继续？', '未登录', {
+      confirmButtonText: '是',
+      cancelButtonText: '否',
+      type: 'warning',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function launch() {
+  if (launching || busy.value) return;
+  launching = true;
+  try {
+    if (!(await confirmGuestLaunch())) return;
+  } finally {
+    launching = false;
+  }
   busy.value = true;
   error.value = '';
   try {
