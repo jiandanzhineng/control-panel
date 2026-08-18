@@ -292,8 +292,6 @@ async function handleDeviceMessage(message) {
     const topic = message?.topic;
     if (typeof topic !== 'string') return;
 
-    logger.info('Device', `收到MQTT消息 ${topic}`);
-
     // 检查是否是 dpub 设备主题格式: /dpub/XXXX
     const topicMatch = topic.match(/^\/dpub\/(.+)$/);
     if (!topicMatch) {
@@ -305,7 +303,7 @@ async function handleDeviceMessage(message) {
     // 解析消息内容（优先使用 text，其次 payload Buffer）
     let payloadObj;
     const rawText = typeof message?.text === 'string' ? message.text : (message?.payload ? message.payload.toString('utf8') : '');
-    logger.info('Device', `解析MQTT消息内容: ${rawText}`);
+    logger.info('Device', `解析MQTT消息内容 ${topic}: ${rawText}`);
     try {
       payloadObj = JSON.parse(rawText);
     } catch (e) {
