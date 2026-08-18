@@ -70,13 +70,16 @@ async function waitReady(dir, child, timeoutMs = 120000) {
 
 function getRunning(id) {
   const item = running.get(id);
-  if (!item) return { running: false, id };
+  if (!item) return { running: false, id, phase: 'idle', detail: '', elapsedMs: 0 };
   return {
     running: item.child.exitCode == null,
     id,
     pid: item.child.pid,
     url: item.url,
     startedAt: item.startedAt,
+    phase: item.phase || 'idle',
+    detail: item.detail || '',
+    elapsedMs: Date.now() - (item.startedAt || Date.now()),
   };
 }
 
@@ -113,20 +116,30 @@ async function startApp(id) {
   const args = Array.isArray(launch.args) ? launch.args.slice() : [];
   const cwd = path.resolve(dir, launch.cwd || '.');
   fs.rmSync(path.join(cwd, 'data', 'instance.json'), { force: true });
+  running.set(id, {
+    child: { exitCode: null, pid: null }, url: null, startedAt: Date.now(),
+    phase: 'starting', detail: '正在启动数字人进程',
+  });
   const child = spawn(exe, args, {
     cwd,
     env: launchEnv(launch),
     windowsHide: true,
     stdio: 'ignore',
   });
-  running.set(id, { child, url: null, startedAt: Date.now() });
+  running.set(id, {
+    child, url: null, startedAt: Date.now(),
+    phase: 'waiting', detail: '等待数字人服务就绪',
+  });
   child.on('exit', () => {
     const current = running.get(id);
     if (current && current.child === child) running.delete(id);
   });
   try {
     const ready = await waitReady(cwd, child);
-    running.set(id, { child, url: ready.url, startedAt: Date.now() });
+    running.set(id, {
+      child, url: ready.url, startedAt: Date.now(),
+      phase: 'ready', detail: '服务已就绪',
+    });
     return { id, running: true, url: ready.url, pid: child.pid, info: ready.info };
   } catch (error) {
     await stopApp(id);

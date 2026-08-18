@@ -89,6 +89,27 @@ function sha256File(filePath) {
   return hash.digest('hex');
 }
 
+function yieldLoop() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+async function sha256FileAsync(filePath) {
+  const hash = crypto.createHash('sha256');
+  const handle = await fs.promises.open(filePath, 'r');
+  const buf = Buffer.alloc(1024 * 1024);
+  try {
+    while (true) {
+      const { bytesRead } = await handle.read(buf, 0, buf.length, null);
+      if (!bytesRead) break;
+      hash.update(buf.subarray(0, bytesRead));
+      await yieldLoop();
+    }
+  } finally {
+    await handle.close();
+  }
+  return hash.digest('hex');
+}
+
 function assertSafeRelPath(relPath) {
   const normalized = String(relPath || '').replace(/\\/g, '/');
   if (!normalized || normalized.startsWith('/') || normalized.includes('\0')) {
@@ -194,6 +215,9 @@ function jobSnapshot(id) {
     totalBytes: 0,
     filesDone: 0,
     filesTotal: 0,
+    extractDone: 0,
+    extractTotal: 0,
+    detail: '',
     error: null,
   };
 }
@@ -253,7 +277,7 @@ async function listApps() {
   return items;
 }
 
-async function downloadFile(file, onChunk) {
+async function downloadFile(file, onChunk, onVerify) {
   const digest = String(file.sha256).toLowerCase();
   const dest = casPath(digest);
   if (fs.existsSync(dest) && fs.statSync(dest).size === file.size) return dest;
@@ -274,7 +298,8 @@ async function downloadFile(file, onChunk) {
     nodeStream.on('data', (chunk) => { if (onChunk) onChunk(chunk.length); });
     await pipeline(nodeStream, fs.createWriteStream(partial));
   }
-  if (sha256File(partial) !== digest) {
+  if (onVerify) onVerify();
+  if ((await sha256FileAsync(partial)) !== digest) {
     fs.rmSync(partial, { force: true });
     throw appError('LOCAL_APP_SHA_MISMATCH', `校验失败: ${file.path}`);
   }
@@ -292,40 +317,59 @@ function linkOrCopy(from, to) {
   }
 }
 
-function replaceDirectory(source, target) {
-  fs.rmSync(target, { recursive: true, force: true });
+async function replaceDirectory(source, target) {
+  await fs.promises.rm(target, { recursive: true, force: true });
   ensureDir(path.dirname(target));
   try {
     fs.renameSync(source, target);
   } catch (error) {
     if (error.code !== 'EXDEV' && error.code !== 'EPERM') throw error;
-    fs.cpSync(source, target, { recursive: true });
-    fs.rmSync(source, { recursive: true, force: true });
+    await fs.promises.cp(source, target, { recursive: true });
+    await fs.promises.rm(source, { recursive: true, force: true });
   }
 }
 
-function extractZip(zipPath, targetDir) {
-  const AdmZip = require('adm-zip');
-  const zip = new AdmZip(zipPath);
-  for (const entry of zip.getEntries()) {
-    const rel = assertSafeRelPath(entry.entryName.replace(/\\/g, '/'));
-    if (entry.isDirectory) continue;
-    const outPath = path.resolve(targetDir, rel);
-    const root = path.resolve(targetDir);
-    if (!(outPath === root || outPath.startsWith(root + path.sep))) {
-      throw appError('LOCAL_APP_UNSAFE_PATH', '压缩包路径越界');
-    }
-    ensureDir(path.dirname(outPath));
-    fs.writeFileSync(outPath, entry.getData());
-  }
+function extractZipAsync(zipPath, targetDir, onProgress) {
+  const { Worker } = require('worker_threads');
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(path.join(__dirname, 'extractZipWorker.js'), {
+      workerData: { zipPath, targetDir },
+    });
+    worker.on('message', (msg) => {
+      if (msg.type === 'start' || msg.type === 'progress') {
+        if (onProgress) onProgress(msg);
+      }
+      if (msg.type === 'done') resolve(msg);
+    });
+    worker.on('error', reject);
+    worker.on('exit', (code) => {
+      if (code !== 0) reject(appError('LOCAL_APP_EXTRACT_FAILED', `解压失败 (${code})`, 500));
+    });
+  });
 }
 
-function materialize(id, manifest) {
+async function materialize(id, manifest, onProgress) {
   const staging = path.join(appRoot(id), `staging-${Date.now()}`);
   ensureDir(staging);
+  let extractIndex = 0;
+  const extractTotal = manifest.files.filter((file) => file.extract).length;
   for (const file of manifest.files) {
     if (file.extract) {
-      extractZip(casPath(file.sha256), staging);
+      if (onProgress) {
+        onProgress({
+          file: file.path, filesDone: extractIndex, filesTotal: extractTotal,
+          extractDone: 0, extractTotal: 0,
+        });
+      }
+      await extractZipAsync(casPath(file.sha256), staging, (msg) => {
+        if (onProgress) {
+          onProgress({
+            file: file.path, filesDone: extractIndex, filesTotal: extractTotal,
+            extractDone: msg.done || 0, extractTotal: msg.total || 0,
+          });
+        }
+      });
+      extractIndex += 1;
       continue;
     }
     const rel = assertSafeRelPath(file.path);
@@ -338,7 +382,7 @@ function materialize(id, manifest) {
     files: fileShaList(manifest.files),
     installedAt: Date.now(),
   }, null, 2)}\n`);
-  replaceDirectory(staging, currentDir(id));
+  await replaceDirectory(staging, currentDir(id));
 }
 
 async function syncApp(id) {
@@ -360,16 +404,33 @@ async function syncApp(id) {
       filesTotal: plan.missing.length,
     });
     for (const file of plan.missing) {
+      setJob(appId, { phase: 'downloading', detail: `下载 ${file.path}` });
       await downloadFile(file, (n) => {
         const job = jobSnapshot(appId);
         setJob(appId, { doneBytes: job.doneBytes + n });
+      }, () => {
+        setJob(appId, { phase: 'verifying', detail: `校验 ${file.path}` });
       });
       const job = jobSnapshot(appId);
       setJob(appId, { filesDone: job.filesDone + 1 });
     }
-    setJob(appId, { phase: 'installing' });
-    materialize(appId, manifest);
-    return setJob(appId, { phase: 'ready', version: manifest.version });
+    const extractFiles = manifest.files.filter((file) => file.extract);
+    setJob(appId, {
+      phase: 'installing', detail: '正在解压安装包',
+      filesDone: 0, filesTotal: extractFiles.length || manifest.files.length,
+      extractDone: 0, extractTotal: 0,
+    });
+    await materialize(appId, manifest, (part) => {
+      setJob(appId, {
+        phase: 'installing',
+        detail: `解压 ${part.file}`,
+        filesDone: part.filesDone,
+        filesTotal: part.filesTotal,
+        extractDone: part.extractDone,
+        extractTotal: part.extractTotal,
+      });
+    });
+    return setJob(appId, { phase: 'ready', version: manifest.version, detail: '' });
   })();
   syncing.set(appId, work);
   try {

@@ -41,7 +41,11 @@ const emit = defineEmits<{ (e: 'refresh'): void }>();
 const { authState, checkSession } = useAuth();
 const busy = ref(false);
 const error = ref('');
-const progress = ref({ doneBytes: 0, totalBytes: 0, phase: 'idle' });
+const progress = ref({
+  doneBytes: 0, totalBytes: 0, phase: 'idle',
+  filesDone: 0, filesTotal: 0, extractDone: 0, extractTotal: 0, detail: '',
+});
+const processInfo = ref({ phase: 'idle', detail: '', elapsedMs: 0, running: false });
 let pollTimer: number | null = null;
 let launching = false;
 
@@ -53,22 +57,52 @@ const versionLabel = computed(() => {
 });
 
 const percent = computed(() => {
+  const phase = progress.value.phase;
   const total = Number(progress.value.totalBytes || 0);
   const done = Number(progress.value.doneBytes || 0);
-  if (total <= 0) return progress.value.phase === 'ready' ? 100 : 10;
-  return Math.min(100, Math.round((done / total) * 100));
+  if (phase === 'downloading') {
+    if (total <= 0) return 8;
+    return Math.min(80, Math.round((80 * done) / total));
+  }
+  if (phase === 'verifying') return 84;
+  if (phase === 'installing') {
+    const filesTotal = Number(progress.value.filesTotal || 1);
+    const filesDone = Number(progress.value.filesDone || 0);
+    const extractTotal = Number(progress.value.extractTotal || 0);
+    const part = extractTotal > 0 ? Number(progress.value.extractDone || 0) / extractTotal : 0;
+    return Math.min(99, 85 + Math.round((15 * (filesDone + part)) / filesTotal));
+  }
+  if (phase === 'ready') return 100;
+  if (processInfo.value.phase === 'waiting' || processInfo.value.phase === 'starting') {
+    return Math.min(90, 20 + Math.floor((processInfo.value.elapsedMs || 0) / 1000) * 3);
+  }
+  if (processInfo.value.phase === 'ready') return 100;
+  return phase === 'checking' ? 5 : 10;
 });
 
 const statusText = computed(() => {
   if (error.value) return error.value;
   if (!busy.value) return '';
+  if (progress.value.detail) return String(progress.value.detail);
   if (progress.value.phase === 'downloading') {
     const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
     return `下载 ${mb(progress.value.doneBytes)} / ${mb(progress.value.totalBytes)}`;
   }
-  if (progress.value.phase === 'installing') return '正在安装...';
-  if (progress.value.phase === 'checking') return '检查更新...';
-  return '启动中...';
+  if (progress.value.phase === 'verifying') return '正在校验安装包';
+  if (progress.value.phase === 'installing') {
+    const extra = progress.value.extractTotal
+      ? ` ${progress.value.extractDone}/${progress.value.extractTotal} 个文件`
+      : '';
+    return `正在解压安装${extra}`;
+  }
+  if (progress.value.phase === 'checking') return '正在检查更新';
+  if (processInfo.value.phase === 'starting') return processInfo.value.detail || '正在启动数字人进程';
+  if (processInfo.value.phase === 'waiting') {
+    const sec = Math.max(0, Math.floor((processInfo.value.elapsedMs || 0) / 1000));
+    return `等待数字人服务就绪（已 ${sec} 秒）`;
+  }
+  if (processInfo.value.phase === 'ready') return '正在打开窗口';
+  return '处理中…';
 });
 
 function stopPoll() {
@@ -79,7 +113,8 @@ function stopPoll() {
 async function readStatus() {
   const res = await fetch(`/api/local-apps/${encodeURIComponent(props.app.id)}/status`);
   const data = await res.json();
-  if (data?.progress) progress.value = data.progress;
+  if (data?.progress) progress.value = { ...progress.value, ...data.progress };
+  if (data?.process) processInfo.value = data.process;
   return data;
 }
 
