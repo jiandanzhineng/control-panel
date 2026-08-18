@@ -2,7 +2,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const localAppService = require('./localAppService');
-const localSessionService = require('./localSessionService');
+const { launchEnv, attachOutput, exitHint } = require('./localAppLaunchEnv');
 
 const running = new Map();
 
@@ -17,11 +17,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function backendUrl() {
-  if (process.env.BACKEND_URL) return process.env.BACKEND_URL.replace(/\/+$/, '');
-  return `http://127.0.0.1:${process.env.PORT || 3000}`;
-}
-
 function killTree(pid) {
   if (!pid) return;
   if (process.platform === 'win32') {
@@ -31,23 +26,13 @@ function killTree(pid) {
   try { process.kill(pid, 'SIGTERM'); } catch (_) {}
 }
 
-function launchEnv(launch) {
-  const extra = launch.env && typeof launch.env === 'object' ? launch.env : {};
-  return {
-    ...process.env,
-    ...extra,
-    DIGITAL_HUMAN_NO_BROWSER: '1',
-    DIGITAL_HUMAN_PLAY_URL: backendUrl(),
-    MIMO_RELAY_URL: localSessionService.getRelayUrl(),
-  };
-}
-
-async function waitReady(dir, child, timeoutMs = 120000) {
+async function waitReady(dir, child, timeoutMs = 120000, tail = []) {
   const deadline = Date.now() + timeoutMs;
   const instancePath = path.join(dir, 'data', 'instance.json');
   while (Date.now() < deadline) {
     if (child.exitCode != null) {
-      throw procError('LOCAL_APP_EXITED', `进程提前退出 (${child.exitCode})`, 500);
+      await sleep(80);
+      throw procError('LOCAL_APP_EXITED', exitHint(child.exitCode, tail), 500);
     }
     try {
       const inst = JSON.parse(fs.readFileSync(instancePath, 'utf8'));
@@ -120,12 +105,14 @@ async function startApp(id) {
     child: { exitCode: null, pid: null }, url: null, startedAt: Date.now(),
     phase: 'starting', detail: '正在启动数字人进程',
   });
+  const tail = [];
   const child = spawn(exe, args, {
     cwd,
-    env: launchEnv(launch),
+    env: launchEnv(launch, cwd),
     windowsHide: true,
-    stdio: 'ignore',
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
+  attachOutput(child, cwd, tail);
   running.set(id, {
     child, url: null, startedAt: Date.now(),
     phase: 'waiting', detail: '等待数字人服务就绪',
@@ -135,7 +122,7 @@ async function startApp(id) {
     if (current && current.child === child) running.delete(id);
   });
   try {
-    const ready = await waitReady(cwd, child);
+    const ready = await waitReady(cwd, child, 120000, tail);
     running.set(id, {
       child, url: ready.url, startedAt: Date.now(),
       phase: 'ready', detail: '服务已就绪',
@@ -156,5 +143,6 @@ module.exports = {
   stopApp,
   stopAll,
   getRunning,
+  launchEnv,
   _resetForTests,
 };

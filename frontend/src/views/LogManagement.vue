@@ -13,7 +13,11 @@
       >
         历史文件
       </button>
+      <button class="upload-btn" :disabled="uploading" @click="uploadDiagnostics">
+        {{ uploading ? '上传中...' : '上传诊断日志' }}
+      </button>
     </div>
+    <p v-if="uploadHint" class="upload-hint">{{ uploadHint }}</p>
 
     <div class="tab-content" :class="{ realtime: activeTab === 'realtime' }">
       <RealTimeLog v-if="activeTab === 'realtime'" />
@@ -28,6 +32,31 @@ import RealTimeLog from '../components/RealTimeLog.vue'
 import LogFileList from '../components/LogFileList.vue'
 
 const activeTab = ref('realtime')
+const uploading = ref(false)
+const uploadHint = ref('')
+
+async function uploadDiagnostics() {
+  if (uploading.value) return
+  uploading.value = true
+  uploadHint.value = ''
+  try {
+    const res = await fetch('/api/logs/upload-diagnostics', { method: 'POST' })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      const code = data?.error?.code || ''
+      if (res.status === 429 || code === 'TOO_MANY_REQUESTS') {
+        throw new Error('上传太频繁，请 10 分钟后再试')
+      }
+      throw new Error(data?.error?.message || '上传失败')
+    }
+    const shortId = String(data.id || '').slice(0, 8)
+    uploadHint.value = shortId ? `诊断日志已上传：${shortId}` : '诊断日志已上传'
+  } catch (error: any) {
+    uploadHint.value = error?.message || '上传失败'
+  } finally {
+    uploading.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -56,6 +85,22 @@ const activeTab = ref('realtime')
   color: #062026;
   border-color: var(--accent);
   font-weight: 600;
+}
+
+.tabs .upload-btn {
+  margin-left: auto;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tabs .upload-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.upload-hint {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
 }
 
 .tab-content {

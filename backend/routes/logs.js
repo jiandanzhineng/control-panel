@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs');
 const logService = require('../services/logService');
+const diagnosticUploadService = require('../services/diagnosticUploadService');
 
 const router = express.Router();
 
@@ -50,6 +51,21 @@ router.get('/download/:filename', (req, res) => {
     res.download(filePath, filename);
   } catch (error) {
     res.status(500).json({ error: '下载文件失败' });
+  }
+});
+
+router.post('/upload-diagnostics', async (req, res) => {
+  try {
+    const result = await diagnosticUploadService.uploadDiagnostics();
+    res.json({ ok: true, id: result.id });
+  } catch (error) {
+    const status = error.status || 500;
+    res.status(status).json({
+      error: {
+        code: error.code || 'UPLOAD_FAILED',
+        message: error.message || '上传失败',
+      },
+    });
   }
 });
 

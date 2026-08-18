@@ -3,6 +3,10 @@ const os = require('os');
 const path = require('path');
 const net = require('net');
 
+jest.mock('../services/logService', () => ({
+  log: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn(),
+}));
+
 function restoreEnv(key, value) {
   if (value === undefined) delete process.env[key];
   else process.env[key] = value;
@@ -161,5 +165,20 @@ describe('localAppProcessService', () => {
     } finally {
       decoy.close();
     }
+  });
+
+  it('surfaces child output when the process exits early', async () => {
+    const current = path.join(process.env.BACKEND_DATA_DIR, 'apps', 'digital-human', 'current');
+    fs.mkdirSync(current, { recursive: true });
+    fs.writeFileSync(path.join(current, 'boom.js'), "console.error('ffmpeg not found'); process.exit(1);\n");
+    fs.writeFileSync(path.join(current, '.app-meta.json'), JSON.stringify({
+      id: 'digital-human', version: 'test',
+      launch: { cwd: '.', exe: process.execPath, args: ['boom.js'] },
+    }));
+    const service = require('../services/localAppProcessService');
+    await expect(service.startApp('digital-human')).rejects.toMatchObject({
+      code: 'LOCAL_APP_EXITED',
+      message: expect.stringContaining('ffmpeg not found'),
+    });
   });
 });
