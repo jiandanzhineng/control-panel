@@ -24,3 +24,23 @@
    - 测试版固定安装包下载地址为 https://ezs-firmware.oss-cn-shanghai.aliyuncs.com/control-panel/test/UnderSilicon.zip。
    - 每次发布都会额外生成源码压缩包 control-panel-test.zip 或 control-panel-stable.zip。
    - sh/run_control_panel.sh 默认下载 http://firmware.undersilicon.cn/control-panel/stable/control-panel-stable.zip。
+
+8. 数字人（本机应用）打包发布
+   - 数字人不是控制面板安装包。面板卡片上的版本号来自
+     `E:\smart\project\digital-human\VERSION`（`x.y.z`），只跟 src/web。
+   - 每发布一次把小版本号加一，例如 `1.0.0` → `1.0.1`。runtime / model 不跟版本号。
+   - 打包前先改 `VERSION`、跑测试并提交，再打正式包：
+     ```
+     cd E:\smart\project\digital-human
+     .venv\Scripts\python.exe -m unittest discover -s tests -v
+     powershell -ExecutionPolicy Bypass -File tools\pack_release.ps1
+     ```
+   - 详细坑见 `digital-human/docs/guide/windows-portable-release.md`。
+   - 上传测试渠道（密钥在 `E:\smart\.env` 的 `OSS_ACCESS_KEY_*`）：
+     ```
+     .venv\Scripts\python.exe tools\upload_cas_to_oss.py `
+       --dir dist\cas-digital-human-<version> --channel test
+     ```
+   - 清单：`https://ezs-firmware.oss-cn-shanghai.aliyuncs.com/apps/digital-human/test/latest.json`
+   - 正式渠道把 `--channel test` 改成 `stable`。
+   - 面板测更新：`npm run electron:debug`，玩法库里看数字人卡片版本号，点更新并启动。
