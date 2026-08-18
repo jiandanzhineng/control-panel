@@ -30,6 +30,7 @@ app.use(cors({
   preflightContinue: true,
 }));
 app.use('/api', browserApiCors);
+app.use('/v1', require('./routes/voiceCompletions'));
 app.use(express.json());
 
 app.use((req, res, next) => {
@@ -193,6 +194,7 @@ app.use('/api/logs', require('./routes/logs'));
 app.use('/api/test', require('./routes/test'));
 app.use('/api/virtual-devices', require('./routes/virtualDevices'));
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/voice', require('./routes/voice'));
 app.use('/api/remote-projection', require('./routes/remoteProjection'));
 app.use('/api/dev-access', require('./routes/devAccess'));
 

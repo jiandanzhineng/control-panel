@@ -5,3 +5,4 @@
 - 数字人本机应用清单：`LOCAL_APP_FEED` 默认走 OSS 源 `https://ezs-firmware.oss-cn-shanghai.aliyuncs.com/apps`（`firmware.undersilicon.cn` 有时还缓存旧的 182 文件清单）。三层 zip：runtime / models / app。卡片上的版本号来自 `digital-human/VERSION`（`x.y.z`，只跟 src/web），写在 `latest.json` 的 version。开发态安装目录 `%APPDATA%\Electron\data\apps\digital-human\current`。OSS 密钥在 `E:\smart\.env`。
 - Electron 窗口/托盘选择：`%APPDATA%\Electron\window-settings.json`（开发态）或 `%APPDATA%\undersilicon\window-settings.json`（安装包）。`closeToTray` 为 `null` 表示还没选过。
 - 小雅启动后由 Electron 开独立窗口（`electron/localAppWindow.js`），主窗口不跳 iframe。窗口标题尾部「按F11全屏 ESC退出全屏」。未登录启动会确认。
+- 语音渠道在面板「设置 → 语音服务」。没改过默认官方。key 在 `BACKEND_DATA_DIR/voice-settings.json`。本机游戏打 `POST /v1/chat/completions`；状态 `GET /api/voice/status`。
