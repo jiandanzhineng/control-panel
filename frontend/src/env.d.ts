@@ -81,6 +81,12 @@ interface Window {
     }>;
     stopCurrent: () => Promise<{ ok: boolean; error?: string }>;
   };
+  localAppWindowApi?: {
+    open: (payload: { url: string; id: string; title?: string }) => Promise<{ ok: boolean; error?: string }>;
+    close: () => Promise<{ ok: boolean }>;
+    focus: () => Promise<{ ok: boolean }>;
+    onClosed: (cb: (data?: { id?: string }) => void) => () => void;
+  };
   browserDeviceApi?: {
     getGrantStatus: () => Promise<{ ok: boolean; granted?: boolean; origin?: string; expiresAt?: number; error?: string }>;
     getGrantStatusForWebview: (webContentsId: number) => Promise<{ ok: boolean; granted?: boolean; origin?: string; expiresAt?: number; error?: string }>;

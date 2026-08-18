@@ -274,6 +274,9 @@ async function stopCurrent() {
       if (!res.ok || data.error) throw new Error(data?.message || '停止失败');
       track('game_stop');
     }
+    if (current?.carrierType === 'local-app') {
+      await window.localAppWindowApi?.close();
+    }
     clearActivePlay();
     await loadAll();
   } catch (e: any) {
@@ -309,6 +312,10 @@ function goConfig(item: PlayItem) {
 }
 
 function resumeRun() {
+  if (activePlay.value?.resumeWindow) {
+    void window.localAppWindowApi?.focus();
+    return;
+  }
   if (activePlay.value) router.push(activePlay.value.resume);
 }
 

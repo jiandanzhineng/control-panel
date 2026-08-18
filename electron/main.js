@@ -13,6 +13,7 @@ const { fileURLToPath, pathToFileURL } = require('url');
 const { BRIDGE_INTERNAL_HEADER } = require('../backend/constants/bridgeAccess.js');
 const externalGameAccessService = require('../backend/services/externalGameAccessService.js');
 const gameHost = require('./gameHost.js');
+const { createLocalAppWindowController } = require('./localAppWindow.js');
 const { createBleMainIntegration } = require('./ble/mainIntegration.js');
 const { createQuitCoordinator } = require('./shutdownCoordinator.js');
 const { createAppTray } = require('./tray.js');
@@ -33,6 +34,7 @@ const browserWebviewOrigins = new Map();
 let bleMainIntegration = null;
 let appTray = null;
 let closeAskInFlight = false;
+let localAppWindow = null;
 
 function getUpdateSettingsPath() {
   return path.join(app.getPath('userData'), 'update-settings.json');
@@ -460,6 +462,22 @@ function registerGameHostIpcHandlers() {
   }));
 }
 
+function stopLocalAppProcess(id) {
+  const base = process.env.BACKEND_URL || 'http://127.0.0.1:5278';
+  if (!id) return;
+  fetch(`${base}/api/local-apps/${encodeURIComponent(id)}/stop`, { method: 'POST' }).catch(() => {});
+}
+
+function registerLocalAppWindowHandlers() {
+  localAppWindow = createLocalAppWindowController({
+    BrowserWindow,
+    ipcMain,
+    getMainWindow: () => mainWindow,
+    onClosed: (payload) => stopLocalAppProcess(payload && payload.id),
+  });
+  localAppWindow.registerHandlers();
+}
+
 function stopBrowserDeviceSessionForContents(webviewContents) {
   try {
     const origin = browserWebviewOrigins.get(webviewContents.id)
@@ -880,6 +898,7 @@ app.whenReady().then(() => {
   registerPluginIpcHandlers();
   registerBrowserDeviceIpcHandlers();
   registerGameHostIpcHandlers();
+  registerLocalAppWindowHandlers();
   setupWebviewHandling();
   startBackendThenWindow();
   initAutoUpdate().catch((error) => {
@@ -925,6 +944,7 @@ const quitCoordinator = createQuitCoordinator({
       await bleMainIntegration?.requestDisconnectAll(mainWindow, { timeoutMs: 3000 });
       await closeServer(server);
     }
+    localAppWindow?.destroyForQuit();
     await closeServer(frontendServer);
     destroyAppTray();
   },

@@ -17,6 +17,8 @@ export interface ActivePlay {
   title: string;
   /** 「返回运行页」用的路由位置：游戏需回放 query，插件仅需 id */
   resume: RouteLocationRaw;
+  /** 本机应用：返回时聚焦独立窗口，不走路由 */
+  resumeWindow?: boolean;
 }
 
 const activePlay = ref<ActivePlay | null>(null);

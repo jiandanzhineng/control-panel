@@ -30,12 +30,10 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue';
-import { useRouter } from 'vue-router';
 import { setActivePlay } from '../composables/useActivePlay';
 
 const props = defineProps<{ app: Record<string, any> }>();
 const emit = defineEmits<{ (e: 'refresh'): void }>();
-const router = useRouter();
 const busy = ref(false);
 const error = ref('');
 const progress = ref({ doneBytes: 0, totalBytes: 0, phase: 'idle' });
@@ -91,14 +89,21 @@ async function launch() {
     const started = await startRes.json();
     if (!startRes.ok) throw new Error(started?.error?.message || '启动失败');
     const url = String(started.url || 'http://127.0.0.1:8020/').replace(/\/api\/info$/, '/');
+    const title = props.app.title || props.app.id;
     setActivePlay({
       carrierType: 'local-app',
       id: props.app.id,
-      title: props.app.title || props.app.id,
-      resume: { name: 'game_current', query: { id: props.app.id, localApp: props.app.id, gamePath: url } },
+      title,
+      resume: { name: 'plays' },
+      resumeWindow: true,
     });
     emit('refresh');
-    router.push({ name: 'game_current', query: { id: props.app.id, localApp: props.app.id, gamePath: url } });
+    if (window.localAppWindowApi) {
+      const opened = await window.localAppWindowApi.open({ url, id: props.app.id, title });
+      if (!opened?.ok) throw new Error(opened?.error || '打开窗口失败');
+    } else {
+      window.open(url, 'local-app-xiaoya');
+    }
   } catch (e: any) {
     error.value = e?.message || '启动失败';
   } finally {
