@@ -574,11 +574,40 @@
     }
   }
   let loopTimer = null;
+  function currentDeviceApi() {
+    if (window.DeviceAPI) return window.DeviceAPI;
+    return typeof DeviceAPI !== 'undefined' ? DeviceAPI : null;
+  }
+  function waitForDeviceApi(timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    return new Promise((resolve, reject) => {
+      function check() {
+        const api = currentDeviceApi();
+        if (api) {
+          resolve(api);
+          return;
+        }
+        if (Date.now() >= deadline) {
+          reject(new Error('DeviceAPI bridge initialization timed out'));
+          return;
+        }
+        setTimeout(check, 50);
+      }
+      check();
+    });
+  }
   async function boot() {
     bindActions();
     render();
-    try { await DeviceAPI.ready; } catch (_) {}
-    const p = DeviceAPI.params || {};
+    let api = currentDeviceApi();
+    try {
+      if (!api) api = await waitForDeviceApi(10000);
+      await api.ready;
+    } catch (error) {
+      addLog('error', `设备通道初始化失败: ${error && error.message || error}`);
+      return;
+    }
+    const p = api.params || {};
     Object.keys(cfg).forEach((k) => { if (p[k] !== undefined && p[k] !== null) cfg[k] = p[k]; });
     voicePlayer.setEnabled(p.voiceEnabled === undefined ? true : !!p.voiceEnabled);
     addLog('info', '设备通道就绪，开始游戏');
