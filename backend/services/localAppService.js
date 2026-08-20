@@ -30,7 +30,7 @@ function feedBase() {
 }
 
 function channel() {
-  const value = String(process.env.LOCAL_APP_CHANNEL || 'test').trim();
+  const value = String(process.env.LOCAL_APP_CHANNEL || 'stable').trim();
   return value === 'stable' ? 'stable' : 'test';
 }
 

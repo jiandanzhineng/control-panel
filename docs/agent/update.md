@@ -36,11 +36,11 @@
      powershell -ExecutionPolicy Bypass -File tools\pack_release.ps1
      ```
    - 详细坑见 `digital-human/docs/guide/windows-portable-release.md`。
-   - 上传测试渠道（密钥在 `E:\smart\.env` 的 `OSS_ACCESS_KEY_*`）：
+   - 默认上传正式渠道（密钥在 `E:\smart\.env` 的 `OSS_ACCESS_KEY_*`）：
      ```
      .venv\Scripts\python.exe tools\upload_cas_to_oss.py `
-       --dir dist\cas-digital-human-<version> --channel test
+       --dir dist\cas-digital-human-<version>
      ```
-   - 清单：`https://ezs-firmware.oss-cn-shanghai.aliyuncs.com/apps/digital-human/test/latest.json`
-   - 正式渠道把 `--channel test` 改成 `stable`。
+   - 清单：`https://ezs-firmware.oss-cn-shanghai.aliyuncs.com/apps/digital-human/stable/latest.json`
+   - 只有明确要发测试渠道时才加 `--channel test`。
    - 面板测更新：`npm run electron:debug`，玩法库里看数字人卡片版本号，点更新并启动。
