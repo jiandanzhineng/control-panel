@@ -434,8 +434,11 @@ button:focus-visible {
 /* plain 模式：更透的底 */
 .el-tag.is-plain { background: transparent; }
 
-/* 状态色按钮：底用主题变量 */
+/* 状态色按钮：底用主题变量；字用真白，避免 --el-color-white 被映射成背景色 */
 .el-button--success {
+  --el-button-text-color: #fff;
+  --el-button-hover-text-color: #fff;
+  --el-button-active-text-color: #fff;
   --el-button-bg-color: var(--success-solid);
   --el-button-border-color: var(--success-solid);
   --el-button-hover-bg-color: var(--success-solid-hover);
@@ -444,6 +447,9 @@ button:focus-visible {
   --el-button-active-border-color: var(--success-solid-active);
 }
 .el-button--danger {
+  --el-button-text-color: #fff;
+  --el-button-hover-text-color: #fff;
+  --el-button-active-text-color: #fff;
   --el-button-bg-color: var(--danger-solid);
   --el-button-border-color: var(--danger-solid);
   --el-button-hover-bg-color: var(--danger-solid-hover);
@@ -452,6 +458,9 @@ button:focus-visible {
   --el-button-active-border-color: var(--danger-solid-active);
 }
 .el-button--warning {
+  --el-button-text-color: #fff;
+  --el-button-hover-text-color: #fff;
+  --el-button-active-text-color: #fff;
   --el-button-bg-color: var(--warning-solid);
   --el-button-border-color: var(--warning-solid);
   --el-button-hover-bg-color: var(--warning-solid-hover);
@@ -459,11 +468,28 @@ button:focus-visible {
   --el-button-active-bg-color: var(--warning-solid-active);
   --el-button-active-border-color: var(--warning-solid-active);
 }
-/* plain/text 变体保持状态色文字，底用表面色 */
+/* plain：保持状态色文字；只用变量设底，避免写死 background-color 压过 :hover */
 .el-button--success.is-plain,
 .el-button--danger.is-plain,
 .el-button--warning.is-plain {
-  background-color: var(--bg-elevated);
+  --el-button-bg-color: var(--bg-elevated);
+  --el-button-hover-text-color: var(--el-button-text-color);
+  --el-button-active-text-color: var(--el-button-text-color);
+}
+.el-button--success.is-plain {
+  --el-button-text-color: var(--el-color-success);
+  --el-button-hover-bg-color: var(--success-bg);
+  --el-button-hover-border-color: var(--success-border);
+}
+.el-button--danger.is-plain {
+  --el-button-text-color: var(--el-color-danger);
+  --el-button-hover-bg-color: var(--danger-bg);
+  --el-button-hover-border-color: var(--danger-border);
+}
+.el-button--warning.is-plain {
+  --el-button-text-color: var(--el-color-warning);
+  --el-button-hover-bg-color: var(--warning-bg);
+  --el-button-hover-border-color: var(--warning-border);
 }
 
 /* 状态色按钮禁用态：低饱和底 */
