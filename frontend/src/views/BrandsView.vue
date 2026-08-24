@@ -130,12 +130,24 @@
       </el-tab-pane>
     </el-tabs>
 
+    <!-- ============ 统计 + 自动刷新（与原设备页一致） ============ -->
+    <el-card shadow="never" class="stats-card">
+      <div class="stats-row">
+        <el-statistic title="品牌设备总数" :value="totalCount" />
+        <el-statistic title="在线设备" :value="onlineCount" class="online-stat" />
+        <el-statistic title="离线设备" :value="offlineCount" class="offline-stat" />
+        <div class="stats-actions">
+          <el-checkbox v-model="autoRefreshEnabled" @change="(v: any) => v ? startAutoRefresh() : stopAutoRefresh()">自动刷新</el-checkbox>
+          <el-button size="small" :icon="Refresh" :loading="refreshing" @click="refreshConnected">刷新</el-button>
+        </div>
+      </div>
+    </el-card>
+
     <!-- ============ 已连接设备 ============ -->
     <el-card shadow="never" class="section-card">
       <template #header>
         <div class="card-header">
           <span>已连接设备（{{ connectedDevices.length }}）</span>
-          <el-button size="small" :icon="Refresh" :loading="refreshing" @click="refreshConnected">刷新</el-button>
         </div>
       </template>
 
@@ -172,9 +184,9 @@
             </el-select>
           </div>
           <div class="control-actions">
-            <el-button type="primary" size="small" @click="dglabApply(dev)">应用</el-button>
-            <el-button size="small" @click="dglabStop(dev)">停止</el-button>
-            <el-button size="small" @click="dglabMaxPrompt(dev)">强度上限 +10</el-button>
+            <el-button type="primary" size="small" :loading="opLoading[`dglabApply:${dev.deviceId}`]" @click="dglabApply(dev)">应用</el-button>
+            <el-button size="small" :loading="opLoading[`dglabStop:${dev.deviceId}`]" @click="dglabStop(dev)">停止</el-button>
+            <el-button size="small" :loading="opLoading[`dglabMax:${dev.deviceId}`]" @click="dglabMaxPrompt(dev)">强度上限 +10</el-button>
           </div>
         </div>
 
@@ -211,9 +223,9 @@
             <div class="control-hint">两种写法对强度数据包的位排布不同，需用真机实测确认哪种正确。切换即时生效并记忆。</div>
           </div>
           <div class="control-actions">
-            <el-button type="primary" size="small" @click="dglabV2Apply(dev)">应用</el-button>
-            <el-button size="small" @click="dglabV2Stop(dev)">停止</el-button>
-            <el-button size="small" @click="dglabV2ReadBattery(dev)">读取电量</el-button>
+            <el-button type="primary" size="small" :loading="opLoading[`v2Apply:${dev.deviceId}`]" @click="dglabV2Apply(dev)">应用</el-button>
+            <el-button size="small" :loading="opLoading[`v2Stop:${dev.deviceId}`]" @click="dglabV2Stop(dev)">停止</el-button>
+            <el-button size="small" :loading="opLoading[`v2Battery:${dev.deviceId}`]" @click="dglabV2ReadBattery(dev)">读取电量</el-button>
           </div>
           <div class="control-hint">强度按 0–100 映射至硬件 0–2047；波形频率 = X + Y（X 0–31，Y 0–1023）。</div>
         </div>
@@ -225,8 +237,8 @@
             <el-input v-model="ctl(dev).commandId" size="small" placeholder="如 player_hurt" class="control-input" />
           </div>
           <div class="control-actions">
-            <el-button type="primary" size="small" @click="ycyTrigger(dev)">触发指令</el-button>
-            <el-button size="small" @click="ycyStop(dev)">全部停止</el-button>
+            <el-button type="primary" size="small" :loading="opLoading[`ycyTrigger:${dev.deviceId}`]" @click="ycyTrigger(dev)">触发指令</el-button>
+            <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">全部停止</el-button>
           </div>
           <div class="control-hint">桥接模式以 App 内已配置指令触发；全局停止为 <code>_stop_all</code>。</div>
         </div>
@@ -248,8 +260,8 @@
             </el-select>
           </div>
           <div class="control-actions">
-            <el-button type="primary" size="small" @click="ycyEmsApply(dev)">应用</el-button>
-            <el-button size="small" @click="ycyStop(dev)">全部停止</el-button>
+            <el-button type="primary" size="small" :loading="opLoading[`ycyEms:${dev.deviceId}`]" @click="ycyEmsApply(dev)">应用</el-button>
+            <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">全部停止</el-button>
           </div>
         </div>
 
@@ -266,8 +278,8 @@
             </el-select>
           </div>
           <div class="control-actions">
-            <el-button type="primary" size="small" @click="ycyToyApply(dev)">应用</el-button>
-            <el-button size="small" @click="ycyStop(dev)">停止</el-button>
+            <el-button type="primary" size="small" :loading="opLoading[`ycyToy:${dev.deviceId}`]" @click="ycyToyApply(dev)">应用</el-button>
+            <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">停止</el-button>
           </div>
         </div>
       </div>
@@ -276,7 +288,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Connection, Switch, Close } from '@element-plus/icons-vue'
 import * as brandsApi from '../api/brands'
@@ -329,7 +341,34 @@ const connectedDevices = computed<BrandDevice[]>(() => {
   }
   return backendDevices.value
 })
+// 与原设备页一致的统计：总数 / 在线 / 离线
+const totalCount = computed(() => connectedDevices.value.length)
+const onlineCount = computed(() => connectedDevices.value.filter((d) => d.connected).length)
+const offlineCount = computed(() => connectedDevices.value.filter((d) => !d.connected).length)
+
+// 自动刷新（与原设备页一致：可开关的轮询兜底，推送为主、拉取为辅）
+const autoRefreshEnabled = ref(true)
+const autoRefreshTimer = ref<number | null>(null)
+function startAutoRefresh() {
+  stopAutoRefresh()
+  autoRefreshTimer.value = window.setInterval(() => {
+    if (!document.hidden) refreshConnected()
+  }, 3000)
+}
+function stopAutoRefresh() {
+  if (autoRefreshTimer.value) {
+    clearInterval(autoRefreshTimer.value)
+    autoRefreshTimer.value = null
+  }
+}
 const controlState = reactive<Record<string, Record<string, any>>>({})
+
+// 操作 loading 态（与原设备页 operationLoading 对齐）
+const opLoading = reactive<Record<string, boolean>>({})
+function withLoading(key: string, fn: () => Promise<void>) {
+  opLoading[key] = true
+  return fn().finally(() => { opLoading[key] = false })
+}
 
 function ctl(dev: BrandDevice) {
   if (!controlState[dev.deviceId]) {
@@ -488,18 +527,22 @@ async function connectYcyBle(c: DiscoverCandidate) {
 
 async function dglabApply(dev: BrandDevice) {
   const s = ctl(dev)
-  try {
+  await withLoading(`dglabApply:${dev.deviceId}`, async () => {
     await brandsApi.control(dev.deviceId, 'setPattern', { pattern: s.pattern, intensity: s.intensity, ticks: s.ticks })
     ElMessage.success('已下发波形')
-  } catch (e: any) { ElMessage.error(e?.message || '下发失败') }
+  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
 }
 
 async function dglabStop(dev: BrandDevice) {
-  try { await brandsApi.control(dev.deviceId, 'stop') } catch (e: any) { ElMessage.error(e?.message || '停止失败') }
+  await withLoading(`dglabStop:${dev.deviceId}`, async () => {
+    await brandsApi.control(dev.deviceId, 'stop')
+  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
 }
 
 async function dglabMaxPrompt(dev: BrandDevice) {
-  try { await brandsApi.control(dev.deviceId, 'setMaxIntensity', { delta: 10 }) } catch (e: any) { ElMessage.error(e?.message || '操作失败') }
+  await withLoading(`dglabMax:${dev.deviceId}`, async () => {
+    await brandsApi.control(dev.deviceId, 'setMaxIntensity', { delta: 10 })
+  }).catch((e: any) => { ElMessage.error(e?.message || '操作失败') })
 }
 
 const V2_STRENGTH_HW_MAX = 2047
@@ -507,7 +550,7 @@ async function dglabV2Apply(dev: BrandDevice) {
   const s = ctl(dev)
   const a = Math.round((s.v2AStrength / 100) * V2_STRENGTH_HW_MAX)
   const b = Math.round((s.v2BStrength / 100) * V2_STRENGTH_HW_MAX)
-  try {
+  await withLoading(`v2Apply:${dev.deviceId}`, async () => {
     if (window.brandBleApi) {
       // Electron 路径：经后端 REST → 主进程 IPC 下发
       await brandsApi.control(dev.deviceId, 'v2SetStrength', { a, b })
@@ -520,60 +563,62 @@ async function dglabV2Apply(dev: BrandDevice) {
       await brandBle.sendOps(brandBle.packWaveformOps('B', s.v2Bx, s.v2By))
     }
     ElMessage.success('已下发')
-  } catch (e: any) { ElMessage.error(e?.message || '下发失败') }
+  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
 }
 
 async function dglabV2Stop(dev: BrandDevice) {
-  try {
+  await withLoading(`v2Stop:${dev.deviceId}`, async () => {
     if (window.brandBleApi) {
       await brandsApi.control(dev.deviceId, 'v2Stop')
     } else {
       await brandBle.sendOps(brandBle.packStrengthOps(0, 0))
     }
     ElMessage.success('已停止')
-  }
-  catch (e: any) { ElMessage.error(e?.message || '停止失败') }
+  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
 }
 
 async function dglabV2ReadBattery(dev: BrandDevice) {
-  try {
+  await withLoading(`v2Battery:${dev.deviceId}`, async () => {
     if (window.brandBleApi) {
       await brandsApi.control(dev.deviceId, 'v2ReadBattery')
     } else {
       await brandBle.sendOps([{ characteristic: 'battery', read: true }])
     }
     ElMessage.success('已请求读取电量')
-  }
-  catch (e: any) { ElMessage.error(e?.message || '读取失败') }
+  }).catch((e: any) => { ElMessage.error(e?.message || '读取失败') })
 }
 
 async function ycyTrigger(dev: BrandDevice) {
   const s = ctl(dev)
   if (!s.commandId) { ElMessage.warning('请填写指令 ID'); return }
-  try { await brandsApi.control(dev.deviceId, 'trigger', { commandId: s.commandId }) } catch (e: any) { ElMessage.error(e?.message || '触发失败') }
+  await withLoading(`ycyTrigger:${dev.deviceId}`, async () => {
+    await brandsApi.control(dev.deviceId, 'trigger', { commandId: s.commandId })
+  }).catch((e: any) => { ElMessage.error(e?.message || '触发失败') })
 }
 
 async function ycyStop(dev: BrandDevice) {
-  try { await brandsApi.control(dev.deviceId, 'ycyStop') } catch (e: any) { ElMessage.error(e?.message || '停止失败') }
+  await withLoading(`ycyStop:${dev.deviceId}`, async () => {
+    await brandsApi.control(dev.deviceId, 'ycyStop')
+  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
 }
 
 async function ycyEmsApply(dev: BrandDevice) {
   const s = ctl(dev)
-  try {
+  await withLoading(`ycyEms:${dev.deviceId}`, async () => {
     await brandsApi.control(dev.deviceId, 'setStrength', { channel: 'A', value: s.aStrength })
     await brandsApi.control(dev.deviceId, 'setStrength', { channel: 'B', value: s.bStrength })
     await brandsApi.control(dev.deviceId, 'setMode', { channel: 'A', mode: s.wave })
     ElMessage.success('已下发')
-  } catch (e: any) { ElMessage.error(e?.message || '下发失败') }
+  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
 }
 
 async function ycyToyApply(dev: BrandDevice) {
   const s = ctl(dev)
-  try {
+  await withLoading(`ycyToy:${dev.deviceId}`, async () => {
     await brandsApi.control(dev.deviceId, 'setSpeed', { motor: 'A', speed: Math.round((s.speed / 100) * 20) })
     await brandsApi.control(dev.deviceId, 'setToyMode', { motor: 'A', mode: s.mode })
     ElMessage.success('已下发')
-  } catch (e: any) { ElMessage.error(e?.message || '下发失败') }
+  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
 }
 
 async function disconnectDevice(dev: BrandDevice) {
@@ -613,7 +658,12 @@ async function onV2LayoutChange(layout: 'official' | 'coyote2') {
   }
 }
 
-onMounted(() => { refreshConnected(); loadV2Layout() })
+onMounted(() => {
+  refreshConnected()
+  loadV2Layout()
+  if (autoRefreshEnabled.value) startAutoRefresh()
+})
+onUnmounted(() => { stopAutoRefresh() })
 </script>
 
 <style scoped>

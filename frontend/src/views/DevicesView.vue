@@ -554,6 +554,22 @@
                   >
                     断开 BLE
                   </el-button>
+                  <el-button
+                    v-if="hasConnection(selectedDevice, 'brand')"
+                    link
+                    type="warning"
+                    @click="disconnectBrandDevice(selectedDevice, 'brand')"
+                  >
+                    断开品牌连接
+                  </el-button>
+                  <el-button
+                    v-if="hasConnection(selectedDevice, 'brandBle')"
+                    link
+                    type="warning"
+                    @click="disconnectBrandDevice(selectedDevice, 'brandBle')"
+                  >
+                    断开品牌蓝牙
+                  </el-button>
                 </div>
               </div>
             </el-descriptions-item>
@@ -914,9 +930,10 @@ import { useRouter } from 'vue-router'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
 import RemoteProjectionPanel from '../components/RemoteProjectionPanel.vue'
 import { track } from '../analytics'
+import { listDevices, getDeviceTypes, getDeviceTypeConfigs } from '../api/devices'
 
 interface DeviceData { [key: string]: any }
-type TransportType = 'mqtt' | 'serial' | 'ble' | 'remote';
+type TransportType = 'mqtt' | 'serial' | 'ble' | 'remote' | 'brand' | 'brandBle';
 interface DeviceConnection {
   type: TransportType;
   connected: boolean;
@@ -1173,21 +1190,15 @@ async function init() {
 }
 
 async function loadDeviceTypes() {
-  const res = await fetch('/api/device-types');
-  if (!res.ok) throw new Error('设备类型获取失败');
-  deviceTypeMap.value = await res.json();
+  deviceTypeMap.value = await getDeviceTypes();
 }
 
 async function loadDeviceTypeConfigs() {
-  const res = await fetch('/api/device-types/configs');
-  if (!res.ok) throw new Error('设备类型配置获取失败');
-  deviceTypeConfigs.value = await res.json();
+  deviceTypeConfigs.value = await getDeviceTypeConfigs();
 }
 
 async function refreshDevices() {
-  const res = await fetch('/api/devices');
-  if (!res.ok) throw new Error('设备列表获取失败');
-  const rawList: Device[] = await res.json();
+  const rawList: Device[] = await listDevices();
   const list = rawList.map(normalizeDevice);
   // 检测离线→在线的边沿，仅对新上线设备上报 device_connect（避免轮询重复上报）
   for (const d of list) {
@@ -1335,11 +1346,11 @@ function hasConnection(device: Device, type: TransportType) {
 }
 
 function getConnectionLabel(type: TransportType) {
-  return { mqtt: 'MQTT', serial: '串口', ble: 'BLE', remote: '远程' }[type];
+  return { mqtt: 'MQTT', serial: '串口', ble: 'BLE', remote: '远程', brand: '品牌连接', brandBle: '品牌蓝牙' }[type];
 }
 
 function getConnectionTagType(type: TransportType): 'success' | 'primary' | 'warning' | 'info' {
-  return { mqtt: 'info', serial: 'success', ble: 'primary', remote: 'warning' }[type] as 'success' | 'primary' | 'warning' | 'info';
+  return { mqtt: 'info', serial: 'success', ble: 'primary', remote: 'warning', brand: 'primary', brandBle: 'primary' }[type] as 'success' | 'primary' | 'warning' | 'info';
 }
 
 function getSerialPortStatus(status: SerialPortInfo['status']) {
@@ -1534,6 +1545,19 @@ async function disconnectBleDevice(device: Device) {
     ElMessage.success('BLE 设备已安全断开');
   } catch (error: any) {
     ElMessage.error(error?.message || 'BLE 断开失败');
+  }
+}
+
+async function disconnectBrandDevice(device: Device, kind: 'brand' | 'brandBle') {
+  try {
+    const res = await fetch(`/api/brands/${encodeURIComponent(device.id)}/disconnect`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || data.message || '断开失败');
+    await refreshDevices();
+    const label = kind === 'brandBle' ? '品牌蓝牙' : '品牌连接';
+    ElMessage.success(`${label}已安全断开`);
+  } catch (error: any) {
+    ElMessage.error(error?.message || '品牌设备断开失败');
   }
 }
 

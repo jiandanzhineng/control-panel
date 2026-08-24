@@ -185,6 +185,24 @@ export function onBattery(cb: (value: number) => void): () => void {
   return () => { if (webClient) webClient.onBattery(() => {}); };
 }
 
+/** Electron 路径：订阅候选设备列表（select-bluetooth-device 推来的候选）。 */
+export function onScanResults(cb: (devices: Array<{ id: string; name: string }>) => void): () => void {
+  if (!usingElectron()) return () => {};
+  return window.brandBleApi!.onScanResults(cb);
+}
+
+/** Electron 路径：从候选列表中选择某个设备完成连接。 */
+export async function selectDevice(id: string): Promise<void> {
+  if (!usingElectron()) throw new Error('仅 Electron 路径支持 selectDevice');
+  return window.brandBleApi!.selectDevice(id);
+}
+
+/** Electron 路径：取消候选选择。 */
+export async function cancelSelection(): Promise<void> {
+  if (!usingElectron()) return;
+  return window.brandBleApi!.cancelSelection();
+}
+
 export function getCandidateName(device: BluetoothDevice): string {
   const n = String(device.name || '');
   return DGLAB_V2_NAMES.some((k) => n.toUpperCase().includes(k.toUpperCase()))
