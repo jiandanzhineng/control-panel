@@ -398,12 +398,14 @@ async function connectDglabV2() {
     scanningV2.value = true
     const off = brandBle.onScanResults((devices) => { v2Candidates.value = devices })
     try {
-      await brandBle.connect()
+      // 注意：必须走 scanAndConnect（内部为 window.brandBleApi.connect，经 select-bluetooth-device
+      // 推送候选并由 pickV2 选择），brandBle 模块本身未导出 connect，误用会整体失败。
+      await brandBle.scanAndConnect()
       v2Candidates.value = []
       ElMessage.success('DG-LAB V2 已连接')
       await refreshConnected()
     } catch (e: any) {
-      ElMessage.error(e?.message || '连接失败')
+      ElMessage.error(e?.  message || '连接失败')
     } finally {
       scanningV2.value = false
       off()

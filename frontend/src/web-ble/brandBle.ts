@@ -154,6 +154,9 @@ export async function scanAndConnect(): Promise<BrandBleMetadata> {
   return meta;
 }
 
+/** 兼容别名：便于调用方以 connect 语义直接使用。 */
+export const connect = scanAndConnect;
+
 export async function disconnect(id: string): Promise<{ ok: boolean }> {
   if (usingElectron()) {
     return window.brandBleApi!.disconnect(id);
