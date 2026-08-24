@@ -1,5 +1,5 @@
 /**
- * 品牌设备编排服务：统一管理郊狼（DGLab）与役次元（YCY）设备的
+ * 品牌设备编排服务：统一管理蓝牙体感设备与遥控蓝牙设备的
  * 发现、连接、断开与控制指令下发，并把连接注册进既有 deviceConnectionService，
  * 从而复用设备映射（devicemap）、Bridge、玩法复位等现有能力。
  */
@@ -10,6 +10,7 @@ const { DGLabV2WebBleConnection } = require('./webBleConnection');
 const dglabV2 = require('./protocols/dglabV2');
 const discovery = require('./discovery');
 const ycyProto = require('./protocols/ycy');
+const { brandLabel, typeLabel } = require('./brandLabels');
 
 const SUPPORTED = ['dglab', 'ycy'];
 const connections = new Map(); // deviceId -> connection adapter
@@ -84,7 +85,7 @@ async function discover(brand, opts = {}) {
       reachable: p.ok,
       error: p.error,
       suggestedDeviceId: `dglab-${p.host}`,
-      suggestedName: `郊狼 ${p.host}`,
+      suggestedName: `蓝牙体感设备 ${p.host}`,
     }));
   }
   if (brand === 'ycy') {
@@ -98,7 +99,7 @@ async function discover(brand, opts = {}) {
         address: d.address,
         rssi: d.rssi,
         suggestedDeviceId: `ycy-${d.id}`,
-        suggestedName: `役次元 ${d.name || d.id}`,
+        suggestedName: `遥控蓝牙设备 ${d.id}`,
       }));
     }
     // bridge 模式
@@ -111,7 +112,7 @@ async function discover(brand, opts = {}) {
       reachable: probe.ok,
       error: probe.error,
       suggestedDeviceId: `ycy-bridge-${probe.host}`,
-      suggestedName: `役次元(桥接) ${probe.host}`,
+      suggestedName: `遥控蓝牙设备(桥接) ${probe.host}`,
     }];
   }
   return [];
@@ -137,15 +138,15 @@ async function connect(brand, opts = {}) {
   if (brand === 'dglab') {
     const host = opts.host;
     const port = opts.port;
-    if (!host) throw new Error('郊狼连接需要 host');
+    if (!host) throw new Error('蓝牙体感设备连接需要 host');
     finalDeviceId = deviceId || `dglab-${host}`;
-    finalName = name || `郊狼 ${host}`;
+    finalName = name || `蓝牙体感设备 ${host}`;
     type = 'DGLAB';
     connection = new DGLabConnection({ deviceId: finalDeviceId, host, port, WebSocketClass });
   } else if (brand === 'ycy') {
     const mode = opts.mode === 'ble' ? 'ble' : 'bridge';
     finalDeviceId = deviceId || (mode === 'ble' ? `ycy-${opts.address || opts.deviceId}` : `ycy-bridge-${opts.host || '127.0.0.1'}`);
-    finalName = name || (mode === 'ble' ? `役次元 ${opts.name || finalDeviceId}` : `役次元(桥接) ${opts.host || '127.0.0.1'}`);
+    finalName = name || (mode === 'ble' ? `遥控蓝牙设备 ${opts.name || finalDeviceId}` : `遥控蓝牙设备(桥接) ${opts.host || '127.0.0.1'}`);
     type = resolveDeviceType('ycy', { model, mode, type: opts.type });
     connection = new YCYConnection({ deviceId: finalDeviceId, mode, WebSocketClass });
   }
@@ -271,7 +272,7 @@ function control(deviceId, brandCommand) {
   return connection.send(brandCommand);
 }
 
-// —— 郊狼高层控制 ——
+// —— 蓝牙体感设备高层控制 ——
 function dglabSetPattern(deviceId, { pattern = '经典', intensity = 100, ticks = -1 } = {}) {
   return control(deviceId, { brand: 'dglab', cmd: 'setPattern', pattern, intensity, ticks });
 }
@@ -285,7 +286,7 @@ function dglabSetBackground(deviceId, opts = {}) {
   return control(deviceId, { brand: 'dglab', cmd: 'setBackground', ...opts });
 }
 
-// —— 役次元高层控制 ——
+// —— 遥控蓝牙设备高层控制 ——
 function ycyTrigger(deviceId, commandId, token) {
   return control(deviceId, { brand: 'ycy', cmd: 'triggerInstruction', commandId, token });
 }
@@ -322,7 +323,7 @@ function disconnect(deviceId) {
   return true;
 }
 
-// ============ DG-LAB V2 Web Bluetooth 直连 ============
+// ============ 蓝牙体感设备（直连版）Web Bluetooth 直连 ============
 // 设备由渲染进程经 WebBT 连接后，通过主进程 brandBle:connected 注入 send 闭包，
 // 再调用本方法将适配器登记进品牌框架与 deviceService。
 
@@ -336,7 +337,7 @@ function attachWebBle(metadata, send) {
   deviceService.connectTransportDevice(
     {
       id: metadata.id,
-      name: metadata.name || `郊狼 V2 ${String(metadata.id).slice(-4)}`,
+      name: metadata.name || `蓝牙体感设备 V2 ${String(metadata.id).slice(-4)}`,
       // 复用既有 DGLAB 设备类型，使设备映射 / 玩法能用同一套 shock/strength 能力驱动，
       // 设备类型层发出的 setPattern/stopPattern 命令由 webBleConnection 翻译为 V2 GATT 操作。
       type: 'DGLAB',
@@ -366,7 +367,7 @@ function detachWebBle(deviceId) {
   return true;
 }
 
-// —— DG-LAB V2 高层控制 ——
+// —— 蓝牙体感设备（直连版）高层控制 ——
 function dglabV2SetStrength(deviceId, { a = 0, b = 0 } = {}) {
   return control(deviceId, { brand: 'dglab', cmd: 'v2_setStrength', a: Number(a) || 0, b: Number(b) || 0 });
 }
@@ -399,9 +400,11 @@ function list() {
     return {
       deviceId,
       brand: meta.brand,
+      brandLabel: brandLabel(meta.brand),
       mode: meta.mode,
       kind: meta.kind,
       type: dev?.type,
+      typeLabel: typeLabel(dev?.type),
       name: dev?.name,
       // 返回真实连接状态，而非写死 true
       connected: st.status === STATUS.CONNECTED,
@@ -433,12 +436,12 @@ module.exports = {
   list,
   getStatus,
   resolveDeviceType,
-  // 郊狼
+  // 蓝牙体感设备
   dglabSetPattern,
   dglabStop,
   dglabSetMaxIntensity,
   dglabSetBackground,
-  // 郊狼 V2（Web Bluetooth 直连）
+  // 蓝牙体感设备（直连版）（Web Bluetooth 直连）
   attachWebBle,
   detachWebBle,
   dglabV2SetStrength,
@@ -447,7 +450,7 @@ module.exports = {
   dglabV2ReadBattery,
   getV2StrengthLayout,
   setV2StrengthLayout,
-  // 役次元
+  // 遥控蓝牙设备
   ycyTrigger,
   ycyStop,
   ycySetStrength,

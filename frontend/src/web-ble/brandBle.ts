@@ -93,7 +93,7 @@ class WebBluetoothV2Client {
       }
     }
 
-    const name = device.name || 'DG-LAB V2';
+    const name = device.name || '蓝牙体感设备 V2';
     return {
       id: `ble:${device.id}`,
       name,
@@ -207,7 +207,7 @@ export function getCandidateName(device: BluetoothDevice): string {
   const n = String(device.name || '');
   return DGLAB_V2_NAMES.some((k) => n.toUpperCase().includes(k.toUpperCase()))
     ? n
-    : (n || 'DG-LAB V2');
+    : (n || '蓝牙体感设备 V2');
 }
 
 export const V2_NAMES = DGLAB_V2_NAMES;

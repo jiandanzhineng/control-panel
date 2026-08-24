@@ -1,12 +1,13 @@
 // 品牌设备 API 客户端：打本地后端 /api/brands/*。
-// 覆盖郊狼（DGLab）与役次元（YCY）设备的发现、连接、断开与控制。
 
 export interface BrandDevice {
   deviceId: string;
   brand: 'dglab' | 'ycy';
+  brandLabel?: string;
   mode?: string;
   kind?: string;
   type?: string;
+  typeLabel?: string;
   name?: string;
   connected: boolean;
   metadata?: Record<string, unknown>;

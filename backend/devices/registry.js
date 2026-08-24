@@ -114,13 +114,13 @@ const registeredTypes = [
     close: (ctx) => ctx.writeProps({ shock: 0, voltage: 0, power: 0 }),
   }),
 
-  // ---- 郊狼（DGLab）品牌设备 ----
+  // ---- 蓝牙体感设备（品牌设备）----
   // 经由 App “娱乐模式”本地 WebSocket 控制（协议见 backend/brands/protocols/dglab.js）。
   // 娱乐模式为单活动波形模型；shock/strength 两个能力均映射为 set_pattern，
-  // 设备类型层只负责发出“郊狼品牌命令”，真正翻译为 App 帧由品牌连接适配器完成。
+  // 设备类型层只负责发出品牌命令，真正翻译为 App 帧由品牌连接适配器完成。
   new BaseDeviceType({
     type: 'DGLAB',
-    name: '郊狼 DGLab',
+    name: '蓝牙体感设备',
     capabilities: {
       shock: {
         actions: {
@@ -152,11 +152,11 @@ const registeredTypes = [
     close: (ctx) => ctx.sendMessage({ brand: 'dglab', cmd: 'stopPattern' }),
   }),
 
-  // ---- 役次元（YCY / YOKONEX）电击器（YSKJ_EMS_BLE） ----
+  // ---- 遥控蓝牙设备·电击器（YSKJ_EMS_BLE）----
   // 通道 A/B 强度 0–100（BLE 直连时映射为 0–276 协议范围），全局停止为 stopAll。
   new BaseDeviceType({
     type: 'YCY_EMS',
-    name: '役次元 电击器',
+    name: '电击型设备',
     capabilities: {
       shock: {
         actions: {
@@ -184,11 +184,11 @@ const registeredTypes = [
     close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
   }),
 
-  // ---- 役次元（YCY / YOKONEX）玩具 / 电机（YSKJ_TOY_BLE） ----
+  // ---- 遥控蓝牙设备·玩具 / 电机（YSKJ_TOY_BLE）----
   // 电机 A/B/C 速度 0–20；此处以 0–100 输入映射到 0–20 协议范围。
   new BaseDeviceType({
     type: 'YCY_TOY',
-    name: '役次元 玩具/电机',
+    name: '电机型设备',
     capabilities: {
       strength: {
         actions: {
@@ -208,14 +208,14 @@ const registeredTypes = [
     close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopToy' }),
   }),
 
-  // ---- 役次元（YCY / YOKONEX）杯 / 灌肠机（非电击，App 指令触发，桥接模式） ----
+  // ---- 遥控蓝牙设备·杯 / 灌肠机（非电击，App 指令触发，桥接模式）----
   // 这类设备不在本机直发强度/通道帧，而是由 YCY App 内已配置的指令驱动；
   // 通过 API-bridge 的 triggerInstruction（commandId）触发，全部停止复用 _stop_all。
   // 因其为「指令触发性」设备，无标准强度/通道能力；连接时由前端选择设备类型
   // （resolveDeviceType 支持显式 type 覆盖），控制统一走通用桥接控制区块。
   new BaseDeviceType({
     type: 'YCY_CUP',
-    name: '役次元 杯',
+    name: '杯型设备',
     capabilities: {},
     operations: [
       {
@@ -235,7 +235,7 @@ const registeredTypes = [
 
   new BaseDeviceType({
     type: 'YCY_ENEMA',
-    name: '役次元 灌肠机',
+    name: '灌肠型设备',
     capabilities: {},
     operations: [
       {

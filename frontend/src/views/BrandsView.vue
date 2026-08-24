@@ -2,12 +2,12 @@
   <div class="brands-page">
     <div class="page-header">
       <h2 class="page-title">品牌设备</h2>
-      <span class="page-sub">郊狼（DGLab）与役次元（YCY）设备的发现、连接与操控</span>
+      <span class="page-sub">蓝牙体感设备与遥控蓝牙设备的发现、连接与操控</span>
     </div>
 
     <el-tabs v-model="activeBrand" class="brand-tabs">
-      <!-- ============ 郊狼 DGLab ============ -->
-      <el-tab-pane label="郊狼 DGLab" name="dglab">
+      <!-- ============ 蓝牙体感设备 ============ -->
+      <el-tab-pane label="蓝牙体感设备" name="dglab">
         <el-card shadow="never" class="section-card">
           <template #header>
             <div class="card-header">
@@ -30,7 +30,7 @@
               class="hint"
               type="info"
               :closable="false"
-              title="在 DG-Lab App 内开启「娱乐模式」后，会显示本机 IP 与端口（默认 60536）。填入后点击探测即可发现。"
+              title="在设备配套 App 内开启「娱乐模式」后，会显示本机 IP 与端口（默认 60536）。填入后点击探测即可发现。"
             />
             <div v-if="dglabCandidates.length" class="candidate-list">
               <div
@@ -55,13 +55,13 @@
             </div>
           </template>
 
-          <!-- Web Bluetooth 直连（原版 V2 / Coyote） -->
+          <!-- 蓝牙体感设备（直连版）Web Bluetooth 直连 -->
           <template v-else>
             <el-alert
               class="hint"
               type="info"
               :closable="false"
-              title="通过 Web Bluetooth 直连原版 DG-LAB V2（Coyote）。支持 Windows / Linux / Android / macOS 的 Chromium 内核浏览器（Edge / Chrome）。连接后可在下方「已连接设备」区直接调控强度与波形。"
+              title="通过 Web Bluetooth 直连蓝牙体感设备（直连版）。支持 Windows / Linux / Android / macOS 的 Chromium 内核浏览器（Edge / Chrome）。连接后可在下方「已连接设备」区直接调控强度与波形。"
             />
             <div class="discover-row">
               <el-button type="primary" :loading="scanningV2" @click="connectDglabV2">连接（选择蓝牙设备）</el-button>
@@ -74,7 +74,7 @@
                 class="candidate-item"
               >
                 <div class="candidate-info">
-                  <span class="candidate-name">{{ c.name }}</span>
+                  <span class="candidate-name">蓝牙体感设备（直连）</span>
                   <span class="candidate-meta">{{ c.id }}</span>
                 </div>
                 <el-button size="small" type="primary" @click="pickV2(c)">选择</el-button>
@@ -84,8 +84,8 @@
         </el-card>
       </el-tab-pane>
 
-      <!-- ============ 役次元 YCY ============ -->
-      <el-tab-pane label="役次元 YCY" name="ycy">
+      <!-- ============ 遥控蓝牙设备 ============ -->
+      <el-tab-pane label="遥控蓝牙设备" name="ycy">
         <el-card shadow="never" class="section-card">
           <template #header>
             <div class="card-header">
@@ -116,7 +116,7 @@
               <el-button type="primary" :loading="busy" @click="connectYcyBridge">连接</el-button>
             </div>
             <el-alert class="hint" type="info" :closable="false"
-              title="桥接模式依赖 YCY API-bridge（公开仓库 YCY-YOKONEX/API-bridge）。在其运行后填入连接码与服务地址即可控制；杯 / 灌肠机等非电击设备请选择对应类型，连接后通过「指令 ID」触发 App 内已配置的玩法。" />
+              title="桥接模式依赖设备 API-bridge 服务。在其运行后填入连接码与服务地址即可控制；杯 / 灌肠机等非电击设备请选择对应类型，连接后通过「指令 ID」触发 App 内已配置的玩法。" />
           </template>
 
           <!-- BLE 模式 -->
@@ -128,7 +128,7 @@
               <div v-for="c in bleCandidates" :key="c.deviceId" class="candidate-item">
                 <div class="candidate-info">
                   <span class="candidate-name">{{ c.suggestedName }}</span>
-                  <span class="candidate-meta">{{ c.name }} · RSSI {{ c.rssi ?? '—' }}</span>
+                  <span class="candidate-meta">RSSI {{ c.rssi ?? '—' }}</span>
                 </div>
                 <el-button size="small" type="primary" :disabled="busy" @click="connectYcyBle(c)">连接</el-button>
               </div>
@@ -165,14 +165,14 @@
         <div class="device-card__head">
           <div>
             <span class="device-card__name">{{ dev.name || dev.deviceId }}</span>
-            <el-tag size="small" class="tag-brand">{{ dev.brand === 'dglab' ? '郊狼' : '役次元' }}</el-tag>
+            <el-tag size="small" class="tag-brand">{{ dev.brandLabel || BRAND_LABEL[dev.brand] || dev.brand }}</el-tag>
             <el-tag v-if="dev.mode" size="small" type="info">{{ dev.mode }}</el-tag>
-            <el-tag v-if="dev.type" size="small" type="warning">{{ dev.type }}</el-tag>
+            <el-tag v-if="dev.type" size="small" type="warning">{{ dev.typeLabel || TYPE_LABEL[dev.type] || dev.type }}</el-tag>
           </div>
           <el-button size="small" :icon="Close" @click="disconnectDevice(dev)">断开</el-button>
         </div>
 
-        <!-- 郊狼 娱乐模式控制 -->
+        <!-- 蓝牙体感设备 娱乐模式控制 -->
         <div v-if="dev.brand === 'dglab' && dev.mode !== 'webble'" class="control-grid">
           <div class="control-field">
             <label>波形</label>
@@ -198,7 +198,7 @@
           </div>
         </div>
 
-        <!-- 郊狼 V2 蓝牙直连控制 -->
+        <!-- 蓝牙体感设备（直连版）蓝牙直连控制 -->
         <div v-else-if="dev.brand === 'dglab' && dev.mode === 'webble'" class="control-grid">
           <div class="control-field">
             <label>通道 A 强度 {{ ctl(dev).v2AStrength }}</label>
@@ -225,8 +225,8 @@
           <div class="control-field">
             <label>强度位排布（标定用）</label>
             <el-select v-model="v2Layout" size="small" class="control-input" @change="onV2LayoutChange">
-              <el-option label="coyote2（经验参考，默认）" value="coyote2" />
-              <el-option label="official（官方文档）" value="official" />
+              <el-option label="布局方案 A（经验参考，默认）" value="coyote2" />
+              <el-option label="布局方案 B（官方文档）" value="official" />
             </el-select>
             <div class="control-hint">两种写法对强度数据包的位排布不同，需用真机实测确认哪种正确。切换即时生效并记忆。</div>
           </div>
@@ -238,7 +238,7 @@
           <div class="control-hint">强度按 0–100 映射至硬件 0–2047；波形频率 = X + Y（X 0–31，Y 0–1023）。</div>
         </div>
 
-        <!-- 役次元 桥接控制 -->
+        <!-- 遥控蓝牙设备 桥接控制 -->
         <div v-else-if="dev.brand === 'ycy' && dev.mode === 'bridge'" class="control-grid">
           <div class="control-field">
             <label>指令 ID</label>
@@ -251,7 +251,7 @@
           <div class="control-hint">桥接模式以 App 内已配置指令触发；全局停止为 <code>_stop_all</code>。</div>
         </div>
 
-        <!-- 役次元 BLE 电击器 -->
+        <!-- 遥控蓝牙设备 BLE 电击器 -->
         <div v-else-if="dev.brand === 'ycy' && dev.mode === 'ble' && dev.type === 'YCY_EMS'" class="control-grid">
           <div class="control-field">
             <label>通道 A 强度 {{ ctl(dev).aStrength }}</label>
@@ -273,7 +273,7 @@
           </div>
         </div>
 
-        <!-- 役次元 BLE 玩具/电机 -->
+        <!-- 遥控蓝牙设备 BLE 玩具/电机 -->
         <div v-else-if="dev.brand === 'ycy' && dev.mode === 'ble' && dev.type === 'YCY_TOY'" class="control-grid">
           <div class="control-field">
             <label>速度 {{ ctl(dev).speed }}</label>
@@ -304,18 +304,33 @@ import * as brandBle from '../web-ble/brandBle'
 import type { BrandDevice, DiscoverCandidate } from '../api/brands'
 import type { BrandBleCandidate } from '../web-ble/brandBle'
 
+// 品牌 / 类型的中文脱敏显示名（与后端 backend/brands/brandLabels.js 保持一致）。
+// 仅用于展示，不暴露真实商业品牌名；内部路由码（dglab/ycy/DGLAB/YCY_*）保持不变。
+const BRAND_LABEL: Record<string, string> = {
+  dglab: '蓝牙体感设备',
+  ycy: '遥控蓝牙设备',
+}
+const TYPE_LABEL: Record<string, string> = {
+  DGLAB: '蓝牙体感设备',
+  DGLAB_V2: '蓝牙体感设备（直连版）',
+  YCY_EMS: '电击型设备',
+  YCY_TOY: '电机型设备',
+  YCY_CUP: '杯型设备',
+  YCY_ENEMA: '灌肠型设备',
+}
+
 const activeBrand = ref<'dglab' | 'ycy'>('dglab')
 const busy = ref(false)
 const refreshing = ref(false)
 
-// 郊狼发现
+// 蓝牙体感设备发现
 const dglabMode = ref<'ws' | 'webble'>('ws')
 const dglabHost = ref('')
 const dglabPort = ref('60536')
 const scanningDglab = ref(false)
 const dglabCandidates = ref<DiscoverCandidate[]>([])
 
-// 郊狼 V2 Web Bluetooth 直连
+// 蓝牙体感设备（直连版）Web Bluetooth 直连
 const scanningV2 = ref(false)
 const v2Candidates = ref<BrandBleCandidate[]>([])
   // 网页版（非 Electron）下本地直接连的 V2 设备
@@ -323,7 +338,7 @@ const localV2 = ref<{ id: string; name: string; connected: boolean; battery?: nu
 // V2 强度位排布（标定用，localStorage 记忆）
 const v2Layout = ref<'official' | 'coyote2'>('coyote2')
 
-// 役次元
+// 遥控蓝牙设备
 const ycyMode = ref<'bridge' | 'ble'>('bridge')
 const ycyBridgeCode = ref('')
 const ycyBridgeHost = ref('127.0.0.1')
@@ -428,7 +443,7 @@ async function connectDglab(c: DiscoverCandidate) {
       host: c.host,
       port: c.port,
     })
-    ElMessage.success('郊狼设备已连接')
+    ElMessage.success('蓝牙体感设备已连接')
     await refreshConnected()
   } catch (e: any) {
     ElMessage.error(e?.message || '连接失败')
@@ -451,7 +466,7 @@ async function connectDglabV2() {
       // 推送候选并由 pickV2 选择），brandBle 模块本身未导出 connect，误用会整体失败。
       await brandBle.scanAndConnect()
       v2Candidates.value = []
-      ElMessage.success('DG-LAB V2 已连接')
+      ElMessage.success('蓝牙体感设备（直连版）已连接')
       await refreshConnected()
     } catch (e: any) {
       ElMessage.error(e?.  message || '连接失败')
@@ -468,7 +483,7 @@ async function connectDglabV2() {
     brandBle.onBattery((value) => {
       if (localV2.value) localV2.value.battery = value
     })
-    ElMessage.success('DG-LAB V2 已连接（网页直连）')
+    ElMessage.success('蓝牙体感设备（直连版）已连接（网页直连）')
     await refreshConnected()
   } catch (e: any) {
     ElMessage.error(e?.message || '连接失败')
@@ -496,7 +511,7 @@ async function connectYcyBridge() {
       host: ycyBridgeHost.value,
       port: ycyBridgePort.value,
     })
-    ElMessage.success('役次元（桥接）已连接')
+    ElMessage.success('遥控蓝牙设备（桥接）已连接')
     await refreshConnected()
   } catch (e: any) {
     ElMessage.error(e?.message || '连接失败')
@@ -510,7 +525,7 @@ async function scanYcyBle() {
   try {
     const res = await brandsApi.discover('ycy', { mode: 'ble', timeoutMs: 5000 })
     bleCandidates.value = res.devices
-    if (!res.devices.length) ElMessage.info('未发现役次元 BLE 设备')
+    if (!res.devices.length) ElMessage.info('未发现遥控蓝牙设备')
   } catch (e: any) {
     ElMessage.error(e?.message || '扫描失败（可能需要 noble 蓝牙依赖）')
   } finally {
@@ -527,7 +542,7 @@ async function connectYcyBle(c: DiscoverCandidate) {
       deviceId: c.deviceId,
       name: c.suggestedName,
     })
-    ElMessage.success('役次元（BLE）已连接')
+    ElMessage.success('遥控蓝牙设备（BLE）已连接')
     await refreshConnected()
   } catch (e: any) {
     ElMessage.error(e?.message || '连接失败')

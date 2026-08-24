@@ -1,7 +1,7 @@
 /**
- * 郊狼（DGLab）设备连接适配器。
+ * 蓝牙体感设备连接适配器。
  * 作为 deviceConnectionService 的 transport adapter：实现 send(message) / disconnect()，
- * 接收设备类型层发出的“郊狼品牌命令”，翻译为 App 娱乐模式 WebSocket 帧。
+ * 接收设备类型层发出的品牌命令，翻译为 App 娱乐模式 WebSocket 帧。
  */
 const { DGLabSocketClient } = require('./protocols/dglab');
 
@@ -24,7 +24,7 @@ class DGLabConnection {
 
   async connect() {
     this.client = new DGLabSocketClient({ host: this.host, port: this.port, WebSocketClass: this.WebSocketClass || null });
-    this.client.on('close', () => { this._statusCb?.('close', { error: '郊狼连接已关闭' }); });
+    this.client.on('close', () => { this._statusCb?.('close', { error: '蓝牙体感设备连接已关闭' }); });
     this.client.on('error', (err) => { this._statusCb?.('error', { error: err?.message || String(err) }); });
     await this.client.connect();
     return this;
@@ -38,7 +38,7 @@ class DGLabConnection {
 
   /** 接收品牌命令（由 DGLAB 设备类型 emit），翻译并下发到 App */
   send(brandCommand) {
-    if (!this.client) throw new Error('郊狼连接未建立');
+    if (!this.client) throw new Error('蓝牙体感设备连接未建立');
     return this.client.send(brandCommand);
   }
 
