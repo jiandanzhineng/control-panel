@@ -202,6 +202,14 @@
             <label>电量</label>
             <span class="candidate-meta">{{ dev.data?.battery ?? '—' }}%</span>
           </div>
+          <div class="control-field">
+            <label>强度位排布（标定用）</label>
+            <el-select v-model="v2Layout" size="small" class="control-input" @change="onV2LayoutChange">
+              <el-option label="coyote2（经验参考，默认）" value="coyote2" />
+              <el-option label="official（官方文档）" value="official" />
+            </el-select>
+            <div class="control-hint">两种写法对强度数据包的位排布不同，需用真机实测确认哪种正确。切换即时生效并记忆。</div>
+          </div>
           <div class="control-actions">
             <el-button type="primary" size="small" @click="dglabV2Apply(dev)">应用</el-button>
             <el-button size="small" @click="dglabV2Stop(dev)">停止</el-button>
@@ -290,6 +298,8 @@ const dglabCandidates = ref<DiscoverCandidate[]>([])
 // 郊狼 V2 Web Bluetooth 直连
 const scanningV2 = ref(false)
 const v2Candidates = ref<BrandBleCandidate[]>([])
+// V2 强度位排布（标定用，localStorage 记忆）
+const v2Layout = ref<'official' | 'coyote2'>('coyote2')
 
 // 役次元
 const ycyMode = ref<'bridge' | 'ble'>('bridge')
@@ -515,7 +525,30 @@ async function disconnectDevice(dev: BrandDevice) {
   } catch (e: any) { ElMessage.error(e?.message || '断开失败') }
 }
 
-onMounted(refreshConnected)
+// V2 强度位排布（标定用）：从后端读取并应用 localStorage 覆盖，切换时记忆
+const V2_LAYOUT_KEY = 'dglab_v2_strength_layout'
+async function loadV2Layout() {
+  const saved = localStorage.getItem(V2_LAYOUT_KEY)
+  if (saved === 'official' || saved === 'coyote2') v2Layout.value = saved
+  try {
+    const res = await brandsApi.getV2Layout()
+    // 若本地选择未与服务端一致，以本地为准写回（标定期间以前端为准）
+    if (v2Layout.value !== res.layout) {
+      await brandsApi.setV2Layout(v2Layout.value)
+    }
+  } catch (_) { /* 后端不支持时静默，仍按本地值下发命令 */ }
+}
+async function onV2LayoutChange(layout: 'official' | 'coyote2') {
+  localStorage.setItem(V2_LAYOUT_KEY, layout)
+  try {
+    await brandsApi.setV2Layout(layout)
+    ElMessage.success(`V2 强度位排布已切换为 ${layout}`)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '切换失败')
+  }
+}
+
+onMounted(() => { refreshConnected(); loadV2Layout() })
 </script>
 
 <style scoped>

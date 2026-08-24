@@ -7,6 +7,7 @@ const deviceService = require('../services/deviceService');
 const { DGLabConnection } = require('./dglabConnection');
 const { YCYConnection } = require('./ycyConnection');
 const { DGLabV2WebBleConnection } = require('./webBleConnection');
+const dglabV2 = require('./protocols/dglabV2');
 const discovery = require('./discovery');
 const ycyProto = require('./protocols/ycy');
 
@@ -204,7 +205,9 @@ function attachWebBle(metadata, send) {
     {
       id: metadata.id,
       name: metadata.name || `郊狼 V2 ${String(metadata.id).slice(-4)}`,
-      type: metadata.type || 'DGLAB_V2',
+      // 复用既有 DGLAB 设备类型，使设备映射 / 玩法能用同一套 shock/strength 能力驱动，
+      // 设备类型层发出的 setPattern/stopPattern 命令由 webBleConnection 翻译为 V2 GATT 操作。
+      type: 'DGLAB',
       connectionType: 'brandBle',
       transportMetadata: connection.toMetadata(),
       data: metadata.data || {},
@@ -240,6 +243,17 @@ function dglabV2Stop(deviceId) {
 }
 function dglabV2ReadBattery(deviceId) {
   return control(deviceId, { brand: 'dglab', cmd: 'v2_readBattery' });
+}
+
+// —— 原版 V2 强度位布局（标定用，运行时切换）——
+function getV2StrengthLayout() {
+  return dglabV2.getStrengthLayout();
+}
+function setV2StrengthLayout(layout) {
+  if (layout !== 'official' && layout !== 'coyote2') {
+    throw new Error('非法布局，仅支持 official / coyote2');
+  }
+  return dglabV2.setStrengthLayout(layout);
 }
 
 function list() {
@@ -289,6 +303,8 @@ module.exports = {
   dglabV2SetWaveform,
   dglabV2Stop,
   dglabV2ReadBattery,
+  getV2StrengthLayout,
+  setV2StrengthLayout,
   // 役次元
   ycyTrigger,
   ycyStop,

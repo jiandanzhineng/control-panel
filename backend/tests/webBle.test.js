@@ -53,7 +53,7 @@ describe('brandService.attachWebBle 集成', () => {
     const metadata = {
       id: DEVICE_ID,
       name: 'DG V2',
-      type: 'DGLAB_V2',
+      type: 'DGLAB',
       connectionType: 'brandBle',
       data: { battery: 88 },
     };
@@ -64,7 +64,7 @@ describe('brandService.attachWebBle 集成', () => {
     expect(listed).toBeTruthy();
     expect(listed.brand).toBe('dglab');
     expect(listed.mode).toBe('webble');
-    expect(listed.type).toBe('DGLAB_V2');
+    expect(listed.type).toBe('DGLAB');
     expect(listed.data.battery).toBe(88);
 
     brandService.dglabV2SetStrength(DEVICE_ID, { a: 100, b: 50 });
@@ -78,5 +78,20 @@ describe('brandService.attachWebBle 集成', () => {
 
     brandService.detachWebBle(DEVICE_ID);
     expect(brandService.getConnection(DEVICE_ID)).toBeFalsy();
+  });
+
+  test('设备类型层命令（setPattern/stopPattern）也能驱动 V2 蓝牙设备', () => {
+    const sent = [];
+    brandService.attachWebBle(
+      { id: DEVICE_ID, name: 'DG V2', type: 'DGLAB', connectionType: 'brandBle' },
+      (ops) => { sent.push(ops); return Promise.resolve({ ok: true }); },
+    );
+    // 模拟 registry 中 DGLAB 设备类型的 shock.start / strength.set 发出的中性命令
+    brandService.control(DEVICE_ID, { brand: 'dglab', cmd: 'setPattern', pattern: '经典', intensity: 50, ticks: -1 });
+    expect(sent[0]).toHaveLength(3); // 强度 + A波形 + B波形
+    expect(sent[0][0]).toEqual({ characteristic: 'pwmAB2', value: v2.packStrength({ a: v2.uiToHwStrength(50), b: v2.uiToHwStrength(50) }) });
+
+    brandService.control(DEVICE_ID, { brand: 'dglab', cmd: 'stopPattern' });
+    expect(sent[1]).toEqual([{ characteristic: 'pwmAB2', value: v2.packStrength({ a: 0, b: 0 }) }]);
   });
 });

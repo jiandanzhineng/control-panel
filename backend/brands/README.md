@@ -95,6 +95,8 @@ UI 入口：郊狼 tab 内「连接方式」可选择 **App 娱乐模式（WebSo
 > 注意：macOS 的 Chromium 对 Web Bluetooth 受限，原版 V2 在 macOS 上通常仍需借 App「娱乐模式」WebSocket；
 > 蓝牙直连在 Windows / Linux / Android 客户端上可用。
 
+普通用户视角的连接与标定步骤见 **[V2-WEBBLE-GUIDE.md](./V2-WEBBLE-GUIDE.md)**。
+
 ## 役次元（YCY）协议
 
 提供两条外部控制路径：

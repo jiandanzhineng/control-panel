@@ -76,4 +76,40 @@ describe('DG-LAB V2 协议（纯函数）', () => {
     expect(v2.V2_UUIDS.pwmAB2).toBe('955a1504-0fe2-f5aa-a094-84b8d4f3e8ad');
     expect(v2.DGLAB_V2_NAMES.some((k) => k.includes('D-LAB'))).toBe(true);
   });
+
+  test('App 高层命令 setPattern/stopPattern 翻译为 V2 GATT 操作', () => {
+    const set = v2.toGattOps({ cmd: 'setPattern', intensity: 50 });
+    expect(set).toHaveLength(3);
+    expect(set[0].characteristic).toBe('pwmAB2');
+    const s = v2.uiToHwStrength(50);
+    expect(set[0].value).toEqual(v2.packStrength({ a: s, b: s }));
+    expect(set[1].characteristic).toBe('pwmA34');
+    expect(set[2].characteristic).toBe('pwmB34');
+    const stop = v2.toGattOps({ cmd: 'stopPattern' });
+    expect(stop).toEqual([{ characteristic: 'pwmAB2', value: v2.packStrength({ a: 0, b: 0 }) }]);
+  });
+});
+
+describe('DG-LAB V2 强度位布局（运行时标定）', () => {
+  const v2 = require('../brands/protocols/dglabV2');
+  afterEach(() => { v2.setStrengthLayout('coyote2'); }); // 还原默认
+
+  test('setStrengthLayout 在 official/coyote2 间切换并影响打包', () => {
+    v2.setStrengthLayout('official');
+    expect(v2.getStrengthLayout()).toBe('official');
+    const officialBytes = v2.packStrength({ a: 100, b: 50 });
+    v2.setStrengthLayout('coyote2');
+    expect(v2.getStrengthLayout()).toBe('coyote2');
+    const coyoteBytes = v2.packStrength({ a: 100, b: 50 });
+    // 两种布局产生的字节应不同（证明位排布确实切换）
+    expect(coyoteBytes).not.toEqual(officialBytes);
+    // 各自往返一致
+    expect(v2.unpackStrength(officialBytes, 'official')).toEqual({ a: 100, b: 50 });
+    expect(v2.unpackStrength(coyoteBytes, 'coyote2')).toEqual({ a: 100, b: 50 });
+  });
+
+  test('非法布局被忽略且保持原值', () => {
+    v2.setStrengthLayout('coyote2');
+    expect(v2.setStrengthLayout('bogus')).toBe('coyote2');
+  });
 });

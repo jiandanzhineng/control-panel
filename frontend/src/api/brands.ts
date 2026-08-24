@@ -81,3 +81,15 @@ export function control(deviceId: string, action: string, params: Record<string,
     body: JSON.stringify({ action, ...params }),
   });
 }
+
+// 原版 V2 强度位布局（标定用）
+export function getV2Layout() {
+  return request<{ layout: 'official' | 'coyote2'; options: string[] }>('/v2-layout');
+}
+
+export function setV2Layout(layout: 'official' | 'coyote2') {
+  return request<{ layout: 'official' | 'coyote2'; options: string[] }>('/v2-layout', {
+    method: 'POST',
+    body: JSON.stringify({ layout }),
+  });
+}

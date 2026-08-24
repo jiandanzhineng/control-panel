@@ -17,6 +17,24 @@ router.get('/status', (req, res) => {
   }
 });
 
+// 原版 V2 强度位布局（标定用）：GET 读取当前布局，POST 切换（'official' | 'coyote2'）
+router.get('/v2-layout', (req, res) => {
+  try {
+    res.json({ layout: brandService.getV2StrengthLayout(), options: ['official', 'coyote2'] });
+  } catch (e) {
+    sendError(res, 'BRAND_V2_LAYOUT_READ_FAILED', e.message || String(e), 500);
+  }
+});
+router.post('/v2-layout', (req, res) => {
+  try {
+    const layout = String(req.body?.layout || '');
+    const next = brandService.setV2StrengthLayout(layout);
+    res.json({ layout: next, options: ['official', 'coyote2'] });
+  } catch (e) {
+    sendError(res, 'BRAND_V2_LAYOUT_SET_FAILED', e.message || String(e), 400);
+  }
+});
+
 // 发现设备
 // 郊狼：?brand=dglab&host=192.168.1.10 或 &hosts=192.168.1.10,192.168.1.11
 // 役次元 bridge：?brand=ycy&mode=bridge&host=127.0.0.1&port=3001

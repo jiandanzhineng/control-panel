@@ -68,8 +68,21 @@ const WAVE_Z_MAX = 31; // 5 bit
 const BATTERY_MAX = 100;
 
 // 位布局：'coyote2'（默认，经验参考）/ 'official'（官方文档，待标定）
-const STRENGTH_LAYOUT = 'coyote2';
-const WAVE_LAYOUT = 'xLow'; // 'xLow'：x 在低 5 位；'xHigh'：x 在高 5 位
+// 运行时可通过 setStrengthLayout() 切换（标定用），env DGLAV2_STRENGTH_LAYOUT 作为初始值。
+let STRENGTH_LAYOUT = (process.env.DGLAV2_STRENGTH_LAYOUT === 'official') ? 'official' : 'coyote2';
+let WAVE_LAYOUT = 'xLow'; // 'xLow'：x 在低 5 位；'xHigh'：x 在高 5 位
+
+/** 运行时切换强度位布局（'official' | 'coyote2'），返回当前值。未知值忽略。 */
+function setStrengthLayout(layout) {
+  if (layout === 'official' || layout === 'coyote2') {
+    STRENGTH_LAYOUT = layout;
+  }
+  return STRENGTH_LAYOUT;
+}
+
+function getStrengthLayout() {
+  return STRENGTH_LAYOUT;
+}
 
 // ============ 基础字节工具 ============
 
@@ -162,6 +175,14 @@ function hwStrengthToDisplay(hwValue) {
 
 // ============ 品牌命令 → GATT 操作 ============
 // 返回操作数组：{ characteristic: 'pwmAB2'|'pwmA34'|'pwmB34'|'battery', value?: number[], read?: boolean }
+//
+// 同时接受两套命令，使同一 DGLAB 设备类型（被玩法 / 设备映射复用）既能驱动
+// App「娱乐模式」WebSocket 路径，也能驱动原版 V2 蓝牙直连路径：
+//   - 高层 App 命令：setPattern / stopPattern（intensity 0–100）
+//   - V2 专用命令：  v2_setStrength / v2_setWaveform / v2_stop / v2_readBattery
+
+// 默认波形（与「经典」模式近似）：频率 X+Y，Z 为占空微调
+const DEFAULT_WAVE = { x: 5, y: 200, z: 0 };
 
 function toGattOps(brandCommand) {
   const cmd = brandCommand?.cmd;
@@ -182,6 +203,18 @@ function toGattOps(brandCommand) {
       return [{ characteristic: 'pwmAB2', value: packStrength({ a: 0, b: 0 }) }];
     case 'v2_readBattery':
       return [{ characteristic: 'battery', read: true }];
+    // —— 高层 App 命令：娱乐模式与 V2 蓝牙共用同一设备类型 ——
+    case 'setPattern': {
+      // intensity 0–100 → 硬件强度（A/B 同步），波形取默认
+      const s = uiToHwStrength(Number(brandCommand.intensity) || 0, 100, STRENGTH_HW_MAX);
+      return [
+        { characteristic: 'pwmAB2', value: packStrength({ a: s, b: s }) },
+        { characteristic: 'pwmA34', value: packWaveform(DEFAULT_WAVE) },
+        { characteristic: 'pwmB34', value: packWaveform(DEFAULT_WAVE) },
+      ];
+    }
+    case 'stopPattern':
+      return [{ characteristic: 'pwmAB2', value: packStrength({ a: 0, b: 0 }) }];
     default:
       throw new Error(`未知的 DG-LAB V2 指令: ${cmd}`);
   }
@@ -200,6 +233,8 @@ module.exports = {
   BATTERY_MAX,
   STRENGTH_LAYOUT,
   WAVE_LAYOUT,
+  setStrengthLayout,
+  getStrengthLayout,
   clampInt,
   toLittleEndian24,
   fromLittleEndian24,
