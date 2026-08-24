@@ -298,6 +298,8 @@ const dglabCandidates = ref<DiscoverCandidate[]>([])
 // 郊狼 V2 Web Bluetooth 直连
 const scanningV2 = ref(false)
 const v2Candidates = ref<BrandBleCandidate[]>([])
+  // 网页版（非 Electron）下本地直接连的 V2 设备
+const localV2 = ref<{ id: string; name: string; connected: boolean; battery?: number } | null>(null)
 // V2 强度位排布（标定用，localStorage 记忆）
 const v2Layout = ref<'official' | 'coyote2'>('coyote2')
 
@@ -309,7 +311,24 @@ const ycyBridgePort = ref('3001')
 const scanningBle = ref(false)
 const bleCandidates = ref<DiscoverCandidate[]>([])
 
-const connectedDevices = ref<BrandDevice[]>([])
+const backendDevices = ref<BrandDevice[]>([])
+const connectedDevices = computed<BrandDevice[]>(() => {
+  if (localV2.value) {
+    const local: BrandDevice = {
+      deviceId: localV2.value.id,
+      brand: 'dglab',
+      mode: 'webble',
+      kind: 'brand',
+      type: 'DGLAB',
+      name: localV2.value.name,
+      connected: true,
+      metadata: { connectionType: 'brandBle' },
+      data: { battery: localV2.value.battery },
+    }
+    return [...backendDevices.value, local]
+  }
+  return backendDevices.value
+})
 const controlState = reactive<Record<string, Record<string, any>>>({})
 
 function ctl(dev: BrandDevice) {
@@ -329,7 +348,7 @@ const dglabPatterns = ['经典', '心跳', '潮汐', '渐强', '随机', '脉冲
 async function refreshConnected() {
   refreshing.value = true
   try {
-    connectedDevices.value = await brandsApi.listDevices()
+    backendDevices.value = await brandsApi.listDevices()
   } catch (e: any) {
     ElMessage.error(e?.message || '获取设备列表失败')
   } finally {
@@ -371,21 +390,37 @@ async function connectDglab(c: DiscoverCandidate) {
 
 async function connectDglabV2() {
   if (!brandBle.isSupported()) {
-    ElMessage.warning('当前客户端不支持 Web Bluetooth（需 Windows / Linux / Android 版）')
+    ElMessage.warning('当前客户端不支持 Web Bluetooth（需 Windows / Linux / Android 版，或 macOS 的 Edge/Chrome）')
     return
   }
-  scanningV2.value = true
-  const off = brandBle.onScanResults((devices) => { v2Candidates.value = devices })
+  // Electron 路径：经主进程 IPC（两步：扫描候选 + 选择）
+  if (window.brandBleApi) {
+    scanningV2.value = true
+    const off = brandBle.onScanResults((devices) => { v2Candidates.value = devices })
+    try {
+      await brandBle.connect()
+      v2Candidates.value = []
+      ElMessage.success('DG-LAB V2 已连接')
+      await refreshConnected()
+    } catch (e: any) {
+      ElMessage.error(e?.message || '连接失败')
+    } finally {
+      scanningV2.value = false
+      off()
+    }
+    return
+  }
+  // 纯网页路径：浏览器原生 Web Bluetooth 弹窗选设备（localhost 可用）
   try {
-    await brandBle.connect()
-    v2Candidates.value = []
-    ElMessage.success('DG-LAB V2 已连接')
+    const meta = await brandBle.scanAndConnect()
+    localV2.value = { id: meta.id, name: meta.name, connected: true }
+    brandBle.onBattery((value) => {
+      if (localV2.value) localV2.value.battery = value
+    })
+    ElMessage.success('DG-LAB V2 已连接（网页直连）')
     await refreshConnected()
   } catch (e: any) {
     ElMessage.error(e?.message || '连接失败')
-  } finally {
-    scanningV2.value = false
-    off()
   }
 }
 
@@ -471,20 +506,42 @@ async function dglabV2Apply(dev: BrandDevice) {
   const a = Math.round((s.v2AStrength / 100) * V2_STRENGTH_HW_MAX)
   const b = Math.round((s.v2BStrength / 100) * V2_STRENGTH_HW_MAX)
   try {
-    await brandsApi.control(dev.deviceId, 'v2SetStrength', { a, b })
-    await brandsApi.control(dev.deviceId, 'v2SetWaveform', { channel: 'A', x: s.v2Ax, y: s.v2Ay })
-    await brandsApi.control(dev.deviceId, 'v2SetWaveform', { channel: 'B', x: s.v2Bx, y: s.v2By })
+    if (window.brandBleApi) {
+      // Electron 路径：经后端 REST → 主进程 IPC 下发
+      await brandsApi.control(dev.deviceId, 'v2SetStrength', { a, b })
+      await brandsApi.control(dev.deviceId, 'v2SetWaveform', { channel: 'A', x: s.v2Ax, y: s.v2Ay })
+      await brandsApi.control(dev.deviceId, 'v2SetWaveform', { channel: 'B', x: s.v2Bx, y: s.v2By })
+    } else {
+      // 网页版：直接经浏览器原生 Web Bluetooth 写 GATT
+      await brandBle.sendOps(brandBle.packStrengthOps(a, b))
+      await brandBle.sendOps(brandBle.packWaveformOps('A', s.v2Ax, s.v2Ay))
+      await brandBle.sendOps(brandBle.packWaveformOps('B', s.v2Bx, s.v2By))
+    }
     ElMessage.success('已下发')
   } catch (e: any) { ElMessage.error(e?.message || '下发失败') }
 }
 
 async function dglabV2Stop(dev: BrandDevice) {
-  try { await brandsApi.control(dev.deviceId, 'v2Stop'); ElMessage.success('已停止') }
+  try {
+    if (window.brandBleApi) {
+      await brandsApi.control(dev.deviceId, 'v2Stop')
+    } else {
+      await brandBle.sendOps(brandBle.packStrengthOps(0, 0))
+    }
+    ElMessage.success('已停止')
+  }
   catch (e: any) { ElMessage.error(e?.message || '停止失败') }
 }
 
 async function dglabV2ReadBattery(dev: BrandDevice) {
-  try { await brandsApi.control(dev.deviceId, 'v2ReadBattery'); ElMessage.success('已请求读取电量') }
+  try {
+    if (window.brandBleApi) {
+      await brandsApi.control(dev.deviceId, 'v2ReadBattery')
+    } else {
+      await brandBle.sendOps([{ characteristic: 'battery', read: true }])
+    }
+    ElMessage.success('已请求读取电量')
+  }
   catch (e: any) { ElMessage.error(e?.message || '读取失败') }
 }
 
@@ -519,6 +576,12 @@ async function ycyToyApply(dev: BrandDevice) {
 
 async function disconnectDevice(dev: BrandDevice) {
   try {
+    if (localV2.value && dev.deviceId === localV2.value.id) {
+      await brandBle.disconnect(dev.deviceId)
+      localV2.value = null
+      ElMessage.success('已断开')
+      return
+    }
     await brandsApi.disconnect(dev.deviceId)
     ElMessage.success('已断开')
     await refreshConnected()
