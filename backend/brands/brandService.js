@@ -52,11 +52,16 @@ function getConnection(deviceId) {
 }
 
 /** 设备类型推断：根据品牌与发现的型号决定 registry 中的 type */
-function resolveDeviceType(brand, { model, mode } = {}) {
+function resolveDeviceType(brand, { model, mode, type } = {}) {
   if (brand === 'dglab') return 'DGLAB';
   if (brand === 'ycy') {
+    // 前端显式选择优先（杯 / 灌肠机 / 电击器 / 玩具 等）
+    if (type) return type;
     if (mode === 'ble') return (model && /toy|玩具|电机|杯|fjb/i.test(model)) ? 'YCY_TOY' : 'YCY_EMS';
-    return 'YCY_EMS'; // 桥接模式默认按电击器处理
+    // 桥接模式默认按电击器；若名称暗示杯/灌肠则细分
+    if (model && /灌肠|enema/i.test(model)) return 'YCY_ENEMA';
+    if (model && /杯|cup|fjb/i.test(model)) return 'YCY_CUP';
+    return 'YCY_EMS';
   }
   return 'base';
 }
@@ -141,7 +146,7 @@ async function connect(brand, opts = {}) {
     const mode = opts.mode === 'ble' ? 'ble' : 'bridge';
     finalDeviceId = deviceId || (mode === 'ble' ? `ycy-${opts.address || opts.deviceId}` : `ycy-bridge-${opts.host || '127.0.0.1'}`);
     finalName = name || (mode === 'ble' ? `役次元 ${opts.name || finalDeviceId}` : `役次元(桥接) ${opts.host || '127.0.0.1'}`);
-    type = resolveDeviceType('ycy', { model, mode });
+    type = resolveDeviceType('ycy', { model, mode, type: opts.type });
     connection = new YCYConnection({ deviceId: finalDeviceId, mode, WebSocketClass });
   }
 
@@ -427,6 +432,7 @@ module.exports = {
   disconnect,
   list,
   getStatus,
+  resolveDeviceType,
   // 郊狼
   dglabSetPattern,
   dglabStop,

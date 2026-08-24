@@ -207,6 +207,51 @@ const registeredTypes = [
     ],
     close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopToy' }),
   }),
+
+  // ---- 役次元（YCY / YOKONEX）杯 / 灌肠机（非电击，App 指令触发，桥接模式） ----
+  // 这类设备不在本机直发强度/通道帧，而是由 YCY App 内已配置的指令驱动；
+  // 通过 API-bridge 的 triggerInstruction（commandId）触发，全部停止复用 _stop_all。
+  // 因其为「指令触发性」设备，无标准强度/通道能力；连接时由前端选择设备类型
+  // （resolveDeviceType 支持显式 type 覆盖），控制统一走通用桥接控制区块。
+  new BaseDeviceType({
+    type: 'YCY_CUP',
+    name: '役次元 杯',
+    capabilities: {},
+    operations: [
+      {
+        key: 'trigger', name: '触发指令',
+        invoke: (ctx, params) => {
+          if (!params || !params.commandId) throw new Error('缺少指令 ID (commandId)');
+          return ctx.sendMessage({ brand: 'ycy', cmd: 'triggerInstruction', commandId: params.commandId });
+        },
+      },
+      {
+        key: 'stop', name: '全部停止',
+        invoke: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+      },
+    ],
+    close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+  }),
+
+  new BaseDeviceType({
+    type: 'YCY_ENEMA',
+    name: '役次元 灌肠机',
+    capabilities: {},
+    operations: [
+      {
+        key: 'trigger', name: '触发指令',
+        invoke: (ctx, params) => {
+          if (!params || !params.commandId) throw new Error('缺少指令 ID (commandId)');
+          return ctx.sendMessage({ brand: 'ycy', cmd: 'triggerInstruction', commandId: params.commandId });
+        },
+      },
+      {
+        key: 'stop', name: '全部停止',
+        invoke: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+      },
+    ],
+    close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+  }),
 ];
 
 const registry = new Map(registeredTypes.map((dt) => [dt.type, dt]));

@@ -103,12 +103,20 @@
               <el-input v-model="ycyBridgeCode" placeholder="连接码（UID 空格 Token）" class="addr-input" />
             </div>
             <div class="discover-row">
+              <el-select v-model="ycyBridgeType" size="small" class="type-select" placeholder="设备类型">
+                <el-option label="电击器" value="YCY_EMS" />
+                <el-option label="玩具/电机" value="YCY_TOY" />
+                <el-option label="杯" value="YCY_CUP" />
+                <el-option label="灌肠机" value="YCY_ENEMA" />
+              </el-select>
+            </div>
+            <div class="discover-row">
               <el-input v-model="ycyBridgeHost" placeholder="桥接服务 IP" class="addr-input" />
               <el-input v-model="ycyBridgePort" placeholder="端口" class="port-input" />
               <el-button type="primary" :loading="busy" @click="connectYcyBridge">连接</el-button>
             </div>
             <el-alert class="hint" type="info" :closable="false"
-              title="桥接模式依赖 YCY API-bridge（公开仓库 YCY-YOKONEX/API-bridge）。在其运行后填入连接码与服务地址即可控制。" />
+              title="桥接模式依赖 YCY API-bridge（公开仓库 YCY-YOKONEX/API-bridge）。在其运行后填入连接码与服务地址即可控制；杯 / 灌肠机等非电击设备请选择对应类型，连接后通过「指令 ID」触发 App 内已配置的玩法。" />
           </template>
 
           <!-- BLE 模式 -->
@@ -320,6 +328,8 @@ const ycyMode = ref<'bridge' | 'ble'>('bridge')
 const ycyBridgeCode = ref('')
 const ycyBridgeHost = ref('127.0.0.1')
 const ycyBridgePort = ref('3001')
+// 桥接连接时指定的设备类型（区分电击器 / 玩具电机 / 杯 / 灌肠机）
+const ycyBridgeType = ref<'YCY_EMS' | 'YCY_TOY' | 'YCY_CUP' | 'YCY_ENEMA'>('YCY_EMS')
 const scanningBle = ref(false)
 const bleCandidates = ref<DiscoverCandidate[]>([])
 
@@ -481,6 +491,7 @@ async function connectYcyBridge() {
     await brandsApi.connect({
       brand: 'ycy',
       mode: 'bridge',
+      type: ycyBridgeType.value,
       connectCode: ycyBridgeCode.value,
       host: ycyBridgeHost.value,
       port: ycyBridgePort.value,
@@ -675,6 +686,7 @@ onUnmounted(() => { stopAutoRefresh() })
 .card-header { display: flex; align-items: center; justify-content: space-between; }
 .discover-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
 .addr-input { flex: 1; min-width: 200px; }
+.type-select { width: 160px; }
 .port-input { width: 110px; }
 .hint { margin-bottom: 12px; }
 .candidate-list { display: flex; flex-direction: column; gap: 8px; }

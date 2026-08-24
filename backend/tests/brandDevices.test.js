@@ -112,5 +112,51 @@ describe('设备类型层发出品牌命令（接入 Bridge / 设备映射）', 
     expect(registry.isValidDeviceType('DGLAB')).toBe(true);
     expect(registry.isValidDeviceType('YCY_EMS')).toBe(true);
     expect(registry.isValidDeviceType('YCY_TOY')).toBe(true);
+    expect(registry.isValidDeviceType('YCY_CUP')).toBe(true);
+    expect(registry.isValidDeviceType('YCY_ENEMA')).toBe(true);
+  });
+
+  test('YCY_CUP 触发指令 → triggerInstruction', () => {
+    let captured = null;
+    registry.getDeviceType('YCY_CUP').invokeOperation('devCup', 'trigger', { commandId: 'cup_on' }, (id, msg) => { captured = msg; return msg; });
+    expect(captured).toEqual({ brand: 'ycy', cmd: 'triggerInstruction', commandId: 'cup_on' });
+  });
+
+  test('YCY_CUP 触发缺少 commandId 抛错', () => {
+    expect(() => registry.getDeviceType('YCY_CUP').invokeOperation('devCup', 'trigger', {}, (id, msg) => msg))
+      .toThrow(/commandId/);
+  });
+
+  test('YCY_CUP 全部停止 → stopAll', () => {
+    let captured = null;
+    registry.getDeviceType('YCY_CUP').invokeOperation('devCup', 'stop', {}, (id, msg) => { captured = msg; return msg; });
+    expect(captured).toEqual({ brand: 'ycy', cmd: 'stopAll' });
+  });
+
+  test('YCY_ENEMA 触发指令 → triggerInstruction', () => {
+    let captured = null;
+    registry.getDeviceType('YCY_ENEMA').invokeOperation('devE', 'trigger', { commandId: 'enema_on' }, (id, msg) => { captured = msg; return msg; });
+    expect(captured).toEqual({ brand: 'ycy', cmd: 'triggerInstruction', commandId: 'enema_on' });
+  });
+
+  test('YCY_ENEMA 全部停止 → stopAll', () => {
+    let captured = null;
+    registry.getDeviceType('YCY_ENEMA').invokeOperation('devE', 'stop', {}, (id, msg) => { captured = msg; return msg; });
+    expect(captured).toEqual({ brand: 'ycy', cmd: 'stopAll' });
+  });
+});
+
+describe('役次元 设备类型推断（resolveDeviceType）', () => {
+  const { resolveDeviceType } = require('../brands/brandService');
+
+  test('显式 type 覆盖优先（杯 / 灌肠机）', () => {
+    expect(resolveDeviceType('ycy', { mode: 'bridge', type: 'YCY_CUP' })).toBe('YCY_CUP');
+    expect(resolveDeviceType('ycy', { mode: 'bridge', type: 'YCY_ENEMA' })).toBe('YCY_ENEMA');
+  });
+
+  test('bridge 模式按名称细分（杯 / 灌肠机）', () => {
+    expect(resolveDeviceType('ycy', { mode: 'bridge', model: '灌肠机' })).toBe('YCY_ENEMA');
+    expect(resolveDeviceType('ycy', { mode: 'bridge', model: '智能杯' })).toBe('YCY_CUP');
+    expect(resolveDeviceType('ycy', { mode: 'bridge' })).toBe('YCY_EMS');
   });
 });
