@@ -61,7 +61,7 @@
               class="hint"
               type="info"
               :closable="false"
-              title="通过 Web Bluetooth 直连原版 DG-LAB V2（Coyote）。需 Windows / Linux / Android 版客户端；macOS 因系统限制不支持。连接后可在下方「已连接设备」区直接调控强度与波形。"
+              title="通过 Web Bluetooth 直连原版 DG-LAB V2（Coyote）。支持 Windows / Linux / Android / macOS 的 Chromium 内核浏览器（Edge / Chrome）。连接后可在下方「已连接设备」区直接调控强度与波形。"
             />
             <div class="discover-row">
               <el-button type="primary" :loading="scanningV2" @click="connectDglabV2">连接（选择蓝牙设备）</el-button>
@@ -276,7 +276,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Connection, Switch, Close } from '@element-plus/icons-vue'
 import * as brandsApi from '../api/brands'
