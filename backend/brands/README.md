@@ -27,7 +27,7 @@ BrandConnection（dglabConnection / ycyConnection）
 DGLab App 娱乐模式 WebSocket  │  YCY API-bridge(WS→IM)  │  YCY BLE 直连
 ```
 
-- `deviceConnectionService` 新增 `brand` 传输类型（`VALID_TRANSPORTS`）。
+- `deviceConnectionService` 新增 `brand` 与 `brandBle` 传输类型（`VALID_TRANSPORTS`）。
 - 新增三种设备类型（`backend/devices/registry.js`）：`DGLAB`、`YCY_EMS`、`YCY_TOY`。
   它们只负责发出“品牌命令”（如 `{ brand:'dglab', cmd:'setPattern', ... }`），真正的协议
   翻译由品牌连接适配器完成，从而与既有 Bridge、设备映射、玩法复位等能力无缝协作。
@@ -52,6 +52,48 @@ App 开启「娱乐模式」后暴露本地 WebSocket：`ws://<手机IP>:<端口
   可在 `dglabConnection.js` 中扩展一个 `socket/bind` 连接模式复用同一 `send()` 翻译层。
 
 发现：在 UI 填入手机 IP（娱乐模式界面显示），后端探测 `ws://host:60536/1` 可达性。
+
+### 形态 1：原版 V2 蓝牙直连（Web Bluetooth）
+
+针对**没有 App、只能通过 BLE 控制的原版郊狼 V2（Coyote / D-LAB ESTIM01 / YSKJ\*）**，
+PC 客户端可在 **Windows / Linux / Android 的 Chromium** 上通过 Web Bluetooth 直接连接硬件，
+无需手机 App 或中转服务。该路径复用了既有 BLUFI `ble` 传输链的 IPC 桥接模式，
+新增一条平行的 `brandBle` 通道：
+
+```
+前端 BrandsView（点「蓝牙直连」）
+   │  window.brandBleApi.connect()  →  navigator.bluetooth.requestDevice
+   ▼
+renderer: BrandBleClient（解析 GATT，缓存 handle）
+   │  ipcRenderer.invoke('brandBle:connected', metadata)
+   ▼
+main: brandMainIntegration（ipcMain.handle）  →  deviceService.connectTransportDevice(..., { kind:'brandBle', send })
+   │  sender.send('brandBle:command', ...)  →  renderer 写 GATT
+   ▼
+后端 brandService.attachWebBle(id, send)  →  注册 DGLabV2WebBleConnection
+   │  高层 control 动作 → v2.toGattOps(品牌命令)  →  transportSend({ op, handle, payload })
+   ▼
+GATT 特征写入（电量 0x1500 / A·B 强度 0x1504 / A 波形 0x1505 / B 波形 0x1506）
+```
+
+**V2 GATT 协议要点**（`protocols/dglabV2.js`，纯函数便于测试与标定）：
+
+- 服务基 UUID：`955Axxxx-0FE2-F5AA-A094-84B8D4F3E8AD`。服务短号 `0x180B`；电量挂在 `0x180A/0x1500`。
+- 特征：
+  - `PWM_AB2`（0x180B/0x1504）— A/B 双通道总强度。硬件范围 0–2047，App 显示值 = S/7。
+  - `PWM_A34`（0x180B/0x1505）— 通道 A 波形；`PWM_B34`（0x180B/0x1506）— 通道 B 波形。
+  - 波形三段：X(5bit 0–31) / Y(10bit 0–1023) / Z(5bit 0–31)，频率 = X + Y。
+- **字节序为小端（little-endian）**，与 `coyote2.py` 参考实现一致。
+- ⚠️ **标定提示**：官方文档与 `coyote2.py` 在 `PWM_AB2` 的 A/B 位排布上不一致
+  （文档 bit 10–0 = A、21–11 = B；参考实现 A = data>>13、B = (data>>2)&0x3FF）。
+  模块以 `packStrength(..., layout)` 支持两种布局（`'official'` / `'coyote2'`），**默认 `'coyote2'`**，
+  实际下发前需用真机校准并切换 `DGLAV2_STRENGTH_LAYOUT` 环境变量（见下方）。
+
+UI 入口：郊狼 tab 内「连接方式」可选择 **App 娱乐模式（WebSocket）** 或 **蓝牙直连（Web Bluetooth）**。
+蓝牙直连下实时读取电量并在控制面板显示。
+
+> 注意：macOS 的 Chromium 对 Web Bluetooth 受限，原版 V2 在 macOS 上通常仍需借 App「娱乐模式」WebSocket；
+> 蓝牙直连在 Windows / Linux / Android 客户端上可用。
 
 ## 役次元（YCY）协议
 
@@ -88,14 +130,21 @@ App 开启「娱乐模式」后暴露本地 WebSocket：`ws://<手机IP>:<端口
 ```
 backend/brands/
   index.js              模块入口（init）
-  brandService.js       发现/连接/断开/控制编排 + 注册进 deviceService
+  brandService.js       发现/连接/断开/控制编排 + 注册进 deviceService（含 webble 路径）
   dglabConnection.js    郊狼连接适配器（transport adapter 接口）
   ycyConnection.js      役次元连接适配器（bridge / ble 双模式）
+  webBleConnection.js   原版 V2 蓝牙直连适配器（brandBle transport，send 经 IPC 写 GATT）
   discovery.js          设备发现（可达性探测 / BLE 扫描）
   protocols/
     dglab.js            郊狼 WebSocket 协议（帧构造 + DGLabSocketClient）
+    dglabV2.js          原版 V2 BLE 协议（UUID / 强度 / 波形 / GATT 操作纯函数）
     ycy.js              役次元协议（IM/桥接消息 + BLE 帧构造 + 客户端/传输层）
   __smoke__.js          无依赖逻辑冒烟测试（node 直接运行）
+electron/ble/
+  brandDeviceClient.js  渲染进程 V2 GATT 客户端（镜像 BleDeviceClient，连接 D-LAB ESTIM01 / YSKJ*）
+  brandMainIntegration.js  主进程 brandBle:* IPC 桥接（镜像 mainIntegration）
+frontend/src/web-ble/
+  brandBle.ts           封装 window.brandBleApi 的前端模块
 ```
 
 ## REST 接口
@@ -119,8 +168,13 @@ backend/brands/
 node backend/brands/__smoke__.js
 
 # 项目 jest 套件（需先 npm install）
-cd backend && npm test          # 含 tests/brandDevices.test.js
+cd backend && npm test          # 含 tests/brandDevices.test.js / dglabV2.test.js / webBle.test.js
 ```
+
+环境变量：
+
+- `DGLAV2_STRENGTH_LAYOUT`：`'official'` 或 `'coyote2'`（默认 `'coyote2'`），用于切换 V2 强度位排布，
+  真机标定后调整。
 
 ## 扩展新品牌
 

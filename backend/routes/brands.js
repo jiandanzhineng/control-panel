@@ -86,6 +86,11 @@ router.post('/:deviceId/control', (req, res) => {
       case 'stop': result = brandService.dglabStop(deviceId); break;
       case 'setMaxIntensity': result = brandService.dglabSetMaxIntensity(deviceId, params); break;
       case 'setBackground': result = brandService.dglabSetBackground(deviceId, params); break;
+      // 郊狼 V2（Web Bluetooth 直连）
+      case 'v2SetStrength': result = brandService.dglabV2SetStrength(deviceId, params); break;
+      case 'v2SetWaveform': result = brandService.dglabV2SetWaveform(deviceId, params); break;
+      case 'v2Stop': result = brandService.dglabV2Stop(deviceId); break;
+      case 'v2ReadBattery': result = brandService.dglabV2ReadBattery(deviceId); break;
       // 役次元
       case 'trigger': result = brandService.ycyTrigger(deviceId, params.commandId, params.token); break;
       case 'ycyStop': result = brandService.ycyStop(deviceId); break;

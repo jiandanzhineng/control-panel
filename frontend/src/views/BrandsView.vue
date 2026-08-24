@@ -12,46 +12,75 @@
           <template #header>
             <div class="card-header">
               <span>发现与连接</span>
-              <el-button
-                size="small"
-                :icon="Refresh"
-                :loading="scanningDglab"
-                @click="discoverDglab"
-              >扫描</el-button>
+              <el-radio-group v-model="dglabMode" size="small">
+                <el-radio-button value="ws">娱乐模式（App WiFi）</el-radio-button>
+                <el-radio-button value="webble">蓝牙直连（V2）</el-radio-button>
+              </el-radio-group>
             </div>
           </template>
-          <div class="discover-row">
-            <el-input v-model="dglabHost" placeholder="手机 IP（娱乐模式显示的地址）" class="addr-input" />
-            <el-input v-model="dglabPort" placeholder="端口" class="port-input" />
-            <el-button type="primary" :loading="scanningDglab" @click="discoverDglab">探测</el-button>
-          </div>
-          <el-alert
-            class="hint"
-            type="info"
-            :closable="false"
-            title="在 DG-Lab App 内开启「娱乐模式」后，会显示本机 IP 与端口（默认 60536）。填入后点击探测即可发现。"
-          />
-          <div v-if="dglabCandidates.length" class="candidate-list">
-            <div
-              v-for="c in dglabCandidates"
-              :key="c.suggestedDeviceId"
-              class="candidate-item"
-            >
-              <div class="candidate-info">
-                <span class="candidate-name">{{ c.suggestedName }}</span>
-                <span class="candidate-meta">{{ c.host }}:{{ c.port }}
-                  <el-tag v-if="c.reachable" type="success" size="small">可达</el-tag>
-                  <el-tag v-else type="danger" size="small">不可达</el-tag>
-                </span>
-              </div>
-              <el-button
-                size="small"
-                type="primary"
-                :disabled="!c.reachable || busy"
-                @click="connectDglab(c)"
-              >连接</el-button>
+
+          <!-- 娱乐模式（App WebSocket） -->
+          <template v-if="dglabMode === 'ws'">
+            <div class="discover-row">
+              <el-input v-model="dglabHost" placeholder="手机 IP（娱乐模式显示的地址）" class="addr-input" />
+              <el-input v-model="dglabPort" placeholder="端口" class="port-input" />
+              <el-button type="primary" :loading="scanningDglab" @click="discoverDglab">探测</el-button>
             </div>
-          </div>
+            <el-alert
+              class="hint"
+              type="info"
+              :closable="false"
+              title="在 DG-Lab App 内开启「娱乐模式」后，会显示本机 IP 与端口（默认 60536）。填入后点击探测即可发现。"
+            />
+            <div v-if="dglabCandidates.length" class="candidate-list">
+              <div
+                v-for="c in dglabCandidates"
+                :key="c.suggestedDeviceId"
+                class="candidate-item"
+              >
+                <div class="candidate-info">
+                  <span class="candidate-name">{{ c.suggestedName }}</span>
+                  <span class="candidate-meta">{{ c.host }}:{{ c.port }}
+                    <el-tag v-if="c.reachable" type="success" size="small">可达</el-tag>
+                    <el-tag v-else type="danger" size="small">不可达</el-tag>
+                  </span>
+                </div>
+                <el-button
+                  size="small"
+                  type="primary"
+                  :disabled="!c.reachable || busy"
+                  @click="connectDglab(c)"
+                >连接</el-button>
+              </div>
+            </div>
+          </template>
+
+          <!-- Web Bluetooth 直连（原版 V2 / Coyote） -->
+          <template v-else>
+            <el-alert
+              class="hint"
+              type="info"
+              :closable="false"
+              title="通过 Web Bluetooth 直连原版 DG-LAB V2（Coyote）。需 Windows / Linux / Android 版客户端；macOS 因系统限制不支持。连接后可在下方「已连接设备」区直接调控强度与波形。"
+            />
+            <div class="discover-row">
+              <el-button type="primary" :loading="scanningV2" @click="connectDglabV2">连接（选择蓝牙设备）</el-button>
+              <el-button v-if="v2Candidates.length && !scanningV2" @click="cancelV2Scan">取消</el-button>
+            </div>
+            <div v-if="v2Candidates.length" class="candidate-list">
+              <div
+                v-for="c in v2Candidates"
+                :key="c.id"
+                class="candidate-item"
+              >
+                <div class="candidate-info">
+                  <span class="candidate-name">{{ c.name }}</span>
+                  <span class="candidate-meta">{{ c.id }}</span>
+                </div>
+                <el-button size="small" type="primary" @click="pickV2(c)">选择</el-button>
+              </div>
+            </div>
+          </template>
         </el-card>
       </el-tab-pane>
 
@@ -123,8 +152,8 @@
           <el-button size="small" :icon="Close" @click="disconnectDevice(dev)">断开</el-button>
         </div>
 
-        <!-- 郊狼控制 -->
-        <div v-if="dev.brand === 'dglab'" class="control-grid">
+        <!-- 郊狼 娱乐模式控制 -->
+        <div v-if="dev.brand === 'dglab' && dev.mode !== 'webble'" class="control-grid">
           <div class="control-field">
             <label>波形</label>
             <el-select v-model="ctl(dev).pattern" size="small" class="control-input">
@@ -147,6 +176,38 @@
             <el-button size="small" @click="dglabStop(dev)">停止</el-button>
             <el-button size="small" @click="dglabMaxPrompt(dev)">强度上限 +10</el-button>
           </div>
+        </div>
+
+        <!-- 郊狼 V2 蓝牙直连控制 -->
+        <div v-else-if="dev.brand === 'dglab' && dev.mode === 'webble'" class="control-grid">
+          <div class="control-field">
+            <label>通道 A 强度 {{ ctl(dev).v2AStrength }}</label>
+            <el-slider v-model="ctl(dev).v2AStrength" :min="0" :max="100" />
+          </div>
+          <div class="control-field">
+            <label>通道 B 强度 {{ ctl(dev).v2BStrength }}</label>
+            <el-slider v-model="ctl(dev).v2BStrength" :min="0" :max="100" />
+          </div>
+          <div class="control-field">
+            <label>通道 A 波形 频率X {{ ctl(dev).v2Ax }} / 强度Y {{ ctl(dev).v2Ay }}</label>
+            <el-slider v-model="ctl(dev).v2Ay" :min="0" :max="1023" />
+            <el-slider v-model="ctl(dev).v2Ax" :min="0" :max="31" />
+          </div>
+          <div class="control-field">
+            <label>通道 B 波形 频率X {{ ctl(dev).v2Bx }} / 强度Y {{ ctl(dev).v2By }}</label>
+            <el-slider v-model="ctl(dev).v2By" :min="0" :max="1023" />
+            <el-slider v-model="ctl(dev).v2Bx" :min="0" :max="31" />
+          </div>
+          <div class="control-field">
+            <label>电量</label>
+            <span class="candidate-meta">{{ dev.data?.battery ?? '—' }}%</span>
+          </div>
+          <div class="control-actions">
+            <el-button type="primary" size="small" @click="dglabV2Apply(dev)">应用</el-button>
+            <el-button size="small" @click="dglabV2Stop(dev)">停止</el-button>
+            <el-button size="small" @click="dglabV2ReadBattery(dev)">读取电量</el-button>
+          </div>
+          <div class="control-hint">强度按 0–100 映射至硬件 0–2047；波形频率 = X + Y（X 0–31，Y 0–1023）。</div>
         </div>
 
         <!-- 役次元 桥接控制 -->
@@ -211,17 +272,24 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Connection, Switch, Close } from '@element-plus/icons-vue'
 import * as brandsApi from '../api/brands'
+import * as brandBle from '../web-ble/brandBle'
 import type { BrandDevice, DiscoverCandidate } from '../api/brands'
+import type { BrandBleCandidate } from '../web-ble/brandBle'
 
 const activeBrand = ref<'dglab' | 'ycy'>('dglab')
 const busy = ref(false)
 const refreshing = ref(false)
 
 // 郊狼发现
+const dglabMode = ref<'ws' | 'webble'>('ws')
 const dglabHost = ref('')
 const dglabPort = ref('60536')
 const scanningDglab = ref(false)
 const dglabCandidates = ref<DiscoverCandidate[]>([])
+
+// 郊狼 V2 Web Bluetooth 直连
+const scanningV2 = ref(false)
+const v2Candidates = ref<BrandBleCandidate[]>([])
 
 // 役次元
 const ycyMode = ref<'bridge' | 'ble'>('bridge')
@@ -240,6 +308,7 @@ function ctl(dev: BrandDevice) {
       pattern: '经典', intensity: 60, ticks: -1,
       commandId: '', aStrength: 40, bStrength: 40, wave: 1,
       speed: 60, mode: 1,
+      v2AStrength: 0, v2BStrength: 0, v2Ax: 5, v2Ay: 200, v2Bx: 5, v2By: 200,
     }
   }
   return controlState[dev.deviceId]
@@ -288,6 +357,35 @@ async function connectDglab(c: DiscoverCandidate) {
   } finally {
     busy.value = false
   }
+}
+
+async function connectDglabV2() {
+  if (!brandBle.isSupported()) {
+    ElMessage.warning('当前客户端不支持 Web Bluetooth（需 Windows / Linux / Android 版）')
+    return
+  }
+  scanningV2.value = true
+  const off = brandBle.onScanResults((devices) => { v2Candidates.value = devices })
+  try {
+    await brandBle.connect()
+    v2Candidates.value = []
+    ElMessage.success('DG-LAB V2 已连接')
+    await refreshConnected()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '连接失败')
+  } finally {
+    scanningV2.value = false
+    off()
+  }
+}
+
+function pickV2(c: BrandBleCandidate) {
+  brandBle.selectDevice(c.id)
+}
+
+async function cancelV2Scan() {
+  v2Candidates.value = []
+  try { await brandBle.cancelSelection() } catch (_) {}
 }
 
 async function connectYcyBridge() {
@@ -355,6 +453,29 @@ async function dglabStop(dev: BrandDevice) {
 
 async function dglabMaxPrompt(dev: BrandDevice) {
   try { await brandsApi.control(dev.deviceId, 'setMaxIntensity', { delta: 10 }) } catch (e: any) { ElMessage.error(e?.message || '操作失败') }
+}
+
+const V2_STRENGTH_HW_MAX = 2047
+async function dglabV2Apply(dev: BrandDevice) {
+  const s = ctl(dev)
+  const a = Math.round((s.v2AStrength / 100) * V2_STRENGTH_HW_MAX)
+  const b = Math.round((s.v2BStrength / 100) * V2_STRENGTH_HW_MAX)
+  try {
+    await brandsApi.control(dev.deviceId, 'v2SetStrength', { a, b })
+    await brandsApi.control(dev.deviceId, 'v2SetWaveform', { channel: 'A', x: s.v2Ax, y: s.v2Ay })
+    await brandsApi.control(dev.deviceId, 'v2SetWaveform', { channel: 'B', x: s.v2Bx, y: s.v2By })
+    ElMessage.success('已下发')
+  } catch (e: any) { ElMessage.error(e?.message || '下发失败') }
+}
+
+async function dglabV2Stop(dev: BrandDevice) {
+  try { await brandsApi.control(dev.deviceId, 'v2Stop'); ElMessage.success('已停止') }
+  catch (e: any) { ElMessage.error(e?.message || '停止失败') }
+}
+
+async function dglabV2ReadBattery(dev: BrandDevice) {
+  try { await brandsApi.control(dev.deviceId, 'v2ReadBattery'); ElMessage.success('已请求读取电量') }
+  catch (e: any) { ElMessage.error(e?.message || '读取失败') }
 }
 
 async function ycyTrigger(dev: BrandDevice) {

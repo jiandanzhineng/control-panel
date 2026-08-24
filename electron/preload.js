@@ -2,6 +2,7 @@ const { ipcRenderer } = require('electron');
 const { BleDeviceClient } = require('./ble/deviceClient');
 const { BLE_UUIDS } = require('./ble/protocol');
 const { BlufiProvisionClient } = require('./blufi/provisionClient');
+const { BrandBleClient, V2_UUIDS } = require('./ble/brandDeviceClient');
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
 const bleClients = new Map();
@@ -110,6 +111,122 @@ window.bleApi = {
     };
     ipcRenderer.on('ble:scan-results', listener);
     return () => ipcRenderer.removeListener('ble:scan-results', listener);
+  },
+};
+
+// ============ DG-LAB 原版 V2（Web Bluetooth 直连）============
+const brandClients = new Map();
+
+function emitBrandBleClientEvent(event, payload) {
+  if (event === 'property') {
+    ipcRenderer.send('brandBle:property', payload);
+  } else if (event === 'message') {
+    ipcRenderer.send('brandBle:message', payload);
+  } else if (event === 'disconnected') {
+    brandClients.delete(payload.id);
+    ipcRenderer.send('brandBle:disconnected', payload);
+  } else if (event === 'error') {
+    ipcRenderer.send('brandBle:command-error', payload);
+  }
+}
+
+async function disconnectAllBrandClients() {
+  await Promise.allSettled([...brandClients.values()].map((client) => client.disconnect()));
+  brandClients.clear();
+  return { ok: true };
+}
+
+ipcRenderer.on('brandBle:command', async (_event, request) => {
+  const client = brandClients.get(request?.id);
+  if (!client) {
+    ipcRenderer.send('brandBle:command-result', {
+      id: request?.id,
+      requestId: request?.requestId,
+      ok: false,
+      code: 'BRAND_BLE_DEVICE_NOT_CONNECTED',
+      error: 'Brand BLE device is not connected',
+    });
+    return;
+  }
+  try {
+    const result = await client.send(request.message);
+    ipcRenderer.send('brandBle:command-result', {
+      id: request.id,
+      requestId: request.requestId,
+      ok: true,
+      result,
+    });
+  } catch (error) {
+    ipcRenderer.send('brandBle:command-result', {
+      id: request.id,
+      requestId: request.requestId,
+      ok: false,
+      code: error?.code || 'BRAND_BLE_COMMAND_FAILED',
+      error: error?.message || String(error),
+      message: request.message,
+    });
+  }
+});
+
+ipcRenderer.on('brandBle:disconnect-all', async (_event, request) => {
+  let ok = false;
+  try {
+    const result = await disconnectAllBrandClients();
+    ok = result.ok;
+  } finally {
+    ipcRenderer.send('brandBle:disconnect-all-complete', {
+      requestId: request?.requestId,
+      ok,
+    });
+  }
+});
+
+window.brandBleApi = {
+  isSupported: () => !!navigator.bluetooth?.requestDevice,
+  connect: async () => {
+    if (!navigator.bluetooth?.requestDevice) {
+      const error = new Error('This PC does not support Web Bluetooth');
+      error.code = 'BLE_NOT_SUPPORTED';
+      throw error;
+    }
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [
+        { namePrefix: 'D-LAB' },
+        { namePrefix: 'DG-LAB' },
+        { namePrefix: 'COYOTE' },
+        { namePrefix: 'YSKJ' },
+      ],
+      optionalServices: [V2_UUIDS.service],
+    });
+    const client = new BrandBleClient(device, { onEvent: emitBrandBleClientEvent });
+    try {
+      const metadata = await client.connect();
+      brandClients.set(metadata.id, client);
+      await ipcRenderer.invoke('brandBle:connected', metadata);
+      return metadata;
+    } catch (error) {
+      brandClients.delete(client.id);
+      try { await client.disconnect(); } catch (_) {}
+      throw error;
+    }
+  },
+  disconnect: async (id) => {
+    const client = brandClients.get(id);
+    if (!client) return { ok: true, alreadyDisconnected: true };
+    await client.disconnect();
+    brandClients.delete(id);
+    return { ok: true };
+  },
+  disconnectAll: disconnectAllBrandClients,
+  connectedDeviceIds: () => [...brandClients.keys()],
+  selectDevice: (deviceId) => ipcRenderer.invoke('brandBle:select-device', deviceId),
+  cancelSelection: () => ipcRenderer.invoke('brandBle:cancel-selection'),
+  onScanResults: (callback) => {
+    const listener = (_event, devices) => {
+      try { callback(devices); } catch (_) {}
+    };
+    ipcRenderer.on('brandBle:scan-results', listener);
+    return () => ipcRenderer.removeListener('brandBle:scan-results', listener);
   },
 };
 

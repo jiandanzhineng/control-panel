@@ -6,6 +6,7 @@
 const deviceService = require('../services/deviceService');
 const { DGLabConnection } = require('./dglabConnection');
 const { YCYConnection } = require('./ycyConnection');
+const { DGLabV2WebBleConnection } = require('./webBleConnection');
 const discovery = require('./discovery');
 const ycyProto = require('./protocols/ycy');
 
@@ -182,8 +183,63 @@ function disconnect(deviceId) {
   if (!connection) return false;
   try { connection.disconnect(); } catch (_) {}
   connections.delete(deviceId);
+  // V2 WebBLE 以 'brandBle' 注册；dglab/ycy 以 'brand' 注册。两者尝试性解注册即可。
   try { deviceService.disconnectTransportDevice(deviceId, 'brand'); } catch (_) {}
+  try { deviceService.disconnectTransportDevice(deviceId, 'brandBle'); } catch (_) {}
   return true;
+}
+
+// ============ DG-LAB V2 Web Bluetooth 直连 ============
+// 设备由渲染进程经 WebBT 连接后，通过主进程 brandBle:connected 注入 send 闭包，
+// 再调用本方法将适配器登记进品牌框架与 deviceService。
+
+function attachWebBle(metadata, send) {
+  if (!metadata?.id) throw new TypeError('WebBLE 元数据缺少 id');
+  let connection = connections.get(metadata.id);
+  if (!connection) {
+    connection = new DGLabV2WebBleConnection({ deviceId: metadata.id, send });
+    connections.set(metadata.id, connection);
+  }
+  deviceService.connectTransportDevice(
+    {
+      id: metadata.id,
+      name: metadata.name || `郊狼 V2 ${String(metadata.id).slice(-4)}`,
+      type: metadata.type || 'DGLAB_V2',
+      connectionType: 'brandBle',
+      transportMetadata: connection.toMetadata(),
+      data: metadata.data || {},
+    },
+    { kind: 'brandBle', send },
+  );
+  return {
+    device: deviceService.getDeviceById(metadata.id),
+    connection: connection.toMetadata(),
+    brand: 'dglab',
+    type: metadata.type || 'DGLAB_V2',
+  };
+}
+
+function detachWebBle(deviceId) {
+  const connection = getConnection(deviceId);
+  if (!connection) return false;
+  try { connection.disconnect(); } catch (_) {}
+  connections.delete(deviceId);
+  try { deviceService.disconnectTransportDevice(deviceId, 'brandBle'); } catch (_) {}
+  return true;
+}
+
+// —— DG-LAB V2 高层控制 ——
+function dglabV2SetStrength(deviceId, { a = 0, b = 0 } = {}) {
+  return control(deviceId, { brand: 'dglab', cmd: 'v2_setStrength', a: Number(a) || 0, b: Number(b) || 0 });
+}
+function dglabV2SetWaveform(deviceId, { channel = 'A', x = 5, y = 200, z = 0 } = {}) {
+  return control(deviceId, { brand: 'dglab', cmd: 'v2_setWaveform', channel, x: Number(x) || 0, y: Number(y) || 0, z: Number(z) || 0 });
+}
+function dglabV2Stop(deviceId) {
+  return control(deviceId, { brand: 'dglab', cmd: 'v2_stop' });
+}
+function dglabV2ReadBattery(deviceId) {
+  return control(deviceId, { brand: 'dglab', cmd: 'v2_readBattery' });
 }
 
 function list() {
@@ -199,6 +255,7 @@ function list() {
       name: dev?.name,
       connected: true,
       metadata: meta,
+      data: dev?.data || {},
     };
   });
 }
@@ -225,6 +282,13 @@ module.exports = {
   dglabStop,
   dglabSetMaxIntensity,
   dglabSetBackground,
+  // 郊狼 V2（Web Bluetooth 直连）
+  attachWebBle,
+  detachWebBle,
+  dglabV2SetStrength,
+  dglabV2SetWaveform,
+  dglabV2Stop,
+  dglabV2ReadBattery,
   // 役次元
   ycyTrigger,
   ycyStop,

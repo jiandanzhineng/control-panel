@@ -9,6 +9,7 @@ const { BRIDGE_INTERNAL_HEADER } = require('../backend/constants/bridgeAccess.js
 const externalGameAccessService = require('../backend/services/externalGameAccessService.js');
 const gameHost = require('./gameHost.js');
 const { createBleMainIntegration } = require('./ble/mainIntegration.js');
+const { createBrandBleMainIntegration } = require('./ble/brandMainIntegration.js');
 const { createQuitCoordinator } = require('./shutdownCoordinator.js');
 
 let server;
@@ -19,6 +20,7 @@ let updateInitialized = false;
 let browserDevicePreloadPath = '';
 const browserWebviewOrigins = new Map();
 let bleMainIntegration = null;
+let brandBleMainIntegration = null;
 
 const UPDATE_FEEDS = {
   stable: 'http://firmware.undersilicon.cn/control-panel/stable/',
@@ -429,6 +431,7 @@ function createWindow() {
   });
   mainWindow = win;
   bleMainIntegration.attachWindow(win);
+  brandBleMainIntegration?.attachWindow(win);
   win.on('close', (event) => quitCoordinator.handleWindowClose(event));
 
   // 外部链接（target="_blank" 或 window.open）使用系统默认浏览器打开，而非 Electron 新窗口
@@ -713,6 +716,13 @@ app.whenReady().then(() => {
     logger: console,
   });
   bleMainIntegration.registerHandlers();
+  brandBleMainIntegration = createBrandBleMainIntegration({
+    ipcMain,
+    getDeviceService,
+    getBrandService: () => getBackendModule(path.join('brands', 'brandService.js')),
+    logger: console,
+  });
+  brandBleMainIntegration.registerHandlers();
   registerUpdateIpcHandlers();
   registerPluginIpcHandlers();
   registerBrowserDeviceIpcHandlers();
@@ -738,13 +748,14 @@ const quitCoordinator = createQuitCoordinator({
   shutdown: async () => {
     if (typeof backendApp?.shutdownBackend === 'function') {
       await backendApp.shutdownBackend('electron-before-quit', {
-        beforeTransportShutdown: () => bleMainIntegration?.requestDisconnectAll(
-          mainWindow,
-          { timeoutMs: 3000 },
-        ),
+        beforeTransportShutdown: () => Promise.all([
+          bleMainIntegration?.requestDisconnectAll(mainWindow, { timeoutMs: 3000 }),
+          brandBleMainIntegration?.requestDisconnectAll(mainWindow, { timeoutMs: 3000 }),
+        ]),
       });
     } else {
       await bleMainIntegration?.requestDisconnectAll(mainWindow, { timeoutMs: 3000 });
+      await brandBleMainIntegration?.requestDisconnectAll(mainWindow, { timeoutMs: 3000 });
       await closeServer(server);
     }
     await closeServer(frontendServer);
