@@ -15,6 +15,13 @@ class DGLabV2WebBleConnection {
     this.mode = 'webble';
     this.v2 = true;
     this._transportSend = typeof send === 'function' ? send : null;
+    this._statusCb = null;
+  }
+
+  /** 注册状态回调（保持统一接口；V2 链路在渲染进程，close 由 Electron 经 detachWebBle 处理）。 */
+  onStatus(cb) {
+    this._statusCb = cb;
+    return this;
   }
 
   /** 接收 V2 品牌命令（由品牌层产生），翻译为 GATT 操作并经 IPC 下发到渲染进程 */

@@ -13,12 +13,27 @@ class DGLabConnection {
     this.port = port;
     this.WebSocketClass = WebSocketClass || null;
     this.client = null;
+    this._statusCb = null;
+  }
+
+  /** 注册状态回调：brandService 用它接收 close / error，驱动状态机与重连。 */
+  onStatus(cb) {
+    this._statusCb = cb;
+    return this;
   }
 
   async connect() {
     this.client = new DGLabSocketClient({ host: this.host, port: this.port, WebSocketClass: this.WebSocketClass || null });
+    this.client.on('close', () => { this._statusCb?.('close', { error: '郊狼连接已关闭' }); });
+    this.client.on('error', (err) => { this._statusCb?.('error', { error: err?.message || String(err) }); });
     await this.client.connect();
     return this;
+  }
+
+  /** 轻量重连：复用既有 host/port 重建底层客户端。 */
+  async reconnect() {
+    this.disconnect();
+    await this.connect();
   }
 
   /** 接收品牌命令（由 DGLAB 设备类型 emit），翻译并下发到 App */

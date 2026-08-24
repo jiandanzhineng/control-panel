@@ -16,6 +16,14 @@ class YCYConnection {
     this.bridge = null;
     this.ble = null;
     this.auth = null; // { uid, token } 桥接模式鉴权
+    this._statusCb = null;
+    this._keepAliveTimer = null;
+  }
+
+  /** 注册状态回调：brandService 用它接收 close / error，驱动状态机与重连。 */
+  onStatus(cb) {
+    this._statusCb = cb;
+    return this;
   }
 
   async connect(opts = {}) {
@@ -30,11 +38,36 @@ class YCYConnection {
     // bridge 模式
     const { host = '127.0.0.1', port = ycy.BRIDGE_DEFAULT_PORT, connectCode, uid, token } = opts;
     const auth = connectCode ? ycy.parseConnectCode(connectCode) : { uid: uid || '', token: token || '' };
-    this.auth = auth;
+    // 保存重建所需连接参数（便于轻量重连）。
+    this.auth = { ...auth, host, port, connectCode };
     this.bridge = new ycy.YcyBridgeClient({ host, port, WebSocketClass: this.WebSocketClass });
+    this.bridge.on('close', () => { this._stopKeepAlive(); this._statusCb?.('close', { error: '役次元桥接已关闭' }); });
+    this.bridge.on('error', (err) => { this._statusCb?.('error', { error: err?.message || String(err) }); });
     await this.bridge.connect();
     this.bridge.login(auth);
+    this._startKeepAlive();
     return this;
+  }
+
+  /** 轻量重连：复用既有 host/port/auth 重建桥接客户端。 */
+  async reconnect() {
+    this.disconnect();
+    await this.connect({ host: this.auth?.host, port: this.auth?.port, connectCode: this.auth?.connectCode, uid: this.auth?.uid, token: this.auth?.token });
+  }
+
+  _startKeepAlive() {
+    this._stopKeepAlive();
+    // 30s 心跳 ping，避免空闲连接被中间网络回收（与郊狼保持一致）。
+    this._keepAliveTimer = setInterval(() => {
+      if (this.bridge && this.bridge.ws && this.bridge.ws.readyState === 1) {
+        try { this.bridge.ws.ping?.(); } catch (_) {}
+      }
+    }, 30000);
+    if (typeof this._keepAliveTimer.unref === 'function') this._keepAliveTimer.unref();
+  }
+
+  _stopKeepAlive() {
+    if (this._keepAliveTimer) { clearInterval(this._keepAliveTimer); this._keepAliveTimer = null; }
   }
 
   /** 接收品牌命令（由 YCY_* 设备类型 emit），翻译并下发 */
@@ -50,6 +83,7 @@ class YCYConnection {
   }
 
   disconnect() {
+    this._stopKeepAlive();
     if (this.bridge) { try { this.bridge.disconnect(); } catch (_) {} this.bridge = null; }
     if (this.ble) { try { this.ble.disconnect(); } catch (_) {} this.ble = null; }
   }

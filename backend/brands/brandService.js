@@ -13,6 +13,39 @@ const ycyProto = require('./protocols/ycy');
 
 const SUPPORTED = ['dglab', 'ycy'];
 const connections = new Map(); // deviceId -> connection adapter
+// 连接状态机（基础连接状态管理，轻量）：
+//   connecting | connected | disconnected | error
+const connState = new Map(); // deviceId -> { status, lastError, lastChange, reconnecting, userClosed }
+
+const STATUS = {
+  CONNECTING: 'connecting',
+  CONNECTED: 'connected',
+  DISCONNECTED: 'disconnected',
+  ERROR: 'error',
+};
+
+// 受控连接（后端持有链路）允许轻量自动重连；V2 webble 的 GATT 句柄在渲染进程，后端不可重连。
+function isReconnectable(kind) {
+  return kind !== 'brandBle';
+}
+
+function setState(deviceId, status, detail = {}) {
+  const prev = connState.get(deviceId) || {};
+  connState.set(deviceId, {
+    status,
+    lastError: detail.error !== undefined ? detail.error : prev.lastError,
+    lastChange: Date.now(),
+    reconnecting: detail.reconnecting !== undefined ? detail.reconnecting : (prev.reconnecting || false),
+    userClosed: detail.userClosed !== undefined ? detail.userClosed : (prev.userClosed || false),
+  });
+}
+
+function getState(deviceId) {
+  return connState.get(deviceId) || { status: STATUS.DISCONNECTED, lastChange: 0 };
+}
+
+const MAX_RECONNECT = 3;
+const RECONNECT_DELAY = 5000;
 
 function getConnection(deviceId) {
   return connections.get(deviceId) || null;
@@ -94,6 +127,7 @@ async function connect(brand, opts = {}) {
   let type;
   let finalDeviceId;
   let finalName;
+  let kind = 'brand';
 
   if (brand === 'dglab') {
     const host = opts.host;
@@ -103,35 +137,124 @@ async function connect(brand, opts = {}) {
     finalName = name || `郊狼 ${host}`;
     type = 'DGLAB';
     connection = new DGLabConnection({ deviceId: finalDeviceId, host, port, WebSocketClass });
-    await connection.connect();
   } else if (brand === 'ycy') {
     const mode = opts.mode === 'ble' ? 'ble' : 'bridge';
     finalDeviceId = deviceId || (mode === 'ble' ? `ycy-${opts.address || opts.deviceId}` : `ycy-bridge-${opts.host || '127.0.0.1'}`);
     finalName = name || (mode === 'ble' ? `役次元 ${opts.name || finalDeviceId}` : `役次元(桥接) ${opts.host || '127.0.0.1'}`);
     type = resolveDeviceType('ycy', { model, mode });
     connection = new YCYConnection({ deviceId: finalDeviceId, mode, WebSocketClass });
-    await connection.connect({ connectCode: opts.connectCode, uid: opts.uid, token: opts.token, host: opts.host, port: opts.port, serviceUuid: opts.serviceUuid, writeUuid: opts.writeUuid });
   }
 
-  // 注册进既有设备连接体系（复用 devicemap / Bridge / 玩法复位）
+  // 标记用户主动发起连接（用于区分主动断开与异常掉线，决定是否重连）
+  setState(finalDeviceId, STATUS.CONNECTING, { userClosed: false, reconnecting: false, error: null });
+  await safeConnect(connection, brand, opts, finalDeviceId, type, finalName, kind);
+  return { device: deviceService.getDeviceById(finalDeviceId), connection: connection.toMetadata(), brand, type };
+}
+
+// 真正建立连接、注册进 deviceService，并挂接 onStatus 回调（close/error → 状态机 + 轻量重连）。
+async function safeConnect(connection, brand, opts, finalDeviceId, type, finalName, kind) {
+  const attemptConnect = async () => {
+    if (brand === 'dglab') {
+      await connection.connect();
+    } else if (brand === 'ycy') {
+      await connection.connect({ connectCode: opts.connectCode, uid: opts.uid, token: opts.token, host: opts.host, port: opts.port, serviceUuid: opts.serviceUuid, writeUuid: opts.writeUuid });
+    }
+  };
+  await attemptConnect();
+
+  // 适配器上报状态（close/error）。重连由 brandService 控制，适配器仅负责链路层回调。
+  if (typeof connection.onStatus === 'function') {
+    connection.onStatus((status, detail = {}) => {
+      if (status === 'close') {
+        handleLinkDown(finalDeviceId, kind, detail.error);
+      } else if (status === 'error') {
+        setState(finalDeviceId, STATUS.ERROR, { error: detail.error });
+      }
+    });
+  }
+
   const transport = {
-    kind: 'brand',
+    kind,
     send: (msg) => connection.send(msg),
     disconnect: () => connection.disconnect(),
   };
-  const device = deviceService.connectTransportDevice(
+  deviceService.connectTransportDevice(
     {
       id: finalDeviceId,
       name: finalName,
       type,
-      connectionType: 'brand',
+      connectionType: kind,
       transportMetadata: connection.toMetadata(),
     },
     transport,
   );
 
   connections.set(finalDeviceId, connection);
-  return { device, connection: connection.toMetadata(), brand, type };
+  setState(finalDeviceId, STATUS.CONNECTED);
+}
+
+// 链路断开（close）：非用户主动断开的受控连接尝试轻量重连，否则置为 disconnected。
+function handleLinkDown(deviceId, kind, error) {
+  const st = getState(deviceId);
+  if (st.userClosed) {
+    setState(deviceId, STATUS.DISCONNECTED, { error });
+    return;
+  }
+  if (!isReconnectable(kind)) {
+    setState(deviceId, STATUS.DISCONNECTED, { error });
+    return;
+  }
+  scheduleReconnect(deviceId, kind, error);
+}
+
+function scheduleReconnect(deviceId, kind, error) {
+  const st = getState(deviceId);
+  const attempts = st.reconnectAttempts || 0;
+  if (attempts >= MAX_RECONNECT) {
+    setState(deviceId, STATUS.ERROR, { error: error || '连接断开且重连失败', reconnecting: false });
+    return;
+  }
+  setState(deviceId, STATUS.ERROR, { error: error || '连接断开，重连中', reconnecting: true });
+  const delay = RECONNECT_DELAY * (attempts + 1);
+  setTimeout(async () => {
+    const cur = getState(deviceId);
+    if (cur.userClosed || cur.status === STATUS.CONNECTED) return;
+    const connection = connections.get(deviceId);
+    if (!connection) return;
+    try {
+      const meta = connection.toMetadata();
+      const st2 = connState.get(deviceId) || {};
+      connState.set(deviceId, { ...st2, reconnectAttempts: (st2.reconnectAttempts || 0) + 1 });
+      // 复用适配器自身重连；若不支持则重建连接对象。
+      if (typeof connection.reconnect === 'function') {
+        await connection.reconnect();
+      } else {
+        const fresh = rebuildConnection(deviceId, meta);
+        connections.set(deviceId, fresh);
+        await fresh.connect();
+        if (typeof fresh.onStatus === 'function') {
+          fresh.onStatus((status, detail = {}) => {
+            if (status === 'close') handleLinkDown(deviceId, kind, detail.error);
+            else if (status === 'error') setState(deviceId, STATUS.ERROR, { error: detail.error });
+          });
+        }
+      }
+      setState(deviceId, STATUS.CONNECTED, { reconnecting: false });
+    } catch (e) {
+      scheduleReconnect(deviceId, kind, e?.message || String(e));
+    }
+  }, delay);
+}
+
+// 依据既有 metadata 重建一个同类适配器（用于无原生 reconnect 的连接）。
+function rebuildConnection(deviceId, meta) {
+  if (meta.brand === 'dglab') {
+    return new DGLabConnection({ deviceId, host: meta.host, port: meta.port });
+  }
+  if (meta.brand === 'ycy') {
+    return new YCYConnection({ deviceId, mode: meta.mode });
+  }
+  return new DGLabV2WebBleConnection({ deviceId, send: () => {} });
 }
 
 // ============ 控制 ============
@@ -182,8 +305,12 @@ function ycySetToyMode(deviceId, { motor = 'A', mode = 1 } = {}) {
 function disconnect(deviceId) {
   const connection = getConnection(deviceId);
   if (!connection) return false;
+  // 标记用户主动断开：抑制自动重连。
+  const st = connState.get(deviceId) || {};
+  connState.set(deviceId, { ...st, userClosed: true, reconnecting: false });
   try { connection.disconnect(); } catch (_) {}
   connections.delete(deviceId);
+  connState.delete(deviceId);
   // V2 WebBLE 以 'brandBle' 注册；dglab/ycy 以 'brand' 注册。两者尝试性解注册即可。
   try { deviceService.disconnectTransportDevice(deviceId, 'brand'); } catch (_) {}
   try { deviceService.disconnectTransportDevice(deviceId, 'brandBle'); } catch (_) {}
@@ -225,8 +352,11 @@ function attachWebBle(metadata, send) {
 function detachWebBle(deviceId) {
   const connection = getConnection(deviceId);
   if (!connection) return false;
+  const st = connState.get(deviceId) || {};
+  connState.set(deviceId, { ...st, userClosed: true, reconnecting: false });
   try { connection.disconnect(); } catch (_) {}
   connections.delete(deviceId);
+  connState.delete(deviceId);
   try { deviceService.disconnectTransportDevice(deviceId, 'brandBle'); } catch (_) {}
   return true;
 }
@@ -260,6 +390,7 @@ function list() {
   return [...connections.entries()].map(([deviceId, connection]) => {
     const meta = connection.toMetadata();
     const dev = deviceService.getDeviceById(deviceId);
+    const st = getState(deviceId);
     return {
       deviceId,
       brand: meta.brand,
@@ -267,7 +398,12 @@ function list() {
       kind: meta.kind,
       type: dev?.type,
       name: dev?.name,
-      connected: true,
+      // 返回真实连接状态，而非写死 true
+      connected: st.status === STATUS.CONNECTED,
+      status: st.status,
+      lastError: st.lastError || null,
+      lastChange: st.lastChange || 0,
+      reconnecting: st.reconnecting || false,
       metadata: meta,
       data: dev?.data || {},
     };
