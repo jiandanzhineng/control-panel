@@ -192,6 +192,7 @@ app.use('/api/virtual-devices', require('./routes/virtualDevices'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/remote-projection', require('./routes/remoteProjection'));
 app.use('/api/dev-access', require('./routes/devAccess'));
+app.use('/api/brands', require('./routes/brands'));
 
 app.get('/api/hello', (req, res) => { res.json({ message: 'Hello from Express backend!' }); });
 app.get('/api', (req, res) => { res.send('Backend is running'); });

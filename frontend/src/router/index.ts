@@ -15,11 +15,13 @@ import FirmwareUpdate from '../views/FirmwareUpdate.vue';
 import WiredFlashUpdate from '../views/WiredFlashUpdate.vue';
 import AccountView from '../views/AccountView.vue';
 import CustomerServiceView from '../views/CustomerServiceView.vue';
+import BrandsView from '../views/BrandsView.vue';
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/home' },
   { path: '/home', name: 'home', component: HomeView, meta: { title: '首页' } },
   { path: '/devices', name: 'devices', component: DevicesView, meta: { title: '设备管理' } },
+  { path: '/brands', name: 'brands', component: BrandsView, meta: { title: '品牌设备' } },
   {
     path: '/devices/firmware',
     component: FirmwareUpdate,

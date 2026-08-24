@@ -113,6 +113,100 @@ const registeredTypes = [
     ],
     close: (ctx) => ctx.writeProps({ shock: 0, voltage: 0, power: 0 }),
   }),
+
+  // ---- 郊狼（DGLab）品牌设备 ----
+  // 经由 App “娱乐模式”本地 WebSocket 控制（协议见 backend/brands/protocols/dglab.js）。
+  // 娱乐模式为单活动波形模型；shock/strength 两个能力均映射为 set_pattern，
+  // 设备类型层只负责发出“郊狼品牌命令”，真正翻译为 App 帧由品牌连接适配器完成。
+  new BaseDeviceType({
+    type: 'DGLAB',
+    name: '郊狼 DGLab',
+    capabilities: {
+      shock: {
+        actions: {
+          start: (ctx, params) => ctx.sendMessage({
+            brand: 'dglab', cmd: 'setPattern',
+            pattern: '经典',
+            intensity: Math.max(0, Math.min(100, Math.round(Number(params.voltage) || 0))),
+            ticks: -1,
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'dglab', cmd: 'stopPattern' }),
+        },
+      },
+      strength: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({
+            brand: 'dglab', cmd: 'setPattern',
+            pattern: '经典',
+            intensity: Math.max(0, Math.min(100, Math.round(Number(params.value) || 0))),
+            ticks: -1,
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'dglab', cmd: 'stopPattern' }),
+        },
+      },
+    },
+    operations: [
+      { key: 'start', name: '启动', capability: 'shock', action: 'start', input: { voltage: 60 } },
+      { key: 'stop', name: '停止', capability: 'shock', action: 'stop', input: {} },
+    ],
+    close: (ctx) => ctx.sendMessage({ brand: 'dglab', cmd: 'stopPattern' }),
+  }),
+
+  // ---- 役次元（YCY / YOKONEX）电击器（YSKJ_EMS_BLE） ----
+  // 通道 A/B 强度 0–100（BLE 直连时映射为 0–276 协议范围），全局停止为 stopAll。
+  new BaseDeviceType({
+    type: 'YCY_EMS',
+    name: '役次元 电击器',
+    capabilities: {
+      shock: {
+        actions: {
+          start: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'setStrength', channel: 'A',
+            value: Math.max(0, Math.min(100, Math.round(Number(params.voltage) || 0))),
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+        },
+      },
+      strength: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'setStrength', channel: 'B',
+            value: Math.max(0, Math.min(100, Math.round(Number(params.value) || 0))),
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+        },
+      },
+    },
+    operations: [
+      { key: 'start', name: '启动', capability: 'shock', action: 'start', input: { voltage: 40 } },
+      { key: 'stop', name: '停止', capability: 'shock', action: 'stop', input: {} },
+    ],
+    close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+  }),
+
+  // ---- 役次元（YCY / YOKONEX）玩具 / 电机（YSKJ_TOY_BLE） ----
+  // 电机 A/B/C 速度 0–20；此处以 0–100 输入映射到 0–20 协议范围。
+  new BaseDeviceType({
+    type: 'YCY_TOY',
+    name: '役次元 玩具/电机',
+    capabilities: {
+      strength: {
+        actions: {
+          set: (ctx, params) => {
+            const v = Math.max(0, Math.min(100, Math.round(Number(params.value) || 0)));
+            const speed = Math.round((v / 100) * 20);
+            return ctx.sendMessage({ brand: 'ycy', cmd: 'setSpeed', motor: 'A', speed });
+          },
+          stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopToy' }),
+        },
+      },
+    },
+    operations: [
+      { key: 'start', name: '启动', capability: 'strength', action: 'set', input: { value: 80 } },
+      { key: 'stop', name: '停止', capability: 'strength', action: 'stop', input: {} },
+    ],
+    close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopToy' }),
+  }),
 ];
 
 const registry = new Map(registeredTypes.map((dt) => [dt.type, dt]));

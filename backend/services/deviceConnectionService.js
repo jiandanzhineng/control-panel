@@ -1,4 +1,4 @@
-const VALID_TRANSPORTS = new Set(['mqtt', 'serial', 'ble', 'remote']);
+const VALID_TRANSPORTS = new Set(['mqtt', 'serial', 'ble', 'remote', 'brand']);
 
 const devices = new Map();
 
