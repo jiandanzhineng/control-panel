@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>YCY 多设备 BLE 控制面板</title>
+<style>
+  :root { --bg:#f7f8fa; --card:#ffffff; --line:#e3e6ea; --txt:#1f2329; --sub:#6b7280;
+          --acc:#2563eb; --ok:#16a34a; --warn:#d97706; --bad:#dc2626; --mono:#0f766e; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+         background:var(--bg); color:var(--txt); padding:18px; line-height:1.5; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .hint { color:var(--sub); font-size:13px; margin:0 0 14px; }
+  #status { font-size:12px; background:#eef2ff; border:1px solid #c7d2fe; color:#1e3a8a;
+            border-radius:8px; padding:8px 10px; margin-bottom:12px; }
+  .topbar { background:var(--card); border:1px solid var(--line); border-radius:10px;
+            padding:12px 14px; margin-bottom:14px; display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; }
+  .topbar label { font-size:12px; color:var(--sub); display:block; margin-bottom:2px; }
+  .topbar input[type=text] { font-size:13px; padding:7px 9px; border:1px solid var(--line);
+            border-radius:8px; width:240px; }
+  button { background:var(--acc); color:#fff; border:none; border-radius:8px;
+           padding:8px 14px; font-size:13px; cursor:pointer; }
+  button.sec { background:#eef2ff; color:var(--acc); }
+  button.warn { background:#fef3c7; color:var(--warn); }
+  button.danger { background:#fee2e2; color:var(--bad); }
+  button.sm { padding:5px 9px; font-size:12px; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:14px; margin-bottom:14px; }
+  .card h2 { font-size:14px; margin:0 0 4px; display:flex; align-items:center; gap:8px; }
+  .devtype { font-size:11px; padding:1px 7px; border-radius:6px; background:#eef2ff; color:var(--acc); }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--ok); display:inline-block; }
+  .sect { border-top:1px dashed var(--line); margin-top:10px; padding-top:10px; }
+  .sect > .t { font-size:13px; font-weight:600; margin-bottom:6px; color:var(--sub); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  input[type=range] { width:160px; }
+  .val { font-family:ui-monospace,monospace; font-size:12px; color:var(--mono); min-width:34px; }
+  details { margin-top:10px; border-top:1px dashed var(--line); padding-top:8px; }
+  summary { cursor:pointer; font-size:12px; color:var(--sub); }
+  select, input.dbg { font-size:12px; padding:6px 8px; border:1px solid var(--line);
+           border-radius:8px; }
+  input.dbg { width:100%; font-family:ui-monospace,monospace; }
+  pre { background:#0f172a; color:#e2e8f0; border-radius:8px; padding:10px; font-size:12px;
+        overflow:auto; max-height:240px; margin:6px 0 0; white-space:pre-wrap; word-break:break-all; }
+  .empty { color:var(--sub); font-size:13px; padding:20px; text-align:center; }
+</style>
+</head>
+<body>
+  <h1>YCY 多设备 BLE 控制面板</h1>
+  <p class="hint">同时连接并控制多台设备。必须用 <b>Edge / Chrome</b> 打开本页面。<b>请通过 http://127.0.0.1:8123/ble-control.html 打开(不要直接拖文件用 file://)</b>,否则 Web Bluetooth 会被禁用。系统弹窗一次只能选一台,但连上后可多台同时在线。点「+ 添加设备」后,弹窗会列出<b>附近全部蓝牙设备</b>,请手动选你的 YCY 设备(选设备弹窗出现在 Edge 窗口<b>顶部地址栏附近</b>,注意看)。</p>
+
+  <div id="banner" style="display:none; background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; border-radius:8px; padding:10px 12px; margin-bottom:14px; font-size:13px;"></div>
+  <div id="status">状态加载中…</div>
+
+  <div class="topbar">
+    <div>
+      <label>设备名前缀(当前连接用 acceptAllDevices,此框暂作备注,不用于过滤)</label>
+      <input type="text" id="namePrefix" value="YSKJ,Yoko,YOKONEX,YCY,YiCiYuan,Yci,YCY-DJ,一" />
+    </div>
+    <button id="btnAdd">+ 添加设备</button>
+    <button id="btnDiag" class="sec">诊断蓝牙</button>
+    <button id="btnDisconnectAll" class="sec">全部断开</button>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--txt)">
+      <input type="checkbox" id="broadcast" /> 对所有已连接设备广播
+    </label>
+  </div>
+
+  <div id="devices"><div class="empty">还没有设备。点「+ 添加设备」开始(系统弹窗里选一台 YCY 设备)。</div></div>
+
+  <div class="card">
+    <h2>全局日志</h2>
+    <pre id="log"></pre>
+  </div>
+
+<script>
+// ===== 全局错误捕获:任何错误都显示在页面上,不再静默 =====
+function showBanner(msg){ const b=document.getElementById('banner'); b.style.display='block'; b.innerHTML=msg; }
+window.addEventListener('error', e=>{ const m=(e&&e.message)||(e&&e.error)||'未知脚本错误'; showBanner('⚠️ 脚本运行错误：'+m+(e&&e.lineno?(' (行 '+e.lineno+')'):'')); log('JS错误: '+m+(e&&e.error&&e.error.stack?'\n'+e.error.stack:''),'ERR'); });
+window.addEventListener('unhandledrejection', e=>{ const r=e&&e.reason; const m=(r&&r.message)||r||'未知 Promise 拒绝'; showBanner('⚠️ 未处理的异步错误：'+m); log('Promise拒绝: '+m,'ERR'); });
+
+// ===== 内联 AES-128-ECB(单 16 字节块, NoPadding),无外部依赖 =====
+const SBOX=[0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,0xb7,0xfd,0x93,0x26,0x36,0x3f,0xf7,0xcc,0x34,0xa5,0xe5,0xf1,0x71,0xd8,0x31,0x15,0x04,0xc7,0x23,0xc3,0x18,0x96,0x05,0x9a,0x07,0x12,0x80,0xe2,0xeb,0x27,0xb2,0x75,0x09,0x83,0x2c,0x1a,0x1b,0x6e,0x5a,0xa0,0x52,0x3b,0xd6,0xb3,0x29,0xe3,0x2f,0x84,0x53,0xd1,0x00,0xed,0x20,0xfc,0xb1,0x5b,0x6a,0xcb,0xbe,0x39,0x4a,0x4c,0x58,0xcf,0xd0,0xef,0xaa,0xfb,0x43,0x4d,0x33,0x85,0x45,0xf9,0x02,0x7f,0x50,0x3c,0x9f,0xa8,0x51,0xa3,0x40,0x8f,0x92,0x9d,0x38,0xf5,0xbc,0xb6,0xda,0x21,0x10,0xff,0xf3,0xd2,0xcd,0x0c,0x13,0xec,0x5f,0x97,0x44,0x17,0xc4,0xa7,0x7e,0x3d,0x64,0x5d,0x19,0x73,0x60,0x81,0x4f,0xdc,0x22,0x2a,0x90,0x88,0x46,0xee,0xb8,0x14,0xde,0x5e,0x0b,0xdb,0xe0,0x32,0x3a,0x0a,0x49,0x06,0x24,0x5c,0xc2,0xd3,0xac,0x62,0x91,0x95,0xe4,0x79,0xe7,0xc8,0x37,0x6d,0x8d,0xd5,0x4e,0xa9,0x6c,0x56,0xf4,0xea,0x65,0x7a,0xae,0x08,0xba,0x78,0x25,0x2e,0x1c,0xa6,0xb4,0xc6,0xe8,0xdd,0x74,0x1f,0x4b,0xbd,0x8b,0x8a,0x70,0x3e,0xb5,0x66,0x48,0x03,0xf6,0x0e,0x61,0x35,0x57,0xb9,0x86,0xc1,0x1d,0x9e,0xe1,0xf8,0x98,0x11,0x69,0xd9,0x8e,0x94,0x9b,0x1e,0x87,0xe9,0xce,0x55,0x28,0xdf,0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16];
+const RCON=[0x00,0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36,0x6c];
+function xtime(a){return((a<<1)^((a&0x80)?0x1b:0))&0xff;}
+function gmul(a,b){let p=0;for(let i=0;i<8;i++){if(b&1)p^=a;const hi=a&0x80;a=(a<<1)&0xff;if(hi)a^=0x1b;b>>=1;}return p&0xff;}
+function h2b(h){h=h.replace(/\s+/g,'');const u=new Uint8Array(h.length/2);for(let i=0;i<u.length;i++)u[i]=parseInt(h.substr(i*2,2),16);return Array.from(u);}
+function b2h(b){return b.map(x=>x.toString(16).padStart(2,'0')).join('').toUpperCase();}
+function keyExpansion(key){const Nk=4,Nr=10,w=[];for(let i=0;i<Nk;i++)w.push([key[i*4],key[i*4+1],key[i*4+2],key[i*4+3]]);for(let i=Nk;i<Nk*(Nr+1);i++){let t=w[i-1].slice();if(i%Nk===0){t=[t[1],t[2],t[3],t[0]];t=t.map((x,j)=>SBOX[x]^(j===0?RCON[i/Nk]:0));}w.push([w[i-Nk][0]^t[0],w[i-Nk][1]^t[1],w[i-Nk][2]^t[2],w[i-Nk][3]^t[3]]);}return w;}
+function addRoundKey(s,w,r){for(let c=0;c<4;c++){const wk=w[r*4+c];for(let j=0;j<4;j++)s[c*4+j]^=wk[j];}}
+function subBytes(s){for(let i=0;i<16;i++)s[i]=SBOX[s[i]];}
+function shiftRows(s){const t=s.slice();for(let r=1;r<4;r++)for(let c=0;c<4;c++)s[r+c*4]=t[r+((c+r)%4)*4];}
+function mixColumns(s){for(let c=0;c<4;c++){const i=c*4;const a=[s[i],s[i+1],s[i+2],s[i+3]];s[i]=gmul(a[0],2)^gmul(a[1],3)^a[2]^a[3];s[i+1]=a[0]^gmul(a[1],2)^gmul(a[2],3)^a[3];s[i+2]=a[0]^a[1]^gmul(a[2],2)^gmul(a[3],3);s[i+3]=gmul(a[0],3)^a[1]^a[2]^gmul(a[3],2);}}
+function aes128EcbHex(hexKey,hexPlain){const K=h2b(hexKey),P=h2b(hexPlain);if(K.length!==16||P.length!==16)throw new Error('AES-128 需要 16 字节密钥与明文');const s=P.slice();const w=keyExpansion(K);addRoundKey(s,w,0);for(let r=1;r<=9;r++){subBytes(s);shiftRows(s);mixColumns(s);addRoundKey(s,w,r);}subBytes(s);shiftRows(s);addRoundKey(s,w,10);return b2h(s);}
+
+// ===== 基础工具 =====
+const $=(id)=>document.getElementById(id);
+const logEl=$('log');
+function log(msg,cls){const t=new Date().toLocaleTimeString();logEl.textContent+='['+t+'] '+(cls?'('+cls+') ':'')+msg+'\n';logEl.scrollTop=logEl.scrollHeight;}
+// 防御:脚本一启动就刷新状态栏(函数声明已提升,此处可安全调用)
+try{ renderStatus(); }catch(e){ const s=$('status'); if(s)s.textContent='脚本已加载,但状态栏刷新失败: '+e.message; }
+function hextobytes(h){h=h.replace(/\s+/g,'');const u=new Uint8Array(h.length/2);for(let i=0;i<u.length;i++)u[i]=parseInt(h.substr(i*2,2),16);return u;}
+function bytestohex(u){return Array.from(u).map(b=>b.toString(16).padStart(2,'0')).join('').toUpperCase();}
+
+// ---- 帧构造 ----
+function frame35(cmd,...rest){const b=[0x35,cmd&0xff,...rest.map(x=>x&0xff)];const s=b.reduce((a,x)=>a+x,0)%256;b.push(s);return new Uint8Array(b);}
+const motorFrame=(speed)=>frame35(0x12,speed&0xff);
+const emsStopFrame=()=>frame35(0x11,0x03,0x00,0x00,0x00,0x01,0x00,0x00);
+const emsHandshake=()=>frame35(0x14,0x01);
+
+const PUMP_KEY='F638BC9CFA477480AB3242F6B04557A1';
+function pumpPlain(scene,ssHex){const H='BF0FA0';ssHex=(ssHex||'0000').padStart(4,'0');switch(scene){case 'add':return H+'01'+'01'+ssHex;case 'cut':return H+'01'+'02'+ssHex;case 'guan':return H+'02'+'01'+ssHex;case 'stop':default:return H+'03';}}
+function pumpEncrypt(plainHex){return aes128EcbHex(PUMP_KEY,plainHex.padEnd(32,'0'));}
+
+// 候选服务 UUID 尽可能覆盖 YCY 全系(杯/玩具/EMS)以及常见 BLE 模组服务,
+// 避免"设备已连接但 getPrimaryServices 找不到服务"导致空白。
+const CANDIDATE_SERVICES=[
+  '0000ff40-0000-1000-8000-00805f9b34fb','98a9cd00-ca0a-4cf8-9f85-e93949467558',
+  '00001800-0000-1000-8000-00805f9b34fb','00001801-0000-1000-8000-00805f9b34fb',
+  '0000180a-0000-1000-8000-00805f9b34fb','0000180f-0000-1000-8000-00805f9b34fb',
+  '0000fff0-0000-1000-8000-00805f9b34fb','0000ffe0-0000-1000-8000-00805f9b34fb',
+  '0000ffe5-0000-1000-8000-00805f9b34fb','0000ffb0-0000-1000-8000-00805f9b34fb',
+  '0000ffc0-0000-1000-8000-00805f9b34fb','0000ffd0-0000-1000-8000-00805f9b34fb',
+  '0000fe00-0000-1000-8000-00805f9b34fb','0000fe01-0000-1000-8000-00805f9b34fb',
+  '0000fee0-0000-1000-8000-00805f9b34fb','0000fee1-0000-1000-8000-00805f9b34fb',
+  '0000fee7-0000-1000-8000-00805f9b34fb','0000fef5-0000-1000-8000-00805f9b34fb',
+  '6e400001-b5a3-f393-e0a9-e50e24dcca9e'
+];
+const KNOWN_WRITE='0000ff41-0000-1000-8000-00805f9b34fb';
+function classifyBtError(e){
+  if(e.name==='NotFoundError')return '选设备弹窗空/取消,或附近没有正在广播的 YCY 设备。常见原因:① 设备已休眠或断电——请把它关机再开机,开机后会有几秒~几十秒广播窗口;② 设备上一轮连接虽"服务发现失败"但 GATT 其实还连着(系统或本页面占着),导致它停止广播——请到 macOS 系统设置→蓝牙,把 YCY-DJ-v2「忽略此设备」,再重开设备;③ 设备被手机等其他设备连着,先断开那个。';
+  if(e.name==='SecurityError')return '非安全上下文。请用 http://127.0.0.1 或 https 打开,不要 file:// 也不要普通 http。';
+  if(e.name==='TypeError')return '请求参数非法(filters/optionalServices 配置错)。';
+  if(e.name==='NotAllowedError'||e.name==='OperationError')return '被浏览器策略禁用(可能企业策略/标志位)。';
+  return '未知错误,把这条信息发我。';
+}
+
+// ---- 多设备状态 ----
+const devices=new Map();
+let addSeq=0;
+
+async function sendBytes(ch,bytes,label){
+  try{
+    if(ch.properties.write&&!ch.properties.writeWithoutResponse){await ch.writeValue(bytes);log('发送(withResponse)→'+ch.uuid+': '+bytestohex(bytes),label);}
+    else if(ch.properties.writeWithoutResponse&&!ch.properties.write){await ch.writeValueWithoutResponse(bytes);log('发送(withoutResponse)→'+ch.uuid+': '+bytestohex(bytes),label);}
+    else if(ch.properties.write&&ch.properties.writeWithoutResponse){try{await ch.writeValue(bytes);log('发送(withResponse)→'+ch.uuid+': '+bytestohex(bytes),label);}catch(e){await ch.writeValueWithoutResponse(bytes);log('改withoutResponse→'+ch.uuid+': '+bytestohex(bytes),label);}}
+    else log('该特征不可写: '+ch.uuid,'ERR');
+  }catch(e){log('发送失败 '+ch.uuid+': '+e.message,'ERR');}
+}
+
+// 连接并加入设备卡片(两个按钮共用)
+async function connectAndAdd(dev){
+  const server=await dev.gatt.connect();
+  const id=dev.id||('dev'+(++addSeq));
+  const st={device:dev,server,id,name:dev.name||id,writeChar:null,svcUuid:null,writable:[]};
+  devices.set(id,st);
+  dev.addEventListener('gattserverdisconnected',()=>{log('设备断开: '+st.name);if(st.el){const dot=st.el.querySelector('.dot');if(dot)dot.style.background='var(--bad)';}});
+  log('已连接 '+st.name+(dev.name?'':'（设备未在广播中暴露名字,用 id 标识)'));
+  let discoverErr=null;
+  try{
+    await discover(st);
+  }catch(e){
+    discoverErr=e;
+    log(st.name+' 服务发现异常: '+e.message+'（仍保留连接,可在卡片「调试→重新发现服务」重试）','ERR');
+  }
+  const empty=$('devices').querySelector('.empty');if(empty)empty.remove();
+  renderCard(st);
+  if(discoverErr)throw discoverErr; // 让上层 btnAdd/btnDiag 弹窗提示,但卡片已渲染可重试
+  return st;
+}
+
+$('btnAdd').onclick=async()=>{
+  if(!navigator.bluetooth){showBanner('⚠️ navigator.bluetooth 不存在:当前不是 Edge/Chrome,或页面是 file:// 非安全上下文。请用 Edge 打开 <b>http://127.0.0.1:8123/ble-control.html</b>。');return;}
+  // 之前用 namePrefix 过滤会让你的设备不出现在列表(广播名不匹配前缀)。改用 acceptAllDevices:弹窗列出附近全部蓝牙设备,你手动选自己的 YCY 即可。
+  const opts={acceptAllDevices:true, optionalServices:CANDIDATE_SERVICES};
+  try{
+    log('requestDevice… 弹窗会列出附近全部蓝牙设备,请手动选你的 YCY 设备');
+    const dev=await navigator.bluetooth.requestDevice(opts);
+    await connectAndAdd(dev);
+  }catch(e){
+    const why=classifyBtError(e);
+    log('连接失败（'+e.name+'）: '+e.message+' — '+why,'ERR');
+    showBanner('⚠️ 添加设备失败：<b>'+e.name+'</b> — '+e.message+'<br>'+why);
+    alert('添加设备失败（'+e.name+'）:\n'+e.message+'\n\n'+why);
+  }
+};
+
+$('btnDiag').onclick=async()=>{
+  if(!navigator.bluetooth){alert('navigator.bluetooth 不存在:说明页面不是安全上下文(如 file://),或不是 Edge/Chrome。请用 Edge 打开 http://127.0.0.1:8123/ble-control.html');return;}
+  const ok=await navigator.bluetooth.getAvailability().catch(()=>false);
+  if(!ok){alert('getAvailability=false:系统蓝牙未开,或 Edge 没有蓝牙权限。\n请到 macOS 系统设置→隐私与安全性→蓝牙,确认 Microsoft Edge 已开启,并打开系统蓝牙。');return;}
+  try{
+    const d=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:CANDIDATE_SERVICES});
+    log('诊断选到设备: '+(d.name||d.id)+' (id='+d.id+')');
+    alert('诊断成功:选到设备 '+(d.name||d.id)+'\n现在直接连接它并加入控制列表。');
+    await connectAndAdd(d);
+  }catch(e){alert('诊断 requestDevice 失败（'+e.name+'）:\n'+e.message+'\n\n'+classifyBtError(e));}
+};
+
+$('btnDisconnectAll').onclick=()=>{for(const st of devices.values()){try{st.device.gatt.disconnect();}catch(e){}}devices.clear();$('devices').innerHTML='<div class="empty">已全部断开。</div>';log('全部断开');};
+
+async function discoverService(st,svc){
+  if(svc.uuid.toLowerCase()==='0000ff40-0000-1000-8000-00805f9b34fb')st.hasToySvc=true;
+  if(svc.uuid.toLowerCase()==='98a9cd00-ca0a-4cf8-9f85-e93949467558')st.hasEmsSvc=true;
+  let chars=[];
+  try{chars=await svc.getCharacteristics();}catch(e){log(st.name+' 读特征失败 '+svc.uuid+': '+e.message,'WARN');return;}
+  for(const c of chars){
+    if(c.properties.write||c.properties.writeWithoutResponse)st.writable.push({char:c,uuid:c.uuid,svcUuid:svc.uuid});
+    if(c.properties.notify||c.properties.indicate){
+      try{await c.startNotifications();c.addEventListener('characteristicvaluechanged',ev=>{const v=ev.target.value;const u=v.buffer?new Uint8Array(v.buffer):new Uint8Array(v);log(st.name+' 通知 ← '+c.uuid+': '+bytestohex(u),'NOTIFY');});}
+      catch(e){log(st.name+' 订阅通知失败 '+c.uuid+': '+e.message,'WARN');}
+    }
+  }
+}
+
+async function discover(st){
+  st.writable=[]; st.hasToySvc=false; st.hasEmsSvc=false;
+  let services=[];
+  let bulkErr=null;
+  // 部分 BLE 设备连接后需要短暂延迟才能枚举服务
+  await new Promise(r=>setTimeout(r,600));
+  try{
+    services=await st.server.getPrimaryServices();
+  }catch(e){
+    bulkErr=e;
+    log(st.name+': getPrimaryServices() 批量枚举失败: '+e.message,'WARN');
+  }
+  if(!services.length){
+    log(st.name+': 批量枚举无结果,逐个尝试 '+CANDIDATE_SERVICES.length+' 个候选服务 UUID…','WARN');
+    for(const uuid of CANDIDATE_SERVICES){
+      try{
+        const svc=await st.server.getPrimaryService(uuid);
+        services.push(svc);
+        log(st.name+': 命中服务 '+svc.uuid,'OK');
+      }catch(e){}
+    }
+  }
+  if(!services.length){
+    // 再试一次:重连后枚举(有些设备第一次连接不稳定)
+    log(st.name+': 仍未发现服务,尝试断开重连后再次枚举…','WARN');
+    try{st.device.gatt.disconnect(); await new Promise(r=>setTimeout(r,800)); const srv=await st.device.gatt.connect(); st.server=srv;}
+    catch(e){log(st.name+' 重连失败: '+e.message,'WARN');}
+    await new Promise(r=>setTimeout(r,600));
+    try{services=await st.server.getPrimaryServices();}catch(e){bulkErr=e; log(st.name+': 重连后批量枚举仍失败: '+e.message,'WARN');}
+    if(!services.length){
+      for(const uuid of CANDIDATE_SERVICES){
+        try{const svc=await st.server.getPrimaryService(uuid); services.push(svc); log(st.name+': 重连后命中服务 '+svc.uuid,'OK');}catch(e){}
+      }
+    }
+  }
+  if(!services.length){
+    const reason=bulkErr?('批量枚举报错: '+bulkErr.message):'设备未暴露任何已知服务';
+    log(st.name+': 未发现可用服务。'+reason,'ERR');
+    showBanner('⚠️ <b>'+st.name+'</b> 已连接,但未发现任何可访问服务。<br>常见原因:① 设备需先配对/绑定,请在 macOS 蓝牙设置里"忽略此设备"后重连;② 该设备服务 UUID 不在候选列表,请展开卡片「调试」手动填入 UUID 后点「发现此服务」;③ 设备未进入控制模式。');
+    st.type='未知(无服务)';
+    return;
+  }
+  log(st.name+': 实际发现 '+services.length+' 个服务');
+  for(const svc of services)await discoverService(st,svc);
+  st.type=st.hasEmsSvc?'EMS电刺激':(st.hasToySvc?'杯/玩具':'未知');
+  let pick=st.writable.find(w=>w.uuid.toLowerCase()===KNOWN_WRITE);
+  if(!pick)pick=st.writable.find(w=>w.svcUuid.toLowerCase()==='0000ff40-0000-1000-8000-00805f9b34fb');
+  if(!pick&&st.writable.length)pick=st.writable[0];
+  st.writeChar=pick?pick.char:null;
+  st.svcUuid=pick?pick.svcUuid:null;
+  log(st.name+': 可写特征共 '+st.writable.length+' 个; 命令特征='+(pick?pick.uuid:'无')+(pick&&pick.uuid.toLowerCase()===KNOWN_WRITE?' (★杯/玩具写特征)':''));
+}
+
+function refreshCardWriteChar(st,devId){
+  const card=st.el; if(!card)return;
+  const cw=document.getElementById('cw-'+devId);
+  if(cw)cw.textContent=st.writeChar?(st.svcUuid+' → '+st.writeChar.uuid):'未确定';
+  const sel=document.getElementById('sel-'+devId);
+  if(sel){sel.innerHTML=''; st.writable.forEach((w,i)=>{const o=document.createElement('option');o.value=i;o.textContent=w.svcUuid+' → '+w.uuid;sel.appendChild(o);}); const defIdx=st.writable.findIndex(w=>w.char===st.writeChar); if(defIdx>=0)sel.value=defIdx;}
+  const dt=card.querySelector('.devtype'); if(dt)dt.textContent=st.type;
+}
+
+function renderCard(st){
+  const card=document.createElement('div');card.className='card';st.el=card;
+  const devId=st.id;
+  card.innerHTML=`
+    <h2><span class="dot"></span> ${st.name} <span class="devtype">${st.type}</span>
+        <button class="danger sm" data-act="remove" style="margin-left:auto">移除</button></h2>
+    <div class="row" style="margin:6px 0 0">
+      <span style="font-size:12px;color:var(--sub)">命令特征: <code id="cw-${devId}">${st.writeChar?st.svcUuid+' → '+st.writeChar.uuid:'未确定'}</code></span>
+    </div>
+    <div class="sect"><div class="t">电机 / 玩具马达</div>
+      <div class="row">
+        <input type="range" min="0" max="20" value="0" id="motor-${devId}" />
+        <span class="val" id="motorv-${devId}">0</span>
+        <button class="sm" data-act="motorSet">设速度</button>
+        <button class="sm sec" data-act="motorStop">停止</button>
+      </div>
+    </div>
+    <div class="sect"><div class="t">泵(杯/灌肠机)</div>
+      <div class="row">
+        <button class="sm" data-act="pump" data-scene="add">充气/吸吮 add</button>
+        <button class="sm" data-act="pump" data-scene="cut">排气 cut</button>
+        <button class="sm" data-act="pump" data-scene="guan">注水 guan</button>
+        <button class="sm sec" data-act="pump" data-scene="stop">停止 stop</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <span style="font-size:12px;color:var(--sub)">强度</span>
+        <input type="range" min="0" max="100" value="60" id="ss-${devId}" />
+        <span class="val" id="ssv-${devId}">60</span>
+      </div>
+    </div>
+    <div class="sect"><div class="t">EMS 电刺激</div>
+      <div class="row">
+        <button class="sm" data-act="emsHandshake">握手 351401</button>
+        <button class="sm sec" data-act="emsStop">停止</button>
+      </div>
+    </div>
+    <details><summary>调试:写特征选择 / 原始帧 / 扫描端点 / 手动发现服务</summary>
+      <div style="margin-top:8px">
+        <label style="font-size:12px;color:var(--sub)">写特征</label>
+        <select id="sel-${devId}"></select>
+        <label style="font-size:12px;color:var(--sub)">原始十六进制帧</label>
+        <input class="dbg" id="raw-${devId}" value="35120047" />
+        <label style="font-size:12px;color:var(--sub)">手动发现服务 UUID(若自动枚举不到,可填入手机 App 抓到的 UUID)</label>
+        <input class="dbg" id="svc-${devId}" value="0000ff40-0000-1000-8000-00805f9b34fb" />
+        <div class="row" style="margin-top:6px">
+          <button class="sm warn" data-act="rawSend">发送原始帧</button>
+          <button class="sm warn" data-act="sweep">扫所有写特征(定位端点)</button>
+          <button class="sm sec" data-act="rediscover">重新发现服务</button>
+          <button class="sm" data-act="manualSvc">发现此服务</button>
+        </div>
+      </div>
+    </details>`;
+  $('devices').appendChild(card);
+  const sel=document.getElementById('sel-'+devId);
+  if(sel){
+    st.writable.forEach((w,i)=>{const o=document.createElement('option');o.value=i;o.textContent=w.svcUuid+' → '+w.uuid;sel.appendChild(o);});
+    const defIdx=st.writable.findIndex(w=>w.char===st.writeChar);if(defIdx>=0)sel.value=defIdx;
+    sel.onchange=()=>{const w=st.writable[parseInt(sel.value,10)];if(w){st.writeChar=w.char;st.svcUuid=w.svcUuid;const cw=document.getElementById('cw-'+devId);if(cw)cw.textContent=w.svcUuid+' → '+w.uuid;log(st.name+' 写特征改为 '+w.uuid);}};
+  }
+  const motor=document.getElementById('motor-'+devId),motorv=document.getElementById('motorv-'+devId);
+  if(motor&&motorv)motor.oninput=()=>motorv.textContent=motor.value;
+  const ss=document.getElementById('ss-'+devId),ssv=document.getElementById('ssv-'+devId);
+  if(ss&&ssv)ss.oninput=()=>ssv.textContent=ss.value;
+  card.querySelectorAll('button[data-act]').forEach(b=>{
+    b.onclick=async()=>{
+      const act=b.dataset.act;
+      if(act==='remove'){const t0=devices.get(devId);if(t0){try{t0.device.gatt.disconnect();}catch(e){}}devices.delete(devId);card.remove();if(!devices.size)$('devices').innerHTML='<div class="empty">还没有设备。</div>';return;}
+      const list=$('broadcast').checked?[...devices.values()]:[devices.get(devId)];
+      for(const target of list){
+        if(!target)continue;
+        if(act==='rediscover'){log('重新发现 '+target.name+' 的服务…');await discover(target);refreshCardWriteChar(target,devId);continue;}
+        if(act==='manualSvc'){
+          const uuidInp=document.getElementById('svc-'+devId);const uuid=uuidInp?uuidInp.value.trim():'';
+          if(!uuid){log('请先输入服务 UUID','ERR');continue;}
+          try{const svc=await target.server.getPrimaryService(uuid);log(target.name+' 手动发现服务成功: '+svc.uuid,'OK');await discoverService(target,svc);refreshCardWriteChar(target,devId);}catch(e){log(target.name+' 手动发现服务失败 '+uuid+': '+e.message,'ERR');}
+          continue;
+        }
+        if(!target.writeChar){log(target.name+' 尚未确定写特征,请在调试里选','ERR');continue;}
+        const motor2=document.getElementById('motor-'+devId),ss2=document.getElementById('ss-'+devId);
+        if(act==='motorSet'){if(motor2)await sendBytes(target.writeChar,motorFrame(parseInt(motor2.value,10)),'SEND');}
+        else if(act==='motorStop'){await sendBytes(target.writeChar,motorFrame(0),'SEND');}
+        else if(act==='pump'){const scene=b.dataset.scene;const ssHex=ss2?Math.round(parseInt(ss2.value,10)/100*65535).toString(16).padStart(4,'0'):'0000';const ct=pumpEncrypt(pumpPlain(scene,ssHex));const u=hextobytes(ct);await sendBytes(target.writeChar,u,'PUMP');log(target.name+' 泵 '+scene+': 明文 '+pumpPlain(scene,ssHex)+' → '+ct);}
+        else if(act==='emsHandshake'){await sendBytes(target.writeChar,emsHandshake(),'EMS');}
+        else if(act==='emsStop'){await sendBytes(target.writeChar,emsStopFrame(),'EMS');}
+        else if(act==='rawSend'){try{const rawInp=document.getElementById('raw-'+devId);if(rawInp)await sendBytes(target.writeChar,hextobytes(rawInp.value),'RAW');}catch(e){log('原始帧解析失败: '+e.message,'ERR');}}
+        else if(act==='sweep'){const frame=motorFrame(0);log('扫描 '+target.name+' 的 '+target.writable.length+' 个写特征…','SWEEP');for(const w of target.writable){log('→ '+w.svcUuid+' / '+w.uuid,'SWEEP');await sendBytes(w.char,frame,'SWEEP');await new Promise(r=>setTimeout(r,400));}log('扫描完成,看哪台设备有反应,记下 UUID 后在调试下拉选它。','SWEEP');}
+      }
+    };
+  });
+}
+
+// ===== 启动:状态栏 + 蓝牙可用性检测 =====
+function renderStatus(){
+  const bt=!!navigator.bluetooth;
+  const sc=window.isSecureContext;
+  const aesOk=typeof aes128EcbHex==='function';
+  $('status').innerHTML='脚本引擎: ✓ 已加载 &nbsp;|&nbsp; navigator.bluetooth: <b>'+(bt?'存在':'不存在')+'</b> &nbsp;|&nbsp; 安全上下文: <b>'+(sc?'是':'否')+'</b> &nbsp;|&nbsp; AES 库: '+(aesOk?'已内联 ✓':'缺失 ✗');
+  return {bt,sc};
+}
+const st0=renderStatus();
+log('就绪。点「+ 添加设备」逐台连接(系统弹窗一次一台,但可多台同时在线)。连好后每张卡片有电机/泵/EMS 按钮;勾选「对所有已连接设备广播」可一键群控。');
+if(!st0.bt){
+  showBanner('⚠️ <b>navigator.bluetooth 不存在</b>:你大概率是用 file:// 直接打开了文件。Web Bluetooth 在 file:// 下被禁用。请改用 Edge 打开 <b>http://127.0.0.1:8123/ble-control.html</b>(本机服务已在运行)。');
+}else{
+  navigator.bluetooth.getAvailability().then(ok=>{ if(!ok) showBanner('⚠️ 此浏览器/系统当前不可用 Web Bluetooth(可能系统蓝牙未开,或 Edge 没有蓝牙权限)。请确认系统蓝牙已开启,并在 macOS 系统设置→隐私与安全性→蓝牙 里允许 Microsoft Edge。'); }).catch(()=>{});
+}
+</script>
+</body>
+</html>

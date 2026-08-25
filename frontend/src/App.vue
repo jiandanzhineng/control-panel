@@ -36,11 +36,6 @@
             <template #title>设备管理</template>
           </el-menu-item>
 
-          <el-menu-item index="/brands">
-            <el-icon><Promotion /></el-icon>
-            <template #title>品牌设备</template>
-          </el-menu-item>
-
           <el-menu-item index="/plays">
             <el-icon><VideoPlay /></el-icon>
             <template #title>本地游戏</template>
@@ -116,7 +111,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass, User, Service, Promotion } from '@element-plus/icons-vue'
+import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass, User, Service } from '@element-plus/icons-vue'
 import { useAuth } from './composables/useAuth'
 import { useTheme } from './composables/useTheme'
 import { router } from './router'

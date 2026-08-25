@@ -47,13 +47,18 @@ const BRIDGE_DEFAULT_PORT = 3001;
 // 由 YcyBleTransport 在连接时按设备类型通过 opts.serviceUuid 传入。
 const BLE_SERVICE_UUID = '98a9cd00-ca0a-4cf8-9f85-e93949467558';
 
-// 杯 / 玩具 BLE 服务 / 写特征 UUID（buttplug.io YiCiYuan 条目 / 官方玩具协议）。
-const BLE_SERVICE_UUID_TOY = '0000ff40-0000-1000-8000-00805f9b34fb';
-const BLE_WRITE_UUID_TOY = '0000ff41-0000-1000-8000-00805f9b34fb';
+// 杯 / 玩具 BLE 服务 / 写特征 UUID。
+// 注:不同 YCY 型号差异很大:
+//   - buttplug.io YiCiYuan 条目记录为 0000ff40 / 0000ff41(部分老玩具);
+//   - **真机实测 YYC-DJ-V2(2026-08-25, 原生 CoreBluetooth 对拍)暴露 FF30 服务 / FF31 写 / FF32 通知**,
+//     另有 AE00 服务(AE01 写 / AE02 通知, 疑似第二通道/泵, 待进一步对拍)。
+//   此处默认以实测值 FF30/FF31 为准;真实连接以设备端动态发现(桥/transport 自动枚举)为权威。
+const BLE_SERVICE_UUID_TOY = '0000ff30-0000-1000-8000-00805f9b34fb';
+const BLE_WRITE_UUID_TOY = '0000ff31-0000-1000-8000-00805f9b34fb';
 
 // 设备广播名关键字（用于 noble 扫描过滤）。保留 YSKJ（固件前缀，集成测试依赖），
-// 并补入真实广播名 Yoko* / YCY*。
-const BLE_NAME_KEYWORDS = ['YSKJ', 'Yoko', 'YOKONEX', 'YCY'];
+// 并补入真实广播名 Yoko* / YCY* / YYC*(YYC-DJ-V2 实测)。
+const BLE_NAME_KEYWORDS = ['YSKJ', 'Yoko', 'YOKONEX', 'YCY', 'YYC', 'DJ-V2'];
 
 // 帧族（命令字 / 第二字节），与 protocol.py 的 YCYCommand 对齐。
 const FAMILY = {

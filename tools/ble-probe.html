@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>YCY 真机 BLE 探测 / 对拍工具 (v2)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+<style>
+  :root { --bg:#f7f8fa; --card:#ffffff; --line:#e3e6ea; --txt:#1f2329; --sub:#6b7280;
+          --acc:#2563eb; --ok:#16a34a; --warn:#d97706; --bad:#dc2626; --mono:#0f766e; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+         background:var(--bg); color:var(--txt); padding:18px; line-height:1.5; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .hint { color:var(--sub); font-size:13px; margin:0 0 14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:14px; margin-bottom:14px; }
+  .card h2 { font-size:14px; margin:0 0 10px; color:var(--txt); }
+  button { background:var(--acc); color:#fff; border:none; border-radius:8px;
+           padding:8px 14px; font-size:13px; cursor:pointer; margin:3px 4px 3px 0; }
+  button.sec { background:#eef2ff; color:var(--acc); }
+  button.warn { background:#fef3c7; color:var(--warn); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  select, input[type=text] { font-size:13px; padding:7px 9px; border:1px solid var(--line);
+           border-radius:8px; background:#fff; color:var(--txt); margin:3px 0; }
+  input[type=text] { width:100%; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  label { font-size:13px; color:var(--sub); display:block; margin:8px 0 2px; }
+  pre { background:#0f172a; color:#e2e8f0; border-radius:8px; padding:10px; font-size:12px;
+        overflow:auto; max-height:340px; margin:6px 0 0; white-space:pre-wrap; word-break:break-all; }
+  .svc { border:1px solid var(--line); border-radius:8px; padding:8px 10px; margin:6px 0; }
+  .svc .uuid { font-family:ui-monospace,monospace; font-size:12px; color:var(--mono); }
+  .chr { font-size:12px; color:var(--sub); margin:2px 0 0 12px; }
+  .tag { display:inline-block; font-size:11px; padding:1px 6px; border-radius:6px;
+         background:#eef2ff; color:var(--acc); margin-left:6px; }
+  .tag.w { background:#fef3c7; color:var(--warn); }
+  .tag.n { background:#dcfce7; color:var(--ok); }
+  .tag.hit { background:#fee2e2; color:var(--bad); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
+  .row > div { flex:1; min-width:200px; }
+  #status { font-size:13px; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px;
+         background:var(--sub); vertical-align:middle; }
+  .dot.on { background:var(--ok); }
+  .preset { font-size:12px; padding:6px 10px; }
+  .note { font-size:12px; color:var(--sub); background:#f1f5f9; border-radius:8px;
+          padding:8px 10px; margin:6px 0; }
+</style>
+</head>
+<body>
+  <h1>YCY 真机 BLE 探测 / 对拍工具 (v2)</h1>
+  <p class="hint">确认：① 杯/玩具真实 BLE 服务 UUID 是否 <code>0000ff40</code> / 写特征 <code>0000ff41</code>；② 泵命令字节语义。必须用 <b>Chrome / Edge</b> 打开（Web Bluetooth 仅 Chromium 支持）。本页改进：名字过滤、订阅所有通知特征、写类型自适应、一键扫描所有写特征定位命令端点。</p>
+
+  <div class="card">
+    <h2>1. 连接</h2>
+    <div class="row">
+      <div>
+        <label>设备名前缀过滤（逗号分隔，仅让匹配的设备出现在系统弹窗里）</label>
+        <input type="text" id="namePrefix" value="YSKJ,Yoko,YOKONEX,YCY,YiCiYuan,Yci,一" />
+      </div>
+      <div style="flex:0 0 auto">
+        <label>&nbsp;</label>
+        <label style="margin:0"><input type="checkbox" id="acceptAll" /> 不过滤（acceptAllDevices，用于发现未知服务 UUID）</label>
+      </div>
+    </div>
+    <div id="status" style="margin-top:8px"><span class="dot" id="dot"></span><span id="statusText">未连接</span></div>
+    <div style="margin-top:8px">
+      <button id="btnConnect">扫描并连接设备</button>
+      <button id="btnDisconnect" class="sec" disabled>断开</button>
+    </div>
+    <div id="svcList" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. 发送已知帧</h2>
+    <label>写特征（从已发现的可写特征中选择；默认优先选 0000ff41，否则第一个可写特征）</label>
+    <select id="chrSelect"></select>
+
+    <div class="note">顺序建议：先点「扫所有写特征」定位真正的命令端点；之后在这里手动选它，再发下面的帧。任何设备在收到正确握手/命令前可能无反应。</div>
+
+    <label>预设明文帧（点击填入下方十六进制输入框）</label>
+    <div>
+      <button class="preset sec" data-hex="35120047">电机停止 (35120047)</button>
+      <button class="preset sec" data-hex="35120A51">电机速度10 (35120A51)</button>
+      <button class="preset sec" data-hex="3511030000000100004A">电刺激停止 (EMS)</button>
+      <button class="preset sec" data-hex="351401">EMS 握手 (351401)</button>
+    </div>
+    <div style="margin-top:6px">
+      <button class="preset" data-pump="add">泵-充气/吸吮 add</button>
+      <button class="preset" data-pump="cut">泵-排气 cut</button>
+      <button class="preset" data-pump="guan">泵-注水 guan</button>
+      <button class="preset" data-pump="stop">泵-停止 stop</button>
+    </div>
+
+    <div class="row" style="margin-top:8px">
+      <div>
+        <label>泵强度 ss (0–65535, 十六进制, 2 字节; add/cut/guan 用)</label>
+        <input type="text" id="ss" value="0000" />
+      </div>
+      <div>
+        <label>泵协议版本</label>
+        <select id="pver">
+          <option value="v1" selected>v1 (BF0FA001 01/02 …)</option>
+          <option value="v2">v2 (BF0FA001 [rate] …)</option>
+        </select>
+      </div>
+    </div>
+
+    <label>待发送帧（十六进制，可手改）</label>
+    <input type="text" id="hex" value="35120047" />
+    <div style="margin-top:6px">
+      <button id="btnSend">发送</button>
+      <button id="btnCopy" class="sec">复制当前帧</button>
+      <button id="btnSweep" class="warn">扫所有写特征（定位命令端点）</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. 日志 / 设备通知</h2>
+    <pre id="log"></pre>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const logEl = $('log');
+function log(msg, cls) {
+  const t = new Date().toLocaleTimeString();
+  logEl.textContent += `[${t}] ${cls ? '('+cls+') ' : ''}${msg}\n`;
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function hextobytes(h) {
+  h = h.replace(/\s+/g, '');
+  if (h.length % 2) throw new Error('十六进制长度必须为偶数');
+  const u = new Uint8Array(h.length / 2);
+  for (let i = 0; i < u.length; i++) u[i] = parseInt(h.substr(i*2, 2), 16);
+  return u;
+}
+function bytestohex(u) { return Array.from(u).map(b => b.toString(16).padStart(2,'0')).join('').toUpperCase(); }
+
+// ---- 泵帧 AES-128-ECB + NoPadding（与 Node protocols/ycy.js 一致）----
+const PUMP_KEY = 'F638BC9CFA477480AB3242F6B04557A1';
+function pumpPlainHex(scene, ver, ssHex) {
+  const H = 'BF0FA0';
+  ssHex = (ssHex || '0000').padStart(4, '0');
+  if (ver === 'v2') {
+    const rate = '03';
+    switch (scene) {
+      case 'add':  return H + '01' + rate + ssHex;
+      case 'cut':  return H + '01FF' + ssHex;
+      case 'guan': return H + '02' + '01' + ssHex;
+      case 'stop': default: return H + '03';
+    }
+  }
+  switch (scene) {
+    case 'add':  return H + '01' + '01' + ssHex;
+    case 'cut':  return H + '01' + '02' + ssHex;
+    case 'guan': return H + '02' + '01' + ssHex;
+    case 'stop': default: return H + '03';
+  }
+}
+function pumpEncrypt(plainHex) {
+  const key = CryptoJS.enc.Hex.parse(PUMP_KEY);
+  const pt = CryptoJS.enc.Hex.parse(plainHex.padEnd(32, '0')); // 零填充至 16 字节
+  const enc = CryptoJS.AES.encrypt(pt, key, { mode: CryptoJS.mode.ECB, padding: CryptoJS.pad.NoPadding });
+  return enc.ciphertext.toString(CryptoJS.enc.Hex).toUpperCase();
+}
+
+// ---- 候选服务 UUID（名字过滤模式下需列在 optionalServices 才能访问）----
+const CANDIDATE_SERVICES = [
+  '0000ff40-0000-1000-8000-00805f9b34fb', // 杯/玩具
+  '98a9cd00-ca0a-4cf8-9f85-e93949467558', // EMS 电刺激
+  '0000180a-0000-1000-8000-00805f9b34fb', // Device Information
+  '0000180f-0000-1000-8000-00805f9b34fb', // Battery
+  '0000fff0-0000-1000-8000-00805f9b34fb',
+  '0000ffe0-0000-1000-8000-00805f9b34fb',
+  '0000ffe5-0000-1000-8000-00805f9b34fb',
+  '0000ffb0-0000-1000-8000-00805f9b34fb',
+  '0000ffc0-0000-1000-8000-00805f9b34fb',
+  '0000ffd0-0000-1000-8000-00805f9b34fb',
+];
+const KNOWN_WRITE = '0000ff41-0000-1000-8000-00805f9b34fb'; // 杯/玩具写特征（优先）
+
+// ---- 状态 ----
+let device = null, server = null, writeCh = null;
+let writeChars = []; // {char, svcUuid, uuid, props}
+
+function setStatus(text, on) {
+  $('statusText').textContent = text;
+  $('dot').className = 'dot' + (on ? ' on' : '');
+}
+
+$('btnConnect').onclick = async () => {
+  if (!navigator.bluetooth) { alert('此浏览器不支持 Web Bluetooth，请用 Chrome / Edge。'); return; }
+  const acceptAll = $('acceptAll').checked;
+  const prefixes = $('namePrefix').value.split(',').map(s => s.trim()).filter(Boolean);
+  const opts = { optionalServices: CANDIDATE_SERVICES };
+  if (acceptAll) {
+    opts.acceptAllDevices = true;
+  } else {
+    opts.filters = prefixes.map(p => ({ namePrefix: p }));
+  }
+  try {
+    log('requestDevice… ' + (acceptAll ? '(不过滤)' : '前缀=' + prefixes.join(',')));
+    device = await navigator.bluetooth.requestDevice(opts);
+    device.addEventListener('gattserverdisconnected', () => { setStatus('已断开', false); $('btnDisconnect').disabled = true; log('设备断开'); });
+    server = await device.gatt.connect();
+    setStatus('已连接：' + (device.name || device.id), true);
+    $('btnDisconnect').disabled = false;
+    log('已连接 ' + (device.name || device.id) + '  (id=' + device.id + ')');
+    await enumerate();
+    await readDeviceInfo();
+  } catch (e) { log('连接失败：' + e.message, 'ERR'); }
+};
+
+async function enumerate() {
+  $('svcList').innerHTML = '';
+  writeChars = [];
+  const services = await server.getPrimaryServices();
+  log('发现 ' + services.length + ' 个服务');
+  for (const svc of services) {
+    let chars;
+    try { chars = await svc.getCharacteristics(); }
+    catch (e) { log('读服务 ' + svc.uuid + ' 特征失败: ' + e.message, 'ERR'); continue; }
+    const div = document.createElement('div'); div.className = 'svc';
+    div.innerHTML = `<div class="uuid">服务: ${svc.uuid}</div>`;
+    for (const c of chars) {
+      const props = [];
+      if (c.properties.write || c.properties.writeWithoutResponse) props.push('write');
+      if (c.properties.notify || c.properties.indicate) props.push('notify');
+      if (c.properties.read) props.push('read');
+      const cd = document.createElement('div'); cd.className = 'chr';
+      cd.innerHTML = `特征: ${c.uuid} ` +
+        (props.includes('write') ? '<span class="tag w">可写</span>' : '') +
+        (props.includes('notify') ? '<span class="tag n">可通知</span>' : '') +
+        (props.includes('read') ? '<span class="tag">可读</span>' : '');
+      div.appendChild(cd);
+      // 记录所有可写特征（供发送/扫描用）
+      if (props.includes('write')) writeChars.push({ char: c, svcUuid: svc.uuid, uuid: c.uuid, props });
+      // 订阅所有带 notify/indicate 的特征（无论是否可写）——修复旧版只订阅“既可写又可通知”的 bug
+      if (props.includes('notify')) {
+        try {
+          await c.startNotifications();
+          c.addEventListener('characteristicvaluechanged', (ev) => {
+            const v = ev.target.value;
+            const u = v.buffer ? new Uint8Array(v.buffer) : new Uint8Array(v);
+            log('设备通知 ← ' + c.uuid + ': ' + bytestohex(u), 'NOTIFY');
+          });
+          log('已订阅通知 ' + c.uuid);
+        } catch (e) { log('订阅通知失败 ' + c.uuid + ': ' + e.message, 'ERR'); }
+      }
+    }
+    $('svcList').appendChild(div);
+  }
+  // 填下拉：优先 KNOWN_WRITE，否则第一个可写特征
+  const sel = $('chrSelect'); sel.innerHTML = '';
+  if (!writeChars.length) { log('未发现任何可写特征！（名字过滤模式下可能漏了真实服务——勾“不过滤”重连试试）', 'WARN'); return; }
+  let preferredIdx = writeChars.findIndex(w => w.uuid.toLowerCase() === KNOWN_WRITE);
+  writeChars.forEach((w, i) => {
+    const o = document.createElement('option');
+    o.value = i;
+    o.textContent = `${w.svcUuid} → ${w.uuid}` + (w.uuid.toLowerCase() === KNOWN_WRITE ? '  ★杯/玩具写特征' : '');
+    sel.appendChild(o);
+  });
+  if (preferredIdx < 0) preferredIdx = 0;
+  sel.value = preferredIdx;
+  writeCh = writeChars[preferredIdx].char;
+  log('默认写特征: ' + writeChars[preferredIdx].uuid + '（在下方下拉可改）');
+}
+
+async function readDeviceInfo() {
+  try {
+    const svc = await server.getPrimaryService('0000180a-0000-1000-8000-00805f9b34fb');
+    const chars = await svc.getCharacteristics();
+    for (const c of chars) {
+      if (c.properties.read) {
+        try {
+          const v = await c.readValue();
+          const u = v.buffer ? new Uint8Array(v.buffer) : new Uint8Array(v);
+          const txt = new TextDecoder().decode(u).replace(/\0/g, '').trim();
+          if (txt) log('Device Info (' + c.uuid + '): ' + txt);
+        } catch (e) {}
+      }
+    }
+  } catch (e) { /* 没有设备信息服务则忽略 */ }
+}
+
+// 自适应写：按特征属性选 writeValue / writeValueWithoutResponse（修复旧版只用 writeValue 被忽略的问题）
+async function sendBytes(ch, bytes, label) {
+  try {
+    if (ch.properties.write && !ch.properties.writeWithoutResponse) {
+      await ch.writeValue(bytes);
+      log(`发送(withResponse) → ${ch.uuid}: ${bytestohex(bytes)}`, label || 'SEND');
+    } else if (ch.properties.writeWithoutResponse && !ch.properties.write) {
+      await ch.writeValueWithoutResponse(bytes);
+      log(`发送(withoutResponse) → ${ch.uuid}: ${bytestohex(bytes)}`, label || 'SEND');
+    } else if (ch.properties.write && ch.properties.writeWithoutResponse) {
+      try { await ch.writeValue(bytes); log(`发送(withResponse) → ${ch.uuid}: ${bytestohex(bytes)}`, label || 'SEND'); }
+      catch (e) {
+        await ch.writeValueWithoutResponse(bytes);
+        log(`withResponse 失败,改 withoutResponse → ${ch.uuid}: ${bytestohex(bytes)}`, label || 'SEND');
+      }
+    } else {
+      log('该特征不可写：' + ch.uuid, 'ERR');
+    }
+  } catch (e) { log('发送失败 ' + ch.uuid + '：' + e.message, 'ERR'); }
+}
+
+$('btnDisconnect').onclick = () => { if (device && device.gatt.connected) device.gatt.disconnect(); };
+
+// 预设按钮
+document.querySelectorAll('button[data-hex]').forEach(b => b.onclick = () => { $('hex').value = b.dataset.hex; log('填入明文帧 ' + b.dataset.hex); });
+document.querySelectorAll('button[data-pump]').forEach(b => b.onclick = () => {
+  const scene = b.dataset.pump;
+  const ver = $('pver').value;
+  const plain = pumpPlainHex(scene, ver, $('ss').value);
+  const ct = pumpEncrypt(plain);
+  $('hex').value = ct;
+  log(`泵帧 ${scene}@${ver}: 明文 ${plain} → AES 密文 ${ct}`, 'PUMP');
+});
+
+$('btnCopy').onclick = () => { navigator.clipboard.writeText($('hex').value); log('已复制 ' + $('hex').value); };
+
+$('btnSend').onclick = async () => {
+  if (!writeChars.length) { alert('请先连接并等待发现可写特征'); return; }
+  const idx = parseInt($('chrSelect').value, 10);
+  const w = writeChars[idx];
+  if (!w) { alert('写特征索引无效'); return; }
+  try { await sendBytes(w.char, hextobytes($('hex').value), 'SEND'); }
+  catch (e) { log('发送异常：' + e.message, 'ERR'); }
+};
+
+// 扫所有写特征：把电机停止帧依次打到每个可写特征，观察设备反应以定位命令端点
+$('btnSweep').onclick = async () => {
+  if (!writeChars.length) { alert('未发现可写特征'); return; }
+  const frame = hextobytes('35120047');
+  log('开始扫描 ' + writeChars.length + ' 个写特征（依次发电机停止帧 35120047，每个间隔 400ms）…', 'SWEEP');
+  for (const w of writeChars) {
+    log(`→ 试写 ${w.svcUuid} / ${w.uuid}`, 'SWEEP');
+    await sendBytes(w.char, frame, 'SWEEP');
+    await new Promise(r => setTimeout(r, 400));
+  }
+  log('扫描完成。请观察设备：对哪个特征有反应，记下它的 UUID，在上方下拉选它再手动发帧。', 'SWEEP');
+};
+
+log('就绪。建议流程：连上后先点「扫所有写特征」定位命令端点 → 在下拉选它 → 发 EMS 握手(351401) → 发电机/泵帧，观察设备与通知日志。');
+</script>
+</body>
+</html>

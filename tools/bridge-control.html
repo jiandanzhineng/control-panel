@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YCY 设备配对</title>
+<style>
+  :root{
+    --bg:#f4f6f9; --card:#ffffff; --text:#1f2733; --muted:#7a869a;
+    --line:#e4e8ef; --blue:#2f6fed; --blue-d:#2257c4; --green:#1faa5a; --green-bg:#e9f7ef;
+    --grey:#9aa3b2; --red:#d6453d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--text);display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 30px rgba(30,40,60,.07);
+    width:380px;max-width:100%;padding:28px 26px;text-align:center}
+  h1{font-size:19px;margin:0 0 4px;font-weight:650}
+  .sub{color:var(--muted);font-size:13px;margin:0 0 22px}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--grey);margin-right:7px;vertical-align:middle}
+  .dot.on{background:var(--green)} .dot.off{background:var(--red)} .dot.wait{background:#e0a106}
+  .status{font-size:15px;font-weight:600;margin-bottom:18px}
+  .ok-box{background:var(--green-bg);border:1px solid #bfe9d1;border-radius:12px;padding:16px;margin-bottom:18px}
+  .ok-box .big{font-size:17px;font-weight:700;color:var(--green);margin-bottom:8px}
+  .meta{font-size:12.5px;color:#3a6b4f;text-align:left;line-height:1.7}
+  .meta b{color:#264e39;font-weight:600}
+  button{font:inherit;font-size:15px;font-weight:600;border:none;border-radius:10px;padding:13px 18px;width:100%;
+    cursor:pointer;transition:.15s;margin-top:6px}
+  .btn-primary{background:var(--blue);color:#fff} .btn-primary:hover{background:var(--blue-d)}
+  .btn-ghost{background:#f0f2f6;color:var(--text)} .btn-ghost:hover{background:#e6e9f0}
+  .err{color:var(--red);font-size:12.5px;margin-top:12px;min-height:16px}
+  .foot{margin-top:18px;font-size:11.5px;color:var(--muted);line-height:1.6}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>YCY 设备配对</h1>
+    <p class="sub">原生蓝牙直连 · 不经系统蓝牙</p>
+    <div class="status"><span id="dot" class="dot"></span><span id="statusText">正在初始化…</span></div>
+    <div id="ok" class="ok-box" style="display:none">
+      <div class="big">✅ 已成功配对连接</div>
+      <div class="meta" id="meta"></div>
+    </div>
+    <div id="actions"></div>
+    <div id="err" class="err"></div>
+    <p class="foot">设备由本地蓝牙桥自动连接。若掉线会自行重连，无需在系统蓝牙里操作。</p>
+  </div>
+<script>
+const $ = id => document.getElementById(id);
+let timer = null;
+
+function setStatus(kind, text){
+  const d = $('dot'); d.className = 'dot ' + (kind==='on'?'on':kind==='off'?'off':kind==='wait'?'wait':'');
+  $('statusText').textContent = text;
+}
+function showErr(m){ $('err').textContent = m || ''; }
+
+function render(j){
+  showErr('');
+  const devs = (j.devices||[]).filter(d => /YCY|YYC|DJ/i.test(d.name||''));
+  const dev = devs.find(d => d.ready) || devs[0];
+  if(!j.bluetoothOn){ setStatus('off','蓝牙未开启'); $('ok').style.display='none';
+    $('actions').innerHTML = '<button class="btn-ghost" onclick="rescan()">重新扫描</button>'; return; }
+  if(dev && dev.ready){
+    setStatus('on','已配对');
+    const c = dev.connection||{};
+    const svc = (dev.services||[]).map(s=>s.uuid).join(' / ');
+    $('ok').style.display = 'block';
+    $('meta').innerHTML =
+      '设备：<b>'+(dev.name||'未知')+'</b><br>'+
+      '服务：<b>'+(svc||c.service||'—')+'</b><br>'+
+      '写特征：<b>'+(c.write||'—')+'</b>　通知：<b>'+(c.notify||'—')+'</b>';
+    $('actions').innerHTML = '<button class="btn-ghost" onclick="disconnect(\''+dev.id+'\')">断开连接</button>';
+  } else if(dev){
+    setStatus('wait','发现设备，待连接');
+    $('ok').style.display = 'none';
+    $('actions').innerHTML = '<button class="btn-primary" onclick="connect(\''+dev.id+'\')">连接设备</button>';
+  } else {
+    setStatus('wait','正在搜索设备…');
+    $('ok').style.display = 'none';
+    $('actions').innerHTML = '<button class="btn-primary" onclick="rescan()">重新扫描</button>';
+  }
+}
+
+async function poll(){
+  try{
+    const r = await fetch('/api/status'); const j = await r.json(); render(j);
+  }catch(e){ setStatus('off','桥未响应'); showErr('无法连接本地桥，请确认桥程序在运行。'); }
+}
+async function connect(id){
+  showErr(''); setStatus('wait','连接中…');
+  await fetch('/api/connect?addr='+encodeURIComponent(id),{method:'POST'}); poll();
+}
+async function disconnect(id){
+  showErr(''); await fetch('/api/disconnect?addr='+encodeURIComponent(id),{method:'POST'}); poll();
+}
+async function rescan(){ showErr(''); setStatus('wait','重新扫描中…');
+  await fetch('/api/rescan',{method:'POST'}); poll(); }
+
+poll(); timer = setInterval(poll, 2000);
+</script>
+</body>
+</html>

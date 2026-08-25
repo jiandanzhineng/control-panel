@@ -915,6 +915,10 @@
     />
       </el-tab-pane>
 
+      <el-tab-pane label="品牌设备" name="brands">
+        <BrandsPanel />
+      </el-tab-pane>
+
       <el-tab-pane label="远程连接" name="remote">
         <RemoteProjectionPanel />
       </el-tab-pane>
@@ -929,6 +933,7 @@ import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Lin
 import { useRouter } from 'vue-router'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
 import RemoteProjectionPanel from '../components/RemoteProjectionPanel.vue'
+import BrandsPanel from '../components/BrandsPanel.vue'
 import { track } from '../analytics'
 import { listDevices, getDeviceTypes, getDeviceTypeConfigs } from '../api/devices'
 
