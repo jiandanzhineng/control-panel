@@ -46,10 +46,6 @@ __pycache__/
 .temp/
 *.tmp
 
-# Compiled native binaries (built from *.swift via swiftc; not portable, rebuild locally)
-tools/dglab_bridge
-tools/ycy_bridge
-tools/ycy_ble
 # launchd / runtime logs
 tools/*.launchd.*
 
