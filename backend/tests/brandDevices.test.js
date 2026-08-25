@@ -44,11 +44,28 @@ describe('郊狼 DGLab 协议', () => {
 });
 
 describe('役次元 YCY 协议', () => {
-  test('BLE 帧构造（YSKJ_*_BLE 数值范围与通道语义）', () => {
-    expect(hex(ycy.buildEmsStrength({ channel: 'A', value: 100 }))).toBe('AA010164006655');
-    expect(hex(ycy.buildEmsStop())).toBe('AA030000000355');
-    expect(hex(ycy.buildToySpeed({ motor: 'A', speed: 10 }))).toBe('AA11010A001C55');
-    expect(hex(ycy.buildToyMode({ motor: 'B', mode: 2 }))).toBe('AA120202001655');
+  test('BLE 帧构造（权威 0x35 族，对齐官方开源 + PyDGLab-WS-for-YCY）', () => {
+    // 电刺激握手（APK 提取，无校验和）
+    expect(hex(ycy.buildEmsHandshake())).toBe('351401');
+    // 电刺激停止：关闭 AB 双通道（35 11 03 00 00 00 01 00 00 + 校验和 4A）
+    expect(hex(ycy.buildEmsStop())).toBe('3511030000000100004A');
+    // 玩具电机停止 / 速度 10（35 12 + 1B + 校验和）
+    expect(hex(ycy.buildMotor({ speed: 0 }))).toBe('35120047');
+    expect(hex(ycy.buildMotor({ speed: 10 }))).toBe('35120A51');
+    // 通道控制（A 通道，强度 50→映射为设备量纲；35 11 01 01 .. .. 01 00 00 + 校验和）
+    const ch = ycy.buildEmsStrength({ channel: 'A', value: 50 });
+    expect(ch[0]).toBe(0x35);
+    expect(ch[1]).toBe(0x11);
+    expect(ch[2]).toBe(0x01); // 通道 A
+    expect(ch[3]).toBe(0x01); // 开启
+    // 强度应为 1–276 之间（value 50 → 约 139）
+    const strength = (ch[4] << 8) | ch[5];
+    expect(strength).toBeGreaterThanOrEqual(1);
+    expect(strength).toBeLessThanOrEqual(276);
+    // 末字节为校验和
+    expect(ch[ch.length - 1]).toBe(ycy.checksum ? ycy.checksum(ch.slice(0, -1)) : (Buffer.from(ch).reduce((s, b) => (s + b) & 0xff, 0) - ch[ch.length - 1] + ch[ch.length - 1]) & 0xff);
+    // pump_v3 停止（明文 35 12 00 00 00 + 校验和 47）
+    expect(hex(ycy.buildPumpV3({ scene: 'stop' }))).toBe('351200000047');
   });
 
   test('桥接消息构造与连接翻译', async () => {
@@ -68,8 +85,27 @@ describe('役次元 YCY 协议', () => {
   });
 
   test('BLE 路径 toBleFrame 与帧构造一致', () => {
-    expect(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'setStrength', channel: 'A', value: 50 })))
-      .toBe(hex(ycy.buildEmsStrength({ channel: 'A', value: 50 })));
+    expect(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'stopAll' }))).toBe(hex(ycy.buildEmsStop()));
+    expect(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'setSpeed', speed: 10 })))
+      .toBe(hex(ycy.buildMotor({ speed: 10 })));
+  });
+
+  test('pump v1/v2 加密帧：AES-128-ECB + 16 字节密文', async () => {
+    const ct = ycy.buildPumpEncrypted({ protocol: 'v1', scene: 'stop' });
+    expect(Buffer.isBuffer(ct)).toBe(true);
+    expect(ct.length).toBe(16); // 单块 AES-128 密文
+    // 相同输入应得相同密文（确定性，无 IV）
+    const ct2 = ycy.buildPumpEncrypted({ protocol: 'v1', scene: 'stop' });
+    expect(hex(ct)).toBe(hex(ct2));
+    // toBleFrame 同样产出 16 字节密文
+    const frame = ycy.toBleFrame({ brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'stop' });
+    expect(frame.length).toBe(16);
+    // 桥接模式不支持原始泵帧，提示改用 BLE 直连
+    const bridgeConn = new YCYConnection({ deviceId: 'ycy-cup', mode: 'bridge', WebSocketClass: MockWebSocket });
+    await bridgeConn.connect({ host: '127.0.0.1', port: ycy.BRIDGE_DEFAULT_PORT, connectCode: 'game_5 mytoken' });
+    expect(() => bridgeConn.send({ brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'stop' }))
+      .toThrow(/BLE 直连/);
+    bridgeConn.disconnect();
   });
 });
 

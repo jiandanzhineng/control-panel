@@ -45,11 +45,12 @@ async function run() {
   assert.deepStrictEqual(JSON.parse(MockWebSocket.last.sent[0]), { cmd: 'set_pattern', pattern_name: '经典', intensity: 80, ticks: -1 });
   dg.disconnect();
 
-  // ===== 3. 役次元 BLE 帧构造（依据 YSKJ_*_BLE 协议）=====
-  assert.strictEqual(hex(ycy.buildEmsStrength({ channel: 'A', value: 100 })), 'AA010164006655'.toUpperCase());
-  assert.strictEqual(hex(ycy.buildEmsStop()), 'AA030000000355'.toUpperCase());
-  assert.strictEqual(hex(ycy.buildToySpeed({ motor: 'A', speed: 10 })), 'AA11010A001C55');
-  assert.strictEqual(hex(ycy.buildToyMode({ motor: 'B', mode: 2 })), 'AA120202001655');
+  // ===== 3. 役次元 BLE 帧构造（权威自官方开源 + PyDGLab-WS-for-YCY：0x35 族）=====
+  assert.strictEqual(hex(ycy.buildEmsHandshake()), '351401');
+  assert.strictEqual(hex(ycy.buildEmsStop()), '3511030000000100004A');
+  assert.strictEqual(hex(ycy.buildMotor({ speed: 0 })), '35120047');
+  assert.strictEqual(hex(ycy.buildMotor({ speed: 10 })), '35120A51');
+  assert.strictEqual(hex(ycy.buildPumpV3({ scene: 'stop' })), '351200000047');
 
   // ===== 4. 役次元桥接消息构造 + 连接适配器翻译 =====
   assert.deepStrictEqual(
@@ -69,8 +70,8 @@ async function run() {
   yb.disconnect();
 
   // BLE 直连路径的帧翻译（不真正连蓝牙，直接校验 toBleFrame）
-  assert.strictEqual(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'setStrength', channel: 'A', value: 50 })),
-    hex(ycy.buildEmsStrength({ channel: 'A', value: 50 })));
+  assert.strictEqual(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'stopAll' })), hex(ycy.buildEmsStop()));
+  assert.strictEqual(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'setSpeed', speed: 10 })), hex(ycy.buildMotor({ speed: 10 })));
 
   // ===== 5. 设备类型层发出品牌命令（接入既有 bridge / devicemap）=====
   const cap = (type, capKey, action, params) => {

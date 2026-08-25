@@ -152,8 +152,9 @@ const registeredTypes = [
     close: (ctx) => ctx.sendMessage({ brand: 'dglab', cmd: 'stopPattern' }),
   }),
 
-  // ---- 遥控蓝牙设备·电击器（YSKJ_EMS_BLE）----
-  // 通道 A/B 强度 0–100（BLE 直连时映射为 0–276 协议范围），全局停止为 stopAll。
+  // ---- 遥控蓝牙设备·电击型（0x35 族电刺激帧）----
+  // 通道 A/B 经 setStrength 下发（无状态单条指令，双通道需分别下发）；全局停止为 stopAll。
+  // BLE 直连帧结构见 backend/brands/protocols/ycy.js（35 11 02 | qda/pla/tla | qdb/plb/tlb）。
   new BaseDeviceType({
     type: 'YCY_EMS',
     name: '电击型设备',
@@ -184,8 +185,8 @@ const registeredTypes = [
     close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
   }),
 
-  // ---- 遥控蓝牙设备·玩具 / 电机（YSKJ_TOY_BLE）----
-  // 电机 A/B/C 速度 0–20；此处以 0–100 输入映射到 0–20 协议范围。
+  // ---- 遥控蓝牙设备·电机型（0x35 族电机帧 35 12）----
+  // 电机速度 0–20（此处以 0–100 输入映射到 0–20）；玩具模式映射到电机速度（无独立 mode 帧）。
   new BaseDeviceType({
     type: 'YCY_TOY',
     name: '电机型设备',
@@ -208,18 +209,33 @@ const registeredTypes = [
     close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopToy' }),
   }),
 
-  // ---- 遥控蓝牙设备·杯 / 灌肠机（非电击，App 指令触发，桥接模式）----
-  // 这类设备不在本机直发强度/通道帧，而是由 YCY App 内已配置的指令驱动；
-  // 通过 API-bridge 的 triggerInstruction（commandId）触发，全部停止复用 _stop_all。
-  // 因其为「指令触发性」设备，无标准强度/通道能力；连接时由前端选择设备类型
-  // （resolveDeviceType 支持显式 type 覆盖），控制统一走通用桥接控制区块。
+  // ---- 遥控蓝牙设备·杯（pump 协议，AES-128 加密 BLE 直发）----
+  // 杯为 BLE 原生泵设备：泵帧以 BF 0F A0 起头、整体经 AES-128（密钥见 PUMP_CIPHER_KEY，
+  // 模式 AES-128-ECB + NoPadding）加密为 16 字节密文下发（协议见 backend/brands/protocols/ycy.js
+  // 的 buildPumpEncrypted）。连接需为 BLE 直连模式（mode=ble）；桥接模式仅支持 triggerInstruction。
+  // 注：泵帧命令字节为 APK 逆向所得，建议用真机抓包对拍；若设备无响应可改 protocol:'v3' 试明文帧。
   new BaseDeviceType({
     type: 'YCY_CUP',
     name: '杯型设备',
     capabilities: {},
     operations: [
       {
-        key: 'trigger', name: '触发指令',
+        key: 'pumpStart', name: '启动泵(充气/吸吮)',
+        invoke: (ctx, params) => ctx.sendMessage({
+          brand: 'ycy', cmd: 'pump',
+          protocol: params?.protocol || 'v1',
+          scene: params?.scene || 'add',
+          rate: params?.rate, ss: params?.ss,
+        }),
+      },
+      {
+        key: 'pumpStop', name: '停止泵',
+        invoke: (ctx, params) => ctx.sendMessage({
+          brand: 'ycy', cmd: 'pump', protocol: params?.protocol || 'v1', scene: 'stop',
+        }),
+      },
+      {
+        key: 'trigger', name: '触发指令(桥接兜底)',
         invoke: (ctx, params) => {
           if (!params || !params.commandId) throw new Error('缺少指令 ID (commandId)');
           return ctx.sendMessage({ brand: 'ycy', cmd: 'triggerInstruction', commandId: params.commandId });
@@ -233,13 +249,30 @@ const registeredTypes = [
     close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
   }),
 
+  // ---- 遥控蓝牙设备·灌肠机（pump 协议，AES-128 加密 BLE 直发）----
+  // 与杯型同属泵设备，默认动作改为注水（guan）；其余同 YCY_CUP。
   new BaseDeviceType({
     type: 'YCY_ENEMA',
     name: '灌肠型设备',
     capabilities: {},
     operations: [
       {
-        key: 'trigger', name: '触发指令',
+        key: 'pumpStart', name: '启动泵(注水)',
+        invoke: (ctx, params) => ctx.sendMessage({
+          brand: 'ycy', cmd: 'pump',
+          protocol: params?.protocol || 'v1',
+          scene: params?.scene || 'guan',
+          rate: params?.rate, ss: params?.ss,
+        }),
+      },
+      {
+        key: 'pumpStop', name: '停止泵',
+        invoke: (ctx, params) => ctx.sendMessage({
+          brand: 'ycy', cmd: 'pump', protocol: params?.protocol || 'v1', scene: 'stop',
+        }),
+      },
+      {
+        key: 'trigger', name: '触发指令(桥接兜底)',
         invoke: (ctx, params) => {
           if (!params || !params.commandId) throw new Error('缺少指令 ID (commandId)');
           return ctx.sendMessage({ brand: 'ycy', cmd: 'triggerInstruction', commandId: params.commandId });

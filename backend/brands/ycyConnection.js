@@ -2,7 +2,7 @@
  * 遥控蓝牙设备连接适配器。
  * 支持两种模式：
  *   - bridge：连接 YCY API-bridge（WebSocket → IM game_cmd），以指令触发控制。
- *   - ble   ：BLE 直连（YSKJ_EMS_BLE / YSKJ_TOY_BLE），原始强度/通道/波形下发。
+ *   - ble   ：BLE 直连（0x35 族真实帧：电刺激 35 11 / 电机 35 12 / pump 35 12），原始强度/通道下发。
  * 作为 deviceConnectionService 的 transport adapter：实现 send(message) / disconnect()。
  */
 const ycy = require('./protocols/ycy');
