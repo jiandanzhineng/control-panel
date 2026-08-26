@@ -270,11 +270,12 @@ export async function scanAndConnect(): Promise<BrandBleMetadata> {
     return window.brandBleApi!.connect();
   }
   if (!webSupported) throw new Error('当前环境不支持网页蓝牙直连（请用 Chrome / Edge 打开本页）');
-  // 系统蓝牙选择器用 namePrefix 过滤无关设备（按服务 UUID 过滤对郊狼无效）。
-  // 同时声明 2.0 (955A) 与 3.0 (2003/2004/fe59) 服务 UUID，避免 macOS Chromium
-  // 因仅匹配到 2.0 服务而偶发 "No Services found"（3.0 实测枚举到的真实服务）。
+  // 关键修正：之前用 namePrefix (D-LAB/DG-LAB/47L) 过滤，但郊狼广播常不带可读名字
+  // （实测得大量 name:""），导致选择器按名字一筛把郊狼全剔掉 → “搜不到”。
+  // 改用 acceptAllDevices:true，让所有广播中的 BLE 设备都进选择器，用户手动挑郊狼；
+  // optionalServices 照常声明，保证连上后能访问 2.0(955A) 与 3.0(2003/2004/fe59) 服务。
   const device = await navigator.bluetooth.requestDevice({
-    filters: DGLAB_V2_NAME_PREFIXES.map((p) => ({ namePrefix: p })),
+    acceptAllDevices: true,
     optionalServices: [
       V2_SERVICE,
       '00002003-0000-1000-8000-00805f9b34fb',
