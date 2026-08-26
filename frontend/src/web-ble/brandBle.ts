@@ -32,12 +32,25 @@ const V2_CHARS = {
   pwmA34: '955a1505-0fe2-f5aa-a094-84b8d4f3e8ad',
   pwmB34: '955a1506-0fe2-f5aa-a094-84b8d4f3e8ad',
 };
+
+// 郊狼 3.0 官方 UUID（与 backend/brands/protocols/dglabV3.js 对齐）
+const V3_SERVICE_CMD = '0000180c-0000-1000-8000-00805f9b34fb';
+const V3_SERVICE_INFO = '0000180a-0000-1000-8000-00805f9b34fb';
+const V3_CHARS = {
+  write: '0000150a-0000-1000-8000-00805f9b34fb',
+  notify: '0000150b-0000-1000-8000-00805f9b34fb',
+  battery: '00001500-0000-1000-8000-00805f9b34fb',
+};
+
+// 标准蓝牙 UUID
+const STD_BATTERY_SERVICE = '0000180f-0000-1000-8000-00805f9b34fb';
+const STD_BATTERY_LEVEL = '00002a19-0000-1000-8000-00805f9b34fb';
+
 const DGLAB_V2_NAMES = ['D-LAB', 'DG-LAB', 'COYOTE', 'YSKJ', 'ESTIM'];
 // 系统蓝牙选择器只用「设备名前缀」过滤无关设备（按服务 UUID 过滤对郊狼无效：
-// 郊狼广播不含 955a180b，按服务过滤会“搜不到”）。2.0 名称以 D-LAB/DG-LAB/COYOTE 开头，
-// 3.0 以 47L 开头；列出这些前缀即可在弹出选择器里只显示郊狼设备，实现“自动筛选”。
-// 前缀集合与前端 BrandsPanel 的 DGLAB_RE 保持一致，覆盖 2.0 与 3.0。
-const DGLAB_V2_NAME_PREFIXES = ['D-LAB', 'DG-LAB', '47L', 'COYOTE', 'YSKJ', 'ESTIM'];
+// 郊狼广播不含 955a180b，按服务过滤会“搜不到”）。2.0 名称以 D-LAB/DG-LAB 开头，
+// 3.0 以 47L 开头；列出这些前缀即可在弹出选择器里只显示郊狼设备。
+const DGLAB_V2_NAME_PREFIXES = ['D-LAB', 'DG-LAB', '47L'];
 
 declare global {
   interface Window {
@@ -84,8 +97,7 @@ class WebBluetoothV2Client {
     this.server = await this.device.gatt!.connect();
     const server = this.server;
 
-    // 枚举全部主服务，兼容 Coyote 2.0（服务 955a180b）与 3.0（可能使用不同服务号）。
-    // 不按设备名拦截——用户在列表里挑中的设备即视为目标设备。
+    // 枚举全部主服务，兼容 Coyote 2.0（服务 955a180b）与 3.0（服务 0000180c/0000180a）。
     let services: BluetoothRemoteGATTService[];
     try {
       services = await server.getPrimaryServices();
@@ -99,50 +111,49 @@ class WebBluetoothV2Client {
       throw new Error('WEBBLE_NO_SERVICES: 设备未返回任何可用服务');
     }
 
-    const service: BluetoothRemoteGATTService | undefined =
-      services.find((s) => s.uuid.toLowerCase() === V2_SERVICE.toLowerCase()) ||
-      services.find((s) => s.uuid.toLowerCase().startsWith('955a')) ||
-      services[0];
-
-    // 枚举服务下全部真实特征（不硬 get 预设 UUID；真机特征 UUID 与 dglabV2.js
-    // 预设的 955a1500/1504/1505/1506 不一定一致）。若选定服务无特征，再扫其余服务兜底。
-    let characteristics: BluetoothRemoteGATTCharacteristic[] = [];
-    try {
-      characteristics = await service.getCharacteristics();
-    } catch (e) {
-      characteristics = [];
+    // 跨所有服务收集全部特征，避免电量/写特征分散在不同服务（尤其 3.0：
+    // 指令服务 0x180c + 设备信息服务 0x180a 下的电量 0x1500）。
+    const allCharacteristics: BluetoothRemoteGATTCharacteristic[] = [];
+    for (const s of services) {
+      try {
+        const cs = await s.getCharacteristics();
+        allCharacteristics.push(...cs);
+      } catch (_) { /* 忽略无权限服务 */ }
     }
-    if (characteristics.length === 0 && services.length > 1) {
-      for (const s of services) {
-        if (s.uuid.toLowerCase() === service.uuid.toLowerCase()) continue;
-        try {
-          const cs = await s.getCharacteristics();
-          characteristics.push(...cs);
-        } catch (_) {
-          /* 忽略无特征的服务 */
-        }
-      }
-    }
-    const foundUuids = characteristics.map((c) => c.uuid.toLowerCase());
+    const foundUuids = allCharacteristics.map((c) => c.uuid.toLowerCase());
     // eslint-disable-next-line no-console
-    console.log('[brandBle] 郊狼服务', service.uuid, '下真实特征 UUID:', foundUuids);
+    console.log('[brandBle] 服务', services.map((s) => s.uuid).join(', '), '真实特征 UUID:', foundUuids);
 
     this.chars = {};
-    this.allChars = characteristics;
+    this.allChars = allCharacteristics;
+
+    // 自动区分 2.0 / 3.0：3.0 官方服务 0x180c 优先，其次按广播名 47L；其余 2.0。
+    const rawName = this.device.name || '';
+    const up = rawName.toUpperCase();
+    const hasV3Service = services.some((s) => s.uuid.toLowerCase() === V3_SERVICE_CMD.toLowerCase());
+    const hasV2Service = services.some((s) => s.uuid.toLowerCase() === V2_SERVICE.toLowerCase());
+    let type: string;
+    if (hasV3Service || /^47L/i.test(up)) type = 'DGLAB_V3';
+    else if (hasV2Service || up.startsWith('D-LAB') || up.startsWith('DG-LAB') || up.startsWith('COYOTE')) type = 'DGLAB_V2';
+    else type = 'DGLAB';
+
+    // 识别 V2 写特征（强度/波形）
     for (const key of Object.keys(V2_CHARS) as Array<keyof typeof V2_CHARS>) {
+      if (key === 'battery') continue; // 电量单独识别
       const want = V2_CHARS[key].toLowerCase();
-      const ch = characteristics.find((c) => c.uuid.toLowerCase() === want);
+      const ch = allCharacteristics.find((c) => c.uuid.toLowerCase() === want);
       if (ch) this.chars[key] = ch;
     }
 
-    // 电量特征识别（按属性优先，避免误选首字节为 0 的通知特征）：
-    // 1) 优先带 notify/indicate 的特征——DG-LAB/Coyote 电量通常经 notify 上报（2.0 的 955A1500 即如此）；
-    // 2) 否则逐个读可读特征，挑出「单字节 0-100」的；
-    // 3) 都没有则用任意可读特征兜底。
-    let battery: BluetoothRemoteGATTCharacteristic | undefined =
-      characteristics.find((c) => c.properties?.notify || c.properties?.indicate);
+    // 电量特征识别：按 UUID 精确匹配 > 可读值试探。
+    const batteryByUuid =
+      allCharacteristics.find((c) => c.uuid.toLowerCase() === V3_CHARS.battery.toLowerCase()) ||
+      allCharacteristics.find((c) => c.uuid.toLowerCase() === V2_CHARS.battery.toLowerCase()) ||
+      allCharacteristics.find((c) => c.uuid.toLowerCase() === STD_BATTERY_LEVEL.toLowerCase());
+    let battery: BluetoothRemoteGATTCharacteristic | undefined = batteryByUuid;
+
     if (!battery) {
-      for (const c of characteristics) {
+      for (const c of allCharacteristics) {
         if (c.properties?.read) {
           try {
             const v = await c.readValue();
@@ -177,12 +188,6 @@ class WebBluetoothV2Client {
       }
     }
 
-    const rawName = this.device.name || '';
-    const up = rawName.toUpperCase();
-    // 自动区分 2.0 / 3.0：47L 前缀为 3.0 全系，D-LAB/DG-LAB/COYOTE 为 2.0
-    let type = 'DGLAB';
-    if (/^47L/i.test(up)) type = 'DGLAB_V3';
-    else if (up.startsWith('D-LAB') || up.startsWith('DG-LAB') || up.startsWith('COYOTE')) type = 'DGLAB_V2';
     const name = rawName || '蓝牙体感设备';
     return {
       id: `ble:${this.device.id}`,
@@ -190,7 +195,7 @@ class WebBluetoothV2Client {
       type,
       connectionType: 'brandBle',
       browserDeviceId: this.device.id,
-      data: { service: service.uuid, characteristics: foundUuids },
+      data: { services: services.map((s) => s.uuid), characteristics: foundUuids },
     };
   }
 
@@ -277,16 +282,16 @@ export async function scanAndConnect(): Promise<BrandBleMetadata> {
     return window.brandBleApi!.connect();
   }
   if (!webSupported) throw new Error('当前环境不支持网页蓝牙直连（请用 Chrome / Edge 打开本页）');
-  // 自动筛选：只用名字前缀匹配郊狼 2.0/3.0（D-LAB/DG-LAB/COYOTE 为 2.0，47L 为 3.0 全系，
-  // YSKJ/ESTIM 为兼容前缀）。这样系统蓝牙选择器里只会出现郊狼，正是“自动筛选真实郊狼设备”的诉求。
-  // 注：macOS 的 Web Bluetooth（CoreBluetooth）对「只有 localName、peripheral.name 为空」的设备，
-  // namePrefix 过滤会失效（平台限制，非代码问题）；此类 macOS 用户应改用「桌面客户端」模式
-  // （本机桥 btleplug 能读到真实广播名 D-LAB ESTIM01 / 47L121000 并自动筛选）。
-  // 对 Windows / Linux / Android 的 Chrome/Edge，namePrefix 过滤正常工作。
+  // 系统蓝牙选择器用 namePrefix 过滤无关设备（按服务 UUID 过滤对郊狼无效）。
+  // 必须把所有可能用到的服务 UUID 都声明为 optionalServices，否则 Web Bluetooth
+  // 不会返回该服务下的特征（尤其 3.0 电量在 0x180a、指令在 0x180c）。
   const device = await navigator.bluetooth.requestDevice({
     filters: DGLAB_V2_NAME_PREFIXES.map((p) => ({ namePrefix: p })),
     optionalServices: [
       V2_SERVICE,
+      V3_SERVICE_CMD,
+      V3_SERVICE_INFO,
+      STD_BATTERY_SERVICE,
       '00002003-0000-1000-8000-00805f9b34fb',
       '00002004-0000-1000-8000-00805f9b34fb',
       '0000fe59-0000-1000-8000-00805f9b34fb',

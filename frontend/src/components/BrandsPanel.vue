@@ -463,18 +463,14 @@ const isWin = computed(() => /Win/i.test(navigator.userAgent || navigator.platfo
 // 桌面客户端（原生桥）选项可见条件：运行在 Electron 壳内，且平台为 macOS / Windows
 // （这两个平台的原生桥由主进程监管；Linux 未监管故不显示）。浏览器（Vite dev / 远程打开）不算 Electron，
 // 只给网页蓝牙，避免凭空出现“桌面客户端未连接”的误导提示。
-// 验证用放宽：Mac 浏览器(非 Electron)也显示“桌面客户端”选项，便于不装客户端时手动起桥点测。
-// 生产建议改回 isElectron.value && (isMac.value || isWin.value)。
-const nativeVisible = computed(() => isMac.value || isElectron.value)
+const nativeVisible = computed(() => isElectron.value && (isMac.value || isWin.value))
 // 连接模式（用户用切换按钮选）：本机桥接(native, mac/win) / 网页蓝牙(webble) / 手机连接(phone)
 // 桌面客户端默认（mac/win 的 Electron 内）；网页蓝牙为功能最全通道（直连 GATT，可下发原始强度/通道/帧/泵控制）。
 const dglabMode = ref<'native' | 'webble' | 'phone'>(nativeVisible.value ? 'native' : 'webble')
 const dglabModeDesc = computed(() => {
   switch (dglabMode.value) {
     case 'native': return '用本机桌面客户端经电脑蓝牙直连郊狼：开页自动连上、自动显示电量，可同时连多台。'
-    case 'webble': return isMac.value
-      ? '用浏览器（Chrome / Edge）经电脑蓝牙直连郊狼：但 macOS 系统蓝牙栈对郊狼常“搜不到”（平台限制）；若连不上，请切到上方「桌面客户端」——本机桥能自动筛选郊狼 2.0 / 3.0。'
-      : '用浏览器（Chrome / Edge）经电脑蓝牙直连郊狼：点“连接设备”后在系统蓝牙里挑设备（自动只列郊狼）；页面须通过 localhost 或 https 打开。Windows / Linux / Android 可正常筛选。'
+    case 'webble': return '用浏览器（Chrome / Edge）经电脑蓝牙直连郊狼：点“连接设备”后在系统蓝牙里挑设备；页面须通过 localhost 或 https 打开。'
     case 'phone': return '把手机上配套软件的“娱乐模式”地址填进来，远程连接手机那边的郊狼设备。'
   }
 })
@@ -554,9 +550,7 @@ const ycyMode = ref<'native' | 'webble' | 'bridge'>(nativeVisible.value ? 'nativ
 const ycyModeDesc = computed(() => {
   switch (ycyMode.value) {
     case 'native': return '用本机桌面客户端经电脑蓝牙直连役次元：开页自动连上、自动显示电量与设备类型，可同时连多台。'
-    case 'webble': return isMac.value
-      ? '用浏览器（Chrome / Edge）经电脑蓝牙直连役次元：macOS 下若搜不到，请切到「桌面客户端」（本机桥自动筛选）。'
-      : '用浏览器（Chrome / Edge）经电脑蓝牙直连役次元：点“连接设备”后在系统蓝牙里挑设备；Windows / Linux / Android 均可。'
+    case 'webble': return '用浏览器（Chrome / Edge）经电脑蓝牙直连役次元：点“连接设备”后在系统蓝牙里挑设备；Windows / Linux / Android 均可。'
     case 'bridge': return '通过设备自带的桥接服务远程连接：填连接码、选设备类型、填服务地址与端口。'
   }
 })
