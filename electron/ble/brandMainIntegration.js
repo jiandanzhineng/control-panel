@@ -1,7 +1,7 @@
 /**
  * 主进程侧 DG-LAB V2（Web Bluetooth 直连）IPC 集成。
  * 结构与既有 BleMainIntegration（BLUFI）对齐，但通道前缀改为 brandBle:*，
- * 且 select-bluetooth-device 仅接纳 DG-LAB V2 广播名关键字。
+ * 且 select-bluetooth-device 接纳郊狼 V2 与役次元（FJB/YCY 等）广播名。
  *
  * 设备注册复用既有 deviceService.connectTransportDevice，与 BLUFI 共用同一
  * deviceService 实例（Electron 主进程与后端同进程、同 require 缓存）。
@@ -27,9 +27,11 @@ function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandServ
     return deviceOwners.get(deviceId) === sender.id;
   }
 
-  function isV2Name(name) {
+  const YCY_NAMES = ['YCY', 'YYC', 'YOKO', 'YOKONEX', 'YISK', 'DJ-V2', 'FJB', 'ENEMA', 'GLJ', 'DJ'];
+  function isBrandName(name) {
     const n = String(name || '').toUpperCase();
-    return DGLAB_V2_NAMES.some((k) => n.includes(k.toUpperCase()));
+    return DGLAB_V2_NAMES.some((k) => n.includes(k.toUpperCase()))
+      || YCY_NAMES.some((k) => n.includes(k.toUpperCase()));
   }
 
   function finishDisconnectRequest(requestId, result) {
@@ -184,10 +186,10 @@ function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandServ
 
       for (const device of devices || []) {
         const name = String(device.deviceName || '');
-        if (!isV2Name(name)) continue;
+        if (!isBrandName(name)) continue;
         selection.candidates.set(device.deviceId, {
           id: device.deviceId,
-          name: name || 'DG-LAB V2',
+          name: name || '品牌设备',
         });
       }
       contents.send('brandBle:scan-results', [...selection.candidates.values()]);

@@ -58,13 +58,14 @@ describe('Electron brandBle (DG-LAB V2) main integration', () => {
         { deviceId: 'a', deviceName: 'AirPods' },          // 拒
         { deviceId: 'b', deviceName: 'D-LAB ESTIM01' },    // 纳
         { deviceId: 'c', deviceName: 'YSKJ-2024' },        // 纳
+        { deviceId: 'd', deviceName: 'YCY-FJB-03' },       // 纳
       ],
       select,
     );
 
     expect(selectionEvent.preventDefault).toHaveBeenCalled();
     const sent = webContents.send.mock.calls.find(([c]) => c === 'brandBle:scan-results')[1];
-    expect(sent.map((x) => x.id).sort()).toEqual(['b', 'c']);
+    expect(sent.map((x) => x.id).sort()).toEqual(['b', 'c', 'd']);
   });
 
   it('连通后注册进 deviceService，且命令经 IPC 回渲染进程写 GATT', async () => {

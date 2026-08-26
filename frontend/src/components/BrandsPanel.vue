@@ -112,6 +112,16 @@
               <div class="discover-row">
                 <el-tag :type="dglabWebbleHint.type" size="small" effect="light">{{ dglabWebbleHint.text }}</el-tag>
                 <el-button type="primary" size="small" :loading="scanningWebble" :disabled="!webbleSupported" @click="dglabWebbleConnect">连接设备</el-button>
+                <el-button v-if="scanningWebble" size="small" @click="dglabWebbleCancelScan">取消</el-button>
+              </div>
+              <div v-if="dglabWebbleCandidates.length" class="candidate-list">
+                <div v-for="c in dglabWebbleCandidates" :key="c.id" class="candidate-item">
+                  <div class="candidate-info">
+                    <span class="candidate-name">{{ brandLabel('dglab', c.name) }}</span>
+                    <span class="candidate-meta">{{ c.name }}</span>
+                  </div>
+                  <el-button size="small" type="primary" @click="dglabWebblePick(c)">选择</el-button>
+                </div>
               </div>
             <p class="op-hint">浏览器通过电脑蓝牙直接连接郊狼：点“连接设备”后在系统蓝牙选择器里挑选即可，连上自动显示电量，可同时连多台。需使用 Chrome / Edge 等支持网页蓝牙的浏览器，且页面须通过 https 或本机 localhost 打开。</p>
             <el-alert
@@ -323,6 +333,16 @@
               <div class="discover-row">
                 <el-tag :type="ycyWebbleHint.type" size="small" effect="light">{{ ycyWebbleHint.text }}</el-tag>
                 <el-button type="primary" size="small" :loading="scanningYcyWebble" :disabled="!webbleSupported" @click="ycyWebbleConnect">连接设备</el-button>
+                <el-button v-if="scanningYcyWebble" size="small" @click="ycyWebbleCancelScan">取消</el-button>
+              </div>
+              <div v-if="ycyWebbleCandidates.length" class="candidate-list">
+                <div v-for="c in ycyWebbleCandidates" :key="c.id" class="candidate-item">
+                  <div class="candidate-info">
+                    <span class="candidate-name">{{ brandLabel('ycy', c.name) }}</span>
+                    <span class="candidate-meta">{{ c.name }}</span>
+                  </div>
+                  <el-button size="small" type="primary" @click="ycyWebblePick(c)">选择</el-button>
+                </div>
               </div>
               <p class="op-hint">浏览器通过电脑蓝牙直接连接役次元：点“连接设备”后在系统蓝牙选择器里挑选即可，连上自动显示电量与设备类型，可同时连多台。需使用 Chrome / Edge 等支持网页蓝牙的浏览器，且页面须通过 https 或本机 localhost 打开。Windows / Linux / Android 均可使用。</p>
               <el-alert
@@ -687,9 +707,19 @@ const dglabWebbleHint = computed(() => {
   const n = dglabWebbleDevices.value.length
   return { type: (n ? 'success' : 'info') as const, text: n ? `已连接 ${n} 台` : '待连接' }
 })
+const dglabWebbleCandidates = ref<Array<{ id: string; name: string }>>([])
+let dglabScanUnsub: (() => void) | null = null
+function dglabWebbleCancelScan() {
+  brandBle.cancelSelection().catch(() => {})
+}
+async function dglabWebblePick(c: { id: string; name: string }) {
+  try { await brandBle.selectDevice(c.id) } catch (e: any) { ElMessage.error(e?.message || '选择失败') }
+}
 async function dglabWebbleConnect() {
   if (!webbleSupported.value) { ElMessage.warning('当前浏览器不支持网页蓝牙直连'); return }
   scanningWebble.value = true
+  dglabWebbleCandidates.value = []
+  dglabScanUnsub = brandBle.onScanResults((list) => { dglabWebbleCandidates.value = list })
   try {
     const meta = await brandBle.scanAndConnect()
     const id = meta.id
@@ -706,6 +736,8 @@ async function dglabWebbleConnect() {
     const msg = String(e?.message || '')
     if (!/cancel|Cancelled|User cancelled|NavigatorUserAgent/i.test(msg)) ElMessage.error(msg || '连接失败')
   } finally {
+    dglabScanUnsub?.(); dglabScanUnsub = null
+    dglabWebbleCandidates.value = []
     scanningWebble.value = false
   }
 }
@@ -1137,7 +1169,15 @@ function stopYcyNativeTimer() {
 // 同一套设备名识别 / 类型标签 / 电量展示逻辑，与 macOS 原生桥一致；仅连接通道不同。
 interface YcyWebbleDevice { id: string; name: string; battery?: number | null; ready: boolean }
 const ycyWebbleDevices = ref<YcyWebbleDevice[]>([])
+const ycyWebbleCandidates = ref<Array<{ id: string; name: string }>>([])
+let ycyScanUnsub: (() => void) | null = null
 const scanningYcyWebble = ref(false)
+function ycyWebbleCancelScan() {
+  brandBle.cancelSelection().catch(() => {})
+}
+async function ycyWebblePick(c: { id: string; name: string }) {
+  try { await brandBle.selectDevice(c.id) } catch (e: any) { ElMessage.error(e?.message || '选择失败') }
+}
 const ycyWebbleUnlisten = new Map<string, () => void>()
 const ycyWebbleHint = computed(() => {
   if (!webbleSupported.value) return { type: 'warning' as const, text: '浏览器不支持' }
@@ -1147,6 +1187,8 @@ const ycyWebbleHint = computed(() => {
 async function ycyWebbleConnect() {
   if (!webbleSupported.value) { ElMessage.warning('当前浏览器不支持网页蓝牙直连'); return }
   scanningYcyWebble.value = true
+  ycyWebbleCandidates.value = []
+  ycyScanUnsub = brandBle.onScanResults((list) => { ycyWebbleCandidates.value = list })
   try {
     const meta = await ycyBle.scanAndConnect()
     const id = meta.id
@@ -1163,6 +1205,8 @@ async function ycyWebbleConnect() {
     const msg = String(e?.message || '')
     if (!/cancel|Cancelled|User cancelled|NavigatorUserAgent/i.test(msg)) ElMessage.error(msg || '连接失败')
   } finally {
+    ycyScanUnsub?.(); ycyScanUnsub = null
+    ycyWebbleCandidates.value = []
     scanningYcyWebble.value = false
   }
 }
