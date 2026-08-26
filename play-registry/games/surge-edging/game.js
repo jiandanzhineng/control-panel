@@ -2,7 +2,7 @@
 // 参考 pressure-edging-v2 五态状态机，但取消绝对临界压：
 //  - 边缘期由「双窗口比较」突变检测触发：本窗口[-τ,0]最大值 − 前一窗口[-2τ,-τ]平均值 ≥ surgeRiseKpa（默认1kPa）
 //  - 中间压力自适应：初始 50kPa，每次进入边缘期更新为「本次触发峰值 − midOffsetKpa」
-//  - 强度下发：限速 sendIntervalMs(默认500ms) + 值变化才发；后端会话级 latest-wins 合并覆盖未下发旧命令；显示逻辑不变
+//  - 强度下发：平静期/中期每 sendIntervalMs（默认2000ms）发一次最新设计值；边缘期触发立即发停止命令（归零不受限速）；显示逻辑不变
 (function () {
   'use strict';
   const SENSOR = 'sensor', MOTOR = 'motor', PUNISH = 'punish', LOCK = 'lock';
@@ -16,7 +16,7 @@
   const cfg = {
     duration: 20, endCalmLock: 60, surgeWindowMs: 500, surgeRiseKpa: 1.0, midOffsetKpa: 1.0,
     maxMotorIntensity: 50, lowPressureDelay: 5, rampRate: 2, gradualIncrease: 2,
-    randomPercent: 0, minSurgeMs: 100, sendIntervalMs: 500,
+    randomPercent: 0, minSurgeMs: 100, sendIntervalMs: 2000,
     midIntensityMin: 5, midIntensityMax: 20, shockVoltage: 20, shockDuration: 3,
   };
 
@@ -394,14 +394,13 @@
     const cur = rt.currentIntensity, tgt = rt.targetIntensity;
     let next = tgt < cur ? tgt : Math.min(cur + Math.max(0, cfg.rampRate) * dtSec, tgt);
     const rounded = Math.round(next);
-    // 限速 + latest-wins：每 sendIntervalMs（默认500ms）发一次当前最新值（值未变则跳过，
-    // 平台期零命令让设备队列排空）；后端会话级 500ms 合并窗口会覆盖窗口内未下发的旧命令。
-    // 归零（EDGING/急停）时不受限速、立即发送，保证安全。
-    const interval = Math.max(100, Number(cfg.sendIntervalMs) || 500);
+    // 限速合并（latest-wins）：平静期/中期每 sendIntervalMs（默认2000ms，0.5条/s）发一次
+    // 当前最新设计值，速率远低于 MQTT 设备消费速率（≈1.8-2条/s），链路队列恒空、滞后不增长；
+    // 边缘期触发时 target 归零 → emergencyZero 立即发送停止命令，保证安全。
+    const interval = Math.max(200, Number(cfg.sendIntervalMs) || 2000);
     const due = (now - (rt.lastSendTs || 0)) >= interval;
-    const changed = rounded !== rt.lastSentStrength;
     const emergencyZero = rounded === 0 && rt.lastSentStrength > 0;
-    if (!Number.isNaN(rounded) && ((due && changed) || emergencyZero)) {
+    if (!Number.isNaN(rounded) && (due || emergencyZero)) {
       setStrength(rounded);
       rt.lastSentStrength = rounded;
       rt.lastSendTs = now;
