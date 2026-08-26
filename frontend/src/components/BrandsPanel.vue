@@ -236,7 +236,7 @@
           <template #header>
             <div class="card-header">
               <span>发现与连接</span>
-              <el-radio-group v-if="isMac" v-model="ycyMode" size="small" class="mode-switch">
+              <el-radio-group v-model="ycyMode" size="small" class="mode-switch">
                 <el-radio-button value="local">本机直连</el-radio-button>
                 <el-radio-button value="bridge">远程桥接</el-radio-button>
               </el-radio-group>
@@ -382,7 +382,7 @@
               </el-select>
             </div>
             <div class="discover-row">
-              <el-input v-model="ycyBridgeHost" placeholder="桥接地址，本机直连留空即可" class="addr-input" />
+              <el-input v-model="ycyBridgeHost" placeholder="桥接地址（设备桥接服务 IP，留空默认 127.0.0.1）" class="addr-input" />
               <el-input v-model="ycyBridgePort" placeholder="端口" class="port-input" />
               <el-button type="primary" :loading="busy" @click="connectYcyBridge">连接</el-button>
             </div>
@@ -930,7 +930,7 @@ async function connectYcyBridge() {
       mode: 'bridge',
       type: ycyBridgeType.value,
       connectCode: ycyBridgeCode.value,
-      host: ycyBridgeHost.value,
+      host: ycyBridgeHost.value || '127.0.0.1',
       port: ycyBridgePort.value,
     })
     ElMessage.success('役次元（远程桥接）已连接')

@@ -709,6 +709,12 @@ function startBackendThenWindow() {
   }
 }
 
+// 启用 Web Bluetooth：使打包后的 Electron 内 navigator.bluetooth 可用。
+// 非 Mac 品牌设备（役次元/郊狼）的"网页蓝牙直连"依赖此开关；
+// macOS 仍走原生桥(ycy_bridge/dglab_bridge)，不触发 Web BLE，故不受影响。
+// 必须在 app ready 之前设置。
+app.commandLine.appendSwitch('enable-features', 'WebBluetooth');
+
 app.whenReady().then(() => {
   bleMainIntegration = createBleMainIntegration({
     ipcMain,
