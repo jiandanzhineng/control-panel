@@ -32,7 +32,7 @@
             <div class="card-header">
               <span>发现与连接</span>
               <el-radio-group v-model="dglabMode" size="small" class="mode-switch">
-                <el-radio-button value="native">本机桥接</el-radio-button>
+                <el-radio-button v-if="isMac" value="native">本机桥接</el-radio-button>
                 <el-radio-button value="webble">网页蓝牙</el-radio-button>
                 <el-radio-button value="phone">手机连接</el-radio-button>
               </el-radio-group>
@@ -48,6 +48,7 @@
               <el-tag :type="dglabNativeSummary.type" size="small" effect="light">{{ dglabNativeSummary.text }}</el-tag>
               <el-button type="primary" size="small" :loading="busy" :disabled="dglabNativeDevices.length === 0" @click="dglabNativeConnectAll">全部连接</el-button>
               <el-button size="small" :loading="busy" @click="dglabNativeRescan">重新扫描</el-button>
+              <el-button v-if="!dglabBridgeUp && webbleSupported" type="success" size="small" @click="dglabMode = 'webble'">改用网页蓝牙连接</el-button>
             </div>
             <p class="op-hint">本机已通过电脑蓝牙直接连接，开页即自动连上并自动显示电量；已连上的设备掉线会自动重连，可同时连多台。</p>
             <el-alert
@@ -209,7 +210,7 @@
             <div class="card-header">
               <span>发现与连接</span>
               <el-radio-group v-model="ycyMode" size="small" class="mode-switch">
-                <el-radio-button value="native">本机桥接</el-radio-button>
+                <el-radio-button v-if="isMac" value="native">本机桥接</el-radio-button>
                 <el-radio-button value="webble">网页蓝牙</el-radio-button>
                 <el-radio-button value="bridge">远程桥接</el-radio-button>
               </el-radio-group>
@@ -225,6 +226,7 @@
               <el-tag :type="ycyNativeSummary.type" size="small" effect="light">{{ ycyNativeSummary.text }}</el-tag>
               <el-button type="primary" size="small" :loading="busy" :disabled="ycyNativeDevices.length === 0" @click="ycyNativeConnectAll">全部连接</el-button>
               <el-button size="small" :loading="busy" @click="ycyNativeRescan">重新扫描</el-button>
+              <el-button v-if="!ycyBridgeUp && webbleSupported" type="success" size="small" @click="ycyMode = 'webble'">改用网页蓝牙连接</el-button>
             </div>
             <p class="op-hint">本机已通过电脑蓝牙直接连接，可同时连多台，掉线会自动重连。下方每台可单独连接或断开。</p>
             <el-alert
@@ -722,7 +724,10 @@ const dglabNativeSummary = computed(() => {
   return { type: (connected === total ? 'success' : 'warning') as const, text: `已连接 ${connected}/${total}` }
 })
 const dglabNativeBtHint = computed(() => {
-  if (!dglabBridgeUp.value) return '本机桥（原生桥进程）未运行：请通过客户端打开本程序，或在本页切到“网页蓝牙”模式。'
+  if (!dglabBridgeUp.value) {
+    if (!webbleSupported.value) return '本机桥（原生桥进程）未运行，且当前浏览器不支持网页蓝牙。请用 Chrome / Edge 打开本页面，或通过客户端启动本机桥。'
+    return '本机桥（原生桥进程）未运行：可点上方“改用网页蓝牙连接”，或用客户端打开本程序。'
+  }
   return dglabNativeBtOn.value ? '正在搜索附近的郊狼设备…' : '蓝牙未开启，请确认本机蓝牙已打开。'
 })
 function dglabNativeMarkPending(id: string) {
@@ -882,7 +887,10 @@ const ycyNativeSummary = computed(() => {
   return { type: (connected === total ? 'success' : 'warning') as const, text: `已连接 ${connected}/${total}` }
 })
 const ycyNativeBtHint = computed(() => {
-  if (!ycyBridgeUp.value) return '本机桥（原生桥进程）未运行：请通过客户端打开本程序，或在本页切到“网页蓝牙”模式。'
+  if (!ycyBridgeUp.value) {
+    if (!webbleSupported.value) return '本机桥（原生桥进程）未运行，且当前浏览器不支持网页蓝牙。请用 Chrome / Edge 打开本页面，或通过客户端启动本机桥。'
+    return '本机桥（原生桥进程）未运行：可点上方“改用网页蓝牙连接”，或用客户端打开本程序。'
+  }
   return ycyNativeBtOn.value ? '正在搜索附近的役次元设备…' : '蓝牙未开启，请确认本机蓝牙已打开。'
 })
 function ycyNativeMarkPending(id: string) {
