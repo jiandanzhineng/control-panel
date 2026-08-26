@@ -27,6 +27,7 @@
     currentPressure: 0, averagePressure: 0, pressureHistory: [],
     // 突变检测（双窗口：本窗口[-τ,0]最大值 − 前一窗口[-2τ,-τ]平均值）
     windowSamples: [], rawOn: false, rawSince: 0, surgeActive: false,
+    surgeReleased: false, delayMin: null, lastDelayMin: 0,
     edgePeak: 0, lastEdgePeak: 0, midPressure: 50,
     unRandomIntensity: 0, targetIntensity: 0, currentIntensity: 0,
     midLimits: { dmin: 5, dmax: 20 },
@@ -250,7 +251,7 @@
       if (s.ts > t0) w1Max = Math.max(w1Max, s.p);
       else { w2Sum += s.p; w2Count += 1; }
     }
-    if (w2Count === 0 || w1Max === -Infinity) { rt.rawOn = false; rt.surgeActive = false; return; }
+    if (w2Count === 0 || w1Max === -Infinity) { rt.rawOn = false; rt.surgeActive = false; rt.surgeReleased = false; return; }
     const w2Avg = w2Sum / w2Count;
     const rise = Math.max(0.1, Number(cfg.surgeRiseKpa) || 1.0);
     const on = (w1Max - w2Avg) >= rise;
@@ -263,6 +264,8 @@
       rt.rawOn = false;
       rt.surgeActive = false; // 无滞回：条件消失即释放
     }
+    // 边缘期结束判据：气压回落到前一个窗口平均值 + 0.2kPa 之下
+    rt.surgeReleased = (p < w2Avg + 0.2);
   }
 
   function triggerShock(force) {
@@ -298,7 +301,10 @@
   }
   function enterEdging() {
     rt.lastEdgePeak = Number(((rt.edgePeak > 0 ? rt.edgePeak : rt.currentPressure)).toFixed(1));
-    rt.midPressure = Math.max(1, Number((rt.lastEdgePeak - (Number(cfg.midOffsetKpa) || 1.0)).toFixed(1)));
+    // 中间值 = max(峰值 − 偏移, 上个延迟期最小值 + 1)；后者优先级更高
+    const peakMid = rt.lastEdgePeak - (Number(cfg.midOffsetKpa) || 1.0);
+    const delayFloor = (Number(rt.lastDelayMin) || 0) + 1;
+    rt.midPressure = Number(Math.max(1, Math.max(peakMid, delayFloor)).toFixed(1));
     rt.edgePeak = 0; // 峰值已记录，重置等待下一轮突变
     rt.state = S.EDGING;
     rt.edgingCount += 1;
@@ -358,7 +364,9 @@
       }
       case S.EDGING: {
         rt.targetIntensity = 0;
-        if (!rt.surgeActive) {
+        // 气压回落到前一个窗口平均值+0.2 之下才结束边缘期，进入延迟期
+        if (rt.surgeReleased) {
+          rt.delayMin = null; // 进入延迟期，重置最小值跟踪
           rt.state = S.DELAY; rt.stateTimer = now;
           view.statusText = '冷却延迟(' + cfg.lowPressureDelay + 's)…';
           playVoice('edging_delay', 'state', function () { return rt.running && rt.state === S.DELAY; });
@@ -367,8 +375,11 @@
       }
       case S.DELAY: {
         rt.targetIntensity = 0;
+        // 记录本次延迟期内的最小压力（用作下一次中间值的下限基准）
+        rt.delayMin = (rt.delayMin == null) ? p : Math.min(rt.delayMin, p);
         // 延迟期内不监测突变：冷却结束后按压力与中间压决定回中期或平静
         if (now - rt.stateTimer > (Number(cfg.lowPressureDelay) || 0) * 1000) {
+          rt.lastDelayMin = (rt.delayMin == null) ? p : rt.delayMin;
           if (p > rt.midPressure) {
             rt.unRandomIntensity = rt.currentIntensity; rt.state = S.MIDDLE;
             view.statusText = '冷却结束，高压保持';
@@ -443,16 +454,17 @@
       ctx.stroke();
       return;
     }
+    // 纵轴只按压力数据缩放（忽略中间值），最小范围 2kPa
     let lo = Infinity, hi = -Infinity;
     for (const it of hist) {
       lo = Math.min(lo, it.pressure);
       hi = Math.max(hi, it.pressure);
     }
-    lo = Math.min(lo, rt.midPressure);
-    hi = Math.max(hi, rt.midPressure);
-    const span = Math.max(0.5, hi - lo);
+    let span = Math.max(2, hi - lo);
     const margin = Math.max(0.5, span * 0.1);
-    lo -= margin; hi += margin;
+    const center = (hi + lo) / 2;
+    lo = center - span / 2 - margin;
+    hi = center + span / 2 + margin;
     const t0 = hist[0].ts, t1 = hist[hist.length - 1].ts;
     const xOf = (it) => pad + ((it.ts - t0) / Math.max(1, t1 - t0)) * gw;
     const yOf = (pr) => pad + gh * (1 - clamp((pr - lo) / Math.max(1e-6, hi - lo), 0, 1));
@@ -462,16 +474,19 @@
     ctx.moveTo(pad, pad + gh); ctx.lineTo(pad + gw, pad + gh);
     ctx.moveTo(pad, pad); ctx.lineTo(pad, pad + gh);
     ctx.stroke();
-    ctx.strokeStyle = '#f97316';
-    ctx.setLineDash([5, 4]);
-    ctx.beginPath();
-    const yMid = yOf(rt.midPressure);
-    ctx.moveTo(pad, yMid); ctx.lineTo(pad + gw, yMid);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = '#f97316';
-    ctx.font = '10px sans-serif';
-    ctx.fillText('中间 ' + Number(rt.midPressure).toFixed(1), pad + 4, Math.max(10, yMid - 4));
+    // 中间压线仅在可视纵轴范围内绘制（初始 50 远超工作区间时不显示）
+    if (rt.midPressure >= lo && rt.midPressure <= hi) {
+      ctx.strokeStyle = '#f97316';
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      const yMid = yOf(rt.midPressure);
+      ctx.moveTo(pad, yMid); ctx.lineTo(pad + gw, yMid);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#f97316';
+      ctx.font = '10px sans-serif';
+      ctx.fillText('中间 ' + Number(rt.midPressure).toFixed(1), pad + 4, Math.max(10, yMid - 4));
+    }
     ctx.strokeStyle = '#3b82f6';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -519,6 +534,7 @@
     rt.unRandomIntensity = 0; rt.targetIntensity = 0; rt.currentIntensity = 0;
     rt.midLimits = updateMidLimits();
     rt.windowSamples = []; rt.rawOn = false; rt.rawSince = 0; rt.surgeActive = false;
+    rt.surgeReleased = false; rt.delayMin = null; rt.lastDelayMin = 0;
     rt.edgePeak = 0; rt.lastEdgePeak = 0; rt.midPressure = 50;
     rt.lastSentStrength = 0; rt.lastSendTs = 0;
     rt.pressureHistory = [];
