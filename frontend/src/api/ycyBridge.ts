@@ -1,7 +1,8 @@
 // YCY 原生蓝牙桥 REST 客户端。
-// 桥由 tools/ycy_bridge.swift 提供，监听 127.0.0.1:3001，已开启 CORS
-// (Access-Control-Allow-Origin: *)；故前端在 dev / Electron 下均可直接访问，无需后端中转。
+// 桥由跨平台 Rust 二进制 tools/ycy_bridge(.exe) 提供（取代原 macOS Swift 桥），监听 127.0.0.1:3001，
+// 已开启 CORS (Access-Control-Allow-Origin: *)；故前端在 dev / Electron 下均可直接访问，无需后端中转。
 // 桥协议为 HTTP REST（非 WebSocket），与 backend/brands/ycyConnection.js 的 WebSocket 桥接不同。
+// Windows 走 WinRT / macOS 走 CoreBluetooth / Linux 走 BlueZ，由 btleplug 自动选择，前端无感知。
 
 const BRIDGE_BASE = 'http://127.0.0.1:3001'
 

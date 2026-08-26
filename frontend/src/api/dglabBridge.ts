@@ -1,8 +1,8 @@
 // 郊狼（DG-LAB Coyote）原生蓝牙桥 REST 客户端。
-// 桥由 tools/dglab_bridge.swift 提供，监听 127.0.0.1:3002，已开启 CORS
-// (Access-Control-Allow-Origin: *)；前端在 dev / Electron 下均可直接访问，无需后端中转。
-// 与 ycyBridge.ts 同思路：用 CoreBluetooth 真正连接设备，绕过 macOS Web Bluetooth
-// 对自定义 GATT 的 "No Services found" 限制（Coyote 3.0 在 Chrome 下连上后枚举不到服务）。
+// 桥由跨平台 Rust 二进制 tools/dglab_bridge(.exe) 提供（取代原 macOS Swift 桥），监听 127.0.0.1:3002，
+// 已开启 CORS (Access-Control-Allow-Origin: *)；前端在 dev / Electron 下均可直接访问，无需后端中转。
+// 与 ycyBridge.ts 同思路：由 btleplug 真正连接设备（Windows=WinRT / macOS=CoreBluetooth / Linux=BlueZ），
+// 绕过各平台网页蓝牙对自定义 GATT 的 "No Services found" 限制（Coyote 3.0 在 Chrome 下连上后枚举不到服务）。
 // 桥自动发现真实 SERVICE/CHAR UUID 并读取电量，浏览器通过 localhost 取数据。
 
 const BRIDGE_BASE = 'http://127.0.0.1:3002'

@@ -1,0 +1,27 @@
+[package]
+name = "brand-bridge"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "brand_bridge"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ycy_bridge"
+path = "src/bin/ycy_bridge.rs"
+
+[[bin]]
+name = "dglab_bridge"
+path = "src/bin/dglab_bridge.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.7", features = ["json"] }
+btleplug = "0.11"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures = "0.3"
+anyhow = "1"
+uuid = "1"
+tower-http = { version = "0.5", features = ["cors"] }

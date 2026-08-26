@@ -32,17 +32,18 @@
             <div class="card-header">
               <span>发现与连接</span>
               <el-radio-group v-model="dglabMode" size="small" class="mode-switch">
-                <el-radio-button value="local">本机直连</el-radio-button>
+                <el-radio-button value="native">本机桥接</el-radio-button>
+                <el-radio-button value="webble">网页蓝牙</el-radio-button>
                 <el-radio-button value="phone">手机连接</el-radio-button>
               </el-radio-group>
               <el-button size="small" type="primary" :icon="Plus" @click="openAdd('dglab')">添加设备</el-button>
             </div>
           </template>
 
-          <!-- 本机直连（多设备）：mac 走原生桥，其他平台走浏览器直连，自动选择 -->
-          <template v-if="dglabMode === 'local'">
-            <!-- 原生桥（macOS） -->
-            <template v-if="dglabLocalMode === 'native'">
+          <!-- 本机通道：mac 可选本机桥接/网页蓝牙，其他平台走网页蓝牙；另有手机连接(远程 WebSocket) -->
+          <template v-if="dglabMode === 'native' || dglabMode === 'webble'">
+            <!-- 原生桥（macOS，Swift 桥，由 Electron 主进程监管（崩溃自启）） -->
+            <template v-if="dglabMode === 'native'">
             <div class="discover-row">
               <el-tag :type="dglabNativeSummary.type" size="small" effect="light">{{ dglabNativeSummary.text }}</el-tag>
               <el-button type="primary" size="small" :loading="busy" :disabled="dglabNativeDevices.length === 0" @click="dglabNativeConnectAll">全部连接</el-button>
@@ -54,7 +55,7 @@
               class="hint"
               type="info"
               :closable="false"
-              :title="dglabNativeBtOn ? '正在搜索附近的郊狼设备…' : '蓝牙未开启，请确认本机蓝牙已打开。'"
+              :title="dglabNativeBtHint"
             />
             <div v-else class="ycy-native-list">
               <el-card
@@ -107,7 +108,7 @@
             </template>
 
             <!-- 浏览器直连（网页蓝牙 Web Bluetooth，非 macOS 自动选用） -->
-            <template v-else>
+            <template v-else-if="dglabMode === 'webble'">
               <div class="discover-row">
                 <el-tag :type="dglabWebbleHint.type" size="small" effect="light">{{ dglabWebbleHint.text }}</el-tag>
                 <el-button type="primary" size="small" :loading="scanningWebble" :disabled="!webbleSupported" @click="dglabWebbleConnect">连接设备</el-button>
@@ -154,7 +155,7 @@
           </template>
 
           <!-- 手机连接（娱乐模式） -->
-          <template v-else-if="dglabMode === 'phone'">
+          <template v-else>
             <div class="discover-row">
               <el-input v-model="dglabHost" placeholder="手机上显示的地址" class="addr-input" />
               <el-input v-model="dglabPort" placeholder="端口" class="port-input" />
@@ -229,7 +230,7 @@
       <section class="brand-col">
         <div class="brand-col__head">
           <h3 class="brand-col__name">役次元</h3>
-          <p class="brand-col__desc">遥控蓝牙设备：通过本机蓝牙（mac 走原生桥 / Windows / Linux / Android 走网页蓝牙）直连，可同时连接多台，连上即可查看电量与状态。</p>
+          <p class="brand-col__desc">遥控蓝牙设备：可用本机桥接（mac）或网页蓝牙（mac / Windows / Linux / Android）直连，也可远程桥接，可同时连接多台，连上即可查看电量与状态。</p>
         </div>
 
         <el-card shadow="never" class="section-card">
@@ -237,17 +238,18 @@
             <div class="card-header">
               <span>发现与连接</span>
               <el-radio-group v-model="ycyMode" size="small" class="mode-switch">
-                <el-radio-button value="local">本机直连</el-radio-button>
+                <el-radio-button value="native">本机桥接</el-radio-button>
+                <el-radio-button value="webble">网页蓝牙</el-radio-button>
                 <el-radio-button value="bridge">远程桥接</el-radio-button>
               </el-radio-group>
               <el-button size="small" type="primary" :icon="Plus" @click="openAdd('ycy')">添加设备</el-button>
             </div>
           </template>
 
-          <!-- 本机直连（多设备）：mac 走原生桥；非 macOS 走网页蓝牙直连 -->
-          <template v-if="ycyMode === 'local'">
-            <!-- 原生桥（仅 macOS） -->
-            <template v-if="ycyLocalMode === 'native'">
+          <!-- 本机通道：mac 可选本机桥接/网页蓝牙，其他平台走网页蓝牙；另有远程桥接(WebSocket) -->
+          <template v-if="ycyMode === 'native' || ycyMode === 'webble'">
+            <!-- 原生桥（仅 macOS，Swift 桥，由 Electron 主进程监管（崩溃自启）） -->
+            <template v-if="ycyMode === 'native'">
             <div class="discover-row">
               <el-tag :type="ycyNativeSummary.type" size="small" effect="light">{{ ycyNativeSummary.text }}</el-tag>
               <el-button type="primary" size="small" :loading="busy" :disabled="ycyNativeDevices.length === 0" @click="ycyNativeConnectAll">全部连接</el-button>
@@ -259,7 +261,7 @@
               class="hint"
               type="info"
               :closable="false"
-              :title="ycyNativeBtOn ? '正在搜索附近的役次元设备…' : '蓝牙未开启，请确认本机蓝牙已打开。'"
+              :title="ycyNativeBtHint"
             />
             <div v-else class="ycy-native-list">
               <el-card
@@ -317,7 +319,7 @@
             </template>
 
             <!-- 浏览器直连（网页蓝牙 Web Bluetooth，非 macOS 自动选用） -->
-            <template v-else>
+            <template v-else-if="ycyMode === 'webble'">
               <div class="discover-row">
                 <el-tag :type="ycyWebbleHint.type" size="small" effect="light">{{ ycyWebbleHint.text }}</el-tag>
                 <el-button type="primary" size="small" :loading="scanningYcyWebble" :disabled="!webbleSupported" @click="ycyWebbleConnect">连接设备</el-button>
@@ -611,10 +613,9 @@ const refreshing = ref(false)
 
 // 郊狼 发现
 const isMac = computed(() => /Mac/i.test(navigator.userAgent || navigator.platform || ''))
-// 本机直连方式自动选择：mac 走原生桥，其他平台走浏览器直连
-const dglabLocalMode = computed<'native' | 'webble'>(() => isMac.value ? 'native' : 'webble')
-// 连接模式（用户用切换按钮选）：本机直连 / 手机连接
-const dglabMode = ref<'local' | 'phone'>('local')
+// 连接模式（用户用切换按钮选）：本机桥接(native, mac) / 网页蓝牙(webble) / 手机连接(phone)
+// mac 默认本机桥接（Swift 桥，由 Electron 主进程监管（崩溃自启）稳定）；网页蓝牙为功能最全通道（直连 GATT，可下发原始强度/通道/帧/泵控制）。
+const dglabMode = ref<'native' | 'webble' | 'phone'>(isMac.value ? 'native' : 'webble')
 const dglabHost = ref('')
 const dglabPort = ref('60536')
 const scanningDglab = ref(false)
@@ -626,6 +627,9 @@ const dglabNativeDevices = ref<DglabBridgeDevice[]>([])
 const dglabAllDevices = ref<DglabBridgeDevice[]>([])
 const dglabShowAll = ref(false)
 const dglabNativeBtOn = ref(true)
+// 本机桥进程是否在运行（fetch 127.0.0.1:3002 能否到达）。
+// 与 bluetoothOn 区分：桥未连接 ≠ 蓝牙未开启，避免误报“蓝牙关闭”。
+const dglabBridgeUp = ref(true)
 const dglabNativePending = ref<string[]>([])
 const dglabNativeEver = ref<string[]>([])
 const dglabNativeManual = ref<string[]>([])
@@ -682,11 +686,9 @@ async function dglabWebbleDisconnect(d: DglabWebbleDevice) {
   }
 }
 
-// 役次元 本机直连方式自动选择：mac 走原生桥（Swift 桥，仅 macOS 可用），其他平台走浏览器直连（网页蓝牙，Windows / Linux / Android 可用）。
-// macOS 下 YCY 自定义 GATT 与郊狼类似有枚举不确定性，故 macOS 不暴露网页蓝牙模式（改走原生桥）。
-const ycyLocalMode = computed<'native' | 'webble'>(() => isMac.value ? 'native' : 'webble')
-// 连接模式（仅 mac 上可见切换）：本机直连 / 远程桥接；非 mac 固定走“本机直连”（实际为网页蓝牙直连）
-const ycyMode = ref<'local' | 'bridge'>('local')
+// 役次元 连接模式（用户用切换按钮选）：本机桥接(native, mac) / 网页蓝牙(webble) / 远程桥接(bridge)
+// mac 默认本机桥接（Swift 桥，由 Electron 主进程监管（崩溃自启）稳定）；网页蓝牙为功能最全通道（直连 GATT，可下发原始强度/通道/帧/泵控制）。
+const ycyMode = ref<'native' | 'webble' | 'bridge'>(isMac.value ? 'native' : 'webble')
 
 // 添加设备 对话框
 const addDialog = ref(false)
@@ -809,10 +811,16 @@ async function connectDglab(c: DiscoverCandidate) {
 
 // ===== 郊狼 本机直连（原生桥 dglab_bridge :3002，仅 macOS 回退用） =====
 const dglabNativeSummary = computed(() => {
+  // 桥未连接：是进程没跑（浏览器开发 / 客户端未拉起），不是蓝牙关了
+  if (!dglabBridgeUp.value) return { type: 'warning' as const, text: '本机桥未连接（请用客户端打开，或切到“网页蓝牙”）' }
   const total = dglabNativeDevices.value.length
   const connected = dglabNativeDevices.value.filter((d) => d.ready).length
-  if (total === 0) return { type: 'info' as const, text: dglabNativeBtOn.value ? '搜索中' : '蓝牙关闭' }
+  if (total === 0) return { type: 'info' as const, text: dglabNativeBtOn.value ? '搜索中' : '蓝牙未开启' }
   return { type: (connected === total ? 'success' : 'warning') as const, text: `已连接 ${connected}/${total}` }
+})
+const dglabNativeBtHint = computed(() => {
+  if (!dglabBridgeUp.value) return '本机桥（原生桥进程）未运行：请通过客户端打开本程序，或在本页切到“网页蓝牙”模式。'
+  return dglabNativeBtOn.value ? '正在搜索附近的郊狼设备…' : '蓝牙未开启，请确认本机蓝牙已打开。'
 })
 function dglabNativeMarkPending(id: string) {
   if (!dglabNativePending.value.includes(id)) dglabNativePending.value.push(id)
@@ -840,12 +848,18 @@ async function dglabNativeAuto() {
 async function dglabNativeRefresh() {
   try {
     const st = await dglabBridge.getStatus()
-    dglabNativeBtOn.value = st.bluetoothOn
     const all = (st.devices || []).slice().sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999))
+    // 桥的 bluetoothOn 标志在 macOS 上不可靠（btleplug StateUpdate 不触发）；
+    // 以“是否真扫到设备”为真相：只要有设备，蓝牙必然已开启，不误报“蓝牙未开启”。
+    // 与役次元(YCY)的判断逻辑保持一致。
+    dglabBridgeUp.value = true
+    dglabNativeBtOn.value = st.bluetoothOn || all.length > 0
     dglabAllDevices.value = all
     dglabNativeDevices.value = all.filter((d) => DGLAB_RE.test(d.name || ''))
     await dglabNativeAuto()
   } catch (_) {
+    // 桥进程未运行（浏览器开发环境 / 客户端未拉起）≠ 蓝牙未开启，不据此误报。
+    dglabBridgeUp.value = false
     if (dglabNativeDevices.value.length === 0) dglabNativeBtOn.value = false
   }
 }
@@ -948,6 +962,8 @@ const ycyNativeDevices = ref<YcyBridgeDevice[]>([])
 const ycyAllDevices = ref<YcyBridgeDevice[]>([])
 const ycyShowAll = ref(false)
 const ycyNativeBtOn = ref(true)
+// 本机桥进程是否在运行（fetch 127.0.0.1:3001 能否到达）。
+const ycyBridgeUp = ref(true)
 const ycyNativePending = ref<string[]>([])
 const ycyNativeEver = ref<string[]>([])
 const ycyNativeManual = ref<string[]>([])
@@ -956,10 +972,15 @@ const ycyNativeTimer = ref<number | null>(null)
 const YCY_RE = /YCY|YYC|YSKJ|YOKO|YOKONEX|YISK|DJ-V2|YICIYUAN|DJ|FJB|灌肠|ENEMA|GLJ/i
 
 const ycyNativeSummary = computed(() => {
+  if (!ycyBridgeUp.value) return { type: 'warning' as const, text: '本机桥未连接（请用客户端打开，或切到“网页蓝牙”）' }
   const total = ycyNativeDevices.value.length
   const connected = ycyNativeDevices.value.filter((d) => d.ready).length
-  if (total === 0) return { type: 'info' as const, text: ycyNativeBtOn.value ? '搜索中' : '蓝牙关闭' }
+  if (total === 0) return { type: 'info' as const, text: ycyNativeBtOn.value ? '搜索中' : '蓝牙未开启' }
   return { type: (connected === total ? 'success' : 'warning') as const, text: `已连接 ${connected}/${total}` }
+})
+const ycyNativeBtHint = computed(() => {
+  if (!ycyBridgeUp.value) return '本机桥（原生桥进程）未运行：请通过客户端打开本程序，或在本页切到“网页蓝牙”模式。'
+  return ycyNativeBtOn.value ? '正在搜索附近的役次元设备…' : '蓝牙未开启，请确认本机蓝牙已打开。'
 })
 function ycyNativeMarkPending(id: string) {
   if (!ycyNativePending.value.includes(id)) ycyNativePending.value.push(id)
@@ -988,11 +1009,13 @@ async function ycyNativeRefresh() {
     const all = (st.devices || []).slice().sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999))
     // 桥的 bluetoothOn 标志不可靠（曾出现“签名变导致 bluetoothOn=false”但仍能扫到设备）；
     // 以“是否真扫到设备”为真相：只要有设备，蓝牙必然已开启，不误报“蓝牙未开启”。
+    ycyBridgeUp.value = true
     ycyNativeBtOn.value = st.bluetoothOn || all.length > 0
     ycyAllDevices.value = all
     ycyNativeDevices.value = all.filter((d) => YCY_RE.test(d.name || ''))
     await ycyNativeAuto()
   } catch (_) {
+    ycyBridgeUp.value = false
     if (ycyNativeDevices.value.length === 0) ycyNativeBtOn.value = false
   }
 }
@@ -1177,13 +1200,34 @@ async function disconnectDevice(dev: BrandDevice) {
   } catch (e: any) { ElMessage.error(e?.message || '断开失败') }
 }
 
+async function probeBridgeAndPickDefault() {
+  // 浏览器开发环境（如 localhost:5173）没有 Electron 监管本机桥进程，原生桥 fetch 会失败。
+  // 向“原设备端设备列表（网页蓝牙）”学习：探测到桥不可达且网页蓝牙可用时，一次性回退到网页蓝牙，
+  // 避免一直误报“蓝牙关闭”。桥可达（如正式客户端）时保持本机桥接。
+  const probe = async (port: number): Promise<boolean> => {
+    try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 800)
+      const res = await fetch(`http://127.0.0.1:${port}/api/status`, { signal: ctrl.signal })
+      clearTimeout(timer)
+      return res.ok
+    } catch {
+      return false
+    }
+  }
+  const [yUp, dUp] = await Promise.all([probe(3001), probe(3002)])
+  ycyBridgeUp.value = yUp
+  dglabBridgeUp.value = dUp
+  if (ycyMode.value === 'native' && !yUp && webbleSupported.value) ycyMode.value = 'webble'
+  if (dglabMode.value === 'native' && !dUp && webbleSupported.value) dglabMode.value = 'webble'
+}
+
 onMounted(() => {
   refreshConnected()
   if (autoRefreshEnabled.value) startAutoRefresh()
-  // 役次元 原生桥（Swift 桥）仅 macOS 可用；非 macOS 走网页蓝牙直连，不启动原生桥轮询
   if (isMac.value) startYcyNativeTimer()
-  // 郊狼 原生桥仅 macOS 上有意义；非 macOS 不启动其轮询
   if (isMac.value) startDglabNativeTimer()
+  probeBridgeAndPickDefault()
 })
 onUnmounted(() => { stopAutoRefresh(); stopYcyNativeTimer(); stopDglabNativeTimer() })
 </script>

@@ -4,6 +4,7 @@ const { autoUpdater } = require('electron-updater');
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const fs = require('fs');
+const { spawn } = require('child_process');
 const { fileURLToPath, pathToFileURL } = require('url');
 const { BRIDGE_INTERNAL_HEADER } = require('../backend/constants/bridgeAccess.js');
 const externalGameAccessService = require('../backend/services/externalGameAccessService.js');
@@ -163,6 +164,56 @@ function getResourcePath(relativePath) {
 
 function getAppRoot() {
   return app.isPackaged ? app.getAppPath() : path.join(__dirname, '..');
+}
+
+// 监管原生桥进程：Electron 在 app 启动时拉起 ycy_bridge / dglab_bridge，崩溃后 1s 自动重启。
+// 这样"本机桥接"通道对所有用户、所有平台开箱即稳定——由主进程统一监管，
+// 不再依赖开发机专属的 launchd plist（launchd 是 macOS 专属，无法覆盖 Windows / Linux）。
+// 二进制由跨平台 Rust 桥(bridge/)构建：macOS 为 tools/ycy_bridge，Windows 为 tools/ycy_bridge.exe。
+// 路径解析复用 getResourcePath：开发环境走项目 tools/，打包后走 resources/tools/。
+function superviseBridge(name, binaryRelBase) {
+  if (process.platform !== 'darwin' && process.platform !== 'win32') return;
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  const binaryRelPath = binaryRelBase + ext;
+  const binPath = getResourcePath(binaryRelPath);
+  if (!fs.existsSync(binPath)) {
+    console.warn(`[bridge] ${name} 二进制缺失，跳过监管: ${binPath}`);
+    return;
+  }
+  try { fs.chmodSync(binPath, 0o755); } catch (_) { /* 已可执行则忽略 */ }
+  const cwd = getResourcePath('tools');
+  let child = null;
+  let stopping = false;
+  const launch = () => {
+    if (stopping) return;
+    try {
+      child = spawn(binPath, [], { cwd, stdio: 'ignore', detached: false });
+    } catch (err) {
+      console.error(`[bridge] 启动 ${name} 失败:`, err);
+      return;
+    }
+    child.on('exit', (code, signal) => {
+      console.warn(`[bridge] ${name} 退出 (code=${code}, signal=${signal})，1s 后重启`);
+      child = null;
+      if (!stopping) setTimeout(launch, 1000);
+    });
+    child.on('error', (err) => {
+      console.error(`[bridge] ${name} 错误:`, err);
+      child = null;
+      if (!stopping) setTimeout(launch, 1000);
+    });
+  };
+  launch();
+  // app 退出时一并结束桥进程
+  app.on('before-quit', () => {
+    stopping = true;
+    if (child) { try { child.kill(); } catch (_) {} }
+  });
+}
+
+function superviseBridges() {
+  superviseBridge('ycy_bridge', 'tools/ycy_bridge');
+  superviseBridge('dglab_bridge', 'tools/dglab_bridge');
 }
 
 function getBackendModule(modulePath) {
@@ -716,6 +767,7 @@ function startBackendThenWindow() {
 app.commandLine.appendSwitch('enable-features', 'WebBluetooth');
 
 app.whenReady().then(() => {
+  superviseBridges();
   bleMainIntegration = createBleMainIntegration({
     ipcMain,
     getDeviceService,

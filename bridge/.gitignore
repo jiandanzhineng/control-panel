@@ -1,0 +1,2 @@
+# Rust build artifacts (per-crate ignore, standard convention)
+/target
