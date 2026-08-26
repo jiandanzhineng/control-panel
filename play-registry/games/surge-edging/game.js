@@ -1,7 +1,8 @@
 // 气压突变寸止 — 页面自驱动（DeviceAPI）
 // 参考 pressure-edging-v2 五态状态机，但取消绝对临界压：
-//  - 边缘期由「滑动窗口平均值（EMA）」突变检测触发：默认 0.5s 内压力相对近期均值抬升 ≥1kPa
+//  - 边缘期由「双窗口比较」突变检测触发：本窗口[-τ,0]最大值 − 前一窗口[-2τ,-τ]平均值 ≥ surgeRiseKpa（默认1kPa）
 //  - 中间压力自适应：初始 50kPa，每次进入边缘期更新为「本次触发峰值 − midOffsetKpa」
+//  - 强度下发采用常驻刷新（值变即发 + 每 1s 重发当前设计值），对抗命令丢失；显示逻辑不变
 (function () {
   'use strict';
   const SENSOR = 'sensor', MOTOR = 'motor', PUNISH = 'punish', LOCK = 'lock';
@@ -13,9 +14,9 @@
 
   // 配置（来自 manifest 默认值，启动时被 DeviceAPI.params 覆盖）
   const cfg = {
-    duration: 20, endCalmLock: 60, surgeWindowMs: 500, surgeRiseKpa: 1.0, midOffsetKpa: 0.5,
-    maxMotorIntensity: 255, lowPressureDelay: 5, rampRate: 2, gradualIncrease: 2,
-    randomPercent: 0, minSurgeMs: 200, releaseRatio: 0.4, shockVoltage: 20, shockDuration: 3,
+    duration: 20, endCalmLock: 60, surgeWindowMs: 500, surgeRiseKpa: 1.0, midOffsetKpa: 1.0,
+    maxMotorIntensity: 50, lowPressureDelay: 5, rampRate: 2, gradualIncrease: 2,
+    randomPercent: 0, minSurgeMs: 100, shockVoltage: 20, shockDuration: 3,
   };
 
   // 运行态
@@ -23,10 +24,11 @@
     running: false, paused: false, startTime: 0, endTime: 0,
     state: S.INITIAL_CALM, stateTimer: 0, recordedMidIntensity: 0, endCalmLocked: false,
     currentPressure: 0, averagePressure: 0, pressureHistory: [],
-    // 突变检测（EMA 滑动平均）
-    ema: 0, lastSampleTs: 0, rawOn: false, rawSince: 0, surgeActive: false,
+    // 突变检测（双窗口：本窗口[-τ,0]最大值 − 前一窗口[-2τ,-τ]平均值）
+    windowSamples: [], rawOn: false, rawSince: 0, surgeActive: false,
     edgePeak: 0, lastEdgePeak: 0, midPressure: 50,
     unRandomIntensity: 0, targetIntensity: 0, currentIntensity: 0, midIntensity: 0,
+    lastSentStrength: 0, lastSendTs: 0,
     lastUpdateTs: 0, lastIntensityUpdateTs: 0,
     isShocking: false, shockCount: 0, shockTimer: null,
     edgingCount: 0, totalStimulationTime: 0,
@@ -51,7 +53,7 @@
       if (typeof v === 'number') v = (Math.abs(v) >= 100 || Number.isInteger(v)) ? Math.round(v) : v.toFixed(1);
       el.textContent = (v === undefined || v === null) ? '' : String(v);
     });
-    const m = Number(cfg.maxMotorIntensity) || 255;
+    const m = Number(cfg.maxMotorIntensity) || 50;
     const pRef = Math.max(1, Number(rt.midPressure) || 1);
     const pBar = document.getElementById('pBar');
     const iBar = document.getElementById('iBar');
@@ -229,30 +231,35 @@
   function stopShockDev() { if (DeviceAPI.device(PUNISH).isMapped()) DeviceAPI.device(PUNISH).invoke('shock', 'stop', {}); }
   function setLockOpen(open) { if (DeviceAPI.device(LOCK).isMapped()) DeviceAPI.device(LOCK).invoke('lock', 'setOpen', { open: !!open }); }
 
-  // ---- 突发检测：滑动窗口平均值（EMA），不用绝对临界压 ----
-  // surgeActive 的判定：
-  //  1) 一阶 EMA(τ=surgeWindowMs) 作为「近期平均压力」基准；
-  //  2) 当 当前压力 − EMA ≥ surgeRiseKpa 且连续保持 ≥ minSurgeMs → surgeActive=true（上升沿）；
-  //  3) 回落：当前 − EMA < surgeRiseKpa × releaseRatio（滞回）→ surgeActive=false。
+  // ---- 突变检测：双窗口比较，不用绝对临界压 ----
+  //  W1 = [-τ, 0]（本窗口）取最大值，W2 = [-2τ, -τ]（前一窗口）取平均值；
+  //  surgeActive = W1max − W2avg ≥ surgeRiseKpa，且连续保持 ≥ minSurgeMs 后触发（上升沿）；
+  //  无滞回（不需要 releaseRatio）：条件消失即释放；进入 DELAY 后不再判定突变。
   function updateSurge(now, p) {
     const winMs = Math.max(50, Number(cfg.surgeWindowMs) || 500);
+    rt.windowSamples.push({ ts: now, p: p });
+    const cutoff = now - 2 * winMs;
+    while (rt.windowSamples.length && rt.windowSamples[0].ts < cutoff) rt.windowSamples.shift();
+    if (rt.state === S.DELAY) return; // 延迟期内不监测突变
+    const t0 = now - winMs;
+    let w1Max = -Infinity;
+    let w2Sum = 0, w2Count = 0;
+    for (const s of rt.windowSamples) {
+      if (s.ts > t0) w1Max = Math.max(w1Max, s.p);
+      else { w2Sum += s.p; w2Count += 1; }
+    }
+    if (w2Count === 0 || w1Max === -Infinity) { rt.rawOn = false; rt.surgeActive = false; return; }
+    const w2Avg = w2Sum / w2Count;
     const rise = Math.max(0.1, Number(cfg.surgeRiseKpa) || 1.0);
-    const tauSec = winMs / 1000;
-    if (!rt.lastSampleTs) rt.lastSampleTs = now;
-    const dtSec = Math.max(0.001, (now - rt.lastSampleTs) / 1000);
-    rt.lastSampleTs = now;
-    if (!rt.ema || dtSec > tauSec * 20) rt.ema = p; // 初始或长时间断流后直接跟进
-    rt.ema += (dtSec / tauSec) * (p - rt.ema);
-
-    const on = (p - rt.ema) >= rise;
+    const on = (w1Max - w2Avg) >= rise;
     if (on) {
-      if (!rt.rawOn) { rt.rawSince = now; rt.edgePeak = p; } // 新一轮快速抬升开始，重置峰值
+      if (!rt.rawOn) { rt.rawSince = now; rt.edgePeak = w1Max; } // 新一轮突变开始，重置峰值
       rt.rawOn = true;
-      rt.edgePeak = Math.max(rt.edgePeak, p);
-      if (!rt.surgeActive && (now - rt.rawSince) >= (Number(cfg.minSurgeMs) || 200)) rt.surgeActive = true;
+      rt.edgePeak = Math.max(rt.edgePeak, w1Max);
+      if (!rt.surgeActive && (now - rt.rawSince) >= (Number(cfg.minSurgeMs) || 100)) rt.surgeActive = true;
     } else {
       rt.rawOn = false;
-      if (rt.surgeActive && (p - rt.ema) < rise * (Number(cfg.releaseRatio) || 0.4)) rt.surgeActive = false;
+      rt.surgeActive = false; // 无滞回：条件消失即释放
     }
   }
 
@@ -284,7 +291,7 @@
   }
   function enterEdging() {
     rt.lastEdgePeak = Number(((rt.edgePeak > 0 ? rt.edgePeak : rt.currentPressure)).toFixed(1));
-    rt.midPressure = Math.max(1, Number((rt.lastEdgePeak - (Number(cfg.midOffsetKpa) || 0.5)).toFixed(1)));
+    rt.midPressure = Math.max(1, Number((rt.lastEdgePeak - (Number(cfg.midOffsetKpa) || 1.0)).toFixed(1)));
     rt.edgePeak = 0; // 峰值已记录，重置等待下一轮突变
     rt.state = S.EDGING;
     rt.edgingCount += 1;
@@ -297,6 +304,7 @@
     triggerShock(false);
   }
   function calculateStateLogic() {
+    if (!rt.running || rt.paused) return;
     const now = Date.now();
     const dtSec = Math.max(0, (now - rt.lastUpdateTs) / 1000);
     rt.lastUpdateTs = now;
@@ -348,9 +356,8 @@
       }
       case S.DELAY: {
         rt.targetIntensity = 0;
-        if (rt.surgeActive && rt.edgePeak) {
-          rt.unRandomIntensity = rt.currentIntensity; enterEdging();
-        } else if (now - rt.stateTimer > (Number(cfg.lowPressureDelay) || 0) * 1000) {
+        // 延迟期内不监测突变：冷却结束后按压力与中间压决定回中期或平静
+        if (now - rt.stateTimer > (Number(cfg.lowPressureDelay) || 0) * 1000) {
           if (p > rt.midPressure) {
             rt.unRandomIntensity = rt.currentIntensity; rt.state = S.MIDDLE;
             view.statusText = '冷却结束，高压保持';
@@ -368,6 +375,7 @@
   }
 
   function updateIntensity() {
+    if (!rt.running || rt.paused) return;
     const now = Date.now();
     if (!rt.lastIntensityUpdateTs) rt.lastIntensityUpdateTs = now;
     const dtSec = Math.max(0, (now - rt.lastIntensityUpdateTs) / 1000);
@@ -375,15 +383,23 @@
     const cur = rt.currentIntensity, tgt = rt.targetIntensity;
     let next = tgt < cur ? tgt : Math.min(cur + Math.max(0, cfg.rampRate) * dtSec, tgt);
     const rounded = Math.round(next);
-    if (rounded !== Math.round(cur)) {
-      if (!Number.isNaN(rounded)) { setStrength(rounded); rt.currentIntensity = rounded; if (rounded > 0) rt.totalStimulationTime += dtSec; }
-    } else rt.currentIntensity = next;
+    // 常驻刷新：取整值变化立即下发；未变化时每 1s 强制重发当前设计值（对抗命令丢失）
+    const refreshDue = (now - (rt.lastSendTs || 0)) >= 1000;
+    if (!Number.isNaN(rounded) && (rounded !== rt.lastSentStrength || refreshDue)) {
+      setStrength(rounded);
+      rt.lastSentStrength = rounded;
+      rt.lastSendTs = now;
+      rt.currentIntensity = rounded;
+      if (rounded > 0) rt.totalStimulationTime += dtSec;
+    } else {
+      rt.currentIntensity = next;
+    }
     view.currentIntensity = rt.currentIntensity;
     view.targetIntensity = rt.targetIntensity;
     view.totalStimulationTime = Number(rt.totalStimulationTime.toFixed(1));
   }
 
-  // 时间序列图：压力曲线 + 中间压水平线 + 突变(红)与边缘触发(绿)
+  // 时间序列图：横轴最近 1 分钟，纵轴按该区间压力 min/max 自动缩放（留余量）
   function drawChart() {
     const cv = document.getElementById('chart');
     if (!cv) return;
@@ -397,16 +413,34 @@
     const ctx = cv.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
-    const hist = rt.pressureHistory.slice(-250);
-    if (!hist.length) return;
+    const now = Date.now();
+    const winMs = 60000;
+    const hist = rt.pressureHistory.filter((it) => now - it.ts <= winMs);
     const pad = 20;
     const gw = cssW - pad * 2;
     const gh = cssH - pad * 2;
-    let yMax = 2;
-    for (const it of hist) yMax = Math.max(yMax, it.pressure);
-    yMax = Math.max(yMax, rt.midPressure + 1) * 1.1;
-    const xOf = (i) => pad + (i / Math.max(1, hist.length - 1)) * gw;
-    const yOf = (pr) => pad + gh * (1 - clamp(pr / yMax, 0, 1));
+    if (hist.length < 2) {
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pad, pad + gh); ctx.lineTo(pad + gw, pad + gh);
+      ctx.moveTo(pad, pad); ctx.lineTo(pad, pad + gh);
+      ctx.stroke();
+      return;
+    }
+    let lo = Infinity, hi = -Infinity;
+    for (const it of hist) {
+      lo = Math.min(lo, it.pressure);
+      hi = Math.max(hi, it.pressure);
+    }
+    lo = Math.min(lo, rt.midPressure);
+    hi = Math.max(hi, rt.midPressure);
+    const span = Math.max(0.5, hi - lo);
+    const margin = Math.max(0.5, span * 0.1);
+    lo -= margin; hi += margin;
+    const t0 = hist[0].ts, t1 = hist[hist.length - 1].ts;
+    const xOf = (it) => pad + ((it.ts - t0) / Math.max(1, t1 - t0)) * gw;
+    const yOf = (pr) => pad + gh * (1 - clamp((pr - lo) / Math.max(1e-6, hi - lo), 0, 1));
     ctx.strokeStyle = '#e2e8f0';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -427,12 +461,12 @@
     ctx.lineWidth = 2;
     ctx.beginPath();
     hist.forEach((it, i) => {
-      const x = xOf(i); const y = yOf(it.pressure);
+      const x = xOf(it); const y = yOf(it.pressure);
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.stroke();
-    hist.forEach((it, i) => {
-      const x = xOf(i); const y = yOf(it.pressure);
+    hist.forEach((it) => {
+      const x = xOf(it); const y = yOf(it.pressure);
       if (it.edgeTrigger) {
         ctx.fillStyle = '#22c55e';
         ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
@@ -443,8 +477,8 @@
     });
     ctx.fillStyle = '#64748b';
     ctx.font = '10px sans-serif';
-    ctx.fillText(String(yMax.toFixed(0)), pad - 4, pad + 8);
-    ctx.fillText('0', pad - 4, pad + gh);
+    ctx.fillText(String(hi.toFixed(0)), pad - 4, pad + 8);
+    ctx.fillText(String(lo.toFixed(0)), pad - 4, pad + gh);
   }
 
   function loop() {
@@ -469,8 +503,9 @@
     rt.state = S.INITIAL_CALM; rt.stateTimer = 0; rt.recordedMidIntensity = 0; rt.endCalmLocked = false;
     rt.unRandomIntensity = 0; rt.targetIntensity = 0; rt.currentIntensity = 0;
     rt.midIntensity = 0.5 * cfg.maxMotorIntensity;
-    rt.ema = 0; rt.lastSampleTs = 0; rt.rawOn = false; rt.rawSince = 0; rt.surgeActive = false;
+    rt.windowSamples = []; rt.rawOn = false; rt.rawSince = 0; rt.surgeActive = false;
     rt.edgePeak = 0; rt.lastEdgePeak = 0; rt.midPressure = 50;
+    rt.lastSentStrength = 0; rt.lastSendTs = 0;
     rt.pressureHistory = [];
     rt.edgingCount = 0; rt.shockCount = 0; rt.totalStimulationTime = 0;
     rt.lastUpdateTs = now; rt.lastIntensityUpdateTs = now;
@@ -484,11 +519,14 @@
     const sensorDevice = DeviceAPI.device(SENSOR);
     const applyPressure = (nv) => {
       const p = Number(nv) || 0;
+      if (!rt.running) return; // 结束后不再驱动状态机/设备（修复“停止后电机持续增强”）
       const ts = Date.now();
       rt.currentPressure = p;
+      if (rt.paused) { view.currentPressure = p; return; } // 暂停只更新读数，不下发
       updateSurge(ts, p);
       const prevCount = rt.edgingCount;
       rt.pressureHistory.push({ ts: ts, pressure: p, surge: rt.surgeActive, edgeTrigger: false });
+      if (rt.pressureHistory.length > 3600) rt.pressureHistory.shift();
       const recent = rt.pressureHistory.slice(-60);
       rt.averagePressure = recent.length ? recent.reduce((a, it) => a + (Number(it.pressure) || 0), 0) / recent.length : p;
       calculateStateLogic();
@@ -508,12 +546,15 @@
     render();
   }
   function end() {
+    rt.running = false; rt.paused = false;
+    rt.targetIntensity = 0; rt.currentIntensity = 0; rt.unRandomIntensity = 0;
+    rt.lastSentStrength = 0; rt.lastSendTs = 0;
     try { setStrength(0); } catch (_) {}
     try { stopShockDev(); } catch (_) {}
     try { setLockOpen(true); } catch (_) {}
     try { if (DeviceAPI.device(SENSOR).isMapped()) DeviceAPI.device(SENSOR).invoke('reporting', 'setReportDelay', { ms: 5000 }); } catch (_) {}
-    rt.running = false; rt.paused = false;
     if (rt.shockTimer) { clearTimeout(rt.shockTimer); rt.shockTimer = null; rt.isShocking = false; }
+    if (loopTimer) { clearInterval(loopTimer); loopTimer = null; }
     view.statusText = '已结束';
     addLog('info', '结束（边缘 ' + rt.edgingCount + ' 次，电击 ' + rt.shockCount + ' 次）');
     playVoice('edging_end', 'critical', function () { return !rt.running; });
@@ -528,7 +569,8 @@
           rt.paused = !rt.paused;
           view.statusText = rt.paused ? '已暂停' : '运行中';
           view.btnText = rt.paused ? '继续' : '暂停';
-          if (rt.paused) setStrength(0);
+          if (rt.paused) { setStrength(0); rt.lastSentStrength = 0; }
+          else rt.windowSamples = []; // 恢复后清空突变窗口，避免用暂停前的旧基准误判
           addLog('info', rt.paused ? '已暂停' : '已继续');
           render();
         } else if (name === 'addIntensity') {

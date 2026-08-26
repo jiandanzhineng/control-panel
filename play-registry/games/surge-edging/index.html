@@ -8,9 +8,9 @@
 {
   "id": "surge-edging",
   "title": "气压突变寸止",
-  "description": "自适应气压寸止玩法：用滑动窗口平均值检测 0.5s 内气压突变（默认抬升 1kPa）进入边缘期；中间压力随每次边缘期自动校准（峰值-0.5kPa），不依赖绝对临界压，防漏气影响体验。",
+  "description": "自适应气压寸止玩法：双窗口比较检测气压突变（本窗口[-τ,0]最大值 − 前一窗口[-2τ,-τ]平均值 ≥ 1kPa）进入边缘期；中间压力随每次边缘期自动校准（峰值-1kPa），不依赖绝对临界压，防漏气影响体验。",
   "howTo": "1. 映射气压传感器与 TD01（必需）\n2. 可选：电击、自动锁\n3. 按需调整突变窗口/抬升阈值\n4. 可用界面按钮微调中间压力",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "devices": [
     {
       "id": "sensor",
@@ -78,7 +78,7 @@
       "default": 500,
       "label": "突变检测窗口",
       "unit": "毫秒",
-      "description": "滑动窗口 EMA 时间常数，窗口内压力相对均值快速抬升视为突变",
+      "description": "双窗口宽度 τ：本窗口[-τ,0]最大值与前一窗口[-2τ,-τ]平均值之差达阈值视为突变",
       "group": "core",
       "min": 200,
       "max": 2000,
@@ -90,7 +90,7 @@
       "default": 1.0,
       "label": "突变抬升阈值",
       "unit": "kPa",
-      "description": "压力相对近期平均抬起超过此值视为突变，进入边缘期",
+      "description": "本窗口最大值 − 前一窗口平均值 ≥ 此值视为突变，进入边缘期",
       "group": "core",
       "min": 0.2,
       "max": 5.0,
@@ -99,7 +99,7 @@
     {
       "key": "midOffsetKpa",
       "type": "number",
-      "default": 0.5,
+      "default": 1.0,
       "label": "中间压偏移",
       "unit": "kPa",
       "description": "中间压力 = 本次边缘期峰值 - 该偏移，每次边缘期自动更新",
@@ -111,12 +111,12 @@
     {
       "key": "maxMotorIntensity",
       "type": "number",
-      "default": 255,
+      "default": 50,
       "label": "TD01最大强度",
-      "description": "刺激强度上限（0-255）",
+      "description": "刺激强度上限（0-100）",
       "group": "difficulty",
       "min": 1,
-      "max": 255,
+      "max": 100,
       "step": 1,
       "device": "motor"
     },
@@ -174,7 +174,7 @@
     {
       "key": "minSurgeMs",
       "type": "number",
-      "default": 200,
+      "default": 100,
       "label": "突变最短持续",
       "unit": "毫秒",
       "description": "突变需连续保持至少此时长才计数，滤除单点尖刺",
@@ -182,18 +182,6 @@
       "min": 50,
       "max": 1500,
       "step": 10,
-      "required": false
-    },
-    {
-      "key": "releaseRatio",
-      "type": "number",
-      "default": 0.4,
-      "label": "突变释放比例",
-      "description": "抬升回落至阈值的此比例后视为本次突变结束（滞回防抖）",
-      "group": "advanced",
-      "min": 0.1,
-      "max": 0.9,
-      "step": 0.05,
       "required": false
     },
     {
