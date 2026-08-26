@@ -546,7 +546,20 @@
       rt.averagePressure = recent.length ? recent.reduce((a, it) => a + (Number(it.pressure) || 0), 0) / recent.length : p;
       calculateStateLogic();
       updateIntensity();
-      if (rt.edgingCount > prevCount && rt.pressureHistory.length) rt.pressureHistory[rt.pressureHistory.length - 1].edgeTrigger = true;
+      if (rt.edgingCount > prevCount && rt.pressureHistory.length) {
+        // 绿点标在本次突变峰值的顶点：回溯最近 2τ 窗口内压力最大处的采样点，而非计数那一刻
+        const winMs = Math.max(50, Number(cfg.surgeWindowMs) || 500);
+        const cutoff = ts - 2 * winMs;
+        let peakIdx = rt.pressureHistory.length - 1;
+        let peakVal = -Infinity;
+        for (let i = rt.pressureHistory.length - 1; i >= 0; i--) {
+          const s = rt.pressureHistory[i];
+          if (s.ts < cutoff) break;
+          const pv = Number(s.pressure) || 0;
+          if (pv >= peakVal) { peakVal = pv; peakIdx = i; }
+        }
+        rt.pressureHistory[peakIdx].edgeTrigger = true;
+      }
       view.currentPressure = p;
       view.averagePressure = Number(rt.averagePressure.toFixed(1));
     };
