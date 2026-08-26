@@ -119,44 +119,6 @@ describe('SerialConnectionService', () => {
     await service.shutdown();
   });
 
-  it('coalesces queued pure-power commands to the latest value (latest-wins)', async () => {
-    const writes = [];
-    let releaseHold = null;
-    const heldPort = {
-      isOpen: true,
-      write: (data, cb) => {
-        writes.push(String(data));
-        if (String(data).includes('"power"') && !releaseHold) releaseHold = cb;
-        else cb();
-      },
-      drain: (cb) => cb(),
-    };
-    const { service } = createHarness();
-    const session = {
-      closing: false,
-      abortWrites: false,
-      port: heldPort,
-      writeQueue: Promise.resolve(),
-      writeTasks: [],
-      pumping: false,
-    };
-    const p1 = service.enqueueWrite(session, { method: 'update', power: 10 });
-    const p2 = service.enqueueWrite(session, { method: 'update', power: 20 });
-    const p3 = service.enqueueWrite(session, { method: 'update', power: 0 });
-    await Promise.resolve();
-    await Promise.resolve();
-    // 在途的 power:10 已写入；power:20 与 power:0 合并，只有最新值 0 会在队列排空后上线
-    expect(writes).toEqual(['@CMD {"method":"update","power":10}\r\n']);
-    expect(typeof releaseHold).toBe('function');
-    releaseHold();
-    await Promise.all([p1, p2, p3]);
-    expect(writes).toEqual([
-      '@CMD {"method":"update","power":10}\r\n',
-      '@CMD {"method":"update","power":0}\r\n',
-    ]);
-    await service.shutdown();
-  });
-
   it('rejects legacy READY immediately and closes the port', async () => {
     FakeSerialPort.responseForPath.set('COM5', '@DEBUG READY\r\n');
     const { service } = createHarness();

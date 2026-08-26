@@ -34,15 +34,6 @@ function isProbeCancellation(error) {
   return ['SERIAL_PROBE_CANCELLED', 'SERIAL_PORT_REMOVED'].includes(error?.code);
 }
 
-// 纯 power 控制命令：{method:'update', power}（强度设定 / 电机归零）。
-// 只有这种同形消息参与 latest-wins 合并；多字段全停（如 CUNZHI01 的 {shock,voltage,power}）不合并，保证安全语义。
-function isPurePowerMessage(message) {
-  if (!message || typeof message !== 'object' || Array.isArray(message)) return false;
-  const keys = Object.keys(message);
-  return keys.length === 2 && keys.includes('method') && keys.includes('power')
-    && message.method === 'update';
-}
-
 class SerialConnectionService extends EventEmitter {
   constructor(options = {}) {
     super();
@@ -473,60 +464,20 @@ class SerialConnectionService extends EventEmitter {
         409,
       ));
     }
-    // latest-wins：队列中已有未开始发送的同类 power 命令时，直接用新值覆盖（不再追加）。
-    // 设备端永远只追赶最新强度，积压的旧中间值、停止命令、手动命令都不会排在后面等待；
-    // 多字段全停消息不参与合并（见 isPurePowerMessage）。
-    const purePower = isPurePowerMessage(message);
-    if (purePower && session.writeTasks) {
-      const pending = session.writeTasks.find((task) => task.kind === 'power' && !task.started);
-      if (pending) {
-        pending.encoded = encodeCommand(message);
-        return pending.promise;
+    const encoded = encodeCommand(message);
+    const write = async () => {
+      if (!session.port.isOpen) {
+        throw serviceError('SERIAL_CONNECTION_CLOSED', 'Serial connection is closed', 409);
       }
-    }
-    const task = {
-      kind: purePower ? 'power' : 'other',
-      started: false,
-      encoded: encodeCommand(message),
+      await callbackOperation((done) => session.port.write(encoded, done));
+      if (session.abortWrites) return;
+      if (typeof session.port.drain === 'function') {
+        await callbackOperation((done) => session.port.drain(done));
+      }
     };
-    task.promise = new Promise((resolve, reject) => {
-      task.resolve = resolve;
-      task.reject = reject;
-    });
-    (session.writeTasks = session.writeTasks || []).push(task);
-    session.writeQueue = (session.writeQueue || Promise.resolve())
-      .then(() => task.promise, () => task.promise)
-      .catch(() => {});
-    this.pumpWriteQueue(session);
-    return task.promise;
-  }
-
-  pumpWriteQueue(session) {
-    if (session.pumping || !session.writeTasks || !session.writeTasks.length) return;
-    session.pumping = true;
-    const task = session.writeTasks.shift();
-    task.started = true;
-    (async () => {
-      try {
-        if (!session.port.isOpen) {
-          throw serviceError('SERIAL_CONNECTION_CLOSED', 'Serial connection is closed', 409);
-        }
-        await callbackOperation((done) => session.port.write(task.encoded, done));
-        if (session.abortWrites) {
-          task.resolve({ ok: false, aborted: true });
-          return;
-        }
-        if (typeof session.port.drain === 'function') {
-          await callbackOperation((done) => session.port.drain(done));
-        }
-        task.resolve({ ok: true });
-      } catch (error) {
-        task.reject(error);
-      } finally {
-        session.pumping = false;
-        this.pumpWriteQueue(session);
-      }
-    })();
+    const result = session.writeQueue.then(write);
+    session.writeQueue = result.catch(() => {});
+    return result;
   }
 
   async disconnectDevice(deviceId) {
