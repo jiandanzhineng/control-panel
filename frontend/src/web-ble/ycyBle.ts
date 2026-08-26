@@ -111,6 +111,16 @@ export function buildMotor(opts: { speed?: number } = {}): number[] {
   const s = clamp(opts.speed ?? 0, 0, MOTOR_SPEED_MAX);
   return withChecksum([0x35, FAMILY.MOTOR_CONTROL, s]);
 }
+/** YCY-FJB-03：6 字节 35 12 旋转(0–40) 震动(0–20) 第三轴(0–20) 校验。 */
+export function buildFjb03(opts: { stroke?: number; vibe?: number; axis?: number } = {}): number[] {
+  return withChecksum([
+    0x35,
+    FAMILY.MOTOR_CONTROL,
+    clamp(opts.stroke ?? 0, 0, 40),
+    clamp(opts.vibe ?? 0, 0, MOTOR_SPEED_MAX),
+    clamp(opts.axis ?? 0, 0, MOTOR_SPEED_MAX),
+  ]);
+}
 /**
  * pump_v3（杯 / 灌肠机，明文 35 12 族，与电机帧同构，仅数据字节语义不同）：
  *   stop : 35 12 00 00 00 | CS
@@ -459,5 +469,6 @@ export const sendEmsHandshake = (id: string) => sendFrame(id, buildEmsHandshake(
 export const sendEmsStrength = (id: string, o?: { channel?: 'A' | 'B' | 'AB'; value?: number; freq?: number; pulse?: number }) => sendFrame(id, buildEmsStrength(o));
 export const sendEmsStop = (id: string) => sendFrame(id, buildEmsStop());
 export const sendMotor = (id: string, speed?: number) => sendFrame(id, buildMotor({ speed }));
+export const sendFjb03 = (id: string, o?: { stroke?: number; vibe?: number; axis?: number }) => sendFrame(id, buildFjb03(o));
 export const sendPumpV3 = (id: string, o?: { scene?: 'stop' | 'cut' | 'add' | 'guan'; air?: number; water?: number }) => sendFrame(id, buildPumpV3(o));
 export const sendPumpEncrypted = (id: string, o?: { protocol?: 'v1' | 'v2'; scene?: 'stop' | 'cut' | 'add' | 'guan'; rate?: number; ss?: number }) => sendFrame(id, buildPumpEncrypted(o));

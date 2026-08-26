@@ -209,30 +209,35 @@ const registeredTypes = [
     close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopToy' }),
   }),
 
-  // ---- 遥控蓝牙设备·杯（pump 协议，AES-128 加密 BLE 直发）----
-  // 杯为 BLE 原生泵设备：泵帧以 BF 0F A0 起头、整体经 AES-128（密钥见 PUMP_CIPHER_KEY，
-  // 模式 AES-128-ECB + NoPadding）加密为 16 字节密文下发（协议见 backend/brands/protocols/ycy.js
-  // 的 buildPumpEncrypted）。连接需为 BLE 直连模式（mode=ble）；桥接模式仅支持 triggerInstruction。
-  // 注：泵帧命令字节为 APK 逆向所得，建议用真机抓包对拍；若设备无响应可改 protocol:'v3' 试明文帧。
+  // ---- 遥控蓝牙设备·杯（YCY-FJB-03：6 字节 35 12 旋转/震动/第三轴）----
+  // 真机对拍：不是 AES 泵帧，也不是 4 字节玩具电机帧。
   new BaseDeviceType({
     type: 'YCY_CUP',
     name: '杯型设备',
-    capabilities: {},
+    capabilities: {
+      strength: {
+        actions: {
+          set: (ctx, params) => {
+            const n = Number(params.value);
+            const pct = Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
+            const stroke = Math.round((pct / 100) * 40);
+            return ctx.sendMessage({ brand: 'ycy', cmd: 'setFjb', stroke, vibe: 0, axis: 0 });
+          },
+          stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopFjb' }),
+        },
+      },
+    },
     operations: [
       {
-        key: 'pumpStart', name: '启动泵(充气/吸吮)',
+        key: 'start', name: '启动旋转',
         invoke: (ctx, params) => ctx.sendMessage({
-          brand: 'ycy', cmd: 'pump',
-          protocol: params?.protocol || 'v1',
-          scene: params?.scene || 'add',
-          rate: params?.rate, ss: params?.ss,
+          brand: 'ycy', cmd: 'setFjb',
+          stroke: params?.stroke ?? 15, vibe: params?.vibe ?? 0, axis: params?.axis ?? 0,
         }),
       },
       {
-        key: 'pumpStop', name: '停止泵',
-        invoke: (ctx, params) => ctx.sendMessage({
-          brand: 'ycy', cmd: 'pump', protocol: params?.protocol || 'v1', scene: 'stop',
-        }),
+        key: 'stop', name: '停止',
+        invoke: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopFjb' }),
       },
       {
         key: 'trigger', name: '触发指令(桥接兜底)',
@@ -241,12 +246,8 @@ const registeredTypes = [
           return ctx.sendMessage({ brand: 'ycy', cmd: 'triggerInstruction', commandId: params.commandId });
         },
       },
-      {
-        key: 'stop', name: '全部停止',
-        invoke: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
-      },
     ],
-    close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+    close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopFjb' }),
   }),
 
   // ---- 遥控蓝牙设备·灌肠机（pump 协议，AES-128 加密 BLE 直发）----

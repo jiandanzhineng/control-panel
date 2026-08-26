@@ -58,7 +58,12 @@ function resolveDeviceType(brand, { model, mode, type } = {}) {
   if (brand === 'ycy') {
     // 前端显式选择优先（杯 / 灌肠机 / 电击器 / 玩具 等）
     if (type) return type;
-    if (mode === 'ble') return (model && /toy|玩具|电机|杯|fjb/i.test(model)) ? 'YCY_TOY' : 'YCY_EMS';
+    if (mode === 'ble') {
+      if (model && /灌肠|enema/i.test(model)) return 'YCY_ENEMA';
+      if (model && /杯|cup|fjb/i.test(model)) return 'YCY_CUP';
+      if (model && /toy|玩具|电机/i.test(model)) return 'YCY_TOY';
+      return 'YCY_EMS';
+    }
     // 桥接模式默认按电击器；若名称暗示杯/灌肠则细分
     if (model && /灌肠|enema/i.test(model)) return 'YCY_ENEMA';
     if (model && /杯|cup|fjb/i.test(model)) return 'YCY_CUP';
@@ -302,6 +307,9 @@ function ycySetMode(deviceId, { channel = 'A', mode = 1 } = {}) {
 function ycySetSpeed(deviceId, { motor = 'A', speed = 0 } = {}) {
   return control(deviceId, { brand: 'ycy', cmd: 'setSpeed', motor, speed });
 }
+function ycySetFjb(deviceId, { stroke = 0, vibe = 0, axis = 0 } = {}) {
+  return control(deviceId, { brand: 'ycy', cmd: 'setFjb', stroke, vibe, axis });
+}
 function ycySetToyMode(deviceId, { motor = 'A', mode = 1 } = {}) {
   return control(deviceId, { brand: 'ycy', cmd: 'setToyMode', motor, mode });
 }
@@ -456,6 +464,7 @@ module.exports = {
   ycySetStrength,
   ycySetMode,
   ycySetSpeed,
+  ycySetFjb,
   ycySetToyMode,
   YCY_GLOBAL_STOP: ycyProto.GLOBAL_STOP_COMMAND,
 };

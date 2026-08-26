@@ -115,6 +115,7 @@ router.post('/:deviceId/control', (req, res) => {
       case 'setStrength': result = brandService.ycySetStrength(deviceId, params); break;
       case 'setMode': result = brandService.ycySetMode(deviceId, params); break;
       case 'setSpeed': result = brandService.ycySetSpeed(deviceId, params); break;
+      case 'setFjb': result = brandService.ycySetFjb(deviceId, params); break;
       case 'setToyMode': result = brandService.ycySetToyMode(deviceId, params); break;
       default:
         return sendError(res, 'BRAND_UNKNOWN_ACTION', `未知控制动作: ${action}`, 400);

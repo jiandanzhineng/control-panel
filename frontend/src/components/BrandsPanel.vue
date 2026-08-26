@@ -362,6 +362,24 @@
                       style="margin-left: 4px"
                     >电量 {{ d.battery == null ? '—' : d.battery + '%' }}</el-tag>
                   </div>
+                  <div v-if="/FJB/i.test(d.name || '')" class="control-grid">
+                    <div class="control-field">
+                      <label>旋转 {{ webbleCtl(d.id).stroke }}</label>
+                      <el-slider v-model="webbleCtl(d.id).stroke" :min="0" :max="40" />
+                    </div>
+                    <div class="control-field">
+                      <label>震动 {{ webbleCtl(d.id).vibe }}</label>
+                      <el-slider v-model="webbleCtl(d.id).vibe" :min="0" :max="20" />
+                    </div>
+                    <div class="control-field">
+                      <label>第三轴 {{ webbleCtl(d.id).axis }}</label>
+                      <el-slider v-model="webbleCtl(d.id).axis" :min="0" :max="20" />
+                    </div>
+                    <div class="control-actions">
+                      <el-button type="primary" size="small" :loading="opLoading[`fjb:${d.id}`]" @click="ycyWebbleFjbApply(d)">应用</el-button>
+                      <el-button size="small" :loading="opLoading[`fjbStop:${d.id}`]" @click="ycyWebbleFjbStop(d)">停止</el-button>
+                    </div>
+                  </div>
                   <div class="ycy-native-card__actions">
                     <el-button type="danger" plain size="small" :loading="busy" @click="ycyWebbleDisconnect(d)">断开连接</el-button>
                   </div>
@@ -442,6 +460,26 @@
               <div class="control-actions">
                 <el-button type="primary" size="small" :loading="opLoading[`ycyEms:${dev.deviceId}`]" @click="ycyEmsApply(dev)">应用</el-button>
                 <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">全部停止</el-button>
+              </div>
+            </div>
+
+            <!-- FJB-03 杯：6 字节旋转/震动/第三轴 -->
+            <div v-else-if="dev.type === 'YCY_CUP'" class="control-grid">
+              <div class="control-field">
+                <label>旋转 {{ ctl(dev).stroke }}</label>
+                <el-slider v-model="ctl(dev).stroke" :min="0" :max="40" />
+              </div>
+              <div class="control-field">
+                <label>震动 {{ ctl(dev).vibe }}</label>
+                <el-slider v-model="ctl(dev).vibe" :min="0" :max="20" />
+              </div>
+              <div class="control-field">
+                <label>第三轴 {{ ctl(dev).axis }}</label>
+                <el-slider v-model="ctl(dev).axis" :min="0" :max="20" />
+              </div>
+              <div class="control-actions">
+                <el-button type="primary" size="small" :loading="opLoading[`ycyFjb:${dev.deviceId}`]" @click="ycyFjbApply(dev)">应用</el-button>
+                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyFjbStop(dev)">停止</el-button>
               </div>
             </div>
 
@@ -751,12 +789,16 @@ function withLoading(key: string, fn: () => Promise<void>) {
   opLoading[key] = true
   return fn().finally(() => { opLoading[key] = false })
 }
+function webbleCtl(id: string) {
+  if (!controlState[id]) controlState[id] = { stroke: 15, vibe: 0, axis: 0 }
+  return controlState[id]
+}
 function ctl(dev: BrandDevice) {
   if (!controlState[dev.deviceId]) {
     controlState[dev.deviceId] = {
       pattern: '经典', intensity: 60, ticks: -1,
       commandId: '', aStrength: 40, bStrength: 40, wave: 1,
-      speed: 60, mode: 1,
+      speed: 60, mode: 1, stroke: 15, vibe: 0, axis: 0,
       v2AStrength: 0, v2BStrength: 0, v2Ax: 5, v2Ay: 200, v2Bx: 5, v2By: 200,
     }
   }
@@ -1124,9 +1166,24 @@ async function ycyWebbleConnect() {
     scanningYcyWebble.value = false
   }
 }
+async function ycyWebbleFjbApply(d: YcyWebbleDevice) {
+  const s = webbleCtl(d.id)
+  await withLoading(`fjb:${d.id}`, async () => {
+    await ycyBle.sendFjb03(d.id, { stroke: s.stroke, vibe: s.vibe, axis: s.axis })
+    ElMessage.success('已下发')
+  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+}
+async function ycyWebbleFjbStop(d: YcyWebbleDevice) {
+  await withLoading(`fjbStop:${d.id}`, async () => {
+    await ycyBle.sendFjb03(d.id, { stroke: 0, vibe: 0, axis: 0 })
+  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
+}
 async function ycyWebbleDisconnect(d: YcyWebbleDevice) {
   busy.value = true
   try {
+    if (/FJB/i.test(d.name || '')) {
+      try { await ycyBle.sendFjb03(d.id, { stroke: 0, vibe: 0, axis: 0 }) } catch (_) {}
+    }
     await ycyBle.disconnect(d.id)
     ycyWebbleUnlisten.get(d.id)?.()
     ycyWebbleUnlisten.delete(d.id)
@@ -1181,6 +1238,19 @@ async function ycyEmsApply(dev: BrandDevice) {
     await brandsApi.control(dev.deviceId, 'setMode', { channel: 'A', mode: s.wave })
     ElMessage.success('已下发')
   }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+}
+
+async function ycyFjbApply(dev: BrandDevice) {
+  const s = ctl(dev)
+  await withLoading(`ycyFjb:${dev.deviceId}`, async () => {
+    await brandsApi.control(dev.deviceId, 'setFjb', { stroke: s.stroke, vibe: s.vibe, axis: s.axis })
+    ElMessage.success('已下发')
+  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+}
+async function ycyFjbStop(dev: BrandDevice) {
+  await withLoading(`ycyStop:${dev.deviceId}`, async () => {
+    await brandsApi.control(dev.deviceId, 'setFjb', { stroke: 0, vibe: 0, axis: 0 })
+  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
 }
 
 async function ycyToyApply(dev: BrandDevice) {

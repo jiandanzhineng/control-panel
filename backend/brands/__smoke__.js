@@ -72,6 +72,8 @@ async function run() {
   // BLE 直连路径的帧翻译（不真正连蓝牙，直接校验 toBleFrame）
   assert.strictEqual(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'stopAll' })), hex(ycy.buildEmsStop()));
   assert.strictEqual(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'setSpeed', speed: 10 })), hex(ycy.buildMotor({ speed: 10 })));
+  assert.strictEqual(hex(ycy.buildFjb03({ stroke: 15 })), '35120F000056');
+  assert.strictEqual(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'stopFjb' })), '351200000047');
 
   // ===== 5. 设备类型层发出品牌命令（接入既有 bridge / devicemap）=====
   const cap = (type, capKey, action, params) => {

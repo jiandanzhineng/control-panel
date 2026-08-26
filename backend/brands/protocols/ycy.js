@@ -95,6 +95,8 @@ const EMS_STRENGTH_MIN = 1;
 const EMS_CHANNEL_MAX = 276;
 const EMS_FREQ_MAX = 100;
 const MOTOR_SPEED_MAX = 20;
+const FJB03_STROKE_MAX = 40;
+const FJB03_AXIS_MAX = 20;
 const PUMP_RATE_DEFAULT = 3;
 
 /** 强度映射：UI 量纲 0–100 → 设备量纲 1–276（0 表示关闭通道）。 */
@@ -216,6 +218,20 @@ function buildMotor({ speed = 0 } = {}) {
 }
 
 /**
+ * YCY-FJB-03 真机帧（6 字节）：35 12 [旋转 0–40] [震动 0–20] [第三轴 0–20] [校验和]。
+ * 旋转 1–20 正转、21–40 反转。不是 4 字节玩具电机帧，也不是 AES 泵帧。
+ */
+function buildFjb03({ stroke = 0, vibe = 0, axis = 0 } = {}) {
+  return withChecksum(Buffer.from([
+    0x35,
+    FAMILY.MOTOR_CONTROL,
+    clamp(stroke, 0, FJB03_STROKE_MAX),
+    clamp(vibe, 0, FJB03_AXIS_MAX),
+    clamp(axis, 0, FJB03_AXIS_MAX),
+  ]));
+}
+
+/**
  * pump_v3（杯 / 灌肠机，明文 + 校验和可下发）：
  *   stop : 35 12 00 00 00 | CS
  *   cut  : 35 12 FF 00 00 | CS
@@ -313,6 +329,10 @@ function toBleFrame(brandCommand) {
       return buildMotor({ speed: brandCommand.mode });
     case 'stopToy':
       return buildMotor({ speed: 0 });
+    case 'setFjb':
+      return buildFjb03(brandCommand);
+    case 'stopFjb':
+      return buildFjb03({ stroke: 0, vibe: 0, axis: 0 });
     case 'pump':
       if (brandCommand.protocol === 'v3') return buildPumpV3(brandCommand);
       return buildPumpEncrypted(brandCommand); // v1/v2 AES 加密
@@ -563,6 +583,8 @@ module.exports = {
   EMS_STRENGTH_MAX,
   EMS_FREQ_MAX,
   MOTOR_SPEED_MAX,
+  FJB03_STROKE_MAX,
+  FJB03_AXIS_MAX,
   GLOBAL_STOP_COMMAND,
   mapStrengthToYcy,
   checksum,
@@ -571,6 +593,7 @@ module.exports = {
   buildEmsStop,
   buildXlIntensity,
   buildMotor,
+  buildFjb03,
   buildPumpV3,
   buildPumpEncrypted,
   toBleFrame,

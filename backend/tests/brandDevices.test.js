@@ -66,6 +66,9 @@ describe('役次元 YCY 协议', () => {
     expect(ch[ch.length - 1]).toBe(ycy.checksum ? ycy.checksum(ch.slice(0, -1)) : (Buffer.from(ch).reduce((s, b) => (s + b) & 0xff, 0) - ch[ch.length - 1] + ch[ch.length - 1]) & 0xff);
     // pump_v3 停止（明文 35 12 00 00 00 + 校验和 47）
     expect(hex(ycy.buildPumpV3({ scene: 'stop' }))).toBe('351200000047');
+    // YCY-FJB-03：6 字节 35 12 旋转 震动 轴 校验（真机对拍）
+    expect(hex(ycy.buildFjb03({ stroke: 15, vibe: 0, axis: 0 }))).toBe('35120F000056');
+    expect(hex(ycy.buildFjb03({ stroke: 0, vibe: 0, axis: 0 }))).toBe('351200000047');
   });
 
   test('桥接消息构造与连接翻译', async () => {
@@ -88,6 +91,9 @@ describe('役次元 YCY 协议', () => {
     expect(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'stopAll' }))).toBe(hex(ycy.buildEmsStop()));
     expect(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'setSpeed', speed: 10 })))
       .toBe(hex(ycy.buildMotor({ speed: 10 })));
+    expect(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'setFjb', stroke: 15 })))
+      .toBe('35120F000056');
+    expect(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'stopFjb' }))).toBe('351200000047');
   });
 
   test('pump v1/v2 加密帧：AES-128-ECB + 16 字节密文', async () => {
@@ -163,10 +169,15 @@ describe('设备类型层发出品牌命令（接入 Bridge / 设备映射）', 
       .toThrow(/commandId/);
   });
 
-  test('YCY_CUP 全部停止 → stopAll', () => {
+  test('YCY_CUP 全部停止 → stopFjb', () => {
     let captured = null;
     registry.getDeviceType('YCY_CUP').invokeOperation('devCup', 'stop', {}, (id, msg) => { captured = msg; return msg; });
-    expect(captured).toEqual({ brand: 'ycy', cmd: 'stopAll' });
+    expect(captured).toEqual({ brand: 'ycy', cmd: 'stopFjb' });
+  });
+
+  test('YCY_CUP strength.set 50 → setFjb 旋转 20', () => {
+    const m = emit('YCY_CUP', 'strength', 'set', { value: 50 });
+    expect(m).toMatchObject({ brand: 'ycy', cmd: 'setFjb', stroke: 20, vibe: 0, axis: 0 });
   });
 
   test('YCY_ENEMA 触发指令 → triggerInstruction', () => {
@@ -194,5 +205,9 @@ describe('役次元 设备类型推断（resolveDeviceType）', () => {
     expect(resolveDeviceType('ycy', { mode: 'bridge', model: '灌肠机' })).toBe('YCY_ENEMA');
     expect(resolveDeviceType('ycy', { mode: 'bridge', model: '智能杯' })).toBe('YCY_CUP');
     expect(resolveDeviceType('ycy', { mode: 'bridge' })).toBe('YCY_EMS');
+  });
+
+  test('ble 模式 FJB 归为杯，不再当成玩具电机', () => {
+    expect(resolveDeviceType('ycy', { mode: 'ble', model: 'YCY-FJB-03' })).toBe('YCY_CUP');
   });
 });
