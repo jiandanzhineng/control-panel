@@ -305,11 +305,14 @@ class WebBluetoothYcyClient {
     }
 
     // 枚举全部服务下的全部特征，兼容各型号不同服务号（FF30/FF40/FF70/AE00 等）。
+    // 同时按服务分组，便于「写+通知」在同服务内配对，避免跨服务误配。
     const allChars: BluetoothRemoteGATTCharacteristic[] = [];
+    const svcChars = new Map<string, BluetoothRemoteGATTCharacteristic[]>();
     for (const svc of services) {
       try {
         const cs = await svc.getCharacteristics();
         allChars.push(...cs);
+        svcChars.set(svc.uuid.toLowerCase(), cs);
       } catch (_) { /* 忽略无特征的服务 */ }
     }
     const foundUuids = allChars.map((c) => c.uuid.toLowerCase());
@@ -317,15 +320,36 @@ class WebBluetoothYcyClient {
     console.log('[ycyBle] 役次元设备', this.device.name, '真实特征 UUID:', foundUuids);
 
     const lower = (s: string) => s.toLowerCase();
-    const findKnown = (uuids: string[]) => allChars.find((c) => uuids.includes(lower(c.uuid)));
-    // 写特征：优先已知写 UUID，否则首个具写属性的特征。
-    let write = findKnown(KNOWN_WRITE_UUIDS);
-    if (!write) write = allChars.find((c) => c.properties?.write || c.properties?.writeWithoutResponse) || null;
-    this.writeChar = write;
+    const isWrite = (c: BluetoothRemoteGATTCharacteristic) => !!c.properties?.write || !!c.properties?.writeWithoutResponse;
+    const isNotify = (c: BluetoothRemoteGATTCharacteristic) => !!c.properties?.notify || !!c.properties?.indicate;
+    const knownWrite = (c: BluetoothRemoteGATTCharacteristic) => KNOWN_WRITE_UUIDS.includes(lower(c.uuid));
+    const knownNotify = (c: BluetoothRemoteGATTCharacteristic) => KNOWN_NOTIFY_UUIDS.includes(lower(c.uuid));
 
-    // 通知特征：优先已知通知 UUID，否则首个具 notify/indicate 的特征。
-    let notify: BluetoothRemoteGATTCharacteristic | undefined = findKnown(KNOWN_NOTIFY_UUIDS);
-    if (!notify) notify = allChars.find((c) => c.properties?.notify || c.properties?.indicate);
+    // 写/通知特征选择：优先精确命中已知 UUID，并在同服务内配对（写+通知成对），
+    // 避免全局首匹配把不同服务的特征误配；未命中已知 UUID 时退化为「同服务内可写+可通知」成对。
+    // 评分：已知 UUID 命中 +2、仅按属性 +1，取分最高者；同分取先枚举到的服务。
+    let write: BluetoothRemoteGATTCharacteristic | null = null;
+    let notify: BluetoothRemoteGATTCharacteristic | undefined;
+    let bestScore = -1;
+    for (const svc of services) {
+      const cs = svcChars.get(svc.uuid.toLowerCase()) || [];
+      if (cs.length === 0) continue;
+      const w = cs.find(knownWrite) || cs.find(isWrite) || null;
+      const n = cs.find(knownNotify) || cs.find(isNotify) || null;
+      if (!w && !n) continue;
+      let score = 0;
+      if (w && knownWrite(w)) score += 2; else if (w) score += 1;
+      if (n && knownNotify(n)) score += 2; else if (n) score += 1;
+      if (score > bestScore) {
+        bestScore = score;
+        write = w;
+        notify = n ?? undefined;
+      }
+    }
+    // 兜底：仍无结果时退化为全局首匹配（保持旧行为，极端情况下保底）。
+    if (!write) write = allChars.find(isWrite) || null;
+    if (!notify) notify = allChars.find(isNotify);
+    this.writeChar = write;
 
     if (!this.writeChar) {
       try { this.device.gatt?.disconnect(); } catch (_) {}
