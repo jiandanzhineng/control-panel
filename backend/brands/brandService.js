@@ -349,6 +349,8 @@ function attachWebBle(metadata, send) {
       ? new YcyWebBleConnection({ deviceId: metadata.id, send, type: ycyType })
       : new DGLabV2WebBleConnection({ deviceId: metadata.id, send });
     connections.set(metadata.id, connection);
+  } else if (typeof send === 'function') {
+    connection._transportSend = send;
   }
   const type = isYcy ? ycyType : 'DGLAB';
   const brand = isYcy ? 'ycy' : 'dglab';
@@ -361,7 +363,11 @@ function attachWebBle(metadata, send) {
       transportMetadata: connection.toMetadata(),
       data: metadata.data || {},
     },
-    { kind: 'brandBle', send },
+    {
+      kind: 'brandBle',
+      send: (msg) => connection.send(msg),
+      disconnect: () => connection.disconnect(),
+    },
   );
   setState(metadata.id, STATUS.CONNECTED, { userClosed: false, reconnecting: false, error: null });
   return {

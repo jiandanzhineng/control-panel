@@ -95,3 +95,25 @@ describe('brandService.attachWebBle 集成', () => {
     expect(sent[1]).toEqual([{ characteristic: 'pwmAB2', value: v2.packStrength({ a: 0, b: 0 }) }]);
   });
 });
+
+describe('YCY WebBLE 经设备操作下发写帧', () => {
+  const brandService = require('../brands/brandService');
+  const deviceService = require('../services/deviceService');
+  const ycy = require('../brands/protocols/ycy');
+  const CUP_ID = 'ycy:test-cup';
+
+  afterEach(() => {
+    try { brandService.detachWebBle(CUP_ID); } catch (_) {}
+  });
+
+  test('启动旋转走 deviceService，下发 0x35 写帧而不是 setMotors', () => {
+    const sent = [];
+    brandService.attachWebBle(
+      { id: CUP_ID, name: 'YCY-FJB-03', type: 'YCY_CUP', brand: 'ycy', connectionType: 'brandBle' },
+      (msg) => { sent.push(msg); return Promise.resolve({ ok: true }); },
+    );
+    deviceService.executeDeviceOperation(CUP_ID, 'start');
+    expect(sent[0]).toMatchObject({ op: 'write' });
+    expect(Buffer.from(sent[0].value).equals(ycy.buildFjb03({ stroke: 15, vibe: 15, axis: 0 }))).toBe(true);
+  });
+});
