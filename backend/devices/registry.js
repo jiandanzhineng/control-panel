@@ -212,7 +212,7 @@ const registeredTypes = [
     close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopToy' }),
   }),
 
-  // 杯：strength 只改旋转且只正转；motors 三路，未写的保持。
+  // 杯：strength 同时改旋转（只正转）和震动；motors 三路，未写的保持。
   new BaseDeviceType({
     type: 'YCY_CUP',
     name: '杯型设备',
@@ -221,7 +221,10 @@ const registeredTypes = [
         actions: {
           set: (ctx, params) => ctx.sendMessage({
             brand: 'ycy', cmd: 'setMotors',
-            channels: { stroke: { value: params.value, direction: 1 } },
+            channels: {
+              stroke: { value: params.value, direction: 1 },
+              vibe: { value: params.value },
+            },
           }),
           stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopFjb' }),
         },

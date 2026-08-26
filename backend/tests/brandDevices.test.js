@@ -46,6 +46,15 @@ describe('能力换算', () => {
     });
     expect(n).toMatchObject({ cmd: 'setFjb', stroke: 40, vibe: 0, axis: 0 });
   });
+
+  test('strength 双通道换成设备旋转+震动', () => {
+    const conn = new YCYConnection({ deviceId: 'x', mode: 'bridge' });
+    const n = conn._normalize({
+      brand: 'ycy', cmd: 'setMotors',
+      channels: { stroke: { value: 255, direction: 1 }, vibe: { value: 255 } },
+    });
+    expect(n).toMatchObject({ cmd: 'setFjb', stroke: 20, vibe: 20, axis: 0 });
+  });
 });
 
 describe('郊狼 DGLab 协议', () => {
@@ -202,11 +211,14 @@ describe('设备类型层发出品牌命令（接入 Bridge / 设备映射）', 
     expect(captured).toEqual({ brand: 'ycy', cmd: 'stopFjb' });
   });
 
-  test('YCY_CUP strength.set → setMotors 只改旋转正转', () => {
+  test('YCY_CUP strength.set → 旋转正转 + 震动', () => {
     const m = emit('YCY_CUP', 'strength', 'set', { value: 128 });
     expect(m).toMatchObject({
       brand: 'ycy', cmd: 'setMotors',
-      channels: { stroke: { value: 128, direction: 1 } },
+      channels: {
+        stroke: { value: 128, direction: 1 },
+        vibe: { value: 128 },
+      },
     });
   });
 
