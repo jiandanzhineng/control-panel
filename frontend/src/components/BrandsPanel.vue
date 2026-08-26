@@ -156,6 +156,16 @@
                 <el-descriptions :column="1" border size="small" class="ycy-native-card__meta">
                   <el-descriptions-item label="电量">{{ d.battery == null ? '—' : d.battery + '%' }}</el-descriptions-item>
                 </el-descriptions>
+                <div class="control-grid">
+                  <div class="control-field">
+                    <label>强度 {{ webbleCtl(d.id).intensity ?? 60 }}</label>
+                    <el-slider v-model="webbleCtl(d.id).intensity" :min="0" :max="100" />
+                  </div>
+                  <div class="control-actions">
+                    <el-button type="primary" size="small" :loading="opLoading[`dglabW:${d.id}`]" @click="dglabWebbleApply(d)">应用</el-button>
+                    <el-button size="small" :loading="opLoading[`dglabWS:${d.id}`]" @click="dglabWebbleStop(d)">停止</el-button>
+                  </div>
+                </div>
                 <div class="ycy-native-card__actions">
                   <el-button type="danger" plain size="small" :loading="busy" @click="dglabWebbleDisconnect(d)">断开连接</el-button>
                 </div>
@@ -189,7 +199,7 @@
 
         <!-- 已连接的郊狼设备（手机连接） -->
         <div class="brand-col__devices">
-          <div v-if="!dglabConnected.length" class="brand-col__empty">还没有连接中的郊狼设备</div>
+          <div v-if="!dglabConnected.length" class="brand-col__empty">还没有连接中的郊狼设备，连上后可在这里试控</div>
 
           <div v-for="dev in dglabConnected" :key="dev.deviceId" class="device-card">
             <div class="device-card__head">
@@ -430,9 +440,9 @@
           </template>
         </el-card>
 
-        <!-- 已连接的役次元设备（远程桥接模式） -->
+        <!-- 已连接的役次元设备：连上即可试控 -->
         <div class="brand-col__devices">
-          <div v-if="!ycyConnected.length" class="brand-col__empty">还没有连接中的役次元设备</div>
+          <div v-if="!ycyConnected.length" class="brand-col__empty">还没有连接中的役次元设备，连上后可在这里试控</div>
 
           <div v-for="dev in ycyConnected" :key="dev.deviceId" class="device-card">
             <div class="device-card__head">
@@ -459,7 +469,7 @@
             </div>
 
             <!-- 电击器 控制 -->
-            <div v-else-if="dev.type === 'YCY_EMS'" class="control-grid">
+            <div v-else-if="ycyPanelType(dev) === 'YCY_EMS'" class="control-grid">
               <div class="control-field">
                 <label>左通道强度 {{ ctl(dev).aStrength }}</label>
                 <el-slider v-model="ctl(dev).aStrength" :min="0" :max="100" />
@@ -484,7 +494,7 @@
             </div>
 
             <!-- FJB-03 杯：6 字节旋转/震动/第三轴 -->
-            <div v-else-if="dev.type === 'YCY_CUP'" class="control-grid">
+            <div v-else-if="ycyPanelType(dev) === 'YCY_CUP'" class="control-grid">
               <div class="control-field">
                 <label>旋转 {{ ctl(dev).stroke }}</label>
                 <el-slider v-model="ctl(dev).stroke" :min="0" :max="40" />
@@ -504,7 +514,7 @@
             </div>
 
             <!-- 玩具 / 电机 控制 -->
-            <div v-else-if="dev.type === 'YCY_TOY'" class="control-grid">
+            <div v-else-if="ycyPanelType(dev) === 'YCY_TOY'" class="control-grid">
               <div class="control-field">
                 <label>速度 {{ ctl(dev).speed }}</label>
                 <el-slider v-model="ctl(dev).speed" :min="0" :max="100" />
@@ -520,6 +530,21 @@
               <div class="control-actions">
                 <el-button type="primary" size="small" :loading="opLoading[`ycyToy:${dev.deviceId}`]" @click="ycyToyApply(dev)">应用</el-button>
                 <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">停止</el-button>
+              </div>
+            </div>
+
+            <div v-else-if="ycyPanelType(dev) === 'YCY_ENEMA'" class="control-grid">
+              <div class="control-field">
+                <label>泵动作</label>
+                <el-select v-model="ctl(dev).scene" size="small" class="control-input">
+                  <el-option label="注水" value="guan" />
+                  <el-option label="抽气" value="add" />
+                  <el-option label="排气" value="cut" />
+                </el-select>
+              </div>
+              <div class="control-actions">
+                <el-button type="primary" size="small" :loading="opLoading[`ycyPump:${dev.deviceId}`]" @click="ycyPumpApply(dev)">应用</el-button>
+                <el-button size="small" :loading="opLoading[`ycyPumpS:${dev.deviceId}`]" @click="ycyPumpStop(dev)">停止</el-button>
               </div>
             </div>
           </div>
@@ -731,6 +756,7 @@ async function dglabWebbleConnect() {
       if (dev) dev.battery = b
     })
     dglabWebbleUnlisten.set(id, un)
+    await refreshConnected()
     ElMessage.success('已连接 ' + brandLabel('dglab', meta.name))
   } catch (e: any) {
     const msg = String(e?.message || '')
@@ -740,6 +766,18 @@ async function dglabWebbleConnect() {
     dglabWebbleCandidates.value = []
     scanningWebble.value = false
   }
+}
+async function dglabWebbleApply(d: DglabWebbleDevice) {
+  const s = webbleCtl(d.id)
+  await withLoading(`dglabW:${d.id}`, async () => {
+    await brandsApi.control(d.id, 'setPattern', { pattern: '经典', intensity: s.intensity ?? 60, ticks: -1 })
+    ElMessage.success('已下发')
+  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+}
+async function dglabWebbleStop(d: DglabWebbleDevice) {
+  await withLoading(`dglabWS:${d.id}`, async () => {
+    await brandsApi.control(d.id, 'stop')
+  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
 }
 async function dglabWebbleDisconnect(d: DglabWebbleDevice) {
   busy.value = true
@@ -822,15 +860,25 @@ function withLoading(key: string, fn: () => Promise<void>) {
   return fn().finally(() => { opLoading[key] = false })
 }
 function webbleCtl(id: string) {
-  if (!controlState[id]) controlState[id] = { stroke: 15, vibe: 0, axis: 0 }
+  if (!controlState[id]) controlState[id] = { stroke: 15, vibe: 0, axis: 0, intensity: 60 }
   return controlState[id]
+}
+
+function ycyPanelType(dev: { type?: string; name?: string }) {
+  if (dev.type && TYPE_LABEL[dev.type]) return dev.type
+  const n = String(dev.name || '')
+  if (/灌肠|enema|glj/i.test(n)) return 'YCY_ENEMA'
+  if (/杯|cup|fjb/i.test(n)) return 'YCY_CUP'
+  if (/toy|玩具|tdd/i.test(n)) return 'YCY_TOY'
+  if (/dj|ems|电击/i.test(n)) return 'YCY_EMS'
+  return 'YCY_CUP'
 }
 function ctl(dev: BrandDevice) {
   if (!controlState[dev.deviceId]) {
     controlState[dev.deviceId] = {
       pattern: '经典', intensity: 60, ticks: -1,
       commandId: '', aStrength: 40, bStrength: 40, wave: 1,
-      speed: 60, mode: 1, stroke: 15, vibe: 0, axis: 0,
+      speed: 60, mode: 1, stroke: 15, vibe: 0, axis: 0, scene: 'guan',
       v2AStrength: 0, v2BStrength: 0, v2Ax: 5, v2Ay: 200, v2Bx: 5, v2By: 200,
     }
   }
@@ -1303,6 +1351,28 @@ async function ycyFjbStop(dev: BrandDevice) {
   }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
 }
 
+async function ycyPumpApply(dev: BrandDevice) {
+  const s = ctl(dev)
+  await withLoading(`ycyPump:${dev.deviceId}`, async () => {
+    const res = await fetch(`/api/devices/${encodeURIComponent(dev.deviceId)}/capabilities/pump/actions/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scene: s.scene || 'guan' }),
+    })
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || '下发失败')
+    ElMessage.success('已下发')
+  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+}
+async function ycyPumpStop(dev: BrandDevice) {
+  await withLoading(`ycyPumpS:${dev.deviceId}`, async () => {
+    const res = await fetch(`/api/devices/${encodeURIComponent(dev.deviceId)}/capabilities/pump/actions/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || '停止失败')
+  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
+}
 async function ycyToyApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`ycyToy:${dev.deviceId}`, async () => {
