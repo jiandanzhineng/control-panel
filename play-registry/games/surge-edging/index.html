@@ -10,7 +10,7 @@
   "title": "气压突变寸止",
   "description": "自适应气压寸止玩法：双窗口比较检测气压突变（本窗口[-τ,0]最大值 − 前一窗口[-2τ,-τ]平均值 ≥ 1kPa）进入边缘期；中间压力随每次边缘期自动校准（峰值-1kPa），不依赖绝对临界压，防漏气影响体验。",
   "howTo": "1. 映射气压传感器与 TD01（必需）\n2. 可选：电击、自动锁\n3. 按需调整突变窗口/抬升阈值\n4. 可用界面按钮微调中间压力",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "devices": [
     {
       "id": "sensor",
@@ -195,6 +195,30 @@
       "min": 100,
       "max": 5000,
       "step": 50,
+      "required": false
+    },
+    {
+      "key": "midIntensityMin",
+      "type": "number",
+      "default": 5,
+      "label": "中期强度下限",
+      "description": "中期强度下限 dmin：P≥P1+ΔP 时维持的最小强度",
+      "group": "advanced",
+      "min": 0,
+      "max": 10,
+      "step": 1,
+      "required": false
+    },
+    {
+      "key": "midIntensityMax",
+      "type": "number",
+      "default": 20,
+      "label": "中期强度上限",
+      "description": "中期强度上限 dmax：P=P1 时的强度，P∈[P1,P1+ΔP] 线性过渡；有效范围 10~Dmax，越界自动替换为 min(20, Dmax)",
+      "group": "advanced",
+      "min": 10,
+      "max": 100,
+      "step": 1,
       "required": false
     },
     {

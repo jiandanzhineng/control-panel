@@ -16,18 +16,20 @@
   const cfg = {
     duration: 20, endCalmLock: 60, surgeWindowMs: 500, surgeRiseKpa: 1.0, midOffsetKpa: 1.0,
     maxMotorIntensity: 50, lowPressureDelay: 5, rampRate: 2, gradualIncrease: 2,
-    randomPercent: 0, minSurgeMs: 100, sendIntervalMs: 500, shockVoltage: 20, shockDuration: 3,
+    randomPercent: 0, minSurgeMs: 100, sendIntervalMs: 500,
+    midIntensityMin: 5, midIntensityMax: 20, shockVoltage: 20, shockDuration: 3,
   };
 
   // 运行态
   const rt = {
     running: false, paused: false, startTime: 0, endTime: 0,
-    state: S.INITIAL_CALM, stateTimer: 0, recordedMidIntensity: 0, endCalmLocked: false,
+    state: S.INITIAL_CALM, stateTimer: 0, endCalmLocked: false,
     currentPressure: 0, averagePressure: 0, pressureHistory: [],
     // 突变检测（双窗口：本窗口[-τ,0]最大值 − 前一窗口[-2τ,-τ]平均值）
     windowSamples: [], rawOn: false, rawSince: 0, surgeActive: false,
     edgePeak: 0, lastEdgePeak: 0, midPressure: 50,
-    unRandomIntensity: 0, targetIntensity: 0, currentIntensity: 0, midIntensity: 0,
+    unRandomIntensity: 0, targetIntensity: 0, currentIntensity: 0,
+    midLimits: { dmin: 5, dmax: 20 },
     lastSentStrength: 0, lastSendTs: 0,
     lastUpdateTs: 0, lastIntensityUpdateTs: 0,
     isShocking: false, shockCount: 0, shockTimer: null,
@@ -279,14 +281,19 @@
     view.midPressure = rt.midPressure;
     addLog('info', '手动微调中间压力 → ' + rt.midPressure.toFixed(1));
   }
+  // 中期强度上下限：dmax 有效范围 [10, Dmax]，越界自动替换为 min(20, Dmax)；dmin 限 [0,10] 且 ≤ dmax
+  function updateMidLimits() {
+    const inputMax = Number(cfg.midIntensityMax);
+    const Dmax = Math.max(1, Number(cfg.maxMotorIntensity) || 50);
+    const dmax = (inputMax >= 10 && inputMax <= Dmax) ? inputMax : Math.min(20, Dmax);
+    const dmin = Math.min(clamp(Number(cfg.midIntensityMin) || 5, 0, 10), dmax);
+    return { dmin: dmin, dmax: dmax };
+  }
 // ---- 状态机 ----
   function enterMid() {
-    rt.recordedMidIntensity = rt.currentIntensity;
-    if (rt.recordedMidIntensity < 1) rt.recordedMidIntensity = rt.targetIntensity;
-    if (rt.recordedMidIntensity < 1) rt.recordedMidIntensity = cfg.maxMotorIntensity * 0.5;
     rt.state = S.MIDDLE;
     view.statusText = '进入中期刺激';
-    addLog('info', '进入中期，基准强度 ' + rt.recordedMidIntensity.toFixed(1));
+    addLog('info', '进入中期刺激（P1=' + rt.midPressure.toFixed(1) + '，ΔP=' + cfg.midOffsetKpa + '）');
     playVoice('edging_middle', 'state', function () { return rt.running && rt.state === S.MIDDLE; });
   }
   function enterEdging() {
@@ -333,10 +340,14 @@
         break;
       }
       case S.MIDDLE: {
-        rt.midIntensity = rt.recordedMidIntensity;
-        const denom = Math.max(0.1, Number(cfg.surgeRiseKpa) || 1.0);
-        const factor = clamp((p - rt.midPressure) / denom, 0, 1);
-        rt.targetIntensity = clamp(rt.recordedMidIntensity * factor, 0, cfg.maxMotorIntensity);
+        // 中期强度：P∈[P1,P1+ΔP] 时 d = dmax − (dmax−dmin)·(P−P1)/ΔP；P≥P1+ΔP 时 d = dmin
+        const P1 = rt.midPressure;
+        const dP = Math.max(0.01, Number(cfg.midOffsetKpa) || 1.0);
+        const lim = rt.midLimits || { dmin: 5, dmax: 20 };
+        let d;
+        if (p >= P1 + dP) d = lim.dmin;
+        else d = lim.dmax - (lim.dmax - lim.dmin) * ((p - P1) / dP);
+        rt.targetIntensity = clamp(d, 0, cfg.maxMotorIntensity);
         if (surge && rt.edgePeak) { rt.unRandomIntensity = rt.currentIntensity; enterEdging(); break; }
         if (p < rt.midPressure) {
           rt.unRandomIntensity = rt.currentIntensity; rt.state = S.SUB_CALM;
@@ -504,9 +515,9 @@
     voicePlayer.stop();
     rt.running = true; rt.paused = false; rt.startTime = now;
     rt.endTime = now + (Number(cfg.duration) || 20) * 60 * 1000;
-    rt.state = S.INITIAL_CALM; rt.stateTimer = 0; rt.recordedMidIntensity = 0; rt.endCalmLocked = false;
+    rt.state = S.INITIAL_CALM; rt.stateTimer = 0; rt.endCalmLocked = false;
     rt.unRandomIntensity = 0; rt.targetIntensity = 0; rt.currentIntensity = 0;
-    rt.midIntensity = 0.5 * cfg.maxMotorIntensity;
+    rt.midLimits = updateMidLimits();
     rt.windowSamples = []; rt.rawOn = false; rt.rawSince = 0; rt.surgeActive = false;
     rt.edgePeak = 0; rt.lastEdgePeak = 0; rt.midPressure = 50;
     rt.lastSentStrength = 0; rt.lastSendTs = 0;
@@ -603,6 +614,7 @@
     try { await DeviceAPI.ready; } catch (_) {}
     const p = DeviceAPI.params || {};
     Object.keys(cfg).forEach((k) => { if (p[k] !== undefined && p[k] !== null) cfg[k] = p[k]; });
+    rt.midLimits = updateMidLimits();
     voicePlayer.setEnabled(p.voiceEnabled === undefined ? true : !!p.voiceEnabled);
     addLog('info', '设备通道就绪，开始游戏');
     start();
