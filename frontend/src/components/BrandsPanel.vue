@@ -985,8 +985,10 @@ async function ycyNativeAuto() {
 async function ycyNativeRefresh() {
   try {
     const st = await ycyBridge.getStatus()
-    ycyNativeBtOn.value = st.bluetoothOn
     const all = (st.devices || []).slice().sort((a, b) => (b.rssi ?? -999) - (a.rssi ?? -999))
+    // 桥的 bluetoothOn 标志不可靠（曾出现“签名变导致 bluetoothOn=false”但仍能扫到设备）；
+    // 以“是否真扫到设备”为真相：只要有设备，蓝牙必然已开启，不误报“蓝牙未开启”。
+    ycyNativeBtOn.value = st.bluetoothOn || all.length > 0
     ycyAllDevices.value = all
     ycyNativeDevices.value = all.filter((d) => YCY_RE.test(d.name || ''))
     await ycyNativeAuto()
