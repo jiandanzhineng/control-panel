@@ -359,6 +359,13 @@ class WebBluetoothYcyClient {
     // 兜底：仍无结果时退化为全局首匹配（保持旧行为，极端情况下保底）。
     if (!write) write = allChars.find(isWrite) || null;
     if (!notify) notify = allChars.find(isNotify);
+    // FJB-03 真机控制在 FF41，AE01 同分会被先枚举到，写过去没动作。
+    if (/FJB/i.test(this.device.name || '')) {
+      const fjbW = allChars.find((c) => lower(c.uuid) === '0000ff41-0000-1000-8000-00805f9b34fb');
+      const fjbN = allChars.find((c) => lower(c.uuid) === '0000ff42-0000-1000-8000-00805f9b34fb');
+      if (fjbW) write = fjbW;
+      if (fjbN) notify = fjbN;
+    }
     this.writeChar = write;
 
     if (!this.writeChar) {
@@ -409,7 +416,7 @@ class WebBluetoothYcyClient {
     if (!this.writeChar) throw new Error('役次元 BLE 未连接');
     const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
     if (this.writeChar.properties?.writeWithoutResponse) {
-      this.writeChar.writeValueWithoutResponse(data);
+      await this.writeChar.writeValueWithoutResponse(data);
     } else {
       await this.writeChar.writeValueWithResponse(data);
     }
