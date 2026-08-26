@@ -80,47 +80,6 @@
                 <el-descriptions v-if="d.ready" :column="1" border size="small" class="ycy-native-card__meta">
                   <el-descriptions-item label="电量">{{ d.battery == null ? '—' : d.battery + '%' }}</el-descriptions-item>
                 </el-descriptions>
-                <!-- 郊狼 3.0（V3）原生桥控制：经 Rust 桥下发 dglabV3 控制帧 -->
-                <div v-if="d.ready && isDglabV3(d.name)" class="ycy-native-card__control">
-                  <div class="control-field">
-                    <label>A 通道强度 {{ (dglabV3Ctl[d.id]?.a) ?? 0 }}</label>
-                    <el-slider v-model="dglabV3Ctl[d.id].a" :min="0" :max="200" @change="dglabV3Apply(d)" />
-                  </div>
-                  <div class="control-field">
-                    <label>B 通道强度 {{ (dglabV3Ctl[d.id]?.b) ?? 0 }}</label>
-                    <el-slider v-model="dglabV3Ctl[d.id].b" :min="0" :max="200" @change="dglabV3Apply(d)" />
-                  </div>
-                  <div class="control-actions">
-                    <el-button type="primary" size="small" :loading="opLoading[`dglabV3:${d.id}`]" @click="dglabV3Apply(d)">应用强度</el-button>
-                    <el-button size="small" :loading="opLoading[`dglabV3:${d.id}`]" @click="dglabV3Stop(d)">停止</el-button>
-                  </div>
-                </div>
-                <!-- 负鼠振动控制器（47L127000）原生桥控制：经 Rust 桥下发 B3 强度帧 -->
-                <div v-if="d.ready && isOpossum(d.name)" class="ycy-native-card__control">
-                  <div class="control-field">
-                    <label>A 通道强度 {{ (opossumCtl[d.id]?.a) ?? 0 }}</label>
-                    <el-slider v-model="opossumCtl[d.id].a" :min="0" :max="200" @change="opossumApply(d)" />
-                  </div>
-                  <div class="control-field">
-                    <label>B 通道强度 {{ (opossumCtl[d.id]?.b) ?? 0 }}</label>
-                    <el-slider v-model="opossumCtl[d.id].b" :min="0" :max="200" @change="opossumApply(d)" />
-                  </div>
-                  <div class="control-actions">
-                    <el-button type="primary" size="small" :loading="opLoading[`opossum:${d.id}`]" @click="opossumApply(d)">应用强度</el-button>
-                    <el-button size="small" :loading="opLoading[`opossum:${d.id}`]" @click="opossumStop(d)">停止</el-button>
-                  </div>
-                </div>
-                <!-- 郊狼 2.0（D-LAB / DG-LAB）本机桥接控制 -->
-                <div v-if="d.ready && detectDglabProduct(d.name) === 'coyote2'" class="ycy-native-card__control">
-                  <div class="control-field"><label>A 强度 {{ dglabV2Ctl[d.id]?.a ?? 0 }}</label><el-slider v-model="dglabV2Ctl[d.id].a" :min="0" :max="100" @change="dglabV2NativeApply(d)" /></div>
-                  <div class="control-field"><label>B 强度 {{ dglabV2Ctl[d.id]?.b ?? 0 }}</label><el-slider v-model="dglabV2Ctl[d.id].b" :min="0" :max="100" @change="dglabV2NativeApply(d)" /></div>
-                  <div class="control-field"><label>A 频率 {{ dglabV2Ctl[d.id]?.ax ?? 5 }}</label><el-slider v-model="dglabV2Ctl[d.id].ax" :min="0" :max="31" @change="dglabV2NativeApply(d)" /></div>
-                  <div class="control-field"><label>B 频率 {{ dglabV2Ctl[d.id]?.bx ?? 5 }}</label><el-slider v-model="dglabV2Ctl[d.id].bx" :min="0" :max="31" @change="dglabV2NativeApply(d)" /></div>
-                  <div class="control-actions">
-                    <el-button type="primary" size="small" :loading="opLoading[`dglabV2N:${d.id}`]" @click="dglabV2NativeApply(d)">应用强度</el-button>
-                    <el-button size="small" :loading="opLoading[`dglabV2N:${d.id}`]" @click="dglabV2NativeStop(d)">停止</el-button>
-                  </div>
-                </div>
                 <div class="ycy-native-card__actions">
                   <el-button v-if="d.ready" type="danger" plain size="small" :loading="busy" @click="dglabNativeDisconnect(d)">断开连接</el-button>
                   <el-button v-else type="primary" size="small" :loading="busy" @click="dglabNativeConnect(d)">连接设备</el-button>
@@ -187,24 +146,6 @@
                 <el-descriptions :column="1" border size="small" class="ycy-native-card__meta">
                   <el-descriptions-item label="电量">{{ d.battery == null ? '—' : d.battery + '%' }}</el-descriptions-item>
                 </el-descriptions>
-                <!-- 郊狼 2.0 网页蓝牙直连 控制 -->
-                <div v-if="d.ready && detectDglabProduct(d.name) === 'coyote2'" class="ycy-native-card__control">
-                  <div class="control-field"><label>A 强度 {{ dglabV2Ctl[d.id]?.a ?? 0 }}</label><el-slider v-model="dglabV2Ctl[d.id].a" :min="0" :max="100" @change="dglabV2Apply(d)" /></div>
-                  <div class="control-field"><label>B 强度 {{ dglabV2Ctl[d.id]?.b ?? 0 }}</label><el-slider v-model="dglabV2Ctl[d.id].b" :min="0" :max="100" @change="dglabV2Apply(d)" /></div>
-                  <div class="control-field"><label>A 频率 {{ dglabV2Ctl[d.id]?.ax ?? 5 }}</label><el-slider v-model="dglabV2Ctl[d.id].ax" :min="0" :max="31" @change="dglabV2Apply(d)" /></div>
-                  <div class="control-field"><label>B 频率 {{ dglabV2Ctl[d.id]?.bx ?? 5 }}</label><el-slider v-model="dglabV2Ctl[d.id].bx" :min="0" :max="31" @change="dglabV2Apply(d)" /></div>
-                  <div class="control-actions">
-                    <el-button type="primary" size="small" :loading="opLoading[`dglabV2:${d.id}`]" @click="dglabV2Apply(d)">应用</el-button>
-                    <el-button size="small" :loading="opLoading[`dglabV2:${d.id}`]" @click="dglabV2Stop(d)">停止</el-button>
-                  </div>
-                </div>
-                <!-- 灵猫 / 爪印 传感器 实时数据（网页蓝牙通道） -->
-                <div v-if="d.ready && (isCivet(d.name) || isPaw(d.name))" class="ycy-native-card__control">
-                  <div class="control-field">
-                    <label>传感器数据</label>
-                    <span class="op-hint">{{ parseSensor(d.name, dglabSensor[d.id] || '') }}</span>
-                  </div>
-                </div>
                 <div class="ycy-native-card__actions">
                   <el-button type="danger" plain size="small" :loading="busy" @click="dglabWebbleDisconnect(d)">断开连接</el-button>
                 </div>
@@ -250,35 +191,6 @@
               <el-button size="small" :icon="Close" @click="disconnectDevice(dev)">断开</el-button>
             </div>
 
-            <!-- 手机连接 控制 -->
-            <div class="control-grid">
-              <div class="control-field">
-                <label>波形</label>
-                <el-select v-model="ctl(dev).pattern" size="small" class="control-input">
-                  <el-option v-for="p in dglabPatterns" :key="p" :label="p" :value="p" />
-                </el-select>
-                <span class="op-hint">选择电击节奏的样子，例如经典、心跳、潮汐</span>
-              </div>
-              <div class="control-field">
-                <label>强度 {{ ctl(dev).intensity }}</label>
-                <el-slider v-model="ctl(dev).intensity" :min="0" :max="100" />
-                <span class="op-hint">调节电击强弱，0 最弱、100 最强</span>
-              </div>
-              <div class="control-field">
-                <label>时长</label>
-                <el-select v-model="ctl(dev).ticks" size="small" class="control-input">
-                  <el-option label="循环播放" :value="-1" />
-                  <el-option label="播放一遍" :value="0" />
-                </el-select>
-                <span class="op-hint">选择循环播放，还是只播放一遍就停</span>
-              </div>
-              <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`dglabApply:${dev.deviceId}`]" @click="dglabApply(dev)">应用</el-button>
-                <el-button size="small" :loading="opLoading[`dglabStop:${dev.deviceId}`]" @click="dglabStop(dev)">停止</el-button>
-                <el-button size="small" :loading="opLoading[`dglabMax:${dev.deviceId}`]" @click="dglabMaxPrompt(dev)">强度上限 +10</el-button>
-              </div>
-              <div class="control-hint">“应用”下发当前设置；“停止”立刻断电；“强度上限 +10”把设备允许的最高强度再提高一档。</div>
-            </div>
           </div>
         </div>
       </section>
@@ -349,33 +261,6 @@
                     effect="plain"
                     style="margin-left: 4px"
                   >电量 {{ d.battery == null ? '—' : d.battery + '%' }}</el-tag>
-                </div>
-                <!-- 役次元 本机桥接 控制（按类型：电击 / 玩具 / 杯 / 灌肠机） -->
-                <div v-if="d.ready && detectYcyType(d.name) === 'EMS'" class="ycy-native-card__control">
-                  <div class="control-field"><label>左通道强度 {{ ycyNativeCtl[d.id]?.a ?? 0 }}</label><el-slider v-model="ycyNativeCtl[d.id].a" :min="0" :max="100" @change="ycyEmsSend(d)" /></div>
-                  <div class="control-field"><label>右通道强度 {{ ycyNativeCtl[d.id]?.b ?? 0 }}</label><el-slider v-model="ycyNativeCtl[d.id].b" :min="0" :max="100" @change="ycyEmsSend(d)" /></div>
-                  <div class="control-field"><label>频率 {{ ycyNativeCtl[d.id]?.freq ?? 50 }}</label><el-slider v-model="ycyNativeCtl[d.id].freq" :min="0" :max="100" @change="ycyEmsSend(d)" /></div>
-                  <div class="control-field"><label>脉宽 {{ ycyNativeCtl[d.id]?.pulse ?? 50 }}</label><el-slider v-model="ycyNativeCtl[d.id].pulse" :min="0" :max="100" @change="ycyEmsSend(d)" /></div>
-                  <div class="control-actions">
-                    <el-button type="primary" size="small" :loading="opLoading[`ycyEmsC:${d.id}`]" @click="ycyEmsSend(d)">应用</el-button>
-                    <el-button size="small" :loading="opLoading[`ycyStopC:${d.id}`]" @click="ycyStopSend(d)">停止</el-button>
-                  </div>
-                </div>
-                <div v-else-if="d.ready && detectYcyType(d.name) === 'TOY'" class="ycy-native-card__control">
-                  <div class="control-field"><label>速度 {{ ycyNativeCtl[d.id]?.speed ?? 0 }}</label><el-slider v-model="ycyNativeCtl[d.id].speed" :min="0" :max="100" @change="ycyToySend(d)" /></div>
-                  <div class="control-actions">
-                    <el-button type="primary" size="small" :loading="opLoading[`ycyToyC:${d.id}`]" @click="ycyToySend(d)">应用</el-button>
-                    <el-button size="small" :loading="opLoading[`ycyStopC:${d.id}`]" @click="ycyStopSend(d)">停止</el-button>
-                  </div>
-                </div>
-                <div v-else-if="d.ready && (detectYcyType(d.name) === 'CUP' || detectYcyType(d.name) === 'ENEMA')" class="ycy-native-card__control">
-                  <div class="control-field"><label>强度 {{ ycyNativeCtl[d.id]?.pump ?? 1 }}</label><el-slider v-model="ycyNativeCtl[d.id].pump" :min="1" :max="255" @change="ycyPumpSend(d,'add')" /></div>
-                  <div class="control-actions">
-                    <el-button type="primary" size="small" :loading="opLoading[`ycyPumpC:${d.id}`]" @click="ycyPumpSend(d,'add')">抽吸</el-button>
-                    <el-button size="small" :loading="opLoading[`ycyPumpC:${d.id}`]" @click="ycyPumpSend(d,'guan')">注水</el-button>
-                    <el-button size="small" :loading="opLoading[`ycyPumpC:${d.id}`]" @click="ycyPumpSend(d,'cut')">释放</el-button>
-                    <el-button size="small" :loading="opLoading[`ycyStopC:${d.id}`]" @click="ycyStopSend(d)">停止</el-button>
-                  </div>
                 </div>
                 <div class="ycy-native-card__actions">
                   <el-button v-if="d.ready" type="danger" plain size="small" :loading="busy" @click="ycyNativeDisconnect(d)">断开连接</el-button>
@@ -448,32 +333,6 @@
                       style="margin-left: 4px"
                     >电量 {{ d.battery == null ? '—' : d.battery + '%' }}</el-tag>
                   </div>
-                  <div class="ycy-native-card__control" v-if="d.ready && detectYcyType(d.name) === 'EMS'">
-                    <div class="control-field"><label>左通道强度 {{ ycyNativeCtl[d.id]?.a ?? 0 }}</label><el-slider v-model="ycyNativeCtl[d.id].a" :min="0" :max="100" @change="ycyEmsSend(d)" /></div>
-                    <div class="control-field"><label>右通道强度 {{ ycyNativeCtl[d.id]?.b ?? 0 }}</label><el-slider v-model="ycyNativeCtl[d.id].b" :min="0" :max="100" @change="ycyEmsSend(d)" /></div>
-                    <div class="control-field"><label>频率 {{ ycyNativeCtl[d.id]?.freq ?? 50 }}</label><el-slider v-model="ycyNativeCtl[d.id].freq" :min="0" :max="100" @change="ycyEmsSend(d)" /></div>
-                    <div class="control-field"><label>脉宽 {{ ycyNativeCtl[d.id]?.pulse ?? 50 }}</label><el-slider v-model="ycyNativeCtl[d.id].pulse" :min="0" :max="100" @change="ycyEmsSend(d)" /></div>
-                    <div class="control-actions">
-                      <el-button type="primary" size="small" :loading="opLoading[`ycyEmsC:${d.id}`]" @click="ycyEmsSend(d)">应用</el-button>
-                      <el-button size="small" :loading="opLoading[`ycyStopC:${d.id}`]" @click="ycyStopSend(d)">停止</el-button>
-                    </div>
-                  </div>
-                  <div class="ycy-native-card__control" v-else-if="d.ready && detectYcyType(d.name) === 'TOY'">
-                    <div class="control-field"><label>速度 {{ ycyNativeCtl[d.id]?.speed ?? 0 }}</label><el-slider v-model="ycyNativeCtl[d.id].speed" :min="0" :max="100" @change="ycyToySend(d)" /></div>
-                    <div class="control-actions">
-                      <el-button type="primary" size="small" :loading="opLoading[`ycyToyC:${d.id}`]" @click="ycyToySend(d)">应用</el-button>
-                      <el-button size="small" :loading="opLoading[`ycyStopC:${d.id}`]" @click="ycyStopSend(d)">停止</el-button>
-                    </div>
-                  </div>
-                  <div class="ycy-native-card__control" v-else-if="d.ready && (detectYcyType(d.name) === 'CUP' || detectYcyType(d.name) === 'ENEMA')">
-                    <div class="control-field"><label>强度 {{ ycyNativeCtl[d.id]?.pump ?? 1 }}</label><el-slider v-model="ycyNativeCtl[d.id].pump" :min="1" :max="255" @change="ycyPumpSend(d,'add')" /></div>
-                    <div class="control-actions">
-                      <el-button type="primary" size="small" :loading="opLoading[`ycyPumpC:${d.id}`]" @click="ycyPumpSend(d,'add')">抽吸</el-button>
-                      <el-button size="small" :loading="opLoading[`ycyPumpC:${d.id}`]" @click="ycyPumpSend(d,'guan')">注水</el-button>
-                      <el-button size="small" :loading="opLoading[`ycyPumpC:${d.id}`]" @click="ycyPumpSend(d,'cut')">释放</el-button>
-                      <el-button size="small" :loading="opLoading[`ycyStopC:${d.id}`]" @click="ycyStopSend(d)">停止</el-button>
-                    </div>
-                  </div>
                   <div class="ycy-native-card__actions">
                     <el-button type="danger" plain size="small" :loading="busy" @click="ycyWebbleDisconnect(d)">断开连接</el-button>
                   </div>
@@ -518,64 +377,6 @@
               <el-button size="small" :icon="Close" @click="disconnectDevice(dev)">断开</el-button>
             </div>
 
-            <!-- 远程桥接 控制 -->
-            <div v-if="dev.mode === 'bridge'" class="control-grid">
-              <div class="control-field">
-                <label>玩法编号</label>
-                <el-input v-model="ctl(dev).commandId" size="small" placeholder="设备里已存的玩法编号" class="control-input" />
-                <span class="op-hint">触发设备里已存好的玩法，在框里填写对应的编号</span>
-              </div>
-              <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`ycyTrigger:${dev.deviceId}`]" @click="ycyTrigger(dev)">触发</el-button>
-                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">全部停止</el-button>
-              </div>
-              <div class="control-hint">“触发”按编号运行对应玩法；“全部停止”让设备立刻停下。</div>
-            </div>
-
-            <!-- 电击器 控制 -->
-            <div v-else-if="dev.type === 'YCY_EMS'" class="control-grid">
-              <div class="control-field">
-                <label>左通道强度 {{ ctl(dev).aStrength }}</label>
-                <el-slider v-model="ctl(dev).aStrength" :min="0" :max="100" />
-                <span class="op-hint">左边电击通道的强弱</span>
-              </div>
-              <div class="control-field">
-                <label>右通道强度 {{ ctl(dev).bStrength }}</label>
-                <el-slider v-model="ctl(dev).bStrength" :min="0" :max="100" />
-                <span class="op-hint">右边电击通道的强弱</span>
-              </div>
-              <div class="control-field">
-                <label>波形</label>
-                <el-select v-model="ctl(dev).wave" size="small" class="control-input">
-                  <el-option v-for="w in 17" :key="w" :label="`波形 ${w}`" :value="w" />
-                </el-select>
-                <span class="op-hint">选择电击的波形样式</span>
-              </div>
-              <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`ycyEms:${dev.deviceId}`]" @click="ycyEmsApply(dev)">应用</el-button>
-                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">全部停止</el-button>
-              </div>
-            </div>
-
-            <!-- 玩具 / 电机 控制 -->
-            <div v-else-if="dev.type === 'YCY_TOY'" class="control-grid">
-              <div class="control-field">
-                <label>速度 {{ ctl(dev).speed }}</label>
-                <el-slider v-model="ctl(dev).speed" :min="0" :max="100" />
-                <span class="op-hint">电机转动的快慢</span>
-              </div>
-              <div class="control-field">
-                <label>模式</label>
-                <el-select v-model="ctl(dev).mode" size="small" class="control-input">
-                  <el-option v-for="m in 4" :key="m" :label="`模式 ${m}`" :value="m" />
-                </el-select>
-                <span class="op-hint">电机的运行方式</span>
-              </div>
-              <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`ycyToy:${dev.deviceId}`]" @click="ycyToyApply(dev)">应用</el-button>
-                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">停止</el-button>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -673,12 +474,6 @@ import * as dglabBridge from '../api/dglabBridge'
 import type { DglabBridgeDevice } from '../api/dglabBridge'
 import * as brandBle from '../web-ble/brandBle'
 import * as ycyBle from '../web-ble/ycyBle'
-// 郊狼 3.0 控制帧（前端本地副本，与后端 backend/brands/protocols/dglabV3.js 同源、已验证）
-import * as dglabV3 from '../web-ble/dglabV3'
-// 负鼠振动控制器控制帧（DG-LAB 47L127000，与后端 dglabOpossum.js 同源）
-import * as dglabOpossum from '../web-ble/dglabOpossum'
-// 郊狼 2.0（DG-LAB V2）控制帧（与后端 dglabV2.js 同源）
-import * as dglabV2 from '../web-ble/dglabV2'
 
 // 品牌中文显示名（按页面要求显示：郊狼 / 役次元）。
 const BRAND_LABEL: Record<string, string> = {
@@ -738,29 +533,6 @@ const activeBrand = ref<'dglab' | 'ycy'>('dglab')
 const busy = ref(false)
 const refreshing = ref(false)
 
-// 判别 DG-LAB 47L 全系具体产品（广播名型号段细分），避免把所有 47L* 都误判为郊狼3.0。
-//   coyote3 : 47L121000（郊狼3.0，V3 控制帧）
-//   opossum : 47L127000（负鼠振动控制器，B3 强度帧）
-//   civet   : 47L124000（灵猫边缘传感器，传感器/配置）
-//   paw     : 47L120300 / 47L120100（爪印无线按钮传感器，传感器/配置）
-function detectDglabProduct(name?: string | null): 'coyote3' | 'opossum' | 'civet' | 'paw' | 'coyote2' | 'unknown' {
-  const n = (name || '').trim().toUpperCase()
-  if (/^47L121/i.test(n)) return 'coyote3'
-  if (/^47L127/i.test(n)) return 'opossum'
-  if (/^47L124/i.test(n)) return 'civet'
-  if (/^47L1203/i.test(n) || /^47L1201/i.test(n)) return 'paw'
-  if (n.startsWith('D-LAB') || n.startsWith('DG-LAB') || n.startsWith('COYOTE') || n.startsWith('YSKJ') || n.startsWith('ESTIM')) return 'coyote2'
-  return 'unknown'
-}
-// 郊狼 3.0（V3，广播名 47L121*）：原生桥下走 dglabV3 控制帧
-function isDglabV3(name?: string | null): boolean {
-  return detectDglabProduct(name) === 'coyote3'
-}
-// 负鼠振动控制器（47L127*）：原生桥下走 dglabOpossum 的 B3 强度帧
-function isOpossum(name?: string | null): boolean {
-  return detectDglabProduct(name) === 'opossum'
-}
-
 // 郊狼 发现
 const isMac = computed(() => /Mac/i.test(navigator.userAgent || navigator.platform || ''))
 // 连接模式（用户用切换按钮选）：本机桥接(native, mac) / 网页蓝牙(webble) / 手机连接(phone)
@@ -813,12 +585,6 @@ async function dglabWebbleConnect() {
       if (dev) dev.battery = b
     })
     dglabWebbleUnlisten.set(id, un)
-    // 郊狼 2.0 预建强度控制 state；灵猫/爪印 订阅 notify 实时数据
-    if (detectDglabProduct(meta.name) === 'coyote2') ensureV2Ctl(id)
-    if (isCivet(meta.name) || isPaw(meta.name)) {
-      const sun = brandBle.subscribeNotify(id, (hex) => { dglabSensor[id] = hex })
-      dglabWebbleUnlisten.set(id + ':sensor', sun)
-    }
     ElMessage.success('已连接 ' + brandLabel('dglab', meta.name))
   } catch (e: any) {
     const msg = String(e?.message || '')
@@ -902,26 +668,6 @@ function stopAutoRefresh() {
     autoRefreshTimer.value = null
   }
 }
-const controlState = reactive<Record<string, Record<string, any>>>({})
-const opLoading = reactive<Record<string, boolean>>({})
-function withLoading(key: string, fn: () => Promise<void>) {
-  opLoading[key] = true
-  return fn().finally(() => { opLoading[key] = false })
-}
-function ctl(dev: BrandDevice) {
-  if (!controlState[dev.deviceId]) {
-    controlState[dev.deviceId] = {
-      pattern: '经典', intensity: 60, ticks: -1,
-      commandId: '', aStrength: 40, bStrength: 40, wave: 1,
-      speed: 60, mode: 1,
-      v2AStrength: 0, v2BStrength: 0, v2Ax: 5, v2Ay: 200, v2Bx: 5, v2By: 200,
-    }
-  }
-  return controlState[dev.deviceId]
-}
-
-const dglabPatterns = ['经典', '心跳', '潮汐', '渐强', '随机', '脉冲', '波浪', '电击']
-
 async function refreshConnected() {
   refreshing.value = true
   try {
@@ -1013,12 +759,6 @@ async function dglabNativeRefresh() {
     dglabNativeBtOn.value = st.bluetoothOn || all.length > 0
     dglabAllDevices.value = all
     dglabNativeDevices.value = all.filter((d) => DGLAB_RE.test(d.name || ''))
-    // 为每台郊狼 3.0（V3）/ 负鼠（47L127000）/ 郊狼 2.0（D-LAB）设备预建控制 state，供卡片内滑块 v-model 使用
-    for (const d of dglabNativeDevices.value) {
-      if (isDglabV3(d.name)) ensureV3Ctl(d.id)
-      if (isOpossum(d.name)) ensureOpossumCtl(d.id)
-      if (detectDglabProduct(d.name) === 'coyote2') ensureV2Ctl(d.id)
-    }
     await dglabNativeAuto()
   } catch (_) {
     // 桥进程未运行（浏览器开发环境 / 客户端未拉起）≠ 蓝牙未开启，不据此误报。
@@ -1054,78 +794,6 @@ async function dglabNativeDisconnect(d: DglabBridgeDevice) {
     busy.value = false
   }
 }
-// ============ 郊狼 3.0（V3）原生桥控制 ============
-// 帧由 dglabV3 模块构造（已对照官方 V3 协议验证）；写特征用桥缓存的真实设备写特征，不写死 UUID。
-const dglabV3Ctl = ref<Record<string, { a: number; b: number }>>({})
-function ensureV3Ctl(id: string) {
-  if (!dglabV3Ctl.value[id]) dglabV3Ctl.value[id] = { a: 0, b: 0 }
-  return dglabV3Ctl.value[id]
-}
-async function dglabV3Apply(d: DglabBridgeDevice) {
-  const ctl = ensureV3Ctl(d.id)
-  opLoading[`dglabV3:${d.id}`] = true
-  try {
-    const op = dglabV3.toGattOps({ cmd: 'v3_setStrength', a: ctl.a, b: ctl.b })
-    await dglabBridge.send(op.frame)
-    ElMessage.success(`已下发 郊狼3.0 强度 A:${ctl.a} B:${ctl.b}`)
-  } catch (e: any) {
-    ElMessage.error(e?.message || '下发失败')
-  } finally {
-    opLoading[`dglabV3:${d.id}`] = false
-  }
-}
-async function dglabV3Stop(d: DglabBridgeDevice) {
-  opLoading[`dglabV3:${d.id}`] = true
-  try {
-    const op = dglabV3.toGattOps({ cmd: 'v3_stop' })
-    await dglabBridge.send(op.frame)
-    const ctl = ensureV3Ctl(d.id)
-    ctl.a = 0
-    ctl.b = 0
-    ElMessage.success('已停止 郊狼3.0')
-  } catch (e: any) {
-    ElMessage.error(e?.message || '停止失败')
-  } finally {
-    opLoading[`dglabV3:${d.id}`] = false
-  }
-}
-
-// ============ 负鼠振动控制器（47L127000）原生桥控制 ============
-// 帧由 dglabOpossum 模块构造（已对照官方 opossum 协议）；写特征用桥缓存的真实设备写特征，不写死 UUID。
-const opossumCtl = ref<Record<string, { a: number; b: number }>>({})
-function ensureOpossumCtl(id: string) {
-  if (!opossumCtl.value[id]) opossumCtl.value[id] = { a: 0, b: 0 }
-  return opossumCtl.value[id]
-}
-async function opossumApply(d: DglabBridgeDevice) {
-  const ctl = ensureOpossumCtl(d.id)
-  opLoading[`opossum:${d.id}`] = true
-  try {
-    const op = dglabOpossum.toGattOps({ cmd: 'op_setStrength', a: ctl.a, b: ctl.b })
-    await dglabBridge.send(op.frame)
-    ElMessage.success(`已下发 负鼠 强度 A:${ctl.a} B:${ctl.b}`)
-  } catch (e: any) {
-    ElMessage.error(e?.message || '下发失败')
-  } finally {
-    opLoading[`opossum:${d.id}`] = false
-  }
-}
-async function opossumStop(d: DglabBridgeDevice) {
-  opLoading[`opossum:${d.id}`] = true
-  try {
-    const op = dglabOpossum.toGattOps({ cmd: 'op_setStrength', a: 0, b: 0 })
-    await dglabBridge.send(op.frame)
-    const ctl = ensureOpossumCtl(d.id)
-    ctl.a = 0
-    ctl.b = 0
-    ElMessage.success('已停止 负鼠')
-  } catch (e: any) {
-    ElMessage.error(e?.message || '停止失败')
-  } finally {
-    opLoading[`opossum:${d.id}`] = false
-  }
-}
-
 async function dglabNativeConnectAll() {
   busy.value = true
   try {
@@ -1248,8 +916,6 @@ async function ycyNativeRefresh() {
     ycyNativeBtOn.value = st.bluetoothOn || all.length > 0
     ycyAllDevices.value = all
     ycyNativeDevices.value = all.filter((d) => YCY_RE.test(d.name || ''))
-    // 为每台已识别役次元设备预建控制 state（按类型），供卡片内滑块 v-model 使用
-    for (const d of ycyNativeDevices.value) ensureYcyCtl(d.id)
     await ycyNativeAuto()
   } catch (_) {
     ycyBridgeUp.value = false
@@ -1353,7 +1019,6 @@ async function ycyWebbleConnect() {
       if (dev) dev.battery = b
     })
     ycyWebbleUnlisten.set(id, un)
-    ensureYcyCtl(id)
     ElMessage.success('已连接 ' + brandLabel('ycy', meta.name))
   } catch (e: any) {
     const msg = String(e?.message || '')
@@ -1377,184 +1042,12 @@ async function ycyWebbleDisconnect(d: YcyWebbleDevice) {
   }
 }
 
-async function dglabApply(dev: BrandDevice) {
-  const s = ctl(dev)
-  await withLoading(`dglabApply:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'setPattern', { pattern: s.pattern, intensity: s.intensity, ticks: s.ticks })
-    ElMessage.success('已下发波形')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
-}
-
-async function dglabStop(dev: BrandDevice) {
-  await withLoading(`dglabStop:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'stop')
-  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
-}
-
-async function dglabMaxPrompt(dev: BrandDevice) {
-  await withLoading(`dglabMax:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'setMaxIntensity', { delta: 10 })
-  }).catch((e: any) => { ElMessage.error(e?.message || '操作失败') })
-}
-
-async function ycyTrigger(dev: BrandDevice) {
-  const s = ctl(dev)
-  if (!s.commandId) { ElMessage.warning('请填写玩法编号'); return }
-  await withLoading(`ycyTrigger:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'trigger', { commandId: s.commandId })
-  }).catch((e: any) => { ElMessage.error(e?.message || '触发失败') })
-}
-
-async function ycyStop(dev: BrandDevice) {
-  await withLoading(`ycyStop:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'ycyStop')
-  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
-}
-
-async function ycyEmsApply(dev: BrandDevice) {
-  const s = ctl(dev)
-  await withLoading(`ycyEms:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'setStrength', { channel: 'A', value: s.aStrength })
-    await brandsApi.control(dev.deviceId, 'setStrength', { channel: 'B', value: s.bStrength })
-    await brandsApi.control(dev.deviceId, 'setMode', { channel: 'A', mode: s.wave })
-    ElMessage.success('已下发')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
-}
-
-async function ycyToyApply(dev: BrandDevice) {
-  const s = ctl(dev)
-  await withLoading(`ycyToy:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'setSpeed', { motor: 'A', speed: Math.round((s.speed / 100) * 20) })
-    await brandsApi.control(dev.deviceId, 'setToyMode', { motor: 'A', mode: s.mode })
-    ElMessage.success('已下发')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
-}
-
 async function disconnectDevice(dev: BrandDevice) {
   try {
     await brandsApi.disconnect(dev.deviceId)
     ElMessage.success('已断开')
     await refreshConnected()
   } catch (e: any) { ElMessage.error(e?.message || '断开失败') }
-}
-
-// ============ 役次元 本机/直连 控制（按类型：电击 / 玩具电机 / 杯 / 灌肠机）============
-// 同一套控制逻辑同时服务「本机桥接(Rust ycy_bridge)」与「网页蓝牙直连(ycyBle)」两条通道：
-// sendYcy() 自动按设备来源选择下发通道（网页蓝牙走 ycyBle.sendFrame，原生桥走 ycyBridge.send）。
-const ycyNativeCtl = reactive<Record<string, { a: number; b: number; freq: number; pulse: number; speed: number; pump: number; proto: string }>>({})
-function ensureYcyCtl(id: string) {
-  if (!ycyNativeCtl[id]) ycyNativeCtl[id] = { a: 0, b: 0, freq: 50, pulse: 50, speed: 0, pump: 1, proto: 'v3' }
-  return ycyNativeCtl[id]
-}
-function detectYcyType(name?: string | null): 'EMS' | 'TOY' | 'CUP' | 'ENEMA' | 'OTHER' {
-  const n = name || ''
-  if (/FJB/i.test(n)) return 'CUP'
-  if (/(YISK|灌肠|ENEMA|GLJ|GLS)/i.test(n)) return 'ENEMA'
-  if (/DJ/i.test(n)) return 'EMS'
-  if (/(YSKJ|YOKO|YOKONEX|YCY|YYC|YICIYUAN)/i.test(n)) return 'EMS' // 系列默认按电击主机处理（最通用）
-  return 'OTHER'
-}
-function isYcyWebble(d: { id: string }) {
-  return ycyWebbleDevices.value.some((x) => x.id === d.id)
-}
-async function sendYcy(d: { id: string }, bytes: number[]): Promise<void> {
-  if (isYcyWebble(d)) return ycyBle.sendFrame(d.id, bytes)
-  return ycyBridge.send(brandBle.bytesToHex(bytes))
-}
-async function withYcyLoading(key: string, fn: () => Promise<void>) {
-  opLoading[key] = true
-  try { await fn() } finally { opLoading[key] = false }
-}
-async function ycyEmsSend(d: any) {
-  const c = ensureYcyCtl(d.id)
-  await withYcyLoading(`ycyEmsC:${d.id}`, async () => {
-    await sendYcy(d, ycyBle.buildEmsStrength({ channel: 'A', value: c.a, freq: c.freq, pulse: c.pulse }))
-    await sendYcy(d, ycyBle.buildEmsStrength({ channel: 'B', value: c.b, freq: c.freq, pulse: c.pulse }))
-    ElMessage.success('已下发 电击强度')
-  }).catch((e: any) => ElMessage.error(e?.message || '下发失败'))
-}
-async function ycyToySend(d: any) {
-  const c = ensureYcyCtl(d.id)
-  await withYcyLoading(`ycyToyC:${d.id}`, async () => {
-    await sendYcy(d, ycyBle.buildMotor({ speed: Math.round((c.speed / 100) * 20) }))
-    ElMessage.success('已下发 电机速度')
-  }).catch((e: any) => ElMessage.error(e?.message || '下发失败'))
-}
-async function ycyPumpSend(d: any, scene: 'add' | 'cut' | 'guan' | 'stop') {
-  const c = ensureYcyCtl(d.id)
-  await withYcyLoading(`ycyPumpC:${d.id}`, async () => {
-    if (c.proto === 'v3') await sendYcy(d, ycyBle.buildPumpV3({ scene, air: c.pump, water: c.pump }))
-    else await sendYcy(d, ycyBle.buildPumpEncrypted({ protocol: c.proto as 'v1' | 'v2', scene, ss: c.pump }))
-    ElMessage.success('已下发 泵指令: ' + scene)
-  }).catch((e: any) => ElMessage.error(e?.message || '下发失败'))
-}
-async function ycyStopSend(d: any) {
-  const t = detectYcyType(d.name)
-  await withYcyLoading(`ycyStopC:${d.id}`, async () => {
-    if (t === 'TOY') await sendYcy(d, ycyBle.buildMotor({ speed: 0 }))
-    else if (t === 'CUP' || t === 'ENEMA') await sendYcy(d, ycyBle.buildPumpV3({ scene: 'stop' }))
-    else await sendYcy(d, ycyBle.buildEmsStop())
-    ElMessage.success('已停止')
-  }).catch((e: any) => ElMessage.error(e?.message || '停止失败'))
-}
-
-// ============ 郊狼 2.0（DGLAB_V2 / Web Bluetooth 直连）控制 ============
-// 网页蓝牙直连的郊狼 2.0（D-LAB / DG-LAB 广播名）走 brandBle.sendGattOp 直接下发强度/波形帧。
-const dglabV2Ctl = reactive<Record<string, { a: number; b: number; ax: number; ay: number; bx: number; by: number }>>({})
-function ensureV2Ctl(id: string) {
-  if (!dglabV2Ctl[id]) dglabV2Ctl[id] = { a: 0, b: 0, ax: 5, ay: 200, bx: 5, by: 200 }
-  return dglabV2Ctl[id]
-}
-async function dglabV2Apply(d: any) {
-  const c = ensureV2Ctl(d.id)
-  await withLoading(`dglabV2:${d.id}`, async () => {
-    await brandBle.sendGattOp(d.id, brandBle.packStrengthOps(c.a, c.b)[0])
-    await brandBle.sendGattOp(d.id, brandBle.packWaveformOps('A', c.ax, c.ay)[0])
-    await brandBle.sendGattOp(d.id, brandBle.packWaveformOps('B', c.bx, c.by)[0])
-    ElMessage.success(`已下发 郊狼2.0 强度 A:${c.a} B:${c.b}`)
-  }).catch((e: any) => ElMessage.error(e?.message || '下发失败'))
-}
-async function dglabV2Stop(d: any) {
-  await withLoading(`dglabV2:${d.id}`, async () => {
-    await brandBle.sendGattOp(d.id, brandBle.packStrengthOps(0, 0)[0])
-    const c = ensureV2Ctl(d.id); c.a = 0; c.b = 0
-    ElMessage.success('已停止 郊狼2.0')
-  }).catch((e: any) => ElMessage.error(e?.message || '停止失败'))
-}
-// 郊狼 2.0（D-LAB）本机桥接控制：V2 有三个独立写特征，需显式传各指令对应的写特征 UUID。
-async function dglabV2NativeApply(d: any) {
-  const c = ensureV2Ctl(d.id)
-  await withLoading(`dglabV2N:${d.id}`, async () => {
-    const ops = [
-      ...dglabV2.toGattOpsHex('v2_setStrength', { a: c.a, b: c.b }),
-      ...dglabV2.toGattOpsHex('v2_setWaveform', { channel: 'A', x: c.ax, y: 200 }),
-      ...dglabV2.toGattOpsHex('v2_setWaveform', { channel: 'B', x: c.bx, y: 200 }),
-    ]
-    for (const op of ops) await dglabBridge.send(op.hex, op.characteristic)
-    ElMessage.success(`已下发 郊狼2.0 强度 A:${c.a} B:${c.b}`)
-  }).catch((e: any) => ElMessage.error(e?.message || '下发失败'))
-}
-async function dglabV2NativeStop(d: any) {
-  await withLoading(`dglabV2N:${d.id}`, async () => {
-    const stop = dglabV2.toGattOpsHex('v2_stop')[0]
-    await dglabBridge.send(stop.hex, stop.characteristic)
-    const c = ensureV2Ctl(d.id); c.a = 0; c.b = 0
-    ElMessage.success('已停止 郊狼2.0')
-  }).catch((e: any) => ElMessage.error(e?.message || '停止失败'))
-}
-
-// ============ 灵猫 / 爪印 传感器（网页蓝牙直连，notify 实时回传）============
-// 灵猫(47L124000) 气压、爪印(47L120300) 按钮/动作 经 notify 上报；本机桥(Rust)无 notify 转发，故仅网页蓝牙通道可看实时值。
-const dglabSensor = reactive<Record<string, string>>({})
-function isCivet(name?: string | null) { return detectDglabProduct(name) === 'civet' }
-function isPaw(name?: string | null) { return detectDglabProduct(name) === 'paw' }
-function parseSensor(name: string | undefined, hex: string): string {
-  const p = detectDglabProduct(name)
-  if (!hex.startsWith('D0')) return hex ? `原始帧 ${hex}` : '—'
-  // D0 数据帧：首字节 D0，后续为传感器负载
-  if (p === 'civet') return `灵猫气压数据 ${hex.slice(2)}`
-  if (p === 'paw') return `爪印传感器数据 ${hex.slice(2)}`
-  return hex
 }
 
 async function probeBridgeAndPickDefault() {
