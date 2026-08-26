@@ -229,7 +229,7 @@
       <section class="brand-col">
         <div class="brand-col__head">
           <h3 class="brand-col__name">役次元</h3>
-          <p class="brand-col__desc">遥控蓝牙设备：通过本机蓝牙桥直连，可同时连接多台，连上即可查看电量与状态。</p>
+          <p class="brand-col__desc">遥控蓝牙设备：通过本机蓝牙（mac 走原生桥 / Windows / Linux / Android 走网页蓝牙）直连，可同时连接多台，连上即可查看电量与状态。</p>
         </div>
 
         <el-card shadow="never" class="section-card">
@@ -244,8 +244,10 @@
             </div>
           </template>
 
-          <!-- 本机直连（多设备） -->
+          <!-- 本机直连（多设备）：mac 走原生桥；非 macOS 走网页蓝牙直连 -->
           <template v-if="ycyMode === 'local'">
+            <!-- 原生桥（仅 macOS） -->
+            <template v-if="ycyLocalMode === 'native'">
             <div class="discover-row">
               <el-tag :type="ycyNativeSummary.type" size="small" effect="light">{{ ycyNativeSummary.text }}</el-tag>
               <el-button type="primary" size="small" :loading="busy" :disabled="ycyNativeDevices.length === 0" @click="ycyNativeConnectAll">全部连接</el-button>
@@ -312,6 +314,58 @@
                 </div>
               </div>
             </div>
+            </template>
+
+            <!-- 浏览器直连（网页蓝牙 Web Bluetooth，非 macOS 自动选用） -->
+            <template v-else>
+              <div class="discover-row">
+                <el-tag :type="ycyWebbleHint.type" size="small" effect="light">{{ ycyWebbleHint.text }}</el-tag>
+                <el-button type="primary" size="small" :loading="scanningYcyWebble" :disabled="!webbleSupported" @click="ycyWebbleConnect">连接设备</el-button>
+              </div>
+              <p class="op-hint">浏览器通过电脑蓝牙直接连接役次元：点“连接设备”后在系统蓝牙选择器里挑选即可，连上自动显示电量与设备类型，可同时连多台。需使用 Chrome / Edge 等支持网页蓝牙的浏览器，且页面须通过 https 或本机 localhost 打开。Windows / Linux / Android 均可使用。</p>
+              <el-alert
+                v-if="!webbleSupported"
+                class="hint"
+                type="warning"
+                :closable="false"
+                title="当前浏览器不支持网页蓝牙直连，请改用 Chrome / Edge 打开本页。"
+              />
+              <el-alert
+                v-else-if="ycyWebbleDevices.length === 0"
+                class="hint"
+                type="info"
+                :closable="false"
+                title="点击“连接设备”以选择并连接附近的役次元设备（电击主机 / 杯 / 灌肠机均可）。"
+              />
+              <div v-else class="ycy-native-list">
+                <el-card
+                  v-for="d in ycyWebbleDevices"
+                  :key="d.id"
+                  shadow="hover"
+                  class="ycy-native-card"
+                  :class="{ 'ycy-native-card--ready': d.ready }"
+                >
+                  <div class="ycy-native-card__head">
+                    <el-icon class="ycy-native-card__icon ycy-native-card__icon--ok"><CircleCheck /></el-icon>
+                    <div class="ycy-native-card__title">
+                      <div class="ycy-native-card__name">{{ brandLabel('ycy', d.name) }}</div>
+                    </div>
+                    <el-tag type="success" size="small" effect="light">已连接</el-tag>
+                    <el-tag type="info" size="small" effect="plain">{{ ycyTypeLabel(d.name) }}</el-tag>
+                    <el-tag
+                      v-if="d.ready"
+                      :type="d.battery == null ? 'info' : (d.battery <= 20 ? 'danger' : d.battery <= 50 ? 'warning' : 'success')"
+                      size="small"
+                      effect="plain"
+                      style="margin-left: 4px"
+                    >电量 {{ d.battery == null ? '—' : d.battery + '%' }}</el-tag>
+                  </div>
+                  <div class="ycy-native-card__actions">
+                    <el-button type="danger" plain size="small" :loading="busy" @click="ycyWebbleDisconnect(d)">断开连接</el-button>
+                  </div>
+                </el-card>
+              </div>
+            </template>
           </template>
 
           <!-- 远程桥接 -->
@@ -504,6 +558,7 @@ import type { YcyBridgeDevice } from '../api/ycyBridge'
 import * as dglabBridge from '../api/dglabBridge'
 import type { DglabBridgeDevice } from '../api/dglabBridge'
 import * as brandBle from '../web-ble/brandBle'
+import * as ycyBle from '../web-ble/ycyBle'
 
 // 品牌中文显示名（按页面要求显示：郊狼 / 役次元）。
 const BRAND_LABEL: Record<string, string> = {
@@ -627,9 +682,11 @@ async function dglabWebbleDisconnect(d: DglabWebbleDevice) {
   }
 }
 
-// 役次元：mac 走本机直连，其他平台走远程桥接
-// 连接模式（仅 mac 上可切换）：本机直连 / 远程桥接；非 mac 直接走远程桥接
-const ycyMode = ref<'local' | 'bridge'>(isMac.value ? 'local' : 'bridge')
+// 役次元 本机直连方式自动选择：mac 走原生桥（Swift 桥，仅 macOS 可用），其他平台走浏览器直连（网页蓝牙，Windows / Linux / Android 可用）。
+// macOS 下 YCY 自定义 GATT 与郊狼类似有枚举不确定性，故 macOS 不暴露网页蓝牙模式（改走原生桥）。
+const ycyLocalMode = computed<'native' | 'webble'>(() => isMac.value ? 'native' : 'webble')
+// 连接模式（仅 mac 上可见切换）：本机直连 / 远程桥接；非 mac 固定走“本机直连”（实际为网页蓝牙直连）
+const ycyMode = ref<'local' | 'bridge'>('local')
 
 // 添加设备 对话框
 const addDialog = ref(false)
@@ -666,7 +723,7 @@ const ycyConnected = computed<BrandDevice[]>(() => connectedDevices.value.filter
 
 // 统计
 const totalCount = computed(() =>
-  dglabNativeDevices.value.length + dglabWebbleDevices.value.length + ycyNativeDevices.value.length + backendDevices.value.length
+  dglabNativeDevices.value.length + dglabWebbleDevices.value.length + ycyNativeDevices.value.length + ycyWebbleDevices.value.length + backendDevices.value.length
 )
 const onlineCount = computed(() => connectedDevices.value.filter((d) => d.connected).length)
 const offlineCount = computed(() => connectedDevices.value.filter((d) => !d.connected).length)
@@ -1009,6 +1066,54 @@ function stopYcyNativeTimer() {
   }
 }
 
+// 役次元 浏览器直连（网页蓝牙 Web Bluetooth，跨平台：Windows / Linux / Android 的 Edge / Chrome）
+// 同一套设备名识别 / 类型标签 / 电量展示逻辑，与 macOS 原生桥一致；仅连接通道不同。
+interface YcyWebbleDevice { id: string; name: string; battery?: number | null; ready: boolean }
+const ycyWebbleDevices = ref<YcyWebbleDevice[]>([])
+const scanningYcyWebble = ref(false)
+const ycyWebbleUnlisten = new Map<string, () => void>()
+const ycyWebbleHint = computed(() => {
+  if (!webbleSupported.value) return { type: 'warning' as const, text: '浏览器不支持' }
+  const n = ycyWebbleDevices.value.length
+  return { type: (n ? 'success' : 'info') as const, text: n ? `已连接 ${n} 台` : '待连接' }
+})
+async function ycyWebbleConnect() {
+  if (!webbleSupported.value) { ElMessage.warning('当前浏览器不支持网页蓝牙直连'); return }
+  scanningYcyWebble.value = true
+  try {
+    const meta = await ycyBle.scanAndConnect()
+    const id = meta.id
+    if (!ycyWebbleDevices.value.find((d) => d.id === id)) {
+      ycyWebbleDevices.value.push({ id, name: meta.name, battery: (meta as any).battery ?? null, ready: true })
+    }
+    const un = ycyBle.onBattery(id, (b) => {
+      const dev = ycyWebbleDevices.value.find((d) => d.id === id)
+      if (dev) dev.battery = b
+    })
+    ycyWebbleUnlisten.set(id, un)
+    ElMessage.success('已连接 ' + brandLabel('ycy', meta.name))
+  } catch (e: any) {
+    const msg = String(e?.message || '')
+    if (!/cancel|Cancelled|User cancelled|NavigatorUserAgent/i.test(msg)) ElMessage.error(msg || '连接失败')
+  } finally {
+    scanningYcyWebble.value = false
+  }
+}
+async function ycyWebbleDisconnect(d: YcyWebbleDevice) {
+  busy.value = true
+  try {
+    await ycyBle.disconnect(d.id)
+    ycyWebbleUnlisten.get(d.id)?.()
+    ycyWebbleUnlisten.delete(d.id)
+    ycyWebbleDevices.value = ycyWebbleDevices.value.filter((x) => x.id !== d.id)
+    ElMessage.success('已断开')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '断开失败')
+  } finally {
+    busy.value = false
+  }
+}
+
 async function dglabApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`dglabApply:${dev.deviceId}`, async () => {
@@ -1073,8 +1178,9 @@ async function disconnectDevice(dev: BrandDevice) {
 onMounted(() => {
   refreshConnected()
   if (autoRefreshEnabled.value) startAutoRefresh()
-  startYcyNativeTimer()
-  // 本机直连桥仅 macOS 上有意义（原生 Swift 桥）；非 macOS 不启动其轮询
+  // 役次元 原生桥（Swift 桥）仅 macOS 可用；非 macOS 走网页蓝牙直连，不启动原生桥轮询
+  if (isMac.value) startYcyNativeTimer()
+  // 郊狼 原生桥仅 macOS 上有意义；非 macOS 不启动其轮询
   if (isMac.value) startDglabNativeTimer()
 })
 onUnmounted(() => { stopAutoRefresh(); stopYcyNativeTimer(); stopDglabNativeTimer() })

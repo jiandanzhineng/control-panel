@@ -446,7 +446,21 @@ class YcyBridgeClient {
 }
 
 /**
- * 遥控蓝牙设备 BLE 直连传输层（基于 noble）。仅在可用时加载，避免无蓝牙环境崩溃。
+ * ⚠️ 实验性 / 当前 UI 未启用
+ * 遥控蓝牙设备 BLE 直连传输层（基于 Node `noble`）。
+ *
+ * 状态（2026-08-26 核对）：
+ *   - 运行依赖 `noble`，但本仓库 package.json 未声明、node_modules 也未安装；
+ *     触发 mode=ble 会直接抛“未安装 noble”。即当前无法实际运行。
+ *   - 帧构造（buildEmsStrength / buildMotor / buildPumpV3 等）已按开源 protocol.py
+ *     的 0x35 族实现，但本传输层（scan/connect/write/disconnect）仅为骨架，
+ *     未经真机充分联调；各型号 GATT 服务/特征 UUID 仍靠设备端动态发现，未全钉死。
+ *   - 与现有 Electron Web Bluetooth 架构（electron/ble/brandDeviceClient.js +
+ *     frontend/src/web-ble/brandBle.ts）尚未对齐，属独立旁路实现。
+ *
+ * 实际在用的 YCY 直连是 Swift `ycy_bridge`（端口 3001，已编译进仓库），
+ * 前端 BrandsPanel 走的是桥接模式，并不调用本模块。本模块仅作为备选/参考保留，暂不启用。
+ *
  * 暴露 scan / connect / write / disconnect，供 YCYConnection 在 ble 模式调用。
  * 注意：serviceId / writeCharacteristicId / notifyCharacteristicId 由设备端动态发现（见 APK
  * findServiceWithWriteAndNotifyUsingTimer），本传输层在 connect 时通过 opts 传入已发现的服务/特征值。
