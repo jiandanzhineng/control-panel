@@ -62,7 +62,10 @@ class WebBluetoothV2Client {
   private device: BluetoothDevice;
   private server: BluetoothRemoteGATTServer | null = null;
   private chars: Record<string, BluetoothRemoteGATTCharacteristic> = {};
+  private allChars: BluetoothRemoteGATTCharacteristic[] = [];
   private batteryListeners = new Set<(value: number) => void>();
+  private notifyListeners = new Set<(hex: string) => void>();
+  private notifyStarted = false;
 
   constructor(device: BluetoothDevice) {
     this.device = device;
@@ -124,6 +127,7 @@ class WebBluetoothV2Client {
     console.log('[brandBle] 郊狼服务', service.uuid, '下真实特征 UUID:', foundUuids);
 
     this.chars = {};
+    this.allChars = characteristics;
     for (const key of Object.keys(V2_CHARS) as Array<keyof typeof V2_CHARS>) {
       const want = V2_CHARS[key].toLowerCase();
       const ch = characteristics.find((c) => c.uuid.toLowerCase() === want);
@@ -190,6 +194,52 @@ class WebBluetoothV2Client {
   onBattery(cb: (value: number) => void): () => void {
     this.batteryListeners.add(cb);
     return () => { this.batteryListeners.delete(cb); };
+  }
+
+  /** 订阅设备发来的 notify / indicate 数据帧（传感器类设备用，如灵猫气压、爪印按钮）。 */
+  onNotify(cb: (hex: string) => void): () => void {
+    this.notifyListeners.add(cb);
+    this.ensureNotify().catch(() => {});
+    return () => { this.notifyListeners.delete(cb); };
+  }
+
+  private async ensureNotify(): Promise<void> {
+    if (this.notifyStarted) return;
+    this.notifyStarted = true;
+    const targets = this.allChars.filter(
+      (c) => c.properties?.notify || c.properties?.indicate
+    );
+    for (const ch of targets) {
+      try {
+        await ch.startNotifications();
+        ch.addEventListener('characteristicvaluechanged', (ev) => {
+          const v = (ev.target as BluetoothRemoteGATTCharacteristic).value;
+          if (!v) return;
+          const hex = Array.from(new Uint8Array(v.buffer))
+            .map((b) => (b & 0xff).toString(16).padStart(2, '0'))
+            .join('')
+            .toUpperCase();
+          this.notifyListeners.forEach((cb) => { try { cb(hex); } catch (_) {} });
+        });
+      } catch (_) {
+        /* 部分设备不支持 notify，忽略 */
+      }
+    }
+  }
+
+  /** 向指定写特征下发一帧 GATT 写指令（强度 / 波形等）。 */
+  async send(op: GattOp): Promise<void> {
+    if (op && 'read' in op && op.read) {
+      const ch = this.chars.battery;
+      if (!ch || !ch.properties?.read) throw new Error('无可读特征');
+      await ch.readValue();
+      return;
+    }
+    const ch = this.chars[(op as any).characteristic];
+    if (!ch) throw new Error(`未找到写特征 ${(op as any).characteristic}`);
+    const data = new Uint8Array((op as any).value);
+    if (ch.properties?.writeWithoutResponse) ch.writeValueWithoutResponse(data);
+    else await ch.writeValueWithResponse(data);
   }
 
   async disconnect(): Promise<void> {
@@ -287,6 +337,30 @@ export function getCandidateName(device: BluetoothDevice): string {
   return DGLAB_V2_NAMES.some((k) => n.toUpperCase().includes(k.toUpperCase()))
     ? n
     : (n || '蓝牙体感设备 V2');
+}
+
+/** 字节数组 → 十六进制串（小写，无分隔）。 */
+export function bytesToHex(bytes: number[] | Uint8Array): string {
+  return Array.from(bytes).map((b) => (b & 0xff).toString(16).padStart(2, '0')).join('');
+}
+
+/** 向已连接的网页蓝牙设备下发 GATT 操作（强度 / 波形帧等）。 */
+export function sendGattOp(id: string, op: GattOp): Promise<void> {
+  if (usingElectron()) {
+    // Electron 路径的写指令统一走原生桥（dglabBridge.send）；此处不支持直接 web 下发。
+    return Promise.reject(new Error('Electron 模式下请使用本机桥接发送指令'));
+  }
+  const c = clients.get(id);
+  if (!c) return Promise.reject(new Error('设备未连接'));
+  return c.send(op);
+}
+
+/** 订阅已连接设备的 notify 数据帧（传感器）。 */
+export function subscribeNotify(id: string, cb: (hex: string) => void): () => void {
+  if (usingElectron()) return () => {};
+  const c = clients.get(id);
+  if (!c) return () => {};
+  return c.onNotify(cb);
 }
 
 export const V2_NAMES = DGLAB_V2_NAMES;
