@@ -9,6 +9,7 @@ const BRAND_LABEL = {
 const TYPE_LABEL = {
   DGLAB: '蓝牙体感设备',
   DGLAB_V2: '蓝牙体感设备（直连版）',
+  DGLAB_V3: '蓝牙体感设备 3.0',
   YCY_EMS: '电击型设备',
   YCY_TOY: '电机型设备',
   YCY_CUP: '杯型设备',

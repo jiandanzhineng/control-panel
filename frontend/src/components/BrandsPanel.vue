@@ -80,6 +80,21 @@
                 <el-descriptions v-if="d.ready" :column="1" border size="small" class="ycy-native-card__meta">
                   <el-descriptions-item label="电量">{{ d.battery == null ? '—' : d.battery + '%' }}</el-descriptions-item>
                 </el-descriptions>
+                <!-- 郊狼 3.0（V3）原生桥控制：经 Rust 桥下发 dglabV3 控制帧 -->
+                <div v-if="d.ready && isDglabV3(d.name)" class="ycy-native-card__control">
+                  <div class="control-field">
+                    <label>A 通道强度 {{ (dglabV3Ctl[d.id]?.a) ?? 0 }}</label>
+                    <el-slider v-model="dglabV3Ctl[d.id].a" :min="0" :max="200" @change="dglabV3Apply(d)" />
+                  </div>
+                  <div class="control-field">
+                    <label>B 通道强度 {{ (dglabV3Ctl[d.id]?.b) ?? 0 }}</label>
+                    <el-slider v-model="dglabV3Ctl[d.id].b" :min="0" :max="200" @change="dglabV3Apply(d)" />
+                  </div>
+                  <div class="control-actions">
+                    <el-button type="primary" size="small" :loading="opLoading[`dglabV3:${d.id}`]" @click="dglabV3Apply(d)">应用强度</el-button>
+                    <el-button size="small" :loading="opLoading[`dglabV3:${d.id}`]" @click="dglabV3Stop(d)">停止</el-button>
+                  </div>
+                </div>
                 <div class="ycy-native-card__actions">
                   <el-button v-if="d.ready" type="danger" plain size="small" :loading="busy" @click="dglabNativeDisconnect(d)">断开连接</el-button>
                   <el-button v-else type="primary" size="small" :loading="busy" @click="dglabNativeConnect(d)">连接设备</el-button>
@@ -561,6 +576,8 @@ import * as dglabBridge from '../api/dglabBridge'
 import type { DglabBridgeDevice } from '../api/dglabBridge'
 import * as brandBle from '../web-ble/brandBle'
 import * as ycyBle from '../web-ble/ycyBle'
+// 郊狼 3.0 控制帧（前端本地副本，与后端 backend/brands/protocols/dglabV3.js 同源、已验证）
+import * as dglabV3 from '../web-ble/dglabV3'
 
 // 品牌中文显示名（按页面要求显示：郊狼 / 役次元）。
 const BRAND_LABEL: Record<string, string> = {
@@ -570,6 +587,7 @@ const BRAND_LABEL: Record<string, string> = {
 const TYPE_LABEL: Record<string, string> = {
   DGLAB: '郊狼',
   DGLAB_V2: '郊狼（直连版）',
+  DGLAB_V3: '郊狼3.0',
   YCY_EMS: '电击主机',
   YCY_TOY: '电机/玩具',
   YCY_CUP: '杯',
@@ -610,6 +628,11 @@ function ycyTypeLabel(rawName?: string | null): string {
 const activeBrand = ref<'dglab' | 'ycy'>('dglab')
 const busy = ref(false)
 const refreshing = ref(false)
+
+// 判别郊狼 3.0（V3，广播名 47L*）：原生桥下走 dglabV3 控制帧，而非 V2
+function isDglabV3(name?: string | null): boolean {
+  return /^(47L)/i.test((name || '').trim())
+}
 
 // 郊狼 发现
 const isMac = computed(() => /Mac/i.test(navigator.userAgent || navigator.platform || ''))
@@ -857,6 +880,10 @@ async function dglabNativeRefresh() {
     dglabNativeBtOn.value = st.bluetoothOn || all.length > 0
     dglabAllDevices.value = all
     dglabNativeDevices.value = all.filter((d) => DGLAB_RE.test(d.name || ''))
+    // 为每台郊狼 3.0（V3）设备预建控制 state，供卡片内滑块 v-model 使用
+    for (const d of dglabNativeDevices.value) {
+      if (isDglabV3(d.name)) ensureV3Ctl(d.id)
+    }
     await dglabNativeAuto()
   } catch (_) {
     // 桥进程未运行（浏览器开发环境 / 客户端未拉起）≠ 蓝牙未开启，不据此误报。
@@ -892,6 +919,42 @@ async function dglabNativeDisconnect(d: DglabBridgeDevice) {
     busy.value = false
   }
 }
+// ============ 郊狼 3.0（V3）原生桥控制 ============
+// 帧由 dglabV3 模块构造（已对照官方 V3 协议验证）；写特征用桥缓存的真实设备写特征，不写死 UUID。
+const dglabV3Ctl = ref<Record<string, { a: number; b: number }>>({})
+function ensureV3Ctl(id: string) {
+  if (!dglabV3Ctl.value[id]) dglabV3Ctl.value[id] = { a: 0, b: 0 }
+  return dglabV3Ctl.value[id]
+}
+async function dglabV3Apply(d: DglabBridgeDevice) {
+  const ctl = ensureV3Ctl(d.id)
+  opLoading[`dglabV3:${d.id}`] = true
+  try {
+    const op = dglabV3.toGattOps({ cmd: 'v3_setStrength', a: ctl.a, b: ctl.b })
+    await dglabBridge.send(op.frame)
+    ElMessage.success(`已下发 郊狼3.0 强度 A:${ctl.a} B:${ctl.b}`)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '下发失败')
+  } finally {
+    opLoading[`dglabV3:${d.id}`] = false
+  }
+}
+async function dglabV3Stop(d: DglabBridgeDevice) {
+  opLoading[`dglabV3:${d.id}`] = true
+  try {
+    const op = dglabV3.toGattOps({ cmd: 'v3_stop' })
+    await dglabBridge.send(op.frame)
+    const ctl = ensureV3Ctl(d.id)
+    ctl.a = 0
+    ctl.b = 0
+    ElMessage.success('已停止 郊狼3.0')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '停止失败')
+  } finally {
+    opLoading[`dglabV3:${d.id}`] = false
+  }
+}
+
 async function dglabNativeConnectAll() {
   busy.value = true
   try {
