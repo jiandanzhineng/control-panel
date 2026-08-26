@@ -95,6 +95,21 @@
                     <el-button size="small" :loading="opLoading[`dglabV3:${d.id}`]" @click="dglabV3Stop(d)">停止</el-button>
                   </div>
                 </div>
+                <!-- 负鼠振动控制器（47L127000）原生桥控制：经 Rust 桥下发 B3 强度帧 -->
+                <div v-if="d.ready && isOpossum(d.name)" class="ycy-native-card__control">
+                  <div class="control-field">
+                    <label>A 通道强度 {{ (opossumCtl[d.id]?.a) ?? 0 }}</label>
+                    <el-slider v-model="opossumCtl[d.id].a" :min="0" :max="200" @change="opossumApply(d)" />
+                  </div>
+                  <div class="control-field">
+                    <label>B 通道强度 {{ (opossumCtl[d.id]?.b) ?? 0 }}</label>
+                    <el-slider v-model="opossumCtl[d.id].b" :min="0" :max="200" @change="opossumApply(d)" />
+                  </div>
+                  <div class="control-actions">
+                    <el-button type="primary" size="small" :loading="opLoading[`opossum:${d.id}`]" @click="opossumApply(d)">应用强度</el-button>
+                    <el-button size="small" :loading="opLoading[`opossum:${d.id}`]" @click="opossumStop(d)">停止</el-button>
+                  </div>
+                </div>
                 <div class="ycy-native-card__actions">
                   <el-button v-if="d.ready" type="danger" plain size="small" :loading="busy" @click="dglabNativeDisconnect(d)">断开连接</el-button>
                   <el-button v-else type="primary" size="small" :loading="busy" @click="dglabNativeConnect(d)">连接设备</el-button>
@@ -578,6 +593,8 @@ import * as brandBle from '../web-ble/brandBle'
 import * as ycyBle from '../web-ble/ycyBle'
 // 郊狼 3.0 控制帧（前端本地副本，与后端 backend/brands/protocols/dglabV3.js 同源、已验证）
 import * as dglabV3 from '../web-ble/dglabV3'
+// 负鼠振动控制器控制帧（DG-LAB 47L127000，与后端 dglabOpossum.js 同源）
+import * as dglabOpossum from '../web-ble/dglabOpossum'
 
 // 品牌中文显示名（按页面要求显示：郊狼 / 役次元）。
 const BRAND_LABEL: Record<string, string> = {
@@ -588,6 +605,9 @@ const TYPE_LABEL: Record<string, string> = {
   DGLAB: '郊狼',
   DGLAB_V2: '郊狼（直连版）',
   DGLAB_V3: '郊狼3.0',
+  DGLAB_OPOSSUM: '负鼠振动器',
+  DGLAB_CIVET: '灵猫边缘传感器',
+  DGLAB_PAW: '爪印按钮传感器',
   YCY_EMS: '电击主机',
   YCY_TOY: '电机/玩具',
   YCY_CUP: '杯',
@@ -600,6 +620,11 @@ function brandLabel(brand: string, rawName?: string | null): string {
   const up = name.toUpperCase()
   if (brand === 'dglab') {
     if (up.startsWith('D-LAB') || up.startsWith('DG-LAB')) return '郊狼2.0'
+    // 47Lxxxx 全系广播名前缀（郊狼3.0 / 负鼠 / 灵猫 / 爪印 共用 47L 前缀，按型号细分）
+    if (/^47L121/i.test(up)) return '郊狼3.0'
+    if (/^47L127/i.test(up)) return '负鼠振动器'
+    if (/^47L124/i.test(up)) return '灵猫边缘传感器'
+    if (/^47L1203/i.test(up) || /^47L1201/i.test(up)) return '爪印按钮传感器'
     if (up.startsWith('47L')) return '郊狼3.0'
     return name || '郊狼'
   }
@@ -629,9 +654,27 @@ const activeBrand = ref<'dglab' | 'ycy'>('dglab')
 const busy = ref(false)
 const refreshing = ref(false)
 
-// 判别郊狼 3.0（V3，广播名 47L*）：原生桥下走 dglabV3 控制帧，而非 V2
+// 判别 DG-LAB 47L 全系具体产品（广播名型号段细分），避免把所有 47L* 都误判为郊狼3.0。
+//   coyote3 : 47L121000（郊狼3.0，V3 控制帧）
+//   opossum : 47L127000（负鼠振动控制器，B3 强度帧）
+//   civet   : 47L124000（灵猫边缘传感器，传感器/配置）
+//   paw     : 47L120300 / 47L120100（爪印无线按钮传感器，传感器/配置）
+function detectDglabProduct(name?: string | null): 'coyote3' | 'opossum' | 'civet' | 'paw' | 'coyote2' | 'unknown' {
+  const n = (name || '').trim().toUpperCase()
+  if (/^47L121/i.test(n)) return 'coyote3'
+  if (/^47L127/i.test(n)) return 'opossum'
+  if (/^47L124/i.test(n)) return 'civet'
+  if (/^47L1203/i.test(n) || /^47L1201/i.test(n)) return 'paw'
+  if (n.startsWith('D-LAB') || n.startsWith('DG-LAB') || n.startsWith('COYOTE') || n.startsWith('YSKJ') || n.startsWith('ESTIM')) return 'coyote2'
+  return 'unknown'
+}
+// 郊狼 3.0（V3，广播名 47L121*）：原生桥下走 dglabV3 控制帧
 function isDglabV3(name?: string | null): boolean {
-  return /^(47L)/i.test((name || '').trim())
+  return detectDglabProduct(name) === 'coyote3'
+}
+// 负鼠振动控制器（47L127*）：原生桥下走 dglabOpossum 的 B3 强度帧
+function isOpossum(name?: string | null): boolean {
+  return detectDglabProduct(name) === 'opossum'
 }
 
 // 郊狼 发现
@@ -880,9 +923,10 @@ async function dglabNativeRefresh() {
     dglabNativeBtOn.value = st.bluetoothOn || all.length > 0
     dglabAllDevices.value = all
     dglabNativeDevices.value = all.filter((d) => DGLAB_RE.test(d.name || ''))
-    // 为每台郊狼 3.0（V3）设备预建控制 state，供卡片内滑块 v-model 使用
+    // 为每台郊狼 3.0（V3）/ 负鼠（47L127000）设备预建控制 state，供卡片内滑块 v-model 使用
     for (const d of dglabNativeDevices.value) {
       if (isDglabV3(d.name)) ensureV3Ctl(d.id)
+      if (isOpossum(d.name)) ensureOpossumCtl(d.id)
     }
     await dglabNativeAuto()
   } catch (_) {
@@ -952,6 +996,42 @@ async function dglabV3Stop(d: DglabBridgeDevice) {
     ElMessage.error(e?.message || '停止失败')
   } finally {
     opLoading[`dglabV3:${d.id}`] = false
+  }
+}
+
+// ============ 负鼠振动控制器（47L127000）原生桥控制 ============
+// 帧由 dglabOpossum 模块构造（已对照官方 opossum 协议）；写特征用桥缓存的真实设备写特征，不写死 UUID。
+const opossumCtl = ref<Record<string, { a: number; b: number }>>({})
+function ensureOpossumCtl(id: string) {
+  if (!opossumCtl.value[id]) opossumCtl.value[id] = { a: 0, b: 0 }
+  return opossumCtl.value[id]
+}
+async function opossumApply(d: DglabBridgeDevice) {
+  const ctl = ensureOpossumCtl(d.id)
+  opLoading[`opossum:${d.id}`] = true
+  try {
+    const op = dglabOpossum.toGattOps({ cmd: 'op_setStrength', a: ctl.a, b: ctl.b })
+    await dglabBridge.send(op.frame)
+    ElMessage.success(`已下发 负鼠 强度 A:${ctl.a} B:${ctl.b}`)
+  } catch (e: any) {
+    ElMessage.error(e?.message || '下发失败')
+  } finally {
+    opLoading[`opossum:${d.id}`] = false
+  }
+}
+async function opossumStop(d: DglabBridgeDevice) {
+  opLoading[`opossum:${d.id}`] = true
+  try {
+    const op = dglabOpossum.toGattOps({ cmd: 'op_setStrength', a: 0, b: 0 })
+    await dglabBridge.send(op.frame)
+    const ctl = ensureOpossumCtl(d.id)
+    ctl.a = 0
+    ctl.b = 0
+    ElMessage.success('已停止 负鼠')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '停止失败')
+  } finally {
+    opLoading[`opossum:${d.id}`] = false
   }
 }
 
