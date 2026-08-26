@@ -425,7 +425,7 @@
     view.totalStimulationTime = Number(rt.totalStimulationTime.toFixed(1));
   }
 
-  // 时间序列图：横轴最近 1 分钟，纵轴按该区间压力 min/max 自动缩放（留余量）
+  // 时间序列图：横轴最近 1 分钟，纵轴锁定 0~最大强度；压力(蓝实线)+电机强度(红虚线)+边缘标记
   function drawChart() {
     const cv = document.getElementById('chart');
     if (!cv) return;
@@ -454,17 +454,9 @@
       ctx.stroke();
       return;
     }
-    // 纵轴只按压力数据缩放（忽略中间值），最小范围 2kPa
-    let lo = Infinity, hi = -Infinity;
-    for (const it of hist) {
-      lo = Math.min(lo, it.pressure);
-      hi = Math.max(hi, it.pressure);
-    }
-    let span = Math.max(2, hi - lo);
-    const margin = Math.max(0.5, span * 0.1);
-    const center = (hi + lo) / 2;
-    lo = center - span / 2 - margin;
-    hi = center + span / 2 + margin;
+    // 纵轴锁定 0 ~ 最大强度（压力与电机强度共用同一刻度）
+    const lo = 0;
+    const hi = Math.max(1, Number(cfg.maxMotorIntensity) || 50);
     const t0 = hist[0].ts, t1 = hist[hist.length - 1].ts;
     const xOf = (it) => pad + ((it.ts - t0) / Math.max(1, t1 - t0)) * gw;
     const yOf = (pr) => pad + gh * (1 - clamp((pr - lo) / Math.max(1e-6, hi - lo), 0, 1));
@@ -474,7 +466,7 @@
     ctx.moveTo(pad, pad + gh); ctx.lineTo(pad + gw, pad + gh);
     ctx.moveTo(pad, pad); ctx.lineTo(pad, pad + gh);
     ctx.stroke();
-    // 中间压线仅在可视纵轴范围内绘制（初始 50 远超工作区间时不显示）
+    // 中间压线仅在可视纵轴范围内绘制（初始 50 远超刻度时不显示）
     if (rt.midPressure >= lo && rt.midPressure <= hi) {
       ctx.strokeStyle = '#f97316';
       ctx.setLineDash([5, 4]);
@@ -487,6 +479,7 @@
       ctx.font = '10px sans-serif';
       ctx.fillText('中间 ' + Number(rt.midPressure).toFixed(1), pad + 4, Math.max(10, yMid - 4));
     }
+    // 压力曲线（蓝实线）
     ctx.strokeStyle = '#3b82f6';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -495,12 +488,26 @@
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.stroke();
+    // 电机强度曲线（红虚线）
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    let firstPoint = true;
+    hist.forEach((it) => {
+      const x = xOf(it); const y = yOf(it.strength);
+      if (firstPoint) { ctx.moveTo(x, y); firstPoint = false; }
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // 边缘触发（绿点，标在峰值顶点）；边缘期激活区间（红点，反映释放条件生效）
     hist.forEach((it) => {
       const x = xOf(it); const y = yOf(it.pressure);
       if (it.edgeTrigger) {
         ctx.fillStyle = '#22c55e';
         ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
-      } else if (it.surge) {
+      } else if (it.edgeActive) {
         ctx.fillStyle = '#ef4444';
         ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
       }
@@ -508,7 +515,7 @@
     ctx.fillStyle = '#64748b';
     ctx.font = '10px sans-serif';
     ctx.fillText(String(hi.toFixed(0)), pad - 4, pad + 8);
-    ctx.fillText(String(lo.toFixed(0)), pad - 4, pad + gh);
+    ctx.fillText('0', pad - 4, pad + gh);
   }
 
   function loop() {
@@ -556,12 +563,12 @@
       if (rt.paused) { view.currentPressure = p; return; } // 暂停只更新读数，不下发
       updateSurge(ts, p);
       const prevCount = rt.edgingCount;
-      rt.pressureHistory.push({ ts: ts, pressure: p, surge: rt.surgeActive, edgeTrigger: false });
+      calculateStateLogic();
+      updateIntensity();
+      rt.pressureHistory.push({ ts: ts, pressure: p, strength: rt.currentIntensity, edgeActive: rt.state === S.EDGING, edgeTrigger: false });
       if (rt.pressureHistory.length > 3600) rt.pressureHistory.shift();
       const recent = rt.pressureHistory.slice(-60);
       rt.averagePressure = recent.length ? recent.reduce((a, it) => a + (Number(it.pressure) || 0), 0) / recent.length : p;
-      calculateStateLogic();
-      updateIntensity();
       if (rt.edgingCount > prevCount && rt.pressureHistory.length) {
         // 绿点标在本次突变峰值的顶点：回溯最近 2τ 窗口内压力最大处的采样点，而非计数那一刻
         const winMs = Math.max(50, Number(cfg.surgeWindowMs) || 500);
