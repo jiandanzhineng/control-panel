@@ -687,7 +687,7 @@ async function dglabWebbleDisconnect(d: DglabWebbleDevice) {
 }
 
 // 役次元 连接模式（用户用切换按钮选）：本机桥接(native, mac) / 网页蓝牙(webble) / 远程桥接(bridge)
-// mac 默认本机桥接（Swift 桥，由 Electron 主进程监管（崩溃自启）稳定）；网页蓝牙为功能最全通道（直连 GATT，可下发原始强度/通道/帧/泵控制）。
+// mac 默认本机桥接（Rust 桥，由 Electron 主进程监管（崩溃自启）稳定）；网页蓝牙为功能最全通道（直连 GATT，可下发原始强度/通道/帧/泵控制）。
 const ycyMode = ref<'native' | 'webble' | 'bridge'>(isMac.value ? 'native' : 'webble')
 
 // 添加设备 对话框
@@ -701,7 +701,8 @@ const addNativeList = computed(() =>
 )
 function openAdd(brand: 'dglab' | 'ycy') {
   addBrand.value = brand
-  addMethod.value = 'remote'
+  // 本机直连（原生桥）可用时默认选它，避免在「本机桥接」页点添加却跳到远程链接
+  addMethod.value = addShowLocal.value ? 'local' : 'remote'
   addDialog.value = true
 }
 async function addRescan() {

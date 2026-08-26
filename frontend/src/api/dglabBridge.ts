@@ -57,3 +57,17 @@ export function disconnect(addr = '') {
   const q = addr ? `?addr=${encodeURIComponent(addr)}` : ''
   return req<{ ok: boolean; msg: string }>(`/api/disconnect${q}`, { method: 'POST' })
 }
+
+/**
+ * 向已连接的郊狼设备发送一帧 GATT 写指令（纯透传，帧由调用方按设备协议计算为 hex）。
+ * @param frame  十六进制字节串，例如 '0a1b2c'
+ * @param writeUuid 目标写特征 UUID（郊狼 3.0 为 2004 服务下的 00000009；不传则使用桥缓存的写特征）
+ */
+export function send(frame: string, writeUuid?: string) {
+  const body: Record<string, string> = { frame }
+  if (writeUuid) body.write = writeUuid
+  return req<{ ok: boolean; written?: string[]; msg?: string }>('/api/send', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}

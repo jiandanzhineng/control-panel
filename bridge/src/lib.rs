@@ -730,9 +730,9 @@ async fn post_identify(
 }
 
 async fn post_send(State(st): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
-    if st.brand != Brand::Ycy {
-        return Json(json!({ "ok": false, "msg": "not supported for this brand" }));
-    }
+    // 纯 GATT 透传：YCY / 郊狼(DGLAB) 共用。帧由客户端计算（AES 等加密在客户端），
+    // 桥只负责把 hex 帧写到指定写特征。写特征 UUID 由客户端经 `write` 参数指定，
+    // 桥在所有已缓存服务/特征中按 UUID 查找，不绑定任何具体设备协议。
     let addr = body
         .get("addr")
         .and_then(|v| v.as_str())

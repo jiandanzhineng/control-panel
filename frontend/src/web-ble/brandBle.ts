@@ -221,9 +221,16 @@ export async function scanAndConnect(): Promise<BrandBleMetadata> {
   }
   if (!webSupported) throw new Error('当前环境不支持网页蓝牙直连（请用 Chrome / Edge 打开本页）');
   // 系统蓝牙选择器用 namePrefix 过滤无关设备（按服务 UUID 过滤对郊狼无效）。
+  // 同时声明 2.0 (955A) 与 3.0 (2003/2004/fe59) 服务 UUID，避免 macOS Chromium
+  // 因仅匹配到 2.0 服务而偶发 "No Services found"（3.0 实测枚举到的真实服务）。
   const device = await navigator.bluetooth.requestDevice({
     filters: DGLAB_V2_NAME_PREFIXES.map((p) => ({ namePrefix: p })),
-    optionalServices: [V2_SERVICE],
+    optionalServices: [
+      V2_SERVICE,
+      '00002003-0000-1000-8000-00805f9b34fb',
+      '00002004-0000-1000-8000-00805f9b34fb',
+      '0000fe59-0000-1000-8000-00805f9b34fb',
+    ],
   });
   const client = new WebBluetoothV2Client(device);
   const meta = await client.connect();
