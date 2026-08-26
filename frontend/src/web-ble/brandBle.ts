@@ -80,6 +80,9 @@ class WebBluetoothV2Client {
   private batteryListeners = new Set<(value: number) => void>();
   private notifyListeners = new Set<(hex: string) => void>();
   private notifyStarted = false;
+  // 最近一次电量值：connect() 读到的初始电量在监听器注册前就可能 emit（丢失），
+  // 这里缓存，onBattery() 注册时立即回放，保证前端一定能拿到初始电量。
+  private lastBattery: number | null = null;
 
   constructor(device: BluetoothDevice) {
     this.device = device;
@@ -200,11 +203,17 @@ class WebBluetoothV2Client {
   }
 
   private emitBattery(value: number) {
+    this.lastBattery = value
     this.batteryListeners.forEach((cb) => { try { cb(value); } catch (_) {} });
   }
 
   onBattery(cb: (value: number) => void): () => void {
     this.batteryListeners.add(cb);
+    // 回放缓存值：若 connect() 阶段已读到电量（此时前端监听器尚未注册），
+    // 立即补发一次，避免初始电量永远丢失（显示 0% 或 --）。
+    if (this.lastBattery != null) {
+      try { cb(this.lastBattery); } catch (_) {}
+    }
     return () => { this.batteryListeners.delete(cb); };
   }
 

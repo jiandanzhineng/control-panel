@@ -49,6 +49,11 @@ const OPTIONAL_SERVICES = [
   '0000180f-0000-1000-8000-00805f9b34fb', // Battery Service
   '0000180a-0000-1000-8000-00805f9b34fb', // Device Information
 ];
+
+// 系统蓝牙选择器的自动筛选前缀（与 YCY_NAME_KEYWORDS 对齐的可靠前缀子集）：
+// 役次元真机广播名如 YCY-FJB-03-DJ / YYC-DJ-V2 / YISK-003V3，均以系列名开头。
+// 用 namePrefix 让系统选择器只显示役次元设备，避免把附近手机/耳机全列出来。
+const YCY_NAME_PREFIXES = ['YCY', 'YYC', 'YSKJ', 'YISK', 'YOKO', 'YOKONEX'];
 const BATTERY_CHAR = '00002a19-0000-1000-8000-00805f9b34fb';
 
 // ============ 帧构造（与 backend/brands/protocols/ycy.js 对齐，权威自 protocol.py）============
@@ -423,8 +428,10 @@ export function isSupported(): boolean {
 /** 弹窗选设备并连接，返回元数据。 */
 export async function scanAndConnect(): Promise<YcyBleMetadata> {
   if (!webSupported) throw new Error('当前环境不支持网页蓝牙直连（请用 Chrome / Edge 打开本页）');
+  // 自动筛选：只显示役次元系列设备（YCY/YYC/YSKJ/YISK/YOKO 前缀），
+  // 避免系统选择器把附近手机/耳机等无关设备全列出来。
   const device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
+    filters: YCY_NAME_PREFIXES.map((p) => ({ namePrefix: p })),
     optionalServices: OPTIONAL_SERVICES,
   });
   const client = new WebBluetoothYcyClient(device);
