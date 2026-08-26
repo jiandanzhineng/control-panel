@@ -34,9 +34,10 @@ const V2_CHARS = {
 };
 const DGLAB_V2_NAMES = ['D-LAB', 'DG-LAB', 'COYOTE', 'YSKJ', 'ESTIM'];
 // 系统蓝牙选择器只用「设备名前缀」过滤无关设备（按服务 UUID 过滤对郊狼无效：
-// 郊狼广播不含 955a180b，按服务过滤会“搜不到”）。2.0 名称以 D-LAB/DG-LAB 开头，
-// 3.0 以 47L 开头；列出这些前缀即可在弹出选择器里只显示郊狼设备。
-const DGLAB_V2_NAME_PREFIXES = ['D-LAB', 'DG-LAB', '47L'];
+// 郊狼广播不含 955a180b，按服务过滤会“搜不到”）。2.0 名称以 D-LAB/DG-LAB/COYOTE 开头，
+// 3.0 以 47L 开头；列出这些前缀即可在弹出选择器里只显示郊狼设备，实现“自动筛选”。
+// 前缀集合与前端 BrandsPanel 的 DGLAB_RE 保持一致，覆盖 2.0 与 3.0。
+const DGLAB_V2_NAME_PREFIXES = ['D-LAB', 'DG-LAB', '47L', 'COYOTE', 'YSKJ', 'ESTIM'];
 
 declare global {
   interface Window {
@@ -176,11 +177,17 @@ class WebBluetoothV2Client {
       }
     }
 
-    const name = this.device.name || '蓝牙体感设备 V2';
+    const rawName = this.device.name || '';
+    const up = rawName.toUpperCase();
+    // 自动区分 2.0 / 3.0：47L 前缀为 3.0 全系，D-LAB/DG-LAB/COYOTE 为 2.0
+    let type = 'DGLAB';
+    if (/^47L/i.test(up)) type = 'DGLAB_V3';
+    else if (up.startsWith('D-LAB') || up.startsWith('DG-LAB') || up.startsWith('COYOTE')) type = 'DGLAB_V2';
+    const name = rawName || '蓝牙体感设备';
     return {
       id: `ble:${this.device.id}`,
       name,
-      type: 'DGLAB',
+      type,
       connectionType: 'brandBle',
       browserDeviceId: this.device.id,
       data: { service: service.uuid, characteristics: foundUuids },
@@ -270,12 +277,14 @@ export async function scanAndConnect(): Promise<BrandBleMetadata> {
     return window.brandBleApi!.connect();
   }
   if (!webSupported) throw new Error('当前环境不支持网页蓝牙直连（请用 Chrome / Edge 打开本页）');
-  // 关键修正：之前用 namePrefix (D-LAB/DG-LAB/47L) 过滤，但郊狼广播常不带可读名字
-  // （实测得大量 name:""），导致选择器按名字一筛把郊狼全剔掉 → “搜不到”。
-  // 改用 acceptAllDevices:true，让所有广播中的 BLE 设备都进选择器，用户手动挑郊狼；
-  // optionalServices 照常声明，保证连上后能访问 2.0(955A) 与 3.0(2003/2004/fe59) 服务。
+  // 自动筛选：只用名字前缀匹配郊狼 2.0/3.0（D-LAB/DG-LAB/COYOTE 为 2.0，47L 为 3.0 全系，
+  // YSKJ/ESTIM 为兼容前缀）。这样系统蓝牙选择器里只会出现郊狼，正是“自动筛选真实郊狼设备”的诉求。
+  // 注：macOS 的 Web Bluetooth（CoreBluetooth）对「只有 localName、peripheral.name 为空」的设备，
+  // namePrefix 过滤会失效（平台限制，非代码问题）；此类 macOS 用户应改用「桌面客户端」模式
+  // （本机桥 btleplug 能读到真实广播名 D-LAB ESTIM01 / 47L121000 并自动筛选）。
+  // 对 Windows / Linux / Android 的 Chrome/Edge，namePrefix 过滤正常工作。
   const device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
+    filters: DGLAB_V2_NAME_PREFIXES.map((p) => ({ namePrefix: p })),
     optionalServices: [
       V2_SERVICE,
       '00002003-0000-1000-8000-00805f9b34fb',
