@@ -37,6 +37,8 @@ class GameSession {
     this.shockCount = 0;
     this.shockStopTimer = null;
     this.shockStopTargets = new Set();
+    this.strengthTimer = null;
+    this.strengthPending = new Map();
   }
 
   send(data) {
@@ -61,6 +63,11 @@ class GameSession {
       clearTimeout(this.shockStopTimer);
       this.shockStopTimer = null;
     }
+    if (this.strengthTimer) {
+      clearTimeout(this.strengthTimer);
+      this.strengthTimer = null;
+    }
+    if (this.strengthPending) this.strengthPending.clear();
     this.subscriptions.clear();
     this.propertySubscriptions.clear();
     this.valueSubscriptions.clear();
@@ -500,6 +507,11 @@ function ensureCapability(physId, capability) {
 function invokeForSession(session, msg) {
   const physIds = requirePhysicalIds(session, msg.deviceId);
   if (!physIds.length) return null;
+  if (msg.capability === 'strength' && msg.actionName === 'set') {
+    // 强度命令 latest-wins 合并：新命令覆盖窗口内未下发的旧命令，设备只收到最新值，
+    // 防止命令积压导致设备响应滞后（首条仍立即下发，保证响应无附加延迟）。
+    return queueStrengthForSession(session, physIds, msg.params && msg.params.value);
+  }
   if (msg.capability === 'shock' && msg.actionName === 'start') {
     const gate = checkShockSafetyGate(session);
     if (!gate.ok) {
@@ -521,6 +533,39 @@ function invokeForSession(session, msg) {
     scheduleShockAutoStop(session, physId, msg.capability, msg.actionName);
   }
   return { ok: true };
+}
+
+// 强度命令合并窗口（毫秒）：窗口内后续 set 只更新待发值，窗口到期时只下发最新值。
+const STRENGTH_FLUSH_MS = 200;
+
+// 会话级强度 latest-wins：
+//  - 空闲时首条立即下发（同步、无附加延迟）；
+//  - 窗口内到达的新命令覆盖未下发的旧命令（pending 按物理设备存最新值）；
+//  - 窗口到期把每个设备的最新值下发一次并清空，保证设备侧队列不积压旧中间值。
+function queueStrengthForSession(session, physIds, rawValue) {
+  const value = Math.min(255, Math.max(0, Number(rawValue) || 0));
+  const hasWindow = !!session.strengthTimer;
+  for (const physId of physIds) session.strengthPending.set(physId, value);
+  if (!hasWindow) {
+    for (const [physId, v] of session.strengthPending) dispatchStrength(session, physId, v);
+    session.strengthTimer = setTimeout(() => {
+      session.strengthTimer = null;
+      if (!session.active) { session.strengthPending.clear(); return; }
+      const pending = session.strengthPending;
+      session.strengthPending = new Map();
+      for (const [physId, v] of pending) dispatchStrength(session, physId, v);
+    }, STRENGTH_FLUSH_MS);
+  }
+  return { ok: true };
+}
+
+function dispatchStrength(session, physId, value) {
+  ensureCapability(physId, 'strength');
+  if (virtualDeviceService.isVirtualDevice(physId)) {
+    virtualDeviceService.interceptCommand(physId, { action: 'invoke', capability: 'strength', actionName: 'set', params: { value } });
+  } else {
+    deviceService.invokeDeviceCapability(physId, 'strength', 'set', { value });
+  }
 }
 
 function writePropsForSession(session, msg) {
