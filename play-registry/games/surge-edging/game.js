@@ -2,7 +2,7 @@
 // 参考 pressure-edging-v2 五态状态机，但取消绝对临界压：
 //  - 边缘期由「双窗口比较」突变检测触发：本窗口[-τ,0]最大值 − 前一窗口[-2τ,-τ]平均值 ≥ surgeRiseKpa（默认1kPa）
 //  - 中间压力自适应：初始 50kPa，每次进入边缘期更新为「本次触发峰值 − midOffsetKpa」
-//  - 强度下发采用常驻刷新（值变即发 + 每 1s 重发当前设计值），对抗命令丢失；显示逻辑不变
+//  - 强度下发采用限速合并（每 sendIntervalMs 发一次最新设计值，latest-wins 且不积压）；显示逻辑不变
 (function () {
   'use strict';
   const SENSOR = 'sensor', MOTOR = 'motor', PUNISH = 'punish', LOCK = 'lock';
@@ -16,7 +16,7 @@
   const cfg = {
     duration: 20, endCalmLock: 60, surgeWindowMs: 500, surgeRiseKpa: 1.0, midOffsetKpa: 1.0,
     maxMotorIntensity: 50, lowPressureDelay: 5, rampRate: 2, gradualIncrease: 2,
-    randomPercent: 0, minSurgeMs: 100, shockVoltage: 20, shockDuration: 3,
+    randomPercent: 0, minSurgeMs: 100, sendIntervalMs: 500, shockVoltage: 20, shockDuration: 3,
   };
 
   // 运行态
@@ -383,9 +383,13 @@
     const cur = rt.currentIntensity, tgt = rt.targetIntensity;
     let next = tgt < cur ? tgt : Math.min(cur + Math.max(0, cfg.rampRate) * dtSec, tgt);
     const rounded = Math.round(next);
-    // 常驻刷新：取整值变化立即下发；未变化时每 1s 强制重发当前设计值（对抗命令丢失）
-    const refreshDue = (now - (rt.lastSendTs || 0)) >= 1000;
-    if (!Number.isNaN(rounded) && (rounded !== rt.lastSentStrength || refreshDue)) {
+    // 限速合并（latest-wins）：每 sendIntervalMs（默认500ms）发一次「当前最新设计值」，
+    // 发送速率（2条/s）低于设备/链路消费速率（≈2.9条/s），积压不随时间增长，滞后恒定不累积；
+    // 归零（EDGING/急停）时立即发送，保证安全。
+    const interval = Math.max(100, Number(cfg.sendIntervalMs) || 500);
+    const due = (now - (rt.lastSendTs || 0)) >= interval;
+    const emergencyZero = rounded === 0 && rt.lastSentStrength > 0;
+    if (!Number.isNaN(rounded) && (due || emergencyZero)) {
       setStrength(rounded);
       rt.lastSentStrength = rounded;
       rt.lastSendTs = now;
