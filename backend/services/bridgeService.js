@@ -39,6 +39,7 @@ class GameSession {
     this.shockStopTargets = new Set();
     this.strengthTimer = null;
     this.strengthPending = new Map();
+    this.strengthDispatched = new Map();
   }
 
   send(data) {
@@ -68,6 +69,7 @@ class GameSession {
       this.strengthTimer = null;
     }
     if (this.strengthPending) this.strengthPending.clear();
+    if (this.strengthDispatched) this.strengthDispatched.clear();
     this.subscriptions.clear();
     this.propertySubscriptions.clear();
     this.valueSubscriptions.clear();
@@ -543,7 +545,8 @@ const STRENGTH_FLUSH_MS = 500;
 // 会话级强度 latest-wins：
 //  - 空闲时首条立即下发（同步、无附加延迟）；
 //  - 窗口内到达的新命令覆盖未下发的旧命令（pending 按物理设备存最新值）；
-//  - 窗口到期把每个设备的最新值下发一次并清空，保证设备侧队列不积压旧中间值。
+//  - 窗口到期把每个设备的最新值下发一次并清空；若该值自上次下发后未变化则跳过，
+//    避免与“立即下发”在同一节奏（游戏 500ms ≈ 窗口 500ms）下重复上线、线上速率翻倍。
 function queueStrengthForSession(session, physIds, rawValue) {
   const value = Math.min(255, Math.max(0, Number(rawValue) || 0));
   const hasWindow = !!session.strengthTimer;
@@ -555,7 +558,9 @@ function queueStrengthForSession(session, physIds, rawValue) {
       if (!session.active) { session.strengthPending.clear(); return; }
       const pending = session.strengthPending;
       session.strengthPending = new Map();
-      for (const [physId, v] of pending) dispatchStrength(session, physId, v);
+      for (const [physId, v] of pending) {
+        if (session.strengthDispatched.get(physId) !== v) dispatchStrength(session, physId, v);
+      }
     }, STRENGTH_FLUSH_MS);
   }
   return { ok: true };
@@ -568,6 +573,7 @@ function dispatchStrength(session, physId, value) {
   } else {
     deviceService.invokeDeviceCapability(physId, 'strength', 'set', { value });
   }
+  session.strengthDispatched.set(physId, value);
 }
 
 function writePropsForSession(session, msg) {
