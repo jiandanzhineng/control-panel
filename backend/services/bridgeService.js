@@ -536,7 +536,9 @@ function invokeForSession(session, msg) {
 }
 
 // 强度命令合并窗口（毫秒）：窗口内后续 set 只更新待发值，窗口到期时只下发最新值。
-const STRENGTH_FLUSH_MS = 200;
+// 窗口同时也是线上命令速率上限（默认 500ms → 最多 2 条/秒），防止压力噪声等高频目标
+// 变化把设备侧命令队列灌满（“间隔改小反而更延迟”的根因）。
+const STRENGTH_FLUSH_MS = 500;
 
 // 会话级强度 latest-wins：
 //  - 空闲时首条立即下发（同步、无附加延迟）；
