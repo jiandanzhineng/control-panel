@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>气压突变寸止</title>
+<script type="application/json" id="game-manifest">
+{
+  "id": "surge-edging",
+  "title": "气压突变寸止",
+  "description": "自适应气压寸止玩法：用滑动窗口平均值检测 0.5s 内气压突变（默认抬升 1kPa）进入边缘期；中间压力随每次边缘期自动校准（峰值-0.5kPa），不依赖绝对临界压，防漏气影响体验。",
+  "howTo": "1. 映射气压传感器与 TD01（必需）\n2. 可选：电击、自动锁\n3. 按需调整突变窗口/抬升阈值\n4. 可用界面按钮微调中间压力",
+  "version": "1.0.0",
+  "devices": [
+    {
+      "id": "sensor",
+      "label": "气压传感器",
+      "capabilities": [
+        "sphincterPressure",
+        "reporting"
+      ],
+      "required": true
+    },
+    {
+      "id": "motor",
+      "label": "TD01刺激器",
+      "capabilities": [
+        "strength"
+      ],
+      "required": true
+    },
+    {
+      "id": "punish",
+      "label": "电击惩罚设备",
+      "capabilities": [
+        "shock"
+      ],
+      "required": false
+    },
+    {
+      "id": "lock",
+      "label": "自动锁",
+      "capabilities": [
+        "lock"
+      ],
+      "required": false
+    }
+  ],
+  "params": [
+    {
+      "key": "duration",
+      "type": "number",
+      "default": 20,
+      "label": "游戏时长",
+      "unit": "分钟",
+      "description": "整局持续时长",
+      "group": "core",
+      "min": 1,
+      "max": 180,
+      "step": 1
+    },
+    {
+      "key": "endCalmLock",
+      "type": "number",
+      "default": 60,
+      "label": "结束前起飞期",
+      "unit": "秒",
+      "description": "结束前进入高强度「起飞」阶段的时长",
+      "group": "core",
+      "min": 0,
+      "max": 600,
+      "step": 5,
+      "recommended": "30-90"
+    },
+    {
+      "key": "surgeWindowMs",
+      "type": "number",
+      "default": 500,
+      "label": "突变检测窗口",
+      "unit": "毫秒",
+      "description": "滑动窗口 EMA 时间常数，窗口内压力相对均值快速抬升视为突变",
+      "group": "core",
+      "min": 200,
+      "max": 2000,
+      "step": 50
+    },
+    {
+      "key": "surgeRiseKpa",
+      "type": "number",
+      "default": 1.0,
+      "label": "突变抬升阈值",
+      "unit": "kPa",
+      "description": "压力相对近期平均抬起超过此值视为突变，进入边缘期",
+      "group": "core",
+      "min": 0.2,
+      "max": 5.0,
+      "step": 0.1
+    },
+    {
+      "key": "midOffsetKpa",
+      "type": "number",
+      "default": 0.5,
+      "label": "中间压偏移",
+      "unit": "kPa",
+      "description": "中间压力 = 本次边缘期峰值 - 该偏移，每次边缘期自动更新",
+      "group": "core",
+      "min": 0.1,
+      "max": 3.0,
+      "step": 0.1
+    },
+    {
+      "key": "maxMotorIntensity",
+      "type": "number",
+      "default": 255,
+      "label": "TD01最大强度",
+      "description": "刺激强度上限（0-255）",
+      "group": "difficulty",
+      "min": 1,
+      "max": 255,
+      "step": 1,
+      "device": "motor"
+    },
+    {
+      "key": "lowPressureDelay",
+      "type": "number",
+      "default": 5,
+      "label": "冷却延迟",
+      "unit": "秒",
+      "description": "边缘期结束后强度保持为零的冷却时长",
+      "group": "difficulty",
+      "min": 0,
+      "max": 60,
+      "step": 1
+    },
+    {
+      "key": "rampRate",
+      "type": "number",
+      "default": 2,
+      "label": "强度递增上限",
+      "unit": "每秒",
+      "description": "强度每秒最多增加多少",
+      "group": "difficulty",
+      "min": 0.1,
+      "max": 50,
+      "step": 0.1,
+      "required": false
+    },
+    {
+      "key": "gradualIncrease",
+      "type": "number",
+      "default": 2,
+      "label": "平静期缓升",
+      "unit": "每秒",
+      "description": "平静期强度每秒抬升幅度",
+      "group": "difficulty",
+      "min": 0.1,
+      "max": 50,
+      "step": 0.5,
+      "required": false
+    },
+    {
+      "key": "randomPercent",
+      "type": "number",
+      "default": 0,
+      "label": "强度随机扰动",
+      "unit": "%",
+      "description": "目标强度随机波动百分比",
+      "group": "advanced",
+      "min": 0,
+      "max": 50,
+      "step": 1,
+      "required": false
+    },
+    {
+      "key": "minSurgeMs",
+      "type": "number",
+      "default": 200,
+      "label": "突变最短持续",
+      "unit": "毫秒",
+      "description": "突变需连续保持至少此时长才计数，滤除单点尖刺",
+      "group": "advanced",
+      "min": 50,
+      "max": 1500,
+      "step": 10,
+      "required": false
+    },
+    {
+      "key": "releaseRatio",
+      "type": "number",
+      "default": 0.4,
+      "label": "突变释放比例",
+      "description": "抬升回落至阈值的此比例后视为本次突变结束（滞回防抖）",
+      "group": "advanced",
+      "min": 0.1,
+      "max": 0.9,
+      "step": 0.05,
+      "required": false
+    },
+    {
+      "key": "shockVoltage",
+      "type": "number",
+      "default": 20,
+      "label": "电击强度",
+      "unit": "V",
+      "description": "突变进入边缘期时电击电压",
+      "group": "punish",
+      "min": 1,
+      "max": 50,
+      "step": 1,
+      "device": "punish"
+    },
+    {
+      "key": "shockDuration",
+      "type": "number",
+      "default": 3,
+      "label": "电击持续",
+      "unit": "秒",
+      "description": "单次电击时间",
+      "group": "punish",
+      "min": 0.5,
+      "max": 10,
+      "step": 0.5,
+      "device": "punish"
+    },
+    {
+      "key": "voiceEnabled",
+      "type": "boolean",
+      "default": true,
+      "label": "语音提示",
+      "description": "开启语音播报",
+      "group": "core"
+    }
+  ]
+}
+</script>
+<script src="/bridge-api/device-api-bridge.js"></script>
+<style>
+  :root{--bg:#f8fafc;--card:#fff;--text:#1e293b;--sub:#64748b;--border:#e2e8f0;--primary:#3b82f6;--danger:#ef4444;--warn:#f59e0b;--ok:#22c55e;}
+  body{margin:0;padding:16px;font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;}
+  .container{max-width:600px;margin:0 auto;display:grid;gap:16px;}
+  header{display:flex;justify-content:space-between;align-items:center;}
+  h1{margin:0;font-size:1.25rem;font-weight:700;}
+  .badge{padding:4px 10px;border-radius:99px;font-size:0.85rem;background:#eff6ff;color:var(--primary);font-weight:500;}
+  .card{background:var(--card);border-radius:16px;padding:20px;box-shadow:0 1px 3px rgba(0,0,0,0.05);border:1px solid var(--border);}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+  .metric{display:flex;flex-direction:column;}
+  .label{font-size:0.85rem;color:var(--sub);margin-bottom:4px;}
+  .value{font-size:2rem;font-weight:700;line-height:1.1;}
+  .progress{height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;margin-top:8px;}
+  .bar{height:100%;background:var(--primary);transition:width .3s;}
+  .bar.p{background:linear-gradient(90deg,#3b82f6,#06b6d4);}
+  .bar.i{background:linear-gradient(90deg,#8b5cf6,#ec4899);}
+  .actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:10px;margin-top:10px;}
+  button{border:1px solid var(--border);background:#fff;padding:12px;border-radius:10px;font-weight:600;color:var(--text);cursor:pointer;font-size:0.9rem;transition:all 0.2s;}
+  button:active{background:#f1f5f9;transform:scale(0.98);}
+  button.primary{background:var(--primary);color:#fff;border:none;}
+  button.danger{color:var(--danger);border-color:#fee2e2;}
+  canvas{width:100%;height:200px;background:#f8fafc;border-radius:8px;border:1px solid var(--border);margin:10px 0;}
+  .adjust{display:flex;justify-content:space-between;background:#f1f5f9;padding:8px;border-radius:8px;font-size:0.85rem;}
+  .adjust div{display:flex;align-items:center;gap:8px;}
+  .btn-sm{width:28px;height:28px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:6px;background:#fff;}
+  ul#logs{list-style:none;margin:0;padding:0;height:120px;overflow-y:auto;font-size:0.8rem;color:var(--sub);border-top:1px solid var(--border);padding-top:8px;}
+  li{padding:2px 0;border-bottom:1px dashed #f1f5f9;}
+  .stat-row{display:flex;gap:15px;font-size:0.85rem;color:var(--sub);margin-bottom:8px;flex-wrap:wrap;}
+  .stat-row b{color:var(--text);}
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div>
+      <h1 data-bind="title">气压突变寸止</h1>
+      <div style="font-size:0.8rem;color:var(--sub)">Started: <span data-bind="startTime">-</span></div>
+    </div>
+    <div class="badge" data-bind="statusText">Ready</div>
+  </header>
+  <div class="card">
+    <div class="grid-2">
+      <div class="metric">
+        <span class="label">当前压力 (Avg: <span data-bind="averagePressure">0</span>)</span>
+        <span class="value" data-bind="currentPressure">0</span>
+        <div class="progress"><div id="pBar" class="bar p" style="width:0%"></div></div>
+      </div>
+      <div class="metric">
+        <span class="label">当前强度 (Tgt: <span data-bind="targetIntensity">0</span>)</span>
+        <span class="value" data-bind="currentIntensity">0</span>
+        <div class="progress"><div id="iBar" class="bar i" style="width:0%"></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="actions">
+      <button class="primary" data-action="pause"><span data-bind="btnText">暂停</span></button>
+      <button data-action="addIntensity">+10 强度</button>
+      <button class="danger" data-action="shockOnce">⚡ 电击</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="stat-row">
+      <span>中间压力: <b data-bind="midPressure">50</b></span>
+      <span>当前峰值: <b data-bind="edgePeak">0</b></span>
+      <span>最近触发峰值: <b data-bind="lastEdgePeak">0</b></span>
+    </div>
+    <canvas id="chart"></canvas>
+    <div class="adjust">
+      <div><span>中间压力微调</span><button class="btn-sm" data-adjust="mid" data-val="-0.1">-</button><button class="btn-sm" data-adjust="mid" data-val="0.1">+</button></div>
+      <div class="muted" style="color:var(--sub)">下次边缘期自动校准</div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="stat-row">
+      <span>边缘次数: <b data-bind="edgingCount">0</b></span>
+      <span>电击次数: <b data-bind="shockCount">0</b></span>
+      <span>累计刺激: <b data-bind="totalStimulationTime">0</b>s</span>
+    </div>
+    <ul id="logs"></ul>
+  </div>
+</div>
+<script src="game.js"></script>
+</body>
+</html>
