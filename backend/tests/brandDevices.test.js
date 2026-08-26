@@ -23,6 +23,30 @@ class MockWebSocket {
 }
 
 const hex = (b) => b.toString('hex').toUpperCase();
+const { mergeFjbState, toFjbStroke, scale255 } = require('../brands/capabilityMap');
+
+describe('能力换算', () => {
+  test('0-255 映射设备量程，strength 只正转', () => {
+    expect(scale255(0, 20)).toBe(0);
+    expect(scale255(255, 20)).toBe(20);
+    expect(toFjbStroke({ value: 255, direction: 1 })).toBe(20);
+    expect(toFjbStroke({ value: 255, direction: -1 })).toBe(40);
+  });
+
+  test('motors 未写的轴保持', () => {
+    const next = mergeFjbState({ stroke: 10, vibe: 5, axis: 2 }, { vibe: { value: 255 } });
+    expect(next).toEqual({ stroke: 10, vibe: 20, axis: 2 });
+  });
+
+  test('YCYConnection 把 setMotors 合成 setFjb', () => {
+    const conn = new YCYConnection({ deviceId: 'x', mode: 'bridge' });
+    const n = conn._normalize({
+      brand: 'ycy', cmd: 'setMotors',
+      channels: { stroke: { value: 255, direction: -1 } },
+    });
+    expect(n).toMatchObject({ cmd: 'setFjb', stroke: 40, vibe: 0, axis: 0 });
+  });
+});
 
 describe('郊狼 DGLab 协议', () => {
   test('构造 set_pattern / stop_pattern / change_max_intensity', () => {
@@ -131,19 +155,22 @@ describe('设备类型层发出品牌命令（接入 Bridge / 设备映射）', 
     expect(emit('DGLAB', 'shock', 'stop', {})).toEqual({ brand: 'dglab', cmd: 'stopPattern' });
   });
 
-  test('YCY_EMS shock.start → setStrength channel A', () => {
+  test('YCY_EMS shock.start → setStrength channel AB', () => {
     const m = emit('YCY_EMS', 'shock', 'start', { voltage: 30 });
-    expect(m).toMatchObject({ brand: 'ycy', cmd: 'setStrength', channel: 'A', value: 30 });
+    expect(m).toMatchObject({ brand: 'ycy', cmd: 'setStrength', channel: 'AB', value: 30 });
   });
 
-  test('YCY_EMS strength.set → setStrength channel B', () => {
-    const m = emit('YCY_EMS', 'strength', 'set', { value: 70 });
-    expect(m).toMatchObject({ brand: 'ycy', cmd: 'setStrength', channel: 'B', value: 70 });
+  test('YCY_EMS estim.set → setEstim', () => {
+    const m = emit('YCY_EMS', 'estim', 'set', { channel: 'a', intensity: 128, wave: '3' });
+    expect(m).toMatchObject({ brand: 'ycy', cmd: 'setEstim', channel: 'A', intensity: 128, wave: '3' });
   });
 
-  test('YCY_TOY strength.set → setSpeed（0-100 映射到 0-20）', () => {
-    const m = emit('YCY_TOY', 'strength', 'set', { value: 50 });
-    expect(m).toMatchObject({ brand: 'ycy', cmd: 'setSpeed', motor: 'A', speed: 10 });
+  test('YCY_TOY strength.set → setMotors a', () => {
+    const m = emit('YCY_TOY', 'strength', 'set', { value: 128 });
+    expect(m).toMatchObject({
+      brand: 'ycy', cmd: 'setMotors',
+      channels: { a: { value: 128, direction: 1 } },
+    });
   });
 
   test('YCY_TOY strength.stop → stopToy', () => {
@@ -175,9 +202,31 @@ describe('设备类型层发出品牌命令（接入 Bridge / 设备映射）', 
     expect(captured).toEqual({ brand: 'ycy', cmd: 'stopFjb' });
   });
 
-  test('YCY_CUP strength.set 50 → setFjb 旋转 20', () => {
-    const m = emit('YCY_CUP', 'strength', 'set', { value: 50 });
-    expect(m).toMatchObject({ brand: 'ycy', cmd: 'setFjb', stroke: 20, vibe: 0, axis: 0 });
+  test('YCY_CUP strength.set → setMotors 只改旋转正转', () => {
+    const m = emit('YCY_CUP', 'strength', 'set', { value: 128 });
+    expect(m).toMatchObject({
+      brand: 'ycy', cmd: 'setMotors',
+      channels: { stroke: { value: 128, direction: 1 } },
+    });
+  });
+
+  test('YCY_CUP motors.set 带方向', () => {
+    const m = emit('YCY_CUP', 'motors', 'set', {
+      channels: { stroke: { value: 128, direction: -1 }, vibe: { value: 64 } },
+    });
+    expect(m.cmd).toBe('setMotors');
+    expect(m.channels.stroke.direction).toBe(-1);
+  });
+
+  test('YCY_ENEMA pump.start → pump guan', () => {
+    const m = emit('YCY_ENEMA', 'pump', 'start', { scene: 'guan' });
+    expect(m).toMatchObject({ brand: 'ycy', cmd: 'pump', scene: 'guan' });
+  });
+
+  test('DGLAB 有 shock+estim，无 strength', () => {
+    expect(registry.hasCapability('DGLAB', 'shock')).toBe(true);
+    expect(registry.hasCapability('DGLAB', 'estim')).toBe(true);
+    expect(registry.hasCapability('DGLAB', 'strength')).toBe(false);
   });
 
   test('YCY_ENEMA 触发指令 → triggerInstruction', () => {

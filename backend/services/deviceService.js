@@ -675,7 +675,7 @@ function stopExecutionDevice(deviceId) {
   }
 
   const deviceType = deviceRegistry.getDeviceType(device.type);
-  const capabilities = ['shock', 'strength'].filter((key) => deviceType.hasCapability(key));
+  const capabilities = ['shock', 'strength', 'motors', 'estim', 'pump'].filter((key) => deviceType.hasCapability(key));
   if (capabilities.length === 0) {
     return {
       deviceId,

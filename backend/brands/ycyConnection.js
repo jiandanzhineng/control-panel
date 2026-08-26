@@ -6,6 +6,7 @@
  * 作为 deviceConnectionService 的 transport adapter：实现 send(message) / disconnect()。
  */
 const ycy = require('./protocols/ycy');
+const { mergeFjbState, toLevel255, clampInt } = require('./capabilityMap');
 
 class YCYConnection {
   constructor({ deviceId, mode = 'bridge', WebSocketClass = null } = {}) {
@@ -18,6 +19,7 @@ class YCYConnection {
     this.auth = null; // { uid, token } 桥接模式鉴权
     this._statusCb = null;
     this._keepAliveTimer = null;
+    this._fjb = { stroke: 0, vibe: 0, axis: 0 };
   }
 
   /** 注册状态回调：brandService 用它接收 close / error，驱动状态机与重连。 */
@@ -70,16 +72,47 @@ class YCYConnection {
     if (this._keepAliveTimer) { clearInterval(this._keepAliveTimer); this._keepAliveTimer = null; }
   }
 
+  _normalize(brandCommand) {
+    const c = brandCommand || {};
+    if (c.cmd === 'setMotors') {
+      const ch = c.channels || {};
+      if (ch.a != null && ch.stroke == null) {
+        return { ...c, cmd: 'setSpeed', speed: toLevel255(ch.a, 20) || 0 };
+      }
+      this._fjb = mergeFjbState(this._fjb, ch);
+      return { brand: 'ycy', cmd: 'setFjb', ...this._fjb };
+    }
+    if (c.cmd === 'setFjb') {
+      this._fjb = {
+        stroke: c.stroke != null ? c.stroke : this._fjb.stroke,
+        vibe: c.vibe != null ? c.vibe : this._fjb.vibe,
+        axis: c.axis != null ? c.axis : this._fjb.axis,
+      };
+      return { ...c, cmd: 'setFjb', ...this._fjb };
+    }
+    if (c.cmd === 'stopFjb' || c.cmd === 'stopToy' || c.cmd === 'stopAll') {
+      this._fjb = { stroke: 0, vibe: 0, axis: 0 };
+    }
+    if (c.cmd === 'setEstim') {
+      return {
+        brand: 'ycy', cmd: 'setStrength',
+        channel: c.channel || 'A',
+        value: Math.round((clampInt(c.intensity, 0, 255) / 255) * 100),
+        wave: c.wave,
+      };
+    }
+    return c;
+  }
+
   /** 接收品牌命令（由 YCY_* 设备类型 emit），翻译并下发 */
   send(brandCommand) {
+    const cmd = this._normalize(brandCommand);
     if (this.mode === 'ble') {
       if (!this.ble) throw new Error('遥控蓝牙设备 BLE 未连接');
-      const frame = ycy.toBleFrame(brandCommand);
-      return this.ble.write(frame);
+      return this.ble.write(ycy.toBleFrame(cmd));
     }
     if (!this.bridge) throw new Error('遥控蓝牙设备桥接未连接');
-    const msg = ycy.toBridgeMessage(brandCommand, { token: this.auth?.token });
-    return this.bridge.send(msg);
+    return this.bridge.send(ycy.toBridgeMessage(cmd, { token: this.auth?.token }));
   }
 
   disconnect() {

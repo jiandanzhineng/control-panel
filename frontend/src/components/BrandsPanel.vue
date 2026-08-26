@@ -1190,6 +1190,12 @@ async function ycyWebbleConnect() {
   ycyWebbleCandidates.value = []
   ycyScanUnsub = brandBle.onScanResults((list) => { ycyWebbleCandidates.value = list })
   try {
+    if (window.ycyBleApi?.isSupported()) {
+      const meta = await window.ycyBleApi.connect()
+      await refreshConnected()
+      ElMessage.success('已连接 ' + brandLabel('ycy', meta.name))
+      return
+    }
     const meta = await ycyBle.scanAndConnect()
     const id = meta.id
     if (!ycyWebbleDevices.value.find((d) => d.id === id)) {

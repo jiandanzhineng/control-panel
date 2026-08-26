@@ -7,6 +7,7 @@ const deviceService = require('../services/deviceService');
 const { DGLabConnection } = require('./dglabConnection');
 const { YCYConnection } = require('./ycyConnection');
 const { DGLabV2WebBleConnection } = require('./webBleConnection');
+const { YcyWebBleConnection } = require('./ycyWebBleConnection');
 const dglabV2 = require('./protocols/dglabV2');
 const discovery = require('./discovery');
 const ycyProto = require('./protocols/ycy');
@@ -337,29 +338,37 @@ function disconnect(deviceId) {
 
 function attachWebBle(metadata, send) {
   if (!metadata?.id) throw new TypeError('WebBLE 元数据缺少 id');
+  const ycyType = metadata.type && String(metadata.type).startsWith('YCY')
+    ? metadata.type
+    : resolveDeviceType('ycy', { mode: 'ble', model: metadata.name, type: metadata.type });
+  const isYcy = metadata.brand === 'ycy' || String(metadata.type || '').startsWith('YCY')
+    || /FJB|YCY|YYC|YOKO|TDD/i.test(metadata.name || '');
   let connection = connections.get(metadata.id);
   if (!connection) {
-    connection = new DGLabV2WebBleConnection({ deviceId: metadata.id, send });
+    connection = isYcy
+      ? new YcyWebBleConnection({ deviceId: metadata.id, send, type: ycyType })
+      : new DGLabV2WebBleConnection({ deviceId: metadata.id, send });
     connections.set(metadata.id, connection);
   }
+  const type = isYcy ? ycyType : 'DGLAB';
+  const brand = isYcy ? 'ycy' : 'dglab';
   deviceService.connectTransportDevice(
     {
       id: metadata.id,
-      name: metadata.name || `蓝牙体感设备 V2 ${String(metadata.id).slice(-4)}`,
-      // 复用既有 DGLAB 设备类型，使设备映射 / 玩法能用同一套 shock/strength 能力驱动，
-      // 设备类型层发出的 setPattern/stopPattern 命令由 webBleConnection 翻译为 V2 GATT 操作。
-      type: 'DGLAB',
+      name: metadata.name || `${isYcy ? '役次元' : '蓝牙体感设备'} ${String(metadata.id).slice(-4)}`,
+      type,
       connectionType: 'brandBle',
       transportMetadata: connection.toMetadata(),
       data: metadata.data || {},
     },
     { kind: 'brandBle', send },
   );
+  setState(metadata.id, STATUS.CONNECTED, { userClosed: false, reconnecting: false, error: null });
   return {
     device: deviceService.getDeviceById(metadata.id),
     connection: connection.toMetadata(),
-    brand: 'dglab',
-    type: metadata.type || 'DGLAB_V2',
+    brand,
+    type,
   };
 }
 

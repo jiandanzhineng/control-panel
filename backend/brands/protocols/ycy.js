@@ -147,14 +147,22 @@ function buildEmsHandshake() {
  * value: UI 量纲 0–100（内部映射为设备量纲 1–276；0 视为关闭该通道）。
  * freq / pulse: 仅自定义模式（mode=CUSTOM）有效；否则固定 0。
  */
+function parseWaveMode(wave) {
+  if (wave == null || wave === '') return null;
+  const n = Number(wave);
+  if (Number.isInteger(n) && n >= 1 && n <= 16) return n;
+  return null;
+}
+
 function buildEmsStrength({
-  channel = 'A', value = 0, freq = 50, pulse = 50,
+  channel = 'A', value = 0, freq = 0, pulse = 0, wave,
 } = {}) {
   const ch = CHANNEL_BYTE[String(channel || 'A').toUpperCase()] ?? CHANNEL_BYTE.A;
   const strength = mapStrengthToYcy(value);
   const enabled = strength > 0 ? 1 : 0;
-  const custom = freq > 0 || pulse > 0;
-  const mode = custom ? MODE.CUSTOM : MODE.PRESET_1;
+  const preset = parseWaveMode(wave);
+  const custom = preset == null && (freq > 0 || pulse > 0);
+  const mode = custom ? MODE.CUSTOM : (preset || MODE.PRESET_1);
   const f = custom ? clamp(freq, 0, EMS_FREQ_MAX) : 0;
   const p = custom ? clamp(pulse, 0, EMS_FREQ_MAX) : 0;
   const s = clamp(strength, 0, EMS_CHANNEL_MAX);
@@ -315,6 +323,7 @@ function toBleFrame(brandCommand) {
         value: brandCommand.value,
         freq: brandCommand.freq,
         pulse: brandCommand.pulse,
+        wave: brandCommand.wave,
       });
     case 'setWave':
     case 'setMode':

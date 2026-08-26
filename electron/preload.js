@@ -3,6 +3,7 @@ const { BleDeviceClient } = require('./ble/deviceClient');
 const { BLE_UUIDS } = require('./ble/protocol');
 const { BlufiProvisionClient } = require('./blufi/provisionClient');
 const { BrandBleClient, V2_UUIDS } = require('./ble/brandDeviceClient');
+const { YcyBleClient } = require('./ble/ycyDeviceClient');
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
 const bleClients = new Map();
@@ -228,6 +229,48 @@ window.brandBleApi = {
     ipcRenderer.on('brandBle:scan-results', listener);
     return () => ipcRenderer.removeListener('brandBle:scan-results', listener);
   },
+};
+
+window.ycyBleApi = {
+  isSupported: () => !!navigator.bluetooth?.requestDevice,
+  connect: async () => {
+    if (!navigator.bluetooth?.requestDevice) {
+      const error = new Error('This PC does not support Web Bluetooth');
+      error.code = 'BLE_NOT_SUPPORTED';
+      throw error;
+    }
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [
+        '0000ff30-0000-1000-8000-00805f9b34fb',
+        '0000ff40-0000-1000-8000-00805f9b34fb',
+        '0000ff70-0000-1000-8000-00805f9b34fb',
+        '0000ae00-0000-1000-8000-00805f9b34fb',
+        '0000180f-0000-1000-8000-00805f9b34fb',
+      ],
+    });
+    const client = new YcyBleClient(device, { onEvent: emitBrandBleClientEvent });
+    try {
+      const metadata = await client.connect();
+      brandClients.set(metadata.id, client);
+      await ipcRenderer.invoke('brandBle:connected', metadata);
+      return metadata;
+    } catch (error) {
+      brandClients.delete(client.id);
+      try { await client.disconnect(); } catch (_) {}
+      throw error;
+    }
+  },
+  disconnect: async (id) => {
+    const client = brandClients.get(id);
+    if (!client) return { ok: true, alreadyDisconnected: true };
+    await client.disconnect();
+    brandClients.delete(id);
+    return { ok: true };
+  },
+  selectDevice: (deviceId) => ipcRenderer.invoke('brandBle:select-device', deviceId),
+  cancelSelection: () => ipcRenderer.invoke('brandBle:cancel-selection'),
+  onScanResults: (callback) => window.brandBleApi.onScanResults(callback),
 };
 
 window.provisionApi = {

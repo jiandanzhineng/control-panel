@@ -97,6 +97,14 @@ function toWireMessage(brandCommand) {
   switch (cmd) {
     case 'setPattern':
       return buildSetPattern(brandCommand);
+    case 'setEstim': {
+      const intensity = Math.round((Math.max(0, Math.min(255, Number(brandCommand.intensity) || 0)) / 255) * 100);
+      return buildSetPattern({
+        pattern: brandCommand.wave || '经典',
+        intensity,
+        ticks: -1,
+      });
+    }
     case 'stopPattern':
     case 'stop':
       return buildStopPattern();

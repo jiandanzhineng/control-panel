@@ -114,10 +114,7 @@ const registeredTypes = [
     close: (ctx) => ctx.writeProps({ shock: 0, voltage: 0, power: 0 }),
   }),
 
-  // ---- 蓝牙体感设备（品牌设备）----
-  // 经由 App “娱乐模式”本地 WebSocket 控制（协议见 backend/brands/protocols/dglab.js）。
-  // 娱乐模式为单活动波形模型；shock/strength 两个能力均映射为 set_pattern，
-  // 设备类型层只负责发出品牌命令，真正翻译为 App 帧由品牌连接适配器完成。
+  // 郊狼：shock=双通道同强度；estim=分通道+波形预设。
   new BaseDeviceType({
     type: 'DGLAB',
     name: '蓝牙体感设备',
@@ -133,13 +130,13 @@ const registeredTypes = [
           stop: (ctx) => ctx.sendMessage({ brand: 'dglab', cmd: 'stopPattern' }),
         },
       },
-      strength: {
+      estim: {
         actions: {
           set: (ctx, params) => ctx.sendMessage({
-            brand: 'dglab', cmd: 'setPattern',
-            pattern: '经典',
-            intensity: Math.max(0, Math.min(100, Math.round(Number(params.value) || 0))),
-            ticks: -1,
+            brand: 'dglab', cmd: 'setEstim',
+            channel: params.channel || 'ab',
+            intensity: Math.max(0, Math.min(255, Math.round(Number(params.intensity) || 0))),
+            wave: params.wave,
           }),
           stop: (ctx) => ctx.sendMessage({ brand: 'dglab', cmd: 'stopPattern' }),
         },
@@ -152,9 +149,7 @@ const registeredTypes = [
     close: (ctx) => ctx.sendMessage({ brand: 'dglab', cmd: 'stopPattern' }),
   }),
 
-  // ---- 遥控蓝牙设备·电击型（0x35 族电刺激帧）----
-  // 通道 A/B 经 setStrength 下发（无状态单条指令，双通道需分别下发）；全局停止为 stopAll。
-  // BLE 直连帧结构见 backend/brands/protocols/ycy.js（35 11 02 | qda/pla/tla | qdb/plb/tlb）。
+  // YCY 电击：shock=AB 同强度；estim=分通道+预设波。
   new BaseDeviceType({
     type: 'YCY_EMS',
     name: '电击型设备',
@@ -162,17 +157,19 @@ const registeredTypes = [
       shock: {
         actions: {
           start: (ctx, params) => ctx.sendMessage({
-            brand: 'ycy', cmd: 'setStrength', channel: 'A',
+            brand: 'ycy', cmd: 'setStrength', channel: 'AB',
             value: Math.max(0, Math.min(100, Math.round(Number(params.voltage) || 0))),
           }),
           stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
         },
       },
-      strength: {
+      estim: {
         actions: {
           set: (ctx, params) => ctx.sendMessage({
-            brand: 'ycy', cmd: 'setStrength', channel: 'B',
-            value: Math.max(0, Math.min(100, Math.round(Number(params.value) || 0))),
+            brand: 'ycy', cmd: 'setEstim',
+            channel: String(params.channel || 'a').toUpperCase(),
+            intensity: Math.max(0, Math.min(255, Math.round(Number(params.intensity) || 0))),
+            wave: params.wave,
           }),
           stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
         },
@@ -185,60 +182,62 @@ const registeredTypes = [
     close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
   }),
 
-  // ---- 遥控蓝牙设备·电机型（0x35 族电机帧 35 12）----
-  // 电机速度 0–20（此处以 0–100 输入映射到 0–20）；玩具模式映射到电机速度（无独立 mode 帧）。
+  // 玩具：strength / motors.a 都映射主电机 0–255 → 0–20。
   new BaseDeviceType({
     type: 'YCY_TOY',
     name: '电机型设备',
     capabilities: {
       strength: {
         actions: {
-          set: (ctx, params) => {
-            const v = Math.max(0, Math.min(100, Math.round(Number(params.value) || 0)));
-            const speed = Math.round((v / 100) * 20);
-            return ctx.sendMessage({ brand: 'ycy', cmd: 'setSpeed', motor: 'A', speed });
-          },
+          set: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'setMotors',
+            channels: { a: { value: params.value, direction: 1 } },
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopToy' }),
+        },
+      },
+      motors: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'setMotors', channels: params.channels || {},
+          }),
           stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopToy' }),
         },
       },
     },
     operations: [
-      { key: 'start', name: '启动', capability: 'strength', action: 'set', input: { value: 80 } },
+      { key: 'start', name: '启动', capability: 'strength', action: 'set', input: { value: 204 } },
       { key: 'stop', name: '停止', capability: 'strength', action: 'stop', input: {} },
     ],
     close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopToy' }),
   }),
 
-  // ---- 遥控蓝牙设备·杯（YCY-FJB-03：6 字节 35 12 旋转/震动/第三轴）----
-  // 真机对拍：不是 AES 泵帧，也不是 4 字节玩具电机帧。
+  // 杯：strength 只改旋转且只正转；motors 三路，未写的保持。
   new BaseDeviceType({
     type: 'YCY_CUP',
     name: '杯型设备',
     capabilities: {
       strength: {
         actions: {
-          set: (ctx, params) => {
-            const n = Number(params.value);
-            const pct = Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 0;
-            const stroke = Math.round((pct / 100) * 40);
-            return ctx.sendMessage({ brand: 'ycy', cmd: 'setFjb', stroke, vibe: 0, axis: 0 });
-          },
+          set: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'setMotors',
+            channels: { stroke: { value: params.value, direction: 1 } },
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopFjb' }),
+        },
+      },
+      motors: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'setMotors', channels: params.channels || {},
+          }),
           stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopFjb' }),
         },
       },
     },
     operations: [
-      {
-        key: 'start', name: '启动旋转',
-        invoke: (ctx, params) => ctx.sendMessage({
-          brand: 'ycy', cmd: 'setFjb',
-          stroke: params?.stroke ?? 15, vibe: params?.vibe ?? 0, axis: params?.axis ?? 0,
-        }),
-      },
-      {
-        key: 'stop', name: '停止',
-        invoke: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopFjb' }),
-      },
+      { key: 'start', name: '启动旋转', capability: 'strength', action: 'set', input: { value: 191 } },
+      { key: 'stop', name: '停止', capability: 'strength', action: 'stop', input: {} },
       {
         key: 'trigger', name: '触发指令(桥接兜底)',
         invoke: (ctx, params) => {
@@ -250,12 +249,26 @@ const registeredTypes = [
     close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopFjb' }),
   }),
 
-  // ---- 遥控蓝牙设备·灌肠机（pump 协议，AES-128 加密 BLE 直发）----
-  // 与杯型同属泵设备，默认动作改为注水（guan）；其余同 YCY_CUP。
+  // 灌肠：只挂 pump，不冒充 strength。
   new BaseDeviceType({
     type: 'YCY_ENEMA',
     name: '灌肠型设备',
-    capabilities: {},
+    capabilities: {
+      pump: {
+        actions: {
+          start: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'pump',
+            protocol: params?.protocol || 'v1',
+            scene: params?.scene || 'guan',
+            rate: params?.rate, ss: params?.ss,
+          }),
+          stop: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'pump',
+            protocol: params?.protocol || 'v1', scene: 'stop',
+          }),
+        },
+      },
+    },
     operations: [
       {
         key: 'pumpStart', name: '启动泵(注水)',

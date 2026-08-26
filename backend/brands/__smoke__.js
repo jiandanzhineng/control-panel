@@ -92,17 +92,17 @@ async function run() {
   const c1 = cap('YCY_EMS', 'shock', 'start', { voltage: 30 });
   assert.strictEqual(c1.brand, 'ycy');
   assert.strictEqual(c1.cmd, 'setStrength');
-  assert.strictEqual(c1.channel, 'A');
+  assert.strictEqual(c1.channel, 'AB');
   assert.strictEqual(c1.value, 30);
 
-  const c2 = cap('YCY_EMS', 'strength', 'set', { value: 70 });
-  assert.strictEqual(c2.channel, 'B');
-  assert.strictEqual(c2.value, 70);
+  const c2 = cap('YCY_EMS', 'estim', 'set', { channel: 'a', intensity: 128, wave: '3' });
+  assert.strictEqual(c2.cmd, 'setEstim');
+  assert.strictEqual(c2.channel, 'A');
+  assert.strictEqual(c2.intensity, 128);
 
-  const t1 = cap('YCY_TOY', 'strength', 'set', { value: 50 });
-  assert.strictEqual(t1.cmd, 'setSpeed');
-  assert.strictEqual(t1.motor, 'A');
-  assert.strictEqual(t1.speed, 10); // 50/100*20
+  const t1 = cap('YCY_TOY', 'strength', 'set', { value: 128 });
+  assert.strictEqual(t1.cmd, 'setMotors');
+  assert.strictEqual(t1.channels.a.value, 128);
 
   const t2 = cap('YCY_TOY', 'strength', 'stop', {});
   assert.deepStrictEqual(t2, { brand: 'ycy', cmd: 'stopToy' });
