@@ -32,7 +32,7 @@
             <div class="card-header">
               <span>发现与连接</span>
               <el-radio-group v-model="dglabMode" size="small" class="mode-switch">
-                <el-radio-button v-if="isMac" value="native">桌面客户端</el-radio-button>
+                <el-radio-button v-if="nativeVisible" value="native">桌面客户端</el-radio-button>
                 <el-radio-button value="webble">网页蓝牙</el-radio-button>
                 <el-radio-button value="phone">手机连接</el-radio-button>
               </el-radio-group>
@@ -210,7 +210,7 @@
             <div class="card-header">
               <span>发现与连接</span>
               <el-radio-group v-model="ycyMode" size="small" class="mode-switch">
-                <el-radio-button v-if="isMac" value="native">桌面客户端</el-radio-button>
+                <el-radio-button v-if="nativeVisible" value="native">桌面客户端</el-radio-button>
                 <el-radio-button value="webble">网页蓝牙</el-radio-button>
                 <el-radio-button value="bridge">远程桥接</el-radio-button>
               </el-radio-group>
@@ -456,9 +456,17 @@ const refreshing = ref(false)
 
 // 郊狼 发现
 const isMac = computed(() => /Mac/i.test(navigator.userAgent || navigator.platform || ''))
-// 连接模式（用户用切换按钮选）：本机桥接(native, mac) / 网页蓝牙(webble) / 手机连接(phone)
-// mac 默认本机桥接（Swift 桥，由 Electron 主进程监管（崩溃自启）稳定）；网页蓝牙为功能最全通道（直连 GATT，可下发原始强度/通道/帧/泵控制）。
-const dglabMode = ref<'native' | 'webble' | 'phone'>(isMac.value ? 'native' : 'webble')
+// 是否运行在 Electron 壳内（客户端）：Electron 主进程会显式开启 Web Bluetooth（main.js: enable-features=WebBluetooth），
+// 故“网页蓝牙”在壳内同样可用；同时主进程会在 macOS / Windows 上监管拉起 ycy_bridge / dglab_bridge 原生桥。
+const isElectron = computed(() => /Electron/i.test(navigator.userAgent || ''))
+const isWin = computed(() => /Win/i.test(navigator.userAgent || navigator.platform || ''))
+// 桌面客户端（原生桥）选项可见条件：运行在 Electron 壳内，且平台为 macOS / Windows
+// （这两个平台的原生桥由主进程监管；Linux 未监管故不显示）。浏览器（Vite dev / 远程打开）不算 Electron，
+// 只给网页蓝牙，避免凭空出现“桌面客户端未连接”的误导提示。
+const nativeVisible = computed(() => isElectron.value && (isMac.value || isWin.value))
+// 连接模式（用户用切换按钮选）：本机桥接(native, mac/win) / 网页蓝牙(webble) / 手机连接(phone)
+// 桌面客户端默认（mac/win 的 Electron 内）；网页蓝牙为功能最全通道（直连 GATT，可下发原始强度/通道/帧/泵控制）。
+const dglabMode = ref<'native' | 'webble' | 'phone'>(nativeVisible.value ? 'native' : 'webble')
 const dglabModeDesc = computed(() => {
   switch (dglabMode.value) {
     case 'native': return '用本机桌面客户端经电脑蓝牙直连郊狼：开页自动连上、自动显示电量，可同时连多台。'
@@ -536,9 +544,9 @@ async function dglabWebbleDisconnect(d: DglabWebbleDevice) {
   }
 }
 
-// 役次元 连接模式（用户用切换按钮选）：本机桥接(native, mac) / 网页蓝牙(webble) / 远程桥接(bridge)
-// mac 默认本机桥接（Rust 桥，由 Electron 主进程监管（崩溃自启）稳定）；网页蓝牙为功能最全通道（直连 GATT，可下发原始强度/通道/帧/泵控制）。
-const ycyMode = ref<'native' | 'webble' | 'bridge'>(isMac.value ? 'native' : 'webble')
+// 役次元 连接模式（用户用切换按钮选）：本机桥接(native, mac/win) / 网页蓝牙(webble) / 远程桥接(bridge)
+// 桌面客户端默认（mac/win 的 Electron 内）；网页蓝牙为功能最全通道（直连 GATT，可下发原始强度/通道/帧/泵控制）。
+const ycyMode = ref<'native' | 'webble' | 'bridge'>(nativeVisible.value ? 'native' : 'webble')
 const ycyModeDesc = computed(() => {
   switch (ycyMode.value) {
     case 'native': return '用本机桌面客户端经电脑蓝牙直连役次元：开页自动连上、自动显示电量与设备类型，可同时连多台。'
@@ -646,8 +654,8 @@ function dglabNativeMarkPending(id: string) {
   setTimeout(() => { dglabNativePending.value = dglabNativePending.value.filter((x) => x !== tid) }, 8000)
 }
 async function dglabNativeAuto() {
-  // 仅在本机直连（原生桥，macOS）下自动连接，避免与其他平台的网页蓝牙冲突
-  if (!isMac.value) return
+  // 仅在本机直连（原生桥，macOS / Windows 的 Electron 客户端）下自动连接，避免与其他平台的网页蓝牙冲突
+  if (!nativeVisible.value) return
   for (const d of dglabNativeDevices.value) {
     if (d.ready) {
       if (!dglabNativeEver.value.includes(d.id)) dglabNativeEver.value.push(d.id)
@@ -993,8 +1001,8 @@ async function probeBridgeAndPickDefault() {
 onMounted(() => {
   refreshConnected()
   if (autoRefreshEnabled.value) startAutoRefresh()
-  if (isMac.value) startYcyNativeTimer()
-  if (isMac.value) startDglabNativeTimer()
+  if (nativeVisible.value) startYcyNativeTimer()
+  if (nativeVisible.value) startDglabNativeTimer()
   probeBridgeAndPickDefault()
 })
 onUnmounted(() => { stopAutoRefresh(); stopYcyNativeTimer(); stopDglabNativeTimer() })
