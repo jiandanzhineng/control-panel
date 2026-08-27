@@ -233,6 +233,20 @@ describe('设备类型层发出品牌命令（接入 Bridge / 设备映射）', 
     expect(m.channels.stroke.direction).toBe(-1);
   });
 
+  test('品牌页试控 motors.set 与玩法同一套命令', () => {
+    const m = emit('YCY_CUP', 'motors', 'set', {
+      channels: {
+        stroke: { value: 96, direction: 1 },
+        vibe: { value: 0 },
+        axis: { value: 0 },
+      },
+    });
+    expect(m).toMatchObject({
+      brand: 'ycy', cmd: 'setMotors',
+      channels: { stroke: { value: 96, direction: 1 }, vibe: { value: 0 }, axis: { value: 0 } },
+    });
+  });
+
   test('YCY_ENEMA pump.start → pump guan', () => {
     const m = emit('YCY_ENEMA', 'pump', 'start', { scene: 'guan' });
     expect(m).toMatchObject({ brand: 'ycy', cmd: 'pump', scene: 'guan' });

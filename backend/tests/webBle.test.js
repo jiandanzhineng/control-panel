@@ -130,6 +130,19 @@ describe('YCY WebBLE 经设备操作下发写帧', () => {
     try { brandService.detachWebBle(CUP_ID); } catch (_) {}
   });
 
+  test('试控 motors.set 经能力层写出 FJB 帧', () => {
+    const sent = [];
+    brandService.attachWebBle(
+      { id: CUP_ID, name: 'YCY-FJB-03', type: 'YCY_CUP', brand: 'ycy', connectionType: 'brandBle' },
+      (msg) => { sent.push(msg); return Promise.resolve({ ok: true }); },
+    );
+    deviceService.invokeDeviceCapability(CUP_ID, 'motors', 'set', {
+      channels: { stroke: { value: 255, direction: 1 }, vibe: { value: 255 }, axis: { value: 0 } },
+    });
+    expect(sent[0]).toMatchObject({ op: 'write' });
+    expect(Buffer.from(sent[0].value).equals(ycy.buildFjb03({ stroke: 20, vibe: 20, axis: 0 }))).toBe(true);
+  });
+
   test('启动旋转走 deviceService，下发 0x35 写帧而不是 setMotors', () => {
     const sent = [];
     brandService.attachWebBle(

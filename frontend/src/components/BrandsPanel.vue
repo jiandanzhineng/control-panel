@@ -69,24 +69,24 @@
               </div>
             </div>
             <div v-else-if="ycyPanelType(dev) === 'YCY_CUP'" class="control-grid">
-              <div class="control-field"><label>旋转 {{ ctl(dev).stroke }}</label><el-slider v-model="ctl(dev).stroke" :min="0" :max="40" /></div>
-              <div class="control-field"><label>震动 {{ ctl(dev).vibe }}</label><el-slider v-model="ctl(dev).vibe" :min="0" :max="20" /></div>
-              <div class="control-field"><label>第三轴 {{ ctl(dev).axis }}</label><el-slider v-model="ctl(dev).axis" :min="0" :max="20" /></div>
+              <div class="control-field"><label>旋转 {{ ctl(dev).stroke }}</label><el-slider v-model="ctl(dev).stroke" :min="0" :max="255" /></div>
+              <div class="control-field"><label>震动 {{ ctl(dev).vibe }}</label><el-slider v-model="ctl(dev).vibe" :min="0" :max="255" /></div>
+              <div class="control-field"><label>第三轴 {{ ctl(dev).axis }}</label><el-slider v-model="ctl(dev).axis" :min="0" :max="255" /></div>
               <div class="control-actions">
                 <el-button type="primary" size="small" :loading="opLoading[`ycyFjb:${dev.deviceId}`]" @click="ycyFjbApply(dev)">应用</el-button>
                 <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyFjbStop(dev)">停止</el-button>
               </div>
             </div>
             <div v-else-if="ycyPanelType(dev) === 'YCY_EMS'" class="control-grid">
-              <div class="control-field"><label>左通道 {{ ctl(dev).aStrength }}</label><el-slider v-model="ctl(dev).aStrength" :min="0" :max="100" /></div>
-              <div class="control-field"><label>右通道 {{ ctl(dev).bStrength }}</label><el-slider v-model="ctl(dev).bStrength" :min="0" :max="100" /></div>
+              <div class="control-field"><label>左通道 {{ ctl(dev).aStrength }}</label><el-slider v-model="ctl(dev).aStrength" :min="0" :max="255" /></div>
+              <div class="control-field"><label>右通道 {{ ctl(dev).bStrength }}</label><el-slider v-model="ctl(dev).bStrength" :min="0" :max="255" /></div>
               <div class="control-actions">
                 <el-button type="primary" size="small" :loading="opLoading[`ycyEms:${dev.deviceId}`]" @click="ycyEmsApply(dev)">应用</el-button>
                 <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">停止</el-button>
               </div>
             </div>
             <div v-else-if="ycyPanelType(dev) === 'YCY_TOY'" class="control-grid">
-              <div class="control-field"><label>速度 {{ ctl(dev).speed }}</label><el-slider v-model="ctl(dev).speed" :min="0" :max="100" /></div>
+              <div class="control-field"><label>速度 {{ ctl(dev).speed }}</label><el-slider v-model="ctl(dev).speed" :min="0" :max="255" /></div>
               <div class="control-actions">
                 <el-button type="primary" size="small" :loading="opLoading[`ycyToy:${dev.deviceId}`]" @click="ycyToyApply(dev)">应用</el-button>
                 <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">停止</el-button>
@@ -108,535 +108,6 @@
           </div>
         </div>
 
-      <section v-if="false" class="brand-col">
-        <div class="brand-col__head">
-          <h3 class="brand-col__name">郊狼</h3>
-          <p class="brand-col__desc">蓝牙体感设备：连上本机即可查看电量与状态，可同时连接多台。</p>
-        </div>
-
-        <el-card shadow="never" class="section-card">
-          <template #header>
-            <div class="card-header">
-              <span>发现与连接</span>
-              <el-radio-group v-model="dglabMode" size="small" class="mode-switch">
-                <el-radio-button value="native">本机桥接</el-radio-button>
-                <el-radio-button value="webble">网页蓝牙</el-radio-button>
-                <el-radio-button value="phone">手机连接</el-radio-button>
-              </el-radio-group>
-              <el-button size="small" type="primary" :icon="Plus" @click="openAdd('dglab')">添加设备</el-button>
-            </div>
-          </template>
-
-          <!-- 本机通道：mac 可选本机桥接/网页蓝牙，其他平台走网页蓝牙；另有手机连接(远程 WebSocket) -->
-          <template v-if="dglabMode === 'native' || dglabMode === 'webble'">
-            <!-- 原生桥（macOS，Swift 桥，由 Electron 主进程监管（崩溃自启）） -->
-            <template v-if="dglabMode === 'native'">
-            <div class="discover-row">
-              <el-tag :type="dglabNativeSummary.type" size="small" effect="light">{{ dglabNativeSummary.text }}</el-tag>
-              <el-button type="primary" size="small" :loading="busy" :disabled="dglabNativeDevices.length === 0" @click="dglabNativeConnectAll">全部连接</el-button>
-              <el-button size="small" :loading="busy" @click="dglabNativeRescan">重新扫描</el-button>
-            </div>
-            <p class="op-hint">本机已通过电脑蓝牙直接连接，开页即自动连上并自动显示电量；已连上的设备掉线会自动重连，可同时连多台。</p>
-            <el-alert
-              v-if="dglabNativeDevices.length === 0"
-              class="hint"
-              type="info"
-              :closable="false"
-              :title="dglabNativeBtHint"
-            />
-            <div v-else class="ycy-native-list">
-              <el-card
-                v-for="d in dglabNativeDevices"
-                :key="d.id"
-                shadow="hover"
-                class="ycy-native-card"
-                :class="{ 'ycy-native-card--ready': d.ready }"
-              >
-                <div class="ycy-native-card__head">
-                  <el-icon v-if="d.ready" class="ycy-native-card__icon ycy-native-card__icon--ok"><CircleCheck /></el-icon>
-                  <el-icon v-else class="ycy-native-card__icon ycy-native-card__icon--wait"><Loading /></el-icon>
-                  <div class="ycy-native-card__title">
-                    <div class="ycy-native-card__name">{{ brandLabel('dglab', d.name) }}</div>
-                  </div>
-                  <el-tag
-                    :type="d.ready ? 'success' : dglabNativePending.includes(d.id) ? 'warning' : 'info'"
-                    size="small"
-                    effect="light"
-                  >{{ d.ready ? '已连接' : dglabNativePending.includes(d.id) ? '连接中' : '待连接' }}</el-tag>
-                </div>
-                <el-descriptions v-if="d.ready" :column="1" border size="small" class="ycy-native-card__meta">
-                  <el-descriptions-item label="电量">{{ d.battery == null ? '—' : d.battery + '%' }}</el-descriptions-item>
-                </el-descriptions>
-                <div class="ycy-native-card__actions">
-                  <el-button v-if="d.ready" type="danger" plain size="small" :loading="busy" @click="dglabNativeDisconnect(d)">断开连接</el-button>
-                  <el-button v-else type="primary" size="small" :loading="busy" @click="dglabNativeConnect(d)">连接设备</el-button>
-                </div>
-              </el-card>
-            </div>
-
-            <!-- 排查：显示全部附近设备（含未命名），确认“为什么只看到 N 台” -->
-            <div class="diag">
-              <div class="discover-row" style="margin-top: 8px">
-                <el-button size="small" text bg @click="dglabShowAll = !dglabShowAll">{{ dglabShowAll ? '收起全部列表' : '排查：显示全部附近设备' }}</el-button>
-                <span class="op-hint" style="margin: 0">桥共扫到 {{ dglabAllDevices.length }} 台附近蓝牙设备，其中已识别郊狼 {{ dglabNativeDevices.length }} 台；其余多为手机/家电等无关设备，或广播无名字的未命名设备。</span>
-              </div>
-              <div v-if="dglabShowAll" class="diag-list">
-                <div v-for="d in dglabAllDevices" :key="d.id" class="diag-item" :class="{ 'diag-item--matched': DGLAB_RE.test(d.name || '') }">
-                  <span class="diag-name">{{ d.name || '未命名设备' }}</span>
-                  <span class="diag-meta">{{ d.name ? '' : (d.id.slice(0, 8) + ' · ') }}RSSI {{ d.rssi }}</span>
-                  <el-tag v-if="DGLAB_RE.test(d.name || '')" type="success" size="small" effect="plain">已识别</el-tag>
-                  <el-tag v-else type="info" size="small" effect="plain">未识别</el-tag>
-                  <el-tag :type="d.ready ? 'success' : 'info'" size="small">{{ d.ready ? '已连' : '待连' }}</el-tag>
-                  <el-button v-if="!d.ready" size="small" type="primary" plain :loading="busy" @click="dglabNativeConnect(d)">连接</el-button>
-                  <el-button v-else size="small" plain :loading="busy" @click="dglabNativeDisconnect(d)">断开</el-button>
-                </div>
-              </div>
-            </div>
-            </template>
-
-            <!-- 浏览器直连（网页蓝牙 Web Bluetooth，非 macOS 自动选用） -->
-            <template v-else-if="dglabMode === 'webble'">
-              <div class="discover-row">
-                <el-tag :type="dglabWebbleHint.type" size="small" effect="light">{{ dglabWebbleHint.text }}</el-tag>
-                <el-button type="primary" size="small" :loading="scanningWebble" :disabled="!webbleSupported" @click="dglabWebbleConnect">连接设备</el-button>
-                <el-button v-if="scanningWebble" size="small" @click="dglabWebbleCancelScan">取消</el-button>
-              </div>
-              <div v-if="dglabWebbleCandidates.length" class="candidate-list">
-                <div v-for="c in dglabWebbleCandidates" :key="c.id" class="candidate-item">
-                  <div class="candidate-info">
-                    <span class="candidate-name">{{ brandLabel('dglab', c.name) }}</span>
-                    <span class="candidate-meta">{{ c.name }}</span>
-                  </div>
-                  <el-button size="small" type="primary" @click="dglabWebblePick(c)">选择</el-button>
-                </div>
-              </div>
-            <p class="op-hint">浏览器通过电脑蓝牙直接连接郊狼：点“连接设备”后在系统蓝牙选择器里挑选即可，连上自动显示电量，可同时连多台。需使用 Chrome / Edge 等支持网页蓝牙的浏览器，且页面须通过 https 或本机 localhost 打开。</p>
-            <el-alert
-              v-if="!webbleSupported"
-              class="hint"
-              type="warning"
-              :closable="false"
-              title="当前浏览器不支持网页蓝牙直连，请改用“手机连接”，或用 Chrome / Edge 打开本页。"
-            />
-            <el-alert
-              v-else-if="dglabWebbleDevices.length === 0"
-              class="hint"
-              type="info"
-              :closable="false"
-              title="点击“连接设备”以选择并连接附近的郊狼设备（2.0 / 3.0 均可）。"
-            />
-            <div v-else class="ycy-native-list">
-              <el-card
-                v-for="d in dglabWebbleDevices"
-                :key="d.id"
-                shadow="hover"
-                class="ycy-native-card"
-                :class="{ 'ycy-native-card--ready': d.ready }"
-              >
-                <div class="ycy-native-card__head">
-                  <el-icon class="ycy-native-card__icon ycy-native-card__icon--ok"><CircleCheck /></el-icon>
-                  <div class="ycy-native-card__title">
-                    <div class="ycy-native-card__name">{{ brandLabel('dglab', d.name) }}</div>
-                  </div>
-                  <el-tag type="success" size="small" effect="light">已连接</el-tag>
-                </div>
-                <el-descriptions :column="1" border size="small" class="ycy-native-card__meta">
-                  <el-descriptions-item label="电量">{{ d.battery == null ? '—' : d.battery + '%' }}</el-descriptions-item>
-                </el-descriptions>
-                <div class="control-grid">
-                  <div class="control-field">
-                    <label>强度 {{ webbleCtl(d.id).intensity ?? 60 }}</label>
-                    <el-slider v-model="webbleCtl(d.id).intensity" :min="0" :max="100" />
-                  </div>
-                  <div class="control-actions">
-                    <el-button type="primary" size="small" :loading="opLoading[`dglabW:${d.id}`]" @click="dglabWebbleApply(d)">应用</el-button>
-                    <el-button size="small" :loading="opLoading[`dglabWS:${d.id}`]" @click="dglabWebbleStop(d)">停止</el-button>
-                  </div>
-                </div>
-                <div class="ycy-native-card__actions">
-                  <el-button type="danger" plain size="small" :loading="busy" @click="dglabWebbleDisconnect(d)">断开连接</el-button>
-                </div>
-              </el-card>
-            </div>
-            </template>
-          </template>
-
-          <!-- 手机连接（娱乐模式） -->
-          <template v-else>
-            <div class="discover-row">
-              <el-input v-model="dglabHost" placeholder="手机上显示的地址" class="addr-input" />
-              <el-input v-model="dglabPort" placeholder="端口" class="port-input" />
-              <el-button type="primary" :loading="scanningDglab" @click="discoverDglab">探测</el-button>
-            </div>
-            <p class="op-hint">手机连接：在配套手机软件里打开“娱乐模式”，屏幕上会显示本机地址和端口，填好后点“探测”即可发现设备。可逐台连接，支持多台同时在线。</p>
-            <div v-if="dglabCandidates.length" class="candidate-list">
-              <div v-for="c in dglabCandidates" :key="c.suggestedDeviceId" class="candidate-item">
-                <div class="candidate-info">
-                  <span class="candidate-name">{{ brandLabel('dglab', c.suggestedName) }}</span>
-                  <span class="candidate-meta">{{ c.host }}:{{ c.port }}
-                    <el-tag v-if="c.reachable" type="success" size="small">可达</el-tag>
-                    <el-tag v-else type="danger" size="small">不可达</el-tag>
-                  </span>
-                </div>
-                <el-button size="small" type="primary" :disabled="!c.reachable || busy" @click="connectDglab(c)">连接</el-button>
-              </div>
-            </div>
-          </template>
-        </el-card>
-
-        <!-- 已连接的郊狼设备（手机连接） -->
-        <div class="brand-col__devices">
-          <div v-if="!dglabConnected.length" class="brand-col__empty">还没有连接中的郊狼设备，连上后可在这里试控</div>
-
-          <div v-for="dev in dglabConnected" :key="dev.deviceId" class="device-card">
-            <div class="device-card__head">
-              <div>
-                <span class="device-card__name">{{ brandLabel('dglab', dev.name) }}</span>
-                <el-tag size="small" class="tag-brand">郊狼</el-tag>
-                <el-tag size="small" type="info">手机连接</el-tag>
-              </div>
-              <el-button size="small" :icon="Close" @click="disconnectDevice(dev)">断开</el-button>
-            </div>
-
-            <!-- 手机连接 控制 -->
-            <div class="control-grid">
-              <div class="control-field">
-                <label>波形</label>
-                <el-select v-model="ctl(dev).pattern" size="small" class="control-input">
-                  <el-option v-for="p in dglabPatterns" :key="p" :label="p" :value="p" />
-                </el-select>
-                <span class="op-hint">选择电击节奏的样子，例如经典、心跳、潮汐</span>
-              </div>
-              <div class="control-field">
-                <label>强度 {{ ctl(dev).intensity }}</label>
-                <el-slider v-model="ctl(dev).intensity" :min="0" :max="100" />
-                <span class="op-hint">调节电击强弱，0 最弱、100 最强</span>
-              </div>
-              <div class="control-field">
-                <label>时长</label>
-                <el-select v-model="ctl(dev).ticks" size="small" class="control-input">
-                  <el-option label="循环播放" :value="-1" />
-                  <el-option label="播放一遍" :value="0" />
-                </el-select>
-                <span class="op-hint">选择循环播放，还是只播放一遍就停</span>
-              </div>
-              <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`dglabApply:${dev.deviceId}`]" @click="dglabApply(dev)">应用</el-button>
-                <el-button size="small" :loading="opLoading[`dglabStop:${dev.deviceId}`]" @click="dglabStop(dev)">停止</el-button>
-                <el-button size="small" :loading="opLoading[`dglabMax:${dev.deviceId}`]" @click="dglabMaxPrompt(dev)">强度上限 +10</el-button>
-              </div>
-              <div class="control-hint">“应用”下发当前设置；“停止”立刻断电；“强度上限 +10”把设备允许的最高强度再提高一档。</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      </el-tab-pane>
-      <!-- 旧分栏保留逻辑，主界面不再展示 -->
-      <el-tab-pane v-if="false" label="役次元" name="ycy">
-      <section class="brand-col">
-        <div class="brand-col__head">
-          <h3 class="brand-col__name">役次元</h3>
-          <p class="brand-col__desc">遥控蓝牙设备：可用本机桥接（mac）或网页蓝牙（mac / Windows / Linux / Android）直连，也可远程桥接，可同时连接多台，连上即可查看电量与状态。</p>
-        </div>
-
-        <el-card shadow="never" class="section-card">
-          <template #header>
-            <div class="card-header">
-              <span>发现与连接</span>
-              <el-radio-group v-model="ycyMode" size="small" class="mode-switch">
-                <el-radio-button value="native">本机桥接</el-radio-button>
-                <el-radio-button value="webble">网页蓝牙</el-radio-button>
-                <el-radio-button value="bridge">远程桥接</el-radio-button>
-              </el-radio-group>
-              <el-button size="small" type="primary" :icon="Plus" @click="openAdd('ycy')">添加设备</el-button>
-            </div>
-          </template>
-
-          <!-- 本机通道：mac 可选本机桥接/网页蓝牙，其他平台走网页蓝牙；另有远程桥接(WebSocket) -->
-          <template v-if="ycyMode === 'native' || ycyMode === 'webble'">
-            <!-- 原生桥（仅 macOS，Swift 桥，由 Electron 主进程监管（崩溃自启）） -->
-            <template v-if="ycyMode === 'native'">
-            <div class="discover-row">
-              <el-tag :type="ycyNativeSummary.type" size="small" effect="light">{{ ycyNativeSummary.text }}</el-tag>
-              <el-button type="primary" size="small" :loading="busy" :disabled="ycyNativeDevices.length === 0" @click="ycyNativeConnectAll">全部连接</el-button>
-              <el-button size="small" :loading="busy" @click="ycyNativeRescan">重新扫描</el-button>
-            </div>
-            <p class="op-hint">本机已通过电脑蓝牙直接连接，可同时连多台，掉线会自动重连。下方每台可单独连接或断开。</p>
-            <el-alert
-              v-if="ycyNativeDevices.length === 0"
-              class="hint"
-              type="info"
-              :closable="false"
-              :title="ycyNativeBtHint"
-            />
-            <div v-else class="ycy-native-list">
-              <el-card
-                v-for="d in ycyNativeDevices"
-                :key="d.id"
-                shadow="hover"
-                class="ycy-native-card"
-                :class="{ 'ycy-native-card--ready': d.ready }"
-              >
-                <div class="ycy-native-card__head">
-                  <el-icon v-if="d.ready" class="ycy-native-card__icon ycy-native-card__icon--ok"><CircleCheck /></el-icon>
-                  <el-icon v-else class="ycy-native-card__icon ycy-native-card__icon--wait"><Loading /></el-icon>
-                  <div class="ycy-native-card__title">
-                    <div class="ycy-native-card__name">{{ brandLabel('ycy', d.name) }}</div>
-                  </div>
-                  <el-tag
-                    :type="d.ready ? 'success' : ycyNativePending.includes(d.id) ? 'warning' : 'info'"
-                    size="small"
-                    effect="light"
-                  >{{ d.ready ? '已连接' : ycyNativePending.includes(d.id) ? '连接中' : '待连接' }}</el-tag>
-                  <el-tag type="info" size="small" effect="plain">{{ ycyTypeLabel(d.name) }}</el-tag>
-                  <el-tag
-                    v-if="d.ready"
-                    :type="d.battery == null ? 'info' : (d.battery <= 20 ? 'danger' : d.battery <= 50 ? 'warning' : 'success')"
-                    size="small"
-                    effect="plain"
-                    style="margin-left: 4px"
-                  >电量 {{ d.battery == null ? '—' : d.battery + '%' }}</el-tag>
-                </div>
-                <div class="ycy-native-card__actions">
-                  <el-button v-if="d.ready" type="danger" plain size="small" :loading="busy" @click="ycyNativeDisconnect(d)">断开连接</el-button>
-                  <el-button v-else type="primary" size="small" :loading="busy" @click="ycyNativeConnect(d)">连接设备</el-button>
-                </div>
-              </el-card>
-            </div>
-
-            <!-- 排查：显示全部附近设备（含未命名），确认“为什么只看到 N 台”、找出灌肠机等未命名设备 -->
-            <div class="diag">
-              <div class="discover-row" style="margin-top: 8px">
-                <el-button size="small" text bg @click="ycyShowAll = !ycyShowAll">{{ ycyShowAll ? '收起全部列表' : '排查：显示全部附近设备' }}</el-button>
-                <span class="op-hint" style="margin: 0">桥共扫到 {{ ycyAllDevices.length }} 台附近蓝牙设备，其中已识别役次元 {{ ycyNativeDevices.length }} 台；其余多为手机/家电等无关设备，或广播无名字的未命名设备。</span>
-              </div>
-              <div v-if="ycyShowAll" class="diag-list">
-                <div v-for="d in ycyAllDevices" :key="d.id" class="diag-item" :class="{ 'diag-item--matched': YCY_RE.test(d.name || '') }">
-                  <span class="diag-name">{{ d.name || '未命名设备' }}</span>
-                  <span class="diag-meta">{{ d.name ? '' : (d.id.slice(0, 8) + ' · ') }}RSSI {{ d.rssi }}</span>
-                  <el-tag v-if="YCY_RE.test(d.name || '')" type="success" size="small" effect="plain">已识别</el-tag>
-                  <el-tag v-else type="info" size="small" effect="plain">未识别</el-tag>
-                  <el-tag :type="d.ready ? 'success' : 'info'" size="small">{{ d.ready ? '已连' : '待连' }}</el-tag>
-                  <el-button v-if="!d.ready" size="small" type="primary" plain :loading="busy" @click="ycyNativeConnect(d)">连接</el-button>
-                  <el-button v-else size="small" plain :loading="busy" @click="ycyNativeDisconnect(d)">断开</el-button>
-                </div>
-              </div>
-            </div>
-            </template>
-
-            <!-- 浏览器直连（网页蓝牙 Web Bluetooth，非 macOS 自动选用） -->
-            <template v-else-if="ycyMode === 'webble'">
-              <div class="discover-row">
-                <el-tag :type="ycyWebbleHint.type" size="small" effect="light">{{ ycyWebbleHint.text }}</el-tag>
-                <el-button type="primary" size="small" :loading="scanningYcyWebble" :disabled="!webbleSupported" @click="ycyWebbleConnect">连接设备</el-button>
-                <el-button v-if="scanningYcyWebble" size="small" @click="ycyWebbleCancelScan">取消</el-button>
-              </div>
-              <div v-if="ycyWebbleCandidates.length" class="candidate-list">
-                <div v-for="c in ycyWebbleCandidates" :key="c.id" class="candidate-item">
-                  <div class="candidate-info">
-                    <span class="candidate-name">{{ brandLabel('ycy', c.name) }}</span>
-                    <span class="candidate-meta">{{ c.name }}</span>
-                  </div>
-                  <el-button size="small" type="primary" @click="ycyWebblePick(c)">选择</el-button>
-                </div>
-              </div>
-              <p class="op-hint">浏览器通过电脑蓝牙直接连接役次元：点“连接设备”后在系统蓝牙选择器里挑选即可，连上自动显示电量与设备类型，可同时连多台。需使用 Chrome / Edge 等支持网页蓝牙的浏览器，且页面须通过 https 或本机 localhost 打开。Windows / Linux / Android 均可使用。</p>
-              <el-alert
-                v-if="!webbleSupported"
-                class="hint"
-                type="warning"
-                :closable="false"
-                title="当前浏览器不支持网页蓝牙直连，请改用 Chrome / Edge 打开本页。"
-              />
-              <el-alert
-                v-else-if="ycyWebbleDevices.length === 0"
-                class="hint"
-                type="info"
-                :closable="false"
-                title="点击“连接设备”以选择并连接附近的役次元设备（电击主机 / 杯 / 灌肠机均可）。"
-              />
-              <div v-else class="ycy-native-list">
-                <el-card
-                  v-for="d in ycyWebbleDevices"
-                  :key="d.id"
-                  shadow="hover"
-                  class="ycy-native-card"
-                  :class="{ 'ycy-native-card--ready': d.ready }"
-                >
-                  <div class="ycy-native-card__head">
-                    <el-icon class="ycy-native-card__icon ycy-native-card__icon--ok"><CircleCheck /></el-icon>
-                    <div class="ycy-native-card__title">
-                      <div class="ycy-native-card__name">{{ brandLabel('ycy', d.name) }}</div>
-                    </div>
-                    <el-tag type="success" size="small" effect="light">已连接</el-tag>
-                    <el-tag type="info" size="small" effect="plain">{{ ycyTypeLabel(d.name) }}</el-tag>
-                    <el-tag
-                      v-if="d.ready"
-                      :type="d.battery == null ? 'info' : (d.battery <= 20 ? 'danger' : d.battery <= 50 ? 'warning' : 'success')"
-                      size="small"
-                      effect="plain"
-                      style="margin-left: 4px"
-                    >电量 {{ d.battery == null ? '—' : d.battery + '%' }}</el-tag>
-                  </div>
-                  <div v-if="/FJB/i.test(d.name || '')" class="control-grid">
-                    <div class="control-field">
-                      <label>旋转 {{ webbleCtl(d.id).stroke }}</label>
-                      <el-slider v-model="webbleCtl(d.id).stroke" :min="0" :max="40" />
-                    </div>
-                    <div class="control-field">
-                      <label>震动 {{ webbleCtl(d.id).vibe }}</label>
-                      <el-slider v-model="webbleCtl(d.id).vibe" :min="0" :max="20" />
-                    </div>
-                    <div class="control-field">
-                      <label>第三轴 {{ webbleCtl(d.id).axis }}</label>
-                      <el-slider v-model="webbleCtl(d.id).axis" :min="0" :max="20" />
-                    </div>
-                    <div class="control-actions">
-                      <el-button type="primary" size="small" :loading="opLoading[`fjb:${d.id}`]" @click="ycyWebbleFjbApply(d)">应用</el-button>
-                      <el-button size="small" :loading="opLoading[`fjbStop:${d.id}`]" @click="ycyWebbleFjbStop(d)">停止</el-button>
-                    </div>
-                  </div>
-                  <div class="ycy-native-card__actions">
-                    <el-button type="danger" plain size="small" :loading="busy" @click="ycyWebbleDisconnect(d)">断开连接</el-button>
-                  </div>
-                </el-card>
-              </div>
-            </template>
-          </template>
-
-          <!-- 远程桥接 -->
-          <template v-else>
-            <div class="discover-row">
-              <el-input v-model="ycyBridgeCode" placeholder="连接码（设备编号加空格加口令）" class="addr-input" />
-            </div>
-            <div class="discover-row">
-              <el-select v-model="ycyBridgeType" size="small" class="type-select" placeholder="设备类型">
-                <el-option label="电击器" value="YCY_EMS" />
-                <el-option label="玩具 / 电机" value="YCY_TOY" />
-                <el-option label="杯" value="YCY_CUP" />
-                <el-option label="灌肠机" value="YCY_ENEMA" />
-              </el-select>
-            </div>
-            <div class="discover-row">
-              <el-input v-model="ycyBridgeHost" placeholder="桥接地址（设备桥接服务 IP，留空默认 127.0.0.1）" class="addr-input" />
-              <el-input v-model="ycyBridgePort" placeholder="端口" class="port-input" />
-              <el-button type="primary" :loading="busy" @click="connectYcyBridge">连接</el-button>
-            </div>
-            <p class="op-hint">远程桥接：依赖设备自带的桥接服务。在其运行后，填入连接码、选好设备类型、填好服务地址与端口即可控制。杯、灌肠机等非电击设备请选对应类型，连接后通过“玩法编号”触发设备里已存好的玩法。</p>
-          </template>
-        </el-card>
-
-        <!-- 已连接的役次元设备：连上即可试控 -->
-        <div class="brand-col__devices">
-          <div v-if="!ycyConnected.length" class="brand-col__empty">还没有连接中的役次元设备，连上后可在这里试控</div>
-
-          <div v-for="dev in ycyConnected" :key="dev.deviceId" class="device-card">
-            <div class="device-card__head">
-              <div>
-                <span class="device-card__name">{{ brandLabel('ycy', dev.name) }}</span>
-                <el-tag size="small" class="tag-brand">役次元</el-tag>
-                <el-tag v-if="dev.type" size="small" type="warning">{{ dev.typeLabel || TYPE_LABEL[dev.type] || dev.type }}</el-tag>
-              </div>
-              <el-button size="small" :icon="Close" @click="disconnectDevice(dev)">断开</el-button>
-            </div>
-
-            <!-- 远程桥接 控制 -->
-            <div v-if="dev.mode === 'bridge'" class="control-grid">
-              <div class="control-field">
-                <label>玩法编号</label>
-                <el-input v-model="ctl(dev).commandId" size="small" placeholder="设备里已存的玩法编号" class="control-input" />
-                <span class="op-hint">触发设备里已存好的玩法，在框里填写对应的编号</span>
-              </div>
-              <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`ycyTrigger:${dev.deviceId}`]" @click="ycyTrigger(dev)">触发</el-button>
-                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">全部停止</el-button>
-              </div>
-              <div class="control-hint">“触发”按编号运行对应玩法；“全部停止”让设备立刻停下。</div>
-            </div>
-
-            <!-- 电击器 控制 -->
-            <div v-else-if="ycyPanelType(dev) === 'YCY_EMS'" class="control-grid">
-              <div class="control-field">
-                <label>左通道强度 {{ ctl(dev).aStrength }}</label>
-                <el-slider v-model="ctl(dev).aStrength" :min="0" :max="100" />
-                <span class="op-hint">左边电击通道的强弱</span>
-              </div>
-              <div class="control-field">
-                <label>右通道强度 {{ ctl(dev).bStrength }}</label>
-                <el-slider v-model="ctl(dev).bStrength" :min="0" :max="100" />
-                <span class="op-hint">右边电击通道的强弱</span>
-              </div>
-              <div class="control-field">
-                <label>波形</label>
-                <el-select v-model="ctl(dev).wave" size="small" class="control-input">
-                  <el-option v-for="w in 16" :key="w" :label="`波形 ${w}`" :value="w" />
-                </el-select>
-                <span class="op-hint">选择电击的波形样式</span>
-              </div>
-              <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`ycyEms:${dev.deviceId}`]" @click="ycyEmsApply(dev)">应用</el-button>
-                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">全部停止</el-button>
-              </div>
-            </div>
-
-            <!-- FJB-03 杯：6 字节旋转/震动/第三轴 -->
-            <div v-else-if="ycyPanelType(dev) === 'YCY_CUP'" class="control-grid">
-              <div class="control-field">
-                <label>旋转 {{ ctl(dev).stroke }}</label>
-                <el-slider v-model="ctl(dev).stroke" :min="0" :max="40" />
-              </div>
-              <div class="control-field">
-                <label>震动 {{ ctl(dev).vibe }}</label>
-                <el-slider v-model="ctl(dev).vibe" :min="0" :max="20" />
-              </div>
-              <div class="control-field">
-                <label>第三轴 {{ ctl(dev).axis }}</label>
-                <el-slider v-model="ctl(dev).axis" :min="0" :max="20" />
-              </div>
-              <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`ycyFjb:${dev.deviceId}`]" @click="ycyFjbApply(dev)">应用</el-button>
-                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyFjbStop(dev)">停止</el-button>
-              </div>
-            </div>
-
-            <!-- 玩具 / 电机 控制 -->
-            <div v-else-if="ycyPanelType(dev) === 'YCY_TOY'" class="control-grid">
-              <div class="control-field">
-                <label>速度 {{ ctl(dev).speed }}</label>
-                <el-slider v-model="ctl(dev).speed" :min="0" :max="100" />
-                <span class="op-hint">电机转动的快慢</span>
-              </div>
-              <div class="control-field">
-                <label>模式</label>
-                <el-select v-model="ctl(dev).mode" size="small" class="control-input">
-                  <el-option v-for="m in 4" :key="m" :label="`模式 ${m}`" :value="m" />
-                </el-select>
-                <span class="op-hint">电机的运行方式</span>
-              </div>
-              <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`ycyToy:${dev.deviceId}`]" @click="ycyToyApply(dev)">应用</el-button>
-                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">停止</el-button>
-              </div>
-            </div>
-
-            <div v-else-if="ycyPanelType(dev) === 'YCY_ENEMA'" class="control-grid">
-              <div class="control-field">
-                <label>泵动作</label>
-                <el-select v-model="ctl(dev).scene" size="small" class="control-input">
-                  <el-option label="注水" value="guan" />
-                  <el-option label="抽气" value="add" />
-                  <el-option label="排气" value="cut" />
-                </el-select>
-              </div>
-              <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`ycyPump:${dev.deviceId}`]" @click="ycyPumpApply(dev)">应用</el-button>
-                <el-button size="small" :loading="opLoading[`ycyPumpS:${dev.deviceId}`]" @click="ycyPumpStop(dev)">停止</el-button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
       </el-tab-pane>
 
       <el-tab-pane label="支持设备" name="support">
@@ -705,90 +176,15 @@
       </template>
     </el-dialog>
 
-    <!-- 添加设备 对话框 -->
-    <el-dialog v-model="addDialog" :title="`添加${BRAND_LABEL[addBrand]}设备`" width="480px" class="add-dialog">
-      <el-radio-group v-model="addMethod" size="small" class="add-method">
-        <el-radio-button v-if="addShowLocal" value="local">本机直连</el-radio-button>
-        <el-radio-button value="remote">{{ addRemoteLabel }}</el-radio-button>
-      </el-radio-group>
-
-      <!-- 本机直连：从已扫描到的设备里挑一台连接 -->
-      <div v-if="addMethod === 'local'" class="add-body">
-        <div class="discover-row">
-          <el-button size="small" :loading="busy" @click="addRescan">重新扫描</el-button>
-          <span class="op-hint" style="margin: 0">选择下方设备即可连接，可同时连接多台。</span>
-        </div>
-        <div v-if="addNativeList.length === 0" class="brand-col__empty">
-          暂未扫描到{{ BRAND_LABEL[addBrand] }}设备，请点“重新扫描”，并确认设备已开机、本机蓝牙已打开。
-        </div>
-        <div v-else class="candidate-list">
-          <div v-for="d in addNativeList" :key="d.id" class="candidate-item">
-            <div class="candidate-info">
-              <span class="candidate-name">{{ brandLabel(addBrand, d.name) }}</span>
-              <span class="candidate-meta">{{ d.ready ? '已连接' : '待连接' }}</span>
-            </div>
-            <el-button size="small" :type="d.ready ? 'info' : 'primary'" :disabled="d.ready" :loading="busy" @click="addNativeConnect(d)">
-              {{ d.ready ? '已连接' : '连接' }}
-            </el-button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 手机连接（郊狼） -->
-      <div v-else-if="addBrand === 'dglab' && addMethod === 'remote'" class="add-body">
-        <div class="discover-row">
-          <el-input v-model="dglabHost" placeholder="手机上显示的地址" class="addr-input" />
-          <el-input v-model="dglabPort" placeholder="端口" class="port-input" />
-          <el-button type="primary" :loading="scanningDglab" @click="discoverDglab">探测</el-button>
-        </div>
-        <p class="op-hint">手机连接：在配套手机软件里打开“娱乐模式”，屏幕上会显示本机地址和端口，填好后点“探测”即可发现设备。</p>
-        <div v-if="dglabCandidates.length" class="candidate-list">
-          <div v-for="c in dglabCandidates" :key="c.suggestedDeviceId" class="candidate-item">
-            <div class="candidate-info">
-              <span class="candidate-name">{{ brandLabel('dglab', c.suggestedName) }}</span>
-              <span class="candidate-meta">{{ c.host }}:{{ c.port }}
-                <el-tag v-if="c.reachable" type="success" size="small">可达</el-tag>
-                <el-tag v-else type="danger" size="small">不可达</el-tag>
-              </span>
-            </div>
-            <el-button size="small" type="primary" :disabled="!c.reachable || busy" @click="connectDglab(c)">连接</el-button>
-          </div>
-        </div>
-      </div>
-
-      <!-- 远程桥接（役次元） -->
-      <div v-else-if="addBrand === 'ycy' && addMethod === 'remote'" class="add-body">
-        <div class="discover-row">
-          <el-input v-model="ycyBridgeCode" placeholder="连接码（设备编号加空格加口令）" class="addr-input" />
-        </div>
-        <div class="discover-row">
-          <el-select v-model="ycyBridgeType" size="small" class="type-select" placeholder="设备类型">
-            <el-option label="电击器" value="YCY_EMS" />
-            <el-option label="玩具 / 电机" value="YCY_TOY" />
-            <el-option label="杯" value="YCY_CUP" />
-            <el-option label="灌肠机" value="YCY_ENEMA" />
-          </el-select>
-        </div>
-        <div class="discover-row">
-          <el-input v-model="ycyBridgeHost" placeholder="桥接地址，本机直连留空即可" class="addr-input" />
-          <el-input v-model="ycyBridgePort" placeholder="端口" class="port-input" />
-          <el-button type="primary" :loading="busy" @click="connectYcyBridge">连接</el-button>
-        </div>
-        <p class="op-hint">远程桥接：依赖设备自带的桥接服务。在其运行后，填入连接码、选好设备类型、填好服务地址与端口即可控制。</p>
-      </div>
-
-      <template #footer>
-        <el-button size="small" @click="addDialog = false">完成</el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Connection, Switch, Close, CircleCheck, Loading, Plus, ArrowDown } from '@element-plus/icons-vue'
+import { Refresh, Close, ArrowDown } from '@element-plus/icons-vue'
 import * as brandsApi from '../api/brands'
+import * as devicesApi from '../api/devices'
 import * as ycyBridge from '../api/ycyBridge'
 import type { BrandDevice, DiscoverCandidate } from '../api/brands'
 import type { YcyBridgeDevice } from '../api/ycyBridge'
@@ -936,38 +332,6 @@ async function dglabWebbleConnect() {
     scanningWebble.value = false
   }
 }
-async function dglabWebbleApply(d: DglabWebbleDevice) {
-  const s = webbleCtl(d.id)
-  await withLoading(`dglabW:${d.id}`, async () => {
-    await brandsApi.control(d.id, 'setPattern', { pattern: '经典', intensity: s.intensity ?? 60, ticks: -1 })
-    ElMessage.success('已下发')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
-}
-async function dglabWebbleStop(d: DglabWebbleDevice) {
-  await withLoading(`dglabWS:${d.id}`, async () => {
-    await brandsApi.control(d.id, 'stop')
-  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
-}
-async function dglabWebbleDisconnect(d: DglabWebbleDevice) {
-  busy.value = true
-  try {
-    if (!window.brandBleApi) {
-      try { await brandBle.sendStop(d.id) } catch (_) {}
-    } else {
-      await brandsApi.disconnect(d.id)
-    }
-    await brandBle.disconnect(d.id)
-    dglabWebbleUnlisten.get(d.id)?.()
-    dglabWebbleUnlisten.delete(d.id)
-    dglabWebbleDevices.value = dglabWebbleDevices.value.filter((x) => x.id !== d.id)
-    ElMessage.success('已断开')
-  } catch (e: any) {
-    ElMessage.error(e?.message || '断开失败')
-  } finally {
-    busy.value = false
-  }
-}
-
 // 役次元 连接模式（用户用切换按钮选）：本机桥接(native, mac) / 网页蓝牙(webble) / 远程桥接(bridge)
 // mac 默认本机桥接（Swift 桥，由 Electron 主进程监管（崩溃自启）稳定）；网页蓝牙为功能最全通道（直连 GATT，可下发原始强度/通道/帧/泵控制）。
 const ycyMode = ref<'native' | 'webble' | 'bridge'>(isMac.value ? 'native' : 'webble')
@@ -1034,10 +398,6 @@ function withLoading(key: string, fn: () => Promise<void>) {
   opLoading[key] = true
   return fn().finally(() => { opLoading[key] = false })
 }
-function webbleCtl(id: string) {
-  if (!controlState[id]) controlState[id] = { stroke: 15, vibe: 0, axis: 0, intensity: 60 }
-  return controlState[id]
-}
 
 function ycyPanelType(dev: { type?: string; name?: string }) {
   if (dev.type && TYPE_LABEL[dev.type]) return dev.type
@@ -1052,8 +412,8 @@ function ctl(dev: BrandDevice) {
   if (!controlState[dev.deviceId]) {
     controlState[dev.deviceId] = {
       pattern: '经典', intensity: 60, ticks: -1,
-      commandId: '', aStrength: 40, bStrength: 40, wave: 1,
-      speed: 60, mode: 1, stroke: 15, vibe: 0, axis: 0, scene: 'guan',
+      commandId: '', aStrength: 102, bStrength: 102, wave: 1,
+      speed: 153, mode: 1, stroke: 96, vibe: 0, axis: 0, scene: 'guan',
       v2AStrength: 0, v2BStrength: 0, v2Ax: 5, v2Ay: 200, v2Bx: 5, v2By: 200,
     }
   }
@@ -1477,105 +837,43 @@ async function ycyWebbleConnect() {
     scanningYcyWebble.value = false
   }
 }
-async function ycyWebbleFjbApply(d: YcyWebbleDevice) {
-  const s = webbleCtl(d.id)
-  await withLoading(`fjb:${d.id}`, async () => {
-    await ycyBle.sendFjb03(d.id, { stroke: s.stroke, vibe: s.vibe, axis: s.axis })
-    ElMessage.success('已下发')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
-}
-async function ycyWebbleFjbStop(d: YcyWebbleDevice) {
-  await withLoading(`fjbStop:${d.id}`, async () => {
-    await ycyBle.sendFjb03(d.id, { stroke: 0, vibe: 0, axis: 0 })
-  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
-}
-async function ycyWebbleDisconnect(d: YcyWebbleDevice) {
-  busy.value = true
-  try {
-    if (window.ycyBleApi) {
-      await brandsApi.disconnect(d.id)
-    } else if (/(YISK|灌肠|ENEMA|GLJ|GLS)/i.test(d.name || '')) {
-      try { await ycyBle.sendPumpEncrypted(d.id, { protocol: 'v1', scene: 'stop' }) } catch (_) {}
-    } else if (/FJB/i.test(d.name || '')) {
-      try { await ycyBle.sendFjb03(d.id, { stroke: 0, vibe: 0, axis: 0 }) } catch (_) {}
-    } else {
-      try { await ycyBle.sendEmsStop(d.id) } catch (_) {}
-    }
-    await ycyBle.disconnect(d.id)
-    ycyWebbleUnlisten.get(d.id)?.()
-    ycyWebbleUnlisten.delete(d.id)
-    ycyWebbleDevices.value = ycyWebbleDevices.value.filter((x) => x.id !== d.id)
-    ElMessage.success('已断开')
-  } catch (e: any) {
-    ElMessage.error(e?.message || '断开失败')
-  } finally {
-    busy.value = false
-  }
-}
-
 async function dglabApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`dglabApply:${dev.deviceId}`, async () => {
-    if (!window.brandBleApi) {
-      await brandBle.sendPattern(dev.deviceId, s.intensity)
-    } else {
-      await brandsApi.control(dev.deviceId, 'setPattern', { pattern: s.pattern, intensity: s.intensity, ticks: s.ticks })
-    }
-    ElMessage.success('已下发波形')
+    await devicesApi.invokeCapability(dev.deviceId, 'shock', 'start', { voltage: s.intensity })
+    ElMessage.success('已下发')
   }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
 }
 
 async function dglabStop(dev: BrandDevice) {
   await withLoading(`dglabStop:${dev.deviceId}`, async () => {
-    if (!window.brandBleApi) await brandBle.sendStop(dev.deviceId)
-    else await brandsApi.control(dev.deviceId, 'stop')
+    await devicesApi.invokeCapability(dev.deviceId, 'shock', 'stop', {})
   }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
-}
-
-async function dglabMaxPrompt(dev: BrandDevice) {
-  await withLoading(`dglabMax:${dev.deviceId}`, async () => {
-    if (!window.brandBleApi) {
-      ElMessage.warning('原版 V2 直连不支持调整 App 强度上限')
-      return
-    }
-    await brandsApi.control(dev.deviceId, 'setMaxIntensity', { delta: 10 })
-  }).catch((e: any) => { ElMessage.error(e?.message || '操作失败') })
 }
 
 async function ycyTrigger(dev: BrandDevice) {
   const s = ctl(dev)
   if (!s.commandId) { ElMessage.warning('请填写玩法编号'); return }
   await withLoading(`ycyTrigger:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'trigger', { commandId: s.commandId })
+    await devicesApi.executeDeviceOperation(dev.deviceId, 'trigger', { commandId: s.commandId })
   }).catch((e: any) => { ElMessage.error(e?.message || '触发失败') })
 }
 
 async function ycyStop(dev: BrandDevice) {
   await withLoading(`ycyStop:${dev.deviceId}`, async () => {
-    if (!window.ycyBleApi) {
-      const type = ycyPanelType(dev)
-      if (type === 'YCY_TOY') await ycyBle.sendMotor(dev.deviceId, 0)
-      else if (type === 'YCY_CUP') await ycyBle.sendFjb03(dev.deviceId, { stroke: 0, vibe: 0, axis: 0 })
-      else if (type === 'YCY_ENEMA') await ycyBle.sendPumpEncrypted(dev.deviceId, { protocol: 'v1', scene: 'stop' })
-      else await ycyBle.sendEmsStop(dev.deviceId)
-      ElMessage.success('已停止')
-      return
-    }
-    await brandsApi.control(dev.deviceId, 'ycyStop')
+    const type = ycyPanelType(dev)
+    if (type === 'YCY_TOY') await devicesApi.invokeCapability(dev.deviceId, 'strength', 'stop', {})
+    else if (dev.mode === 'bridge') await devicesApi.executeDeviceOperation(dev.deviceId, 'stop', {})
+    else await devicesApi.invokeCapability(dev.deviceId, 'estim', 'stop', {})
+    ElMessage.success('已停止')
   }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
 }
 
 async function ycyEmsApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`ycyEms:${dev.deviceId}`, async () => {
-    if (!window.ycyBleApi) {
-      await ycyBle.sendEmsStrength(dev.deviceId, { channel: 'A', value: s.aStrength, wave: s.wave })
-      await ycyBle.sendEmsStrength(dev.deviceId, { channel: 'B', value: s.bStrength, wave: s.wave })
-    } else {
-      // 波形更新必须带当前强度，避免生成 0 强度帧。
-      await brandsApi.control(dev.deviceId, 'setStrength', { channel: 'A', value: s.aStrength, wave: s.wave })
-      await brandsApi.control(dev.deviceId, 'setStrength', { channel: 'B', value: s.bStrength, wave: s.wave })
-    }
+    await devicesApi.invokeCapability(dev.deviceId, 'estim', 'set', { channel: 'A', intensity: s.aStrength, wave: s.wave })
+    await devicesApi.invokeCapability(dev.deviceId, 'estim', 'set', { channel: 'B', intensity: s.bStrength, wave: s.wave })
     ElMessage.success('已下发')
   }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
 }
@@ -1583,59 +881,38 @@ async function ycyEmsApply(dev: BrandDevice) {
 async function ycyFjbApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`ycyFjb:${dev.deviceId}`, async () => {
-    if (!window.ycyBleApi) await ycyBle.sendFjb03(dev.deviceId, { stroke: s.stroke, vibe: s.vibe, axis: s.axis })
-    else await brandsApi.control(dev.deviceId, 'setFjb', { stroke: s.stroke, vibe: s.vibe, axis: s.axis })
+    await devicesApi.invokeCapability(dev.deviceId, 'motors', 'set', {
+      channels: {
+        stroke: { value: s.stroke, direction: 1 },
+        vibe: { value: s.vibe },
+        axis: { value: s.axis },
+      },
+    })
     ElMessage.success('已下发')
   }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
 }
 async function ycyFjbStop(dev: BrandDevice) {
   await withLoading(`ycyStop:${dev.deviceId}`, async () => {
-    if (!window.ycyBleApi) await ycyBle.sendFjb03(dev.deviceId, { stroke: 0, vibe: 0, axis: 0 })
-    else await brandsApi.control(dev.deviceId, 'setFjb', { stroke: 0, vibe: 0, axis: 0 })
+    await devicesApi.invokeCapability(dev.deviceId, 'motors', 'stop', {})
   }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
 }
 
 async function ycyPumpApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`ycyPump:${dev.deviceId}`, async () => {
-    if (!window.ycyBleApi) {
-      await ycyBle.sendPumpEncrypted(dev.deviceId, { protocol: 'v1', scene: s.scene || 'guan' })
-      ElMessage.success('已下发')
-      return
-    }
-    const res = await fetch(`/api/devices/${encodeURIComponent(dev.deviceId)}/capabilities/pump/actions/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scene: s.scene || 'guan' }),
-    })
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || '下发失败')
+    await devicesApi.invokeCapability(dev.deviceId, 'pump', 'start', { scene: s.scene || 'guan' })
     ElMessage.success('已下发')
   }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
 }
 async function ycyPumpStop(dev: BrandDevice) {
   await withLoading(`ycyPumpS:${dev.deviceId}`, async () => {
-    if (!window.ycyBleApi) {
-      await ycyBle.sendPumpEncrypted(dev.deviceId, { protocol: 'v1', scene: 'stop' })
-      ElMessage.success('已停止')
-      return
-    }
-    const res = await fetch(`/api/devices/${encodeURIComponent(dev.deviceId)}/capabilities/pump/actions/stop`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
-    })
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || '停止失败')
+    await devicesApi.invokeCapability(dev.deviceId, 'pump', 'stop', {})
   }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
 }
 async function ycyToyApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`ycyToy:${dev.deviceId}`, async () => {
-    if (!window.ycyBleApi) {
-      await ycyBle.sendMotor(dev.deviceId, Math.round((s.speed / 100) * 20))
-    } else {
-      await brandsApi.control(dev.deviceId, 'setSpeed', { motor: 'A', speed: Math.round((s.speed / 100) * 20) })
-      await brandsApi.control(dev.deviceId, 'setToyMode', { motor: 'A', mode: s.mode })
-    }
+    await devicesApi.invokeCapability(dev.deviceId, 'strength', 'set', { value: s.speed })
     ElMessage.success('已下发')
   }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
 }

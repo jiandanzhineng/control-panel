@@ -81,10 +81,25 @@ export function sendDeviceMessage(id: string, message: unknown): Promise<unknown
 }
 
 export function executeDeviceOperation(id: string, opKey: string, payload: Record<string, unknown> = {}): Promise<unknown> {
+  const body = payload && Object.prototype.hasOwnProperty.call(payload, 'params')
+    ? payload
+    : { params: payload };
   return request(`/api/devices/${encodeURIComponent(id)}/operations/${encodeURIComponent(opKey)}`, {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(body),
   });
+}
+
+export function invokeCapability(
+  id: string,
+  capability: string,
+  action: string,
+  params: Record<string, unknown> = {},
+): Promise<unknown> {
+  return request(
+    `/api/devices/${encodeURIComponent(id)}/capabilities/${encodeURIComponent(capability)}/actions/${encodeURIComponent(action)}`,
+    { method: 'POST', body: JSON.stringify(params) },
+  );
 }
 
 export function updateDeviceNickname(id: string, nickname: string): Promise<unknown> {
