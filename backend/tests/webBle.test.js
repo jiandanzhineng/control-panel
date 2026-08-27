@@ -94,6 +94,30 @@ describe('brandService.attachWebBle 集成', () => {
     brandService.control(DEVICE_ID, { brand: 'dglab', cmd: 'stopPattern' });
     expect(sent[1]).toEqual([{ characteristic: 'pwmAB2', value: v2.packStrength({ a: 0, b: 0 }) }]);
   });
+
+  test('通用 YCY 元数据按名称推断具体类型，不把 YISK 当成未知类型', () => {
+    const metadata = brandService.attachWebBle(
+      { id: 'ycy:yisk', name: 'YISK-003V3', type: 'YCY', connectionType: 'brandBle' },
+      () => Promise.resolve({ ok: true }),
+    );
+    expect(metadata.type).toBe('YCY_ENEMA');
+    expect(brandService.list().find((d) => d.deviceId === 'ycy:yisk').type).toBe('YCY_ENEMA');
+    brandService.detachWebBle('ycy:yisk');
+  });
+
+  test('setPattern 后单通道 setEstim 保留另一通道强度', () => {
+    const sent = [];
+    const conn = new DGLabV2WebBleConnection({
+      deviceId: 'dglab-v2-state',
+      send: (ops) => { sent.push(ops); return Promise.resolve({ ok: true }); },
+    });
+    conn.send({ cmd: 'setPattern', intensity: 50 });
+    conn.send({ cmd: 'setEstim', channel: 'a', intensity: 128 });
+    expect(sent[1]).toEqual([{
+      characteristic: 'pwmAB2',
+      value: v2.packStrength({ a: Math.round(128 / 255 * v2.STRENGTH_HW_MAX), b: v2.uiToHwStrength(50) }),
+    }]);
+  });
 });
 
 describe('YCY WebBLE 经设备操作下发写帧', () => {
@@ -115,5 +139,27 @@ describe('YCY WebBLE 经设备操作下发写帧', () => {
     deviceService.executeDeviceOperation(CUP_ID, 'start');
     expect(sent[0]).toMatchObject({ op: 'write' });
     expect(Buffer.from(sent[0].value).equals(ycy.buildFjb03({ stroke: 15, vibe: 15, axis: 0 }))).toBe(true);
+  });
+
+  test('setMode 复用当前通道强度，不发送 0 强度帧', () => {
+    const sent = [];
+    const conn = new (require('../brands/ycyWebBleConnection').YcyWebBleConnection)({
+      deviceId: 'ycy:ems', send: (msg) => { sent.push(msg); return Promise.resolve({ ok: true }); }, type: 'YCY_EMS',
+    });
+    conn.send({ cmd: 'setStrength', channel: 'A', value: 50 });
+    conn.send({ cmd: 'setMode', channel: 'A', mode: 3 });
+    expect(Buffer.from(sent[1].value).equals(ycy.buildEmsStrength({ channel: 'A', value: 50, wave: 3 }))).toBe(true);
+  });
+
+  test('WebBLE 断开先等待停止帧再发 disconnect', async () => {
+    const events = [];
+    brandService.attachWebBle(
+      { id: 'ycy:disconnect', name: 'YCY-FJB-03', type: 'YCY_CUP', brand: 'ycy', connectionType: 'brandBle' },
+      async (message) => { events.push(message); return { ok: true }; },
+    );
+    await brandService.detachWebBle('ycy:disconnect');
+    expect(events[0]).toMatchObject({ op: 'write' });
+    expect(events[0].value).toEqual(Array.from(ycy.buildFjb03({ stroke: 0, vibe: 0, axis: 0 })));
+    expect(events[1]).toEqual({ method: 'disconnect' });
   });
 });

@@ -300,7 +300,8 @@ const registeredTypes = [
         invoke: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
       },
     ],
-    close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+    // 灌肠机的输出通道是泵；stopAll 仅是电刺激帧，不能保证泵停止。
+    close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'stop' }),
   }),
 ];
 

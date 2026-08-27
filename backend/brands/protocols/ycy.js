@@ -326,9 +326,18 @@ function toBleFrame(brandCommand) {
         wave: brandCommand.wave,
       });
     case 'setWave':
+      return buildEmsStrength({
+        channel: brandCommand.channel,
+        value: brandCommand.value ?? brandCommand.strength,
+        wave: brandCommand.wave ?? brandCommand.value,
+      });
     case 'setMode':
-      // 无状态最简映射：仅在对应维度更新，其余取默认
-      return buildEmsStrength({ freq: cmd === 'setWave' ? brandCommand.value : 50, pulse: cmd === 'setMode' ? brandCommand.value : 50 });
+      // setMode 只改变波形，必须带上当前强度，不能生成关闭通道的 0 强度帧。
+      return buildEmsStrength({
+        channel: brandCommand.channel,
+        value: brandCommand.value ?? brandCommand.strength,
+        wave: brandCommand.mode,
+      });
     case 'stopAll':
     case 'stop':
       return buildEmsStop();
@@ -397,7 +406,11 @@ function toBridgeMessage(brandCommand, { token } = {}) {
       throw new Error('杯/灌肠机的泵控制需使用 BLE 直连模式（mode=ble），桥接模式仅支持 triggerInstruction');
     default:
       // 原始强度/通道/模式在 IM 指令模型下不可直接下发，需改用指令触发。
-      throw new Error(`桥接模式不支持原始指令 ${cmd}，请使用 triggerInstruction`);
+      {
+        const error = new Error(`桥接模式不支持原始指令 ${cmd}，请使用 triggerInstruction`);
+        error.code = 'YCY_BRIDGE_RAW_COMMAND_UNSUPPORTED';
+        throw error;
+      }
   }
 }
 

@@ -23,11 +23,12 @@ async function writeCharacteristic(characteristic, value) {
 
 function resolveType(name) {
   const n = String(name || '');
-  if (/灌肠|enema|glj/i.test(n)) return 'YCY_ENEMA';
+  if (/灌肠|enema|glj|yisk/i.test(n)) return 'YCY_ENEMA';
   if (/杯|cup|fjb/i.test(n)) return 'YCY_CUP';
   if (/toy|玩具|tdd|电机/i.test(n)) return 'YCY_TOY';
   if (/dj|ems|电击/i.test(n)) return 'YCY_EMS';
-  return 'YCY_CUP';
+  // 未知型号不能默认成带机械输出的杯，避免误发电机/泵帧；保守使用电击型能力。
+  return 'YCY_EMS';
 }
 
 class YcyBleClient {

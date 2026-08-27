@@ -20,6 +20,7 @@ class YCYConnection {
     this._statusCb = null;
     this._keepAliveTimer = null;
     this._fjb = { stroke: 0, vibe: 0, axis: 0 };
+    this._ems = { A: 0, B: 0 };
   }
 
   /** 注册状态回调：brandService 用它接收 close / error，驱动状态机与重连。 */
@@ -92,14 +93,40 @@ class YCYConnection {
     }
     if (c.cmd === 'stopFjb' || c.cmd === 'stopToy' || c.cmd === 'stopAll') {
       this._fjb = { stroke: 0, vibe: 0, axis: 0 };
+      if (c.cmd === 'stopAll') this._ems = { A: 0, B: 0 };
+      if (this.mode === 'bridge' && c.cmd !== 'stopAll') return { brand: 'ycy', cmd: 'stopAll' };
+    }
+    if (c.cmd === 'setStrength') {
+      const channel = String(c.channel || 'A').toUpperCase();
+      const value = Number(c.value) || 0;
+      if (channel === 'AB') this._ems = { A: value, B: value };
+      else if (channel === 'A' || channel === 'B') this._ems[channel] = value;
+      return c;
     }
     if (c.cmd === 'setEstim') {
+      const channel = String(c.channel || 'A').toUpperCase();
+      const value = Math.round((clampInt(c.intensity, 0, 255) / 255) * 100);
+      if (channel === 'AB') this._ems = { A: value, B: value };
+      else if (channel === 'A' || channel === 'B') this._ems[channel] = value;
       return {
         brand: 'ycy', cmd: 'setStrength',
         channel: c.channel || 'A',
-        value: Math.round((clampInt(c.intensity, 0, 255) / 255) * 100),
+        value,
         wave: c.wave,
       };
+    }
+    if (c.cmd === 'setMode') {
+      const channel = String(c.channel || 'A').toUpperCase();
+      return {
+        ...c,
+        cmd: 'setStrength',
+        channel,
+        value: channel === 'AB' ? this._ems.A : (this._ems[channel] ?? 0),
+        wave: c.mode,
+      };
+    }
+    if (this.mode === 'bridge' && c.cmd === 'pump' && c.scene === 'stop') {
+      return { brand: 'ycy', cmd: 'stopAll' };
     }
     return c;
   }

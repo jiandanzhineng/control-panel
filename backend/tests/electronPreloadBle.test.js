@@ -67,4 +67,22 @@ describe('Electron BLE preload API', () => {
     dispose();
     expect(ipcRenderer.removeListener).toHaveBeenCalledWith('ble:scan-results', listener);
   });
+
+  it('includes the official YCY EMS service for Windows Web Bluetooth', async () => {
+    const cancelled = Object.assign(new Error('Selection cancelled'), { name: 'NotFoundError' });
+    const requestDevice = jest.fn().mockRejectedValue(cancelled);
+    global.window = { fetch: jest.fn() };
+    Object.defineProperty(global, 'navigator', {
+      configurable: true,
+      value: { bluetooth: { requestDevice } },
+    });
+
+    require('../../electron/preload');
+
+    await expect(global.window.ycyBleApi.connect()).rejects.toBe(cancelled);
+    expect(requestDevice).toHaveBeenCalledWith(expect.objectContaining({
+      acceptAllDevices: true,
+      optionalServices: expect.arrayContaining(['98a9cd00-ca0a-4cf8-9f85-e93949467558']),
+    }));
+  });
 });

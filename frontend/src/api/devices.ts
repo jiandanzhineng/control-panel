@@ -68,7 +68,7 @@ export function deleteAllDevices(): Promise<{ ok: boolean }> {
 // ---- 控制 / 消息 / 操作 ----
 export function setControlConnection(id: string, type: string): Promise<unknown> {
   return request(`/api/devices/${encodeURIComponent(id)}/control-connection`, {
-    method: 'POST',
+    method: 'PUT',
     body: JSON.stringify({ type }),
   });
 }
@@ -76,7 +76,7 @@ export function setControlConnection(id: string, type: string): Promise<unknown>
 export function sendDeviceMessage(id: string, message: unknown): Promise<unknown> {
   return request(`/api/devices/${encodeURIComponent(id)}/message`, {
     method: 'POST',
-    body: JSON.stringify(message),
+    body: JSON.stringify({ message }),
   });
 }
 

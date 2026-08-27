@@ -192,6 +192,28 @@ class WebBluetoothV2Client {
     return () => { this.batteryListeners.delete(cb); };
   }
 
+  async sendOps(ops: GattOp[]): Promise<void> {
+    if (!this.chars.pwmAB2 && !this.chars.pwmA34 && !this.chars.pwmB34) {
+      throw new Error('郊狼 V2 可写特征未就绪');
+    }
+    for (const op of ops || []) {
+      if ('read' in op) {
+        await this.chars[op.characteristic]?.readValue();
+        continue;
+      }
+      const characteristic = this.chars[op.characteristic];
+      if (!characteristic) throw new Error(`缺少 GATT 特征: ${op.characteristic}`);
+      const bytes = Uint8Array.from(op.value);
+      if (characteristic.properties?.writeWithoutResponse && characteristic.writeValueWithoutResponse) {
+        await characteristic.writeValueWithoutResponse(bytes);
+      } else if (characteristic.writeValueWithResponse) {
+        await characteristic.writeValueWithResponse(bytes);
+      } else {
+        await characteristic.writeValue(bytes);
+      }
+    }
+  }
+
   async disconnect(): Promise<void> {
     try { this.device.gatt?.disconnect(); } catch (_) {}
     this.server = null;
@@ -284,6 +306,23 @@ export function getCandidateName(device: BluetoothDevice): string {
 
 export const V2_NAMES = DGLAB_V2_NAMES;
 export const V2_CHARACTERISTICS = V2_CHARS;
+
+async function sendDirectOps(id: string, ops: GattOp[]): Promise<void> {
+  const client = clients.get(id);
+  if (!client) throw new Error('郊狼 V2 设备未连接');
+  await client.sendOps(ops);
+}
+
+export async function sendPattern(id: string, intensity: number): Promise<void> {
+  const strength = Math.max(0, Math.min(2047, Math.round((Math.max(0, Math.min(100, intensity)) / 100) * 2047)));
+  await sendDirectOps(id, [
+    ...packStrengthOps(strength, strength),
+    ...packWaveformOps('A', 5, 200),
+    ...packWaveformOps('B', 5, 200),
+  ]);
+}
+
+export const sendStop = (id: string) => sendDirectOps(id, packStrengthOps(0, 0));
 
 // ============ 协议打包（与后端 dglabV2.js 对齐，便于网页版直接下发） ============
 // 强度位布局默认 coyote2；网页版暂无运行时切换入口，沿用默认。

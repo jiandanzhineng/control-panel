@@ -483,7 +483,7 @@
               <div class="control-field">
                 <label>波形</label>
                 <el-select v-model="ctl(dev).wave" size="small" class="control-input">
-                  <el-option v-for="w in 17" :key="w" :label="`波形 ${w}`" :value="w" />
+                  <el-option v-for="w in 16" :key="w" :label="`波形 ${w}`" :value="w" />
                 </el-select>
                 <span class="op-hint">选择电击的波形样式</span>
               </div>
@@ -782,6 +782,11 @@ async function dglabWebbleStop(d: DglabWebbleDevice) {
 async function dglabWebbleDisconnect(d: DglabWebbleDevice) {
   busy.value = true
   try {
+    if (!window.brandBleApi) {
+      try { await brandBle.sendStop(d.id) } catch (_) {}
+    } else {
+      await brandsApi.disconnect(d.id)
+    }
     await brandBle.disconnect(d.id)
     dglabWebbleUnlisten.get(d.id)?.()
     dglabWebbleUnlisten.delete(d.id)
@@ -867,11 +872,11 @@ function webbleCtl(id: string) {
 function ycyPanelType(dev: { type?: string; name?: string }) {
   if (dev.type && TYPE_LABEL[dev.type]) return dev.type
   const n = String(dev.name || '')
-  if (/灌肠|enema|glj/i.test(n)) return 'YCY_ENEMA'
+  if (/灌肠|enema|glj|yisk/i.test(n)) return 'YCY_ENEMA'
   if (/杯|cup|fjb/i.test(n)) return 'YCY_CUP'
   if (/toy|玩具|tdd/i.test(n)) return 'YCY_TOY'
   if (/dj|ems|电击/i.test(n)) return 'YCY_EMS'
-  return 'YCY_CUP'
+  return 'YCY_EMS'
 }
 function ctl(dev: BrandDevice) {
   if (!controlState[dev.deviceId]) {
@@ -1279,8 +1284,14 @@ async function ycyWebbleFjbStop(d: YcyWebbleDevice) {
 async function ycyWebbleDisconnect(d: YcyWebbleDevice) {
   busy.value = true
   try {
-    if (/FJB/i.test(d.name || '')) {
+    if (window.ycyBleApi) {
+      await brandsApi.disconnect(d.id)
+    } else if (/(YISK|灌肠|ENEMA|GLJ|GLS)/i.test(d.name || '')) {
+      try { await ycyBle.sendPumpEncrypted(d.id, { protocol: 'v1', scene: 'stop' }) } catch (_) {}
+    } else if (/FJB/i.test(d.name || '')) {
       try { await ycyBle.sendFjb03(d.id, { stroke: 0, vibe: 0, axis: 0 }) } catch (_) {}
+    } else {
+      try { await ycyBle.sendEmsStop(d.id) } catch (_) {}
     }
     await ycyBle.disconnect(d.id)
     ycyWebbleUnlisten.get(d.id)?.()
@@ -1297,19 +1308,28 @@ async function ycyWebbleDisconnect(d: YcyWebbleDevice) {
 async function dglabApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`dglabApply:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'setPattern', { pattern: s.pattern, intensity: s.intensity, ticks: s.ticks })
+    if (!window.brandBleApi) {
+      await brandBle.sendPattern(dev.deviceId, s.intensity)
+    } else {
+      await brandsApi.control(dev.deviceId, 'setPattern', { pattern: s.pattern, intensity: s.intensity, ticks: s.ticks })
+    }
     ElMessage.success('已下发波形')
   }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
 }
 
 async function dglabStop(dev: BrandDevice) {
   await withLoading(`dglabStop:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'stop')
+    if (!window.brandBleApi) await brandBle.sendStop(dev.deviceId)
+    else await brandsApi.control(dev.deviceId, 'stop')
   }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
 }
 
 async function dglabMaxPrompt(dev: BrandDevice) {
   await withLoading(`dglabMax:${dev.deviceId}`, async () => {
+    if (!window.brandBleApi) {
+      ElMessage.warning('原版 V2 直连不支持调整 App 强度上限')
+      return
+    }
     await brandsApi.control(dev.deviceId, 'setMaxIntensity', { delta: 10 })
   }).catch((e: any) => { ElMessage.error(e?.message || '操作失败') })
 }
@@ -1324,6 +1344,15 @@ async function ycyTrigger(dev: BrandDevice) {
 
 async function ycyStop(dev: BrandDevice) {
   await withLoading(`ycyStop:${dev.deviceId}`, async () => {
+    if (!window.ycyBleApi) {
+      const type = ycyPanelType(dev)
+      if (type === 'YCY_TOY') await ycyBle.sendMotor(dev.deviceId, 0)
+      else if (type === 'YCY_CUP') await ycyBle.sendFjb03(dev.deviceId, { stroke: 0, vibe: 0, axis: 0 })
+      else if (type === 'YCY_ENEMA') await ycyBle.sendPumpEncrypted(dev.deviceId, { protocol: 'v1', scene: 'stop' })
+      else await ycyBle.sendEmsStop(dev.deviceId)
+      ElMessage.success('已停止')
+      return
+    }
     await brandsApi.control(dev.deviceId, 'ycyStop')
   }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
 }
@@ -1331,9 +1360,14 @@ async function ycyStop(dev: BrandDevice) {
 async function ycyEmsApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`ycyEms:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'setStrength', { channel: 'A', value: s.aStrength })
-    await brandsApi.control(dev.deviceId, 'setStrength', { channel: 'B', value: s.bStrength })
-    await brandsApi.control(dev.deviceId, 'setMode', { channel: 'A', mode: s.wave })
+    if (!window.ycyBleApi) {
+      await ycyBle.sendEmsStrength(dev.deviceId, { channel: 'A', value: s.aStrength, wave: s.wave })
+      await ycyBle.sendEmsStrength(dev.deviceId, { channel: 'B', value: s.bStrength, wave: s.wave })
+    } else {
+      // 波形更新必须带当前强度，避免生成 0 强度帧。
+      await brandsApi.control(dev.deviceId, 'setStrength', { channel: 'A', value: s.aStrength, wave: s.wave })
+      await brandsApi.control(dev.deviceId, 'setStrength', { channel: 'B', value: s.bStrength, wave: s.wave })
+    }
     ElMessage.success('已下发')
   }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
 }
@@ -1341,19 +1375,26 @@ async function ycyEmsApply(dev: BrandDevice) {
 async function ycyFjbApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`ycyFjb:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'setFjb', { stroke: s.stroke, vibe: s.vibe, axis: s.axis })
+    if (!window.ycyBleApi) await ycyBle.sendFjb03(dev.deviceId, { stroke: s.stroke, vibe: s.vibe, axis: s.axis })
+    else await brandsApi.control(dev.deviceId, 'setFjb', { stroke: s.stroke, vibe: s.vibe, axis: s.axis })
     ElMessage.success('已下发')
   }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
 }
 async function ycyFjbStop(dev: BrandDevice) {
   await withLoading(`ycyStop:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'setFjb', { stroke: 0, vibe: 0, axis: 0 })
+    if (!window.ycyBleApi) await ycyBle.sendFjb03(dev.deviceId, { stroke: 0, vibe: 0, axis: 0 })
+    else await brandsApi.control(dev.deviceId, 'setFjb', { stroke: 0, vibe: 0, axis: 0 })
   }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
 }
 
 async function ycyPumpApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`ycyPump:${dev.deviceId}`, async () => {
+    if (!window.ycyBleApi) {
+      await ycyBle.sendPumpEncrypted(dev.deviceId, { protocol: 'v1', scene: s.scene || 'guan' })
+      ElMessage.success('已下发')
+      return
+    }
     const res = await fetch(`/api/devices/${encodeURIComponent(dev.deviceId)}/capabilities/pump/actions/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1365,6 +1406,11 @@ async function ycyPumpApply(dev: BrandDevice) {
 }
 async function ycyPumpStop(dev: BrandDevice) {
   await withLoading(`ycyPumpS:${dev.deviceId}`, async () => {
+    if (!window.ycyBleApi) {
+      await ycyBle.sendPumpEncrypted(dev.deviceId, { protocol: 'v1', scene: 'stop' })
+      ElMessage.success('已停止')
+      return
+    }
     const res = await fetch(`/api/devices/${encodeURIComponent(dev.deviceId)}/capabilities/pump/actions/stop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1376,8 +1422,12 @@ async function ycyPumpStop(dev: BrandDevice) {
 async function ycyToyApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`ycyToy:${dev.deviceId}`, async () => {
-    await brandsApi.control(dev.deviceId, 'setSpeed', { motor: 'A', speed: Math.round((s.speed / 100) * 20) })
-    await brandsApi.control(dev.deviceId, 'setToyMode', { motor: 'A', mode: s.mode })
+    if (!window.ycyBleApi) {
+      await ycyBle.sendMotor(dev.deviceId, Math.round((s.speed / 100) * 20))
+    } else {
+      await brandsApi.control(dev.deviceId, 'setSpeed', { motor: 'A', speed: Math.round((s.speed / 100) * 20) })
+      await brandsApi.control(dev.deviceId, 'setToyMode', { motor: 'A', mode: s.mode })
+    }
     ElMessage.success('已下发')
   }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
 }

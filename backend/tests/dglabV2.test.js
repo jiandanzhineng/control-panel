@@ -88,6 +88,15 @@ describe('DG-LAB V2 协议（纯函数）', () => {
     const stop = v2.toGattOps({ cmd: 'stopPattern' });
     expect(stop).toEqual([{ characteristic: 'pwmAB2', value: v2.packStrength({ a: 0, b: 0 }) }]);
   });
+
+  test('setEstim 带显式波形时同时下发强度和波形，拒绝预设编号', () => {
+    const ops = v2.toGattOps({ cmd: 'setEstim', channel: 'A', a: 500, b: 0, wave: { x: 7, y: 321, z: 2 } });
+    expect(ops).toHaveLength(2);
+    expect(ops[0]).toEqual({ characteristic: 'pwmAB2', value: v2.packStrength({ a: 500, b: 0 }) });
+    expect(ops[1]).toEqual({ characteristic: 'pwmA34', value: v2.packWaveform({ x: 7, y: 321, z: 2 }) });
+    expect(() => v2.toGattOps({ cmd: 'setEstim', intensity: 50, wave: 3 }))
+      .toThrow(expect.objectContaining({ code: 'DGLAB_WAVE_PRESET_UNSUPPORTED' }));
+  });
 });
 
 describe('DG-LAB V2 强度位布局（运行时标定）', () => {

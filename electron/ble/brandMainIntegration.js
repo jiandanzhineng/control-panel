@@ -127,9 +127,10 @@ function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandServ
     ipcMain.on('brandBle:disconnected', (event, payload) => {
       if (!payload?.id || !isOwner(event.sender, payload.id)) return;
       deviceOwners.delete(payload.id);
-      getDeviceService().disconnectTransportDevice(payload.id, 'brandBle');
       const brandService = getBrandService();
+      // 让 brandService 先发停止帧；其异步清理完成后再移除 transport。
       try { brandService.detachWebBle(payload.id); } catch (_) {}
+      getDeviceService().disconnectTransportDevice(payload.id, 'brandBle');
     });
 
     ipcMain.on('brandBle:command-error', (event, payload) => {
@@ -216,9 +217,9 @@ function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandServ
       for (const [deviceId, ownerId] of [...deviceOwners.entries()]) {
         if (ownerId !== contents.id) continue;
         deviceOwners.delete(deviceId);
-        getDeviceService().disconnectTransportDevice(deviceId, 'brandBle');
         const brandService = getBrandService();
         try { brandService.detachWebBle(deviceId); } catch (_) {}
+        getDeviceService().disconnectTransportDevice(deviceId, 'brandBle');
       }
     });
   }

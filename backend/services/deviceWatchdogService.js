@@ -116,7 +116,8 @@ async function stopDeviceWithRetry(device) {
   let lastError = null;
   for (let attempt = 1; attempt <= MAX_STOP_ATTEMPTS; attempt += 1) {
     try {
-      const result = await Promise.resolve(deviceService.stopExecutionDevice(device.id));
+      const stop = deviceService.stopExecutionDeviceAndWait || deviceService.stopExecutionDevice;
+      const result = await Promise.resolve(stop(device.id));
       return { ...result, attempts: attempt };
     } catch (error) {
       lastError = error;

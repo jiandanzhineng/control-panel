@@ -46,6 +46,7 @@ const OPTIONAL_SERVICES = [
   '0000ff40-0000-1000-8000-00805f9b34fb',
   '0000ff70-0000-1000-8000-00805f9b34fb',
   '0000ae00-0000-1000-8000-00805f9b34fb',
+  '98a9cd00-ca0a-4cf8-9f85-e93949467558',
   '0000180f-0000-1000-8000-00805f9b34fb', // Battery Service
   '0000180a-0000-1000-8000-00805f9b34fb', // Device Information
 ];
@@ -90,15 +91,17 @@ export function buildEmsHandshake(): number[] {
   return [0x35, 0x14, 0x01];
 }
 /** 电刺激通道强度帧（10 字节，含校验和）。 */
-export function buildEmsStrength(opts: { channel?: 'A' | 'B' | 'AB'; value?: number; freq?: number; pulse?: number } = {}): number[] {
+export function buildEmsStrength(opts: { channel?: 'A' | 'B' | 'AB'; value?: number; freq?: number; pulse?: number; wave?: number | string } = {}): number[] {
   const channel = (opts.channel || 'A').toUpperCase();
   const ch = CHANNEL_BYTE[channel] ?? CHANNEL_BYTE.A;
   const strength = mapStrengthToYcy(opts.value ?? 0);
   const enabled = strength > 0 ? 1 : 0;
-  const custom = true; // 统一带 freq/pulse，固件按其是否为 0 决定预设/自定义
-  const mode = custom ? MODE.CUSTOM : MODE.PRESET_1;
-  const f = clamp(opts.freq ?? 50, 0, EMS_FREQ_MAX);
-  const p = clamp(opts.pulse ?? 50, 0, EMS_FREQ_MAX);
+  const preset = Number.isInteger(Number(opts.wave)) && Number(opts.wave) >= 1 && Number(opts.wave) <= 16
+    ? Number(opts.wave) : null;
+  const custom = preset == null && (opts.freq !== undefined || opts.pulse !== undefined);
+  const mode = custom ? MODE.CUSTOM : (preset || MODE.PRESET_1);
+  const f = custom ? clamp(opts.freq ?? 0, 0, EMS_FREQ_MAX) : 0;
+  const p = custom ? clamp(opts.pulse ?? 0, 0, EMS_FREQ_MAX) : 0;
   const s = clamp(strength, 0, EMS_CHANNEL_MAX);
   return withChecksum([0x35, FAMILY.CHANNEL_CONTROL, ch, enabled, (s >> 8) & 0xff, s & 0xff, mode, f, p]);
 }
@@ -433,12 +436,19 @@ class WebBluetoothYcyClient {
 const clients = new Map<string, WebBluetoothYcyClient>();
 const webSupported = typeof navigator !== 'undefined' && !!navigator.bluetooth?.requestDevice;
 
+function usingElectron(): boolean {
+  return typeof window !== 'undefined' && !!window.ycyBleApi && window.ycyBleApi.isSupported();
+}
+
 export function isSupported(): boolean {
-  return !!webSupported;
+  return usingElectron() || !!webSupported;
 }
 
 /** 弹窗选设备并连接，返回元数据。 */
 export async function scanAndConnect(): Promise<YcyBleMetadata> {
+  if (usingElectron()) {
+    return window.ycyBleApi!.connect() as Promise<YcyBleMetadata>;
+  }
   if (!webSupported) throw new Error('当前环境不支持网页蓝牙直连（请用 Chrome / Edge 打开本页）');
   const device = await navigator.bluetooth.requestDevice({
     acceptAllDevices: true,
@@ -451,6 +461,9 @@ export async function scanAndConnect(): Promise<YcyBleMetadata> {
 }
 
 export async function disconnect(id: string): Promise<{ ok: boolean }> {
+  if (usingElectron()) {
+    return window.ycyBleApi!.disconnect(id);
+  }
   const c = clients.get(id);
   if (c) {
     await c.disconnect();
@@ -461,6 +474,7 @@ export async function disconnect(id: string): Promise<{ ok: boolean }> {
 
 /** 订阅电量回调，返回取消订阅函数（标准电池特征若有则回传，否则永不触发）。 */
 export function onBattery(id: string, cb: (value: number) => void): () => void {
+  if (usingElectron()) return () => {};
   const c = clients.get(id);
   if (!c) return () => {};
   return c.onBattery(cb);
@@ -473,7 +487,7 @@ export async function sendFrame(id: string, bytes: number[] | Uint8Array): Promi
   await c.write(bytes);
 }
 export const sendEmsHandshake = (id: string) => sendFrame(id, buildEmsHandshake());
-export const sendEmsStrength = (id: string, o?: { channel?: 'A' | 'B' | 'AB'; value?: number; freq?: number; pulse?: number }) => sendFrame(id, buildEmsStrength(o));
+export const sendEmsStrength = (id: string, o?: { channel?: 'A' | 'B' | 'AB'; value?: number; freq?: number; pulse?: number; wave?: number | string }) => sendFrame(id, buildEmsStrength(o));
 export const sendEmsStop = (id: string) => sendFrame(id, buildEmsStop());
 export const sendMotor = (id: string, speed?: number) => sendFrame(id, buildMotor({ speed }));
 export const sendFjb03 = (id: string, o?: { stroke?: number; vibe?: number; axis?: number }) => sendFrame(id, buildFjb03(o));

@@ -438,6 +438,29 @@ function getCloneableTypeConfig(type) {
   }
 }
 
+function isYcyBridgeDevice(device) {
+  return /^YCY_/.test(String(device?.type || ''))
+    && (device.connections || []).some((connection) => (
+      connection.type === 'brand' && connection.mode === 'bridge'
+    ));
+}
+
+function getEffectiveCapabilities(device) {
+  return isYcyBridgeDevice(device) ? [] : deviceRegistry.getDeviceCapabilities(device.type);
+}
+
+function getEffectiveTypeConfig(device) {
+  const config = getCloneableTypeConfig(device.type);
+  if (!isYcyBridgeDevice(device)) return config;
+  // API-bridge 只接受玩法编号和全局停止；隐藏会生成原始 BLE 帧的能力/操作。
+  return {
+    ...config,
+    capabilities: [],
+    capabilityConfig: {},
+    operations: (config.operations || []).filter((operation) => ['trigger', 'stop'].includes(operation.key)),
+  };
+}
+
 function listDevicesWithCapabilities() {
   return deviceService.listDevicesForApi().map((d) => ({
     id: d.id,
@@ -449,8 +472,8 @@ function listDevicesWithCapabilities() {
     controlConnection: d.controlConnection,
     connections: d.connections || [],
     data: d.data || {},
-    capabilities: deviceRegistry.getDeviceCapabilities(d.type),
-    typeConfig: getCloneableTypeConfig(d.type),
+    capabilities: getEffectiveCapabilities(d),
+    typeConfig: getEffectiveTypeConfig(d),
   }));
 }
 
@@ -459,7 +482,7 @@ function getAllDeviceMap() {
   const devices = deviceService.listDevicesForApi();
   for (const device of devices) {
     map[device.id] = [device.id];
-    const caps = deviceRegistry.getDeviceCapabilities(device.type);
+    const caps = getEffectiveCapabilities(device);
     if (caps.includes('shock') && !map.shock) map.shock = [device.id];
     if (caps.includes('strength') && !map.vibrator) map.vibrator = [device.id];
   }
@@ -489,7 +512,7 @@ function ensureCapability(physId, capability) {
     error.code = 'DEVICE_NOT_FOUND';
     throw error;
   }
-  if (!deviceRegistry.hasCapability(device.type, capability)) {
+  if (isYcyBridgeDevice(device) || !deviceRegistry.hasCapability(device.type, capability)) {
     const error = new Error(`设备 ${physId} 不支持能力 ${capability}`);
     error.code = 'CAPABILITY_NOT_SUPPORTED';
     throw error;
@@ -661,6 +684,12 @@ function resetPhysicalDevice(session, logicalId, physId) {
     ...manifestCapabilities,
     ...(Array.isArray(caps) ? caps : []),
   ]);
+  const type = device?.type;
+  // 某些类型的两个能力共用同一停止帧；只发一次，避免重复写入或覆盖状态。
+  const duplicateStop = (capability) => (
+    (capability === 'estim' && (type === 'DGLAB' || type === 'YCY_EMS') && resetCaps.has('shock'))
+    || (capability === 'motors' && (type === 'YCY_TOY' || type === 'YCY_CUP') && resetCaps.has('strength'))
+  );
 
   try {
     if (resetCaps.has('shock')) {
@@ -675,7 +704,7 @@ function resetPhysicalDevice(session, logicalId, physId) {
   }
 
   try {
-    if (resetCaps.has('strength')) {
+    if (resetCaps.has('strength') && !duplicateStop('strength')) {
       if (virtualDeviceService.isVirtualDevice(physId)) {
         virtualDeviceService.interceptCommand(physId, { action: 'invoke', capability: 'strength', actionName: 'stop', params: {} });
       } else {
@@ -684,6 +713,24 @@ function resetPhysicalDevice(session, logicalId, physId) {
     }
   } catch (error) {
     emitSystemLog(session, 'warn', `复位强度设备失败: ${logicalId}`, { physId, error: error?.message || String(error) });
+  }
+
+  for (const capability of ['motors', 'estim', 'pump']) {
+    if (!resetCaps.has(capability) || duplicateStop(capability)) continue;
+    try {
+      if (virtualDeviceService.isVirtualDevice(physId)) {
+        virtualDeviceService.interceptCommand(physId, {
+          action: 'invoke', capability, actionName: 'stop', params: {},
+        });
+      } else {
+        deviceService.invokeDeviceCapability(physId, capability, 'stop', {});
+      }
+    } catch (error) {
+      emitSystemLog(session, 'warn', `复位${capability}设备失败: ${logicalId}`, {
+        physId,
+        error: error?.message || String(error),
+      });
+    }
   }
 }
 

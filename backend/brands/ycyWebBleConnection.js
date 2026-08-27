@@ -14,6 +14,7 @@ class YcyWebBleConnection {
     this._transportSend = typeof send === 'function' ? send : null;
     this._statusCb = null;
     this._fjb = { stroke: 0, vibe: 0, axis: 0 };
+    this._ems = { A: 0, B: 0 };
   }
 
   onStatus(cb) {
@@ -41,13 +42,35 @@ class YcyWebBleConnection {
     }
     if (c.cmd === 'stopFjb' || c.cmd === 'stopToy' || c.cmd === 'stopAll') {
       this._fjb = { stroke: 0, vibe: 0, axis: 0 };
+      if (c.cmd === 'stopAll') this._ems = { A: 0, B: 0 };
+    }
+    if (c.cmd === 'setStrength') {
+      const channel = String(c.channel || 'A').toUpperCase();
+      const value = Number(c.value) || 0;
+      if (channel === 'AB') this._ems = { A: value, B: value };
+      else if (channel === 'A' || channel === 'B') this._ems[channel] = value;
+      return c;
     }
     if (c.cmd === 'setEstim') {
+      const channel = String(c.channel || 'A').toUpperCase();
+      const value = Math.round((clampInt(c.intensity, 0, 255) / 255) * 100);
+      if (channel === 'AB') this._ems = { A: value, B: value };
+      else if (channel === 'A' || channel === 'B') this._ems[channel] = value;
       return {
         brand: 'ycy', cmd: 'setStrength',
         channel: c.channel || 'A',
-        value: Math.round((clampInt(c.intensity, 0, 255) / 255) * 100),
+        value,
         wave: c.wave,
+      };
+    }
+    if (c.cmd === 'setMode') {
+      const channel = String(c.channel || 'A').toUpperCase();
+      return {
+        ...c,
+        cmd: 'setStrength',
+        channel,
+        value: channel === 'AB' ? this._ems.A : (this._ems[channel] ?? 0),
+        wave: c.mode,
       };
     }
     return c;

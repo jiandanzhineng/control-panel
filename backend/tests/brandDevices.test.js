@@ -139,10 +139,13 @@ describe('役次元 YCY 协议', () => {
     // toBleFrame 同样产出 16 字节密文
     const frame = ycy.toBleFrame({ brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'stop' });
     expect(frame.length).toBe(16);
-    // 桥接模式不支持原始泵帧，提示改用 BLE 直连
+    // 桥接模式不能发原始泵帧，但停止必须转成协议支持的全局停止。
     const bridgeConn = new YCYConnection({ deviceId: 'ycy-cup', mode: 'bridge', WebSocketClass: MockWebSocket });
     await bridgeConn.connect({ host: '127.0.0.1', port: ycy.BRIDGE_DEFAULT_PORT, connectCode: 'game_5 mytoken' });
-    expect(() => bridgeConn.send({ brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'stop' }))
+    bridgeConn.send({ brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'stop' });
+    expect(JSON.parse(MockWebSocket.last.sent[MockWebSocket.last.sent.length - 1]))
+      .toEqual({ type: 'sendCommand', commandId: '_stop_all', token: 'mytoken' });
+    expect(() => bridgeConn.send({ brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'guan' }))
       .toThrow(/BLE 直连/);
     bridgeConn.disconnect();
   });
@@ -270,5 +273,11 @@ describe('役次元 设备类型推断（resolveDeviceType）', () => {
 
   test('ble 模式 FJB 归为杯，不再当成玩具电机', () => {
     expect(resolveDeviceType('ycy', { mode: 'ble', model: 'YCY-FJB-03' })).toBe('YCY_CUP');
+  });
+
+  test('ble 模式未知 YSKJ / DJ / YISK 型号分类保守且一致', () => {
+    expect(resolveDeviceType('ycy', { mode: 'ble', model: 'YSKJ-2024' })).toBe('YCY_EMS');
+    expect(resolveDeviceType('ycy', { mode: 'ble', model: 'YYC-DJ-V2' })).toBe('YCY_EMS');
+    expect(resolveDeviceType('ycy', { mode: 'ble', model: 'YISK-003V3' })).toBe('YCY_ENEMA');
   });
 });

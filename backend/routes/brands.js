@@ -81,9 +81,9 @@ router.get('/', (req, res) => {
 });
 
 // 断开连接
-router.post('/:deviceId/disconnect', (req, res) => {
+router.post('/:deviceId/disconnect', async (req, res) => {
   try {
-    const ok = brandService.disconnect(req.params.deviceId);
+    const ok = await brandService.disconnect(req.params.deviceId);
     if (!ok) return sendError(res, 'BRAND_DEVICE_NOT_FOUND', '设备未连接', 404);
     res.json({ ok: true });
   } catch (e) {

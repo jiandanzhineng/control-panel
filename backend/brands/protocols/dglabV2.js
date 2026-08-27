@@ -184,6 +184,22 @@ function hwStrengthToDisplay(hwValue) {
 // 默认波形（与「经典」模式近似）：频率 X+Y，Z 为占空微调
 const DEFAULT_WAVE = { x: 5, y: 200, z: 0 };
 
+function normalizeWaveform(wave) {
+  if (wave == null || wave === '') return null;
+  if (typeof wave === 'object') {
+    if (wave.x === undefined || wave.y === undefined) {
+      const error = new Error('DG-LAB V2 波形需要 x/y/z 参数');
+      error.code = 'DGLAB_WAVEFORM_INVALID';
+      throw error;
+    }
+    return { x: wave.x, y: wave.y, z: wave.z ?? 0 };
+  }
+  // V2 GATT 接收的是已编码的 x/y/z，不接受 YCY 那种 1..16 预设编号。
+  const error = new Error('DG-LAB V2 不支持波形预设编号，请传入 { x, y, z }');
+  error.code = 'DGLAB_WAVE_PRESET_UNSUPPORTED';
+  throw error;
+}
+
 function toGattOps(brandCommand) {
   const cmd = brandCommand?.cmd;
   switch (cmd) {
@@ -203,6 +219,22 @@ function toGattOps(brandCommand) {
       return [{ characteristic: 'pwmAB2', value: packStrength({ a: 0, b: 0 }) }];
     case 'v2_readBattery':
       return [{ characteristic: 'battery', read: true }];
+    case 'setEstim': {
+      const a = brandCommand.a !== undefined
+        ? brandCommand.a
+        : uiToHwStrength(brandCommand.intensity, 255, STRENGTH_HW_MAX);
+      const b = brandCommand.b !== undefined
+        ? brandCommand.b
+        : uiToHwStrength(brandCommand.intensity, 255, STRENGTH_HW_MAX);
+      const ops = [{ characteristic: 'pwmAB2', value: packStrength({ a, b }) }];
+      const wave = normalizeWaveform(brandCommand.wave);
+      if (wave) {
+        const channel = String(brandCommand.channel || 'ab').toLowerCase();
+        if (channel === 'a' || channel === 'ab') ops.push({ characteristic: 'pwmA34', value: packWaveform(wave) });
+        if (channel === 'b' || channel === 'ab') ops.push({ characteristic: 'pwmB34', value: packWaveform(wave) });
+      }
+      return ops;
+    }
     // —— 高层 App 命令：娱乐模式与 V2 蓝牙共用同一设备类型 ——
     case 'setPattern': {
       // intensity 0–100 → 硬件强度（A/B 同步），波形取默认
@@ -245,5 +277,6 @@ module.exports = {
   uiToHwStrength,
   hwToUiStrength,
   hwStrengthToDisplay,
+  normalizeWaveform,
   toGattOps,
 };

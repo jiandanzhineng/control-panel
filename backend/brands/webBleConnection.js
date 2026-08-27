@@ -33,9 +33,13 @@ class DGLabV2WebBleConnection {
       if (ch === 'a') this._ab.a = hw;
       else if (ch === 'b') this._ab.b = hw;
       else { this._ab.a = hw; this._ab.b = hw; }
-      return { ...c, cmd: 'v2_setStrength', a: this._ab.a, b: this._ab.b };
+      return { ...c, cmd: 'setEstim', a: this._ab.a, b: this._ab.b };
     }
-    if (c.cmd === 'setPattern' || c.cmd === 'stopPattern' || c.cmd === 'v2_stop') {
+    if (c.cmd === 'setPattern') {
+      const hw = dglabV2.uiToHwStrength(Number(c.intensity) || 0, 100, dglabV2.STRENGTH_HW_MAX);
+      this._ab = { a: hw, b: hw };
+    }
+    if (c.cmd === 'stopPattern' || c.cmd === 'v2_stop') {
       if (c.cmd !== 'setPattern') this._ab = { a: 0, b: 0 };
     }
     return c;

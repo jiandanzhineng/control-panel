@@ -12,6 +12,7 @@ const dglabV2 = require('./protocols/dglabV2');
 const discovery = require('./discovery');
 const ycyProto = require('./protocols/ycy');
 const { brandLabel, typeLabel } = require('./brandLabels');
+const logger = require('../utils/logger');
 
 const SUPPORTED = ['dglab', 'ycy'];
 const connections = new Map(); // deviceId -> connection adapter
@@ -60,13 +61,13 @@ function resolveDeviceType(brand, { model, mode, type } = {}) {
     // 前端显式选择优先（杯 / 灌肠机 / 电击器 / 玩具 等）
     if (type) return type;
     if (mode === 'ble') {
-      if (model && /灌肠|enema/i.test(model)) return 'YCY_ENEMA';
+      if (model && /灌肠|enema|glj|yisk/i.test(model)) return 'YCY_ENEMA';
       if (model && /杯|cup|fjb/i.test(model)) return 'YCY_CUP';
       if (model && /toy|玩具|电机/i.test(model)) return 'YCY_TOY';
       return 'YCY_EMS';
     }
     // 桥接模式默认按电击器；若名称暗示杯/灌肠则细分
-    if (model && /灌肠|enema/i.test(model)) return 'YCY_ENEMA';
+    if (model && /灌肠|enema|glj|yisk/i.test(model)) return 'YCY_ENEMA';
     if (model && /杯|cup|fjb/i.test(model)) return 'YCY_CUP';
     return 'YCY_EMS';
   }
@@ -323,13 +324,27 @@ function disconnect(deviceId) {
   // 标记用户主动断开：抑制自动重连。
   const st = connState.get(deviceId) || {};
   connState.set(deviceId, { ...st, userClosed: true, reconnecting: false });
-  try { connection.disconnect(); } catch (_) {}
+  // 在物理断链前等待停止帧写入，避免 GATT 断开后设备保持上一次输出。
+  let stopPromise;
+  try {
+    stopPromise = typeof deviceService.stopExecutionDeviceAndWait === 'function'
+      ? deviceService.stopExecutionDeviceAndWait(deviceId)
+      : Promise.resolve(deviceService.invokeDeviceClose?.(deviceId));
+  } catch (error) {
+    stopPromise = Promise.reject(error);
+  }
   connections.delete(deviceId);
   connState.delete(deviceId);
   // V2 WebBLE 以 'brandBle' 注册；dglab/ycy 以 'brand' 注册。两者尝试性解注册即可。
   try { deviceService.disconnectTransportDevice(deviceId, 'brand'); } catch (_) {}
   try { deviceService.disconnectTransportDevice(deviceId, 'brandBle'); } catch (_) {}
-  return true;
+  return Promise.resolve(stopPromise)
+    .catch((error) => {
+      logger.warn('Brand', `断开前停止设备失败: ${deviceId}`, error?.message || String(error));
+    })
+    .then(() => {
+      try { return Promise.resolve(connection.disconnect()).then(() => true); } catch (_) { return true; }
+    });
 }
 
 // ============ 蓝牙体感设备（直连版）Web Bluetooth 直连 ============
@@ -338,9 +353,12 @@ function disconnect(deviceId) {
 
 function attachWebBle(metadata, send) {
   if (!metadata?.id) throw new TypeError('WebBLE 元数据缺少 id');
-  const ycyType = metadata.type && String(metadata.type).startsWith('YCY')
+  const explicitYcyType = /^YCY_(EMS|TOY|CUP|ENEMA)$/.test(String(metadata.type || ''))
     ? metadata.type
-    : resolveDeviceType('ycy', { mode: 'ble', model: metadata.name, type: metadata.type });
+    : null;
+  const ycyType = explicitYcyType
+    ? explicitYcyType
+    : resolveDeviceType('ycy', { mode: 'ble', model: metadata.name });
   const isYcy = metadata.brand === 'ycy' || String(metadata.type || '').startsWith('YCY')
     || /FJB|YCY|YYC|YOKO|TDD/i.test(metadata.name || '');
   let connection = connections.get(metadata.id);
@@ -383,11 +401,24 @@ function detachWebBle(deviceId) {
   if (!connection) return false;
   const st = connState.get(deviceId) || {};
   connState.set(deviceId, { ...st, userClosed: true, reconnecting: false });
-  try { connection.disconnect(); } catch (_) {}
+  let stopPromise;
+  try {
+    stopPromise = typeof deviceService.stopExecutionDeviceAndWait === 'function'
+      ? deviceService.stopExecutionDeviceAndWait(deviceId)
+      : Promise.resolve(deviceService.invokeDeviceClose?.(deviceId));
+  } catch (error) {
+    stopPromise = Promise.reject(error);
+  }
   connections.delete(deviceId);
   connState.delete(deviceId);
   try { deviceService.disconnectTransportDevice(deviceId, 'brandBle'); } catch (_) {}
-  return true;
+  return Promise.resolve(stopPromise)
+    .catch((error) => {
+      logger.warn('Brand', `WebBLE 断开前停止设备失败: ${deviceId}`, error?.message || String(error));
+    })
+    .then(() => {
+      try { return Promise.resolve(connection.disconnect()).then(() => true); } catch (_) { return true; }
+    });
 }
 
 // —— 蓝牙体感设备（直连版）高层控制 ——

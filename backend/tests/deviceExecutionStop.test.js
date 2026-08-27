@@ -54,6 +54,43 @@ describe('execution device reset interface', () => {
     expect(expected).not.toHaveProperty('report_delay_ms');
   });
 
+  it('resets YCY_ENEMA through the pump stop command', () => {
+    const deviceId = 'enema-1';
+    addConnectedDevice({ id: deviceId, name: 'YISK', type: 'YCY_ENEMA' });
+
+    const result = deviceService.stopExecutionDevice(deviceId);
+
+    expect(result).toMatchObject({ eligible: true, commandSent: true });
+    expect(mqttClient.publish).toHaveBeenCalledWith(`/drecv/${deviceId}`, {
+      brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'stop',
+    });
+  });
+
+  it('waits for an asynchronous WebBLE stop write before confirming', async () => {
+    let release;
+    const sent = [];
+    await deviceService.connectTransportDevice(
+      { id: 'webble-stop', name: 'YCY-FJB-03', type: 'YCY_CUP', connectionType: 'brandBle' },
+      {
+        kind: 'brandBle',
+        send: (message) => {
+          sent.push(message);
+          return new Promise((resolve) => { release = resolve; });
+        },
+      },
+    );
+
+    const stopping = deviceService.stopExecutionDeviceAndWait('webble-stop');
+    await Promise.resolve();
+    expect(sent).toEqual([{ brand: 'ycy', cmd: 'stopFjb' }]);
+    let finished = false;
+    stopping.then(() => { finished = true; });
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    release({ ok: true });
+    await expect(stopping).resolves.toMatchObject({ confirmed: true, commandSent: true });
+  });
+
   it.each(['QIYA', 'QTZ', 'DZC01', 'ZIDONGSUO'])(
     'skips non-execution device type %s',
     (type) => {
