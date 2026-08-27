@@ -35,7 +35,7 @@
             <el-button v-if="scanningWebble || scanningYcyWebble" size="small" @click="cancelBleScan">取消扫描</el-button>
             <el-checkbox v-model="bleAutoConnect" @change="onBleAutoConnectChange">自动连接已保存设备</el-checkbox>
           </div>
-          <p class="op-hint">点「蓝牙连接」扫描附近设备。自动连接只连以前授权过、且还在设备列表里的设备；不想再连就去设备列表删除。</p>
+          <p class="op-hint">点「蓝牙连接」扫描附近设备。自动连接按广播名识别已保存设备；不想再连就去设备列表删除。</p>
         </el-card>
 
         <div v-if="ycyWebbleCandidates.length" class="candidate-list">
@@ -981,16 +981,14 @@ async function onBleAutoConnectChange(v: boolean | string | number) {
 async function tryBleAutoConnect() {
   if (!bleAutoConnect.value || scanningWebble.value || scanningYcyWebble.value || bleAutoBusy) return
   const api = window.brandBleApi
-  if (!api?.getKnownDevices || !api.connectKnown) return
+  if (!api?.autoConnectScan) return
   bleAutoBusy = true
   try {
-    const pending = (await brandsApi.listSavedBle()).filter((d) => !d.connected && d.browserDeviceId)
-    if (!pending.length) return
-    const knownIds = new Set((await api.getKnownDevices()).map((k) => k.id))
-    for (const d of pending) {
-      if (!knownIds.has(d.browserDeviceId)) continue
-      try { await api.connectKnown(d.browserDeviceId) } catch (_) {}
-    }
+    const saved = await brandsApi.listSavedBle()
+    const connectedNames = new Set(saved.filter((d) => d.connected && d.name).map((d) => d.name.trim().toUpperCase()))
+    const pending = saved.some((d) => !d.connected && d.name && !connectedNames.has(d.name.trim().toUpperCase()))
+    if (!pending) return
+    try { await api.autoConnectScan() } catch (_) {}
     await refreshConnected()
   } catch (_) { /* 本轮失败等下次 */ }
   finally { bleAutoBusy = false }

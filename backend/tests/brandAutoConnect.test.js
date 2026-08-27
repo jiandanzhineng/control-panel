@@ -48,4 +48,23 @@ describe('品牌蓝牙自动连接设置', () => {
     mockDevices.splice(0, 1);
     expect(brandService.listSavedBleDevices().map((d) => d.deviceId)).toEqual(['dglab-v2-chrome-2']);
   });
+
+  test('广播名相同则沿用已保存设备 id', () => {
+    mockDevices.push({
+      id: 'ycy:old-id', name: 'YCY-FJB-03-DJ', type: 'YCY_CUP', connected: false,
+    });
+    const meta = { id: 'ycy:new-id', name: 'YCY-FJB-03-DJ' };
+    brandService.stabilizeBrandBleId(meta);
+    expect(meta.id).toBe('ycy:old-id');
+  });
+
+  test('同名多条时优先沿用已连接记录', () => {
+    mockDevices.push(
+      { id: 'ycy:ghost', name: 'YCY-FJB-03-DJ', type: 'YCY_CUP', connected: false },
+      { id: 'ycy:live', name: 'YCY-FJB-03-DJ', type: 'YCY_CUP', connected: true },
+    );
+    const meta = { id: 'ycy:new-id', name: 'YCY-FJB-03-DJ' };
+    brandService.stabilizeBrandBleId(meta);
+    expect(meta.id).toBe('ycy:live');
+  });
 });

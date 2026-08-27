@@ -133,4 +133,20 @@ describe('Electron BLE preload API', () => {
     await expect(global.window.brandBleApi.connectKnown('chrome-1')).rejects.toThrow(/不可见/);
     expect(requestDevice).not.toHaveBeenCalled();
   });
+
+  it('autoConnectScan 先 begin-auto-select 再 requestDevice', async () => {
+    const { ipcRenderer } = require('electron');
+    const cancelled = Object.assign(new Error('Selection cancelled'), { name: 'NotFoundError' });
+    const requestDevice = jest.fn().mockRejectedValue(cancelled);
+    global.window = { fetch: jest.fn() };
+    Object.defineProperty(global, 'navigator', {
+      configurable: true,
+      value: { bluetooth: { requestDevice } },
+    });
+    ipcRenderer.invoke.mockResolvedValue({ ok: true });
+    require('../../electron/preload');
+    await expect(global.window.brandBleApi.autoConnectScan()).rejects.toBe(cancelled);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('brandBle:begin-auto-select');
+    expect(requestDevice).toHaveBeenCalled();
+  });
 });

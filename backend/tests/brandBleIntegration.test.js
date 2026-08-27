@@ -235,4 +235,34 @@ describe('Electron brandBle (DG-LAB V2) main integration', () => {
       id: 'x', connectionType: 'ble',
     })).toThrow(TypeError);
   });
+
+  it('自动连接按已保存广播名静默选中，不弹列表', async () => {
+    const ipcMain = createIpcMain();
+    const webContents = createWebContents(17);
+    const integration = createBrandBleMainIntegration({
+      ipcMain,
+      getDeviceService: () => ({}),
+      getBrandService: () => ({
+        listSavedBleDevices: () => ([
+          { deviceId: 'ycy:old', name: 'YCY-FJB-03-DJ', connected: false },
+        ]),
+      }),
+      logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    });
+    integration.registerHandlers();
+    integration.attachWindow({ webContents });
+
+    await ipcMain.invoke('brandBle:begin-auto-select', { sender: webContents });
+    const select = jest.fn();
+    webContents._handlers.get('select-bluetooth-device')(
+      { preventDefault: jest.fn() },
+      [
+        { deviceId: 'a', deviceName: 'AirPods' },
+        { deviceId: 'b', deviceName: 'YCY-FJB-03-DJ' },
+      ],
+      select,
+    );
+    expect(select).toHaveBeenCalledWith('b');
+    expect(webContents.send).not.toHaveBeenCalled();
+  });
 });

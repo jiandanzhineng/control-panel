@@ -333,6 +333,7 @@ function disconnect(deviceId) {
 
 function attachWebBle(metadata, send) {
   if (!metadata?.id) throw new TypeError('WebBLE 元数据缺少 id');
+  stabilizeBrandBleId(metadata);
   const explicitYcyType = /^YCY_(EMS|TOY|CUP|ENEMA)$/.test(String(metadata.type || ''))
     ? metadata.type
     : null;
@@ -474,6 +475,20 @@ function browserIdFromDeviceId(id) {
   return '';
 }
 
+function bleNamesMatch(a, b) {
+  const x = String(a || '').trim().toUpperCase();
+  const y = String(b || '').trim().toUpperCase();
+  return !!x && x === y;
+}
+
+function stabilizeBrandBleId(metadata) {
+  if (!metadata?.name) return metadata;
+  const all = listSavedBleDevices().filter((d) => bleNamesMatch(d.name, metadata.name));
+  const hit = all.find((d) => d.connected) || all[0];
+  if (hit) metadata.id = hit.deviceId;
+  return metadata;
+}
+
 function listSavedBleDevices() {
   return deviceService.listDevicesForApi()
     .filter((d) => browserIdFromDeviceId(d.id))
@@ -503,5 +518,7 @@ module.exports = {
   getSettings,
   setSettings,
   listSavedBleDevices,
+  bleNamesMatch,
+  stabilizeBrandBleId,
   YCY_GLOBAL_STOP: ycyProto.GLOBAL_STOP_COMMAND,
 };

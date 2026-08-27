@@ -104,6 +104,16 @@ function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandServ
       return { ok: true };
     });
 
+    ipcMain.handle('brandBle:begin-auto-select', (event) => {
+      const pending = getBrandService().listSavedBleDevices()
+        .filter((d) => !d.connected && d.name);
+      const existing = selectionFor(event.sender) || { callback: null, candidates: new Map() };
+      existing.autoSelect = true;
+      existing.autoNames = pending.map((d) => d.name);
+      selections.set(event.sender.id, existing);
+      return { ok: true, names: existing.autoNames };
+    });
+
     ipcMain.handle('brandBle:connected', (event, metadata) => {
       if (!metadata?.id || metadata.connectionType !== 'brandBle') {
         throw new TypeError('Invalid brand BLE device metadata');
@@ -184,6 +194,18 @@ function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandServ
         selections.set(contents.id, selection);
       } else {
         selection.callback = callback;
+      }
+
+      if (selection.autoSelect) {
+        const wanted = (selection.autoNames || []).map((n) => String(n).trim().toUpperCase()).filter(Boolean);
+        for (const device of devices || []) {
+          const name = String(device.deviceName || '').trim().toUpperCase();
+          if (!name || !wanted.includes(name)) continue;
+          selections.delete(contents.id);
+          callback(device.deviceId);
+          return;
+        }
+        return;
       }
 
       for (const device of devices || []) {

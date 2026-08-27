@@ -200,9 +200,11 @@ async function attachBrandBluetoothDevice(device) {
     : new YcyBleClient(device, { onEvent: emitBrandBleClientEvent });
   try {
     const metadata = await client.connect();
-    brandClients.set(metadata.id, client);
-    await ipcRenderer.invoke('brandBle:connected', metadata);
-    return metadata;
+    const attached = await ipcRenderer.invoke('brandBle:connected', metadata);
+    const id = attached?.device?.id || metadata.id;
+    client.id = id;
+    brandClients.set(id, client);
+    return { ...metadata, id };
   } catch (error) {
     brandClients.delete(client.id);
     try { await client.disconnect(); } catch (_) {}
@@ -240,18 +242,36 @@ window.brandBleApi = {
     const devices = await navigator.bluetooth.getDevices();
     return devices.map((d) => ({ id: d.id, name: d.name || '' }));
   },
-  connectKnown: async (browserDeviceId) => {
+  connectKnown: async (browserDeviceId, name) => {
     if (!navigator.bluetooth?.getDevices) throw new Error('当前环境不支持已授权设备列表');
-    const existing = [...brandClients.values()].find((c) => c.browserDeviceId === browserDeviceId);
+    const existing = [...brandClients.values()].find((c) => (
+      c.browserDeviceId === browserDeviceId
+      || (name && String(c.device?.name || '').toUpperCase() === String(name).toUpperCase())
+    ));
     if (existing) return { id: existing.id, alreadyConnected: true };
     const devices = await navigator.bluetooth.getDevices();
-    const device = devices.find((d) => d.id === browserDeviceId);
+    const want = String(name || '').trim().toUpperCase();
+    const device = devices.find((d) => d.id === browserDeviceId)
+      || (want ? devices.find((d) => String(d.name || '').trim().toUpperCase() === want) : null);
     if (!device) {
       const error = new Error('已保存设备当前不可见');
       error.code = 'BRAND_BLE_DEVICE_NOT_AVAILABLE';
       throw error;
     }
     return attachBrandBluetoothDevice(device);
+  },
+  autoConnectScan: async () => {
+    await ipcRenderer.invoke('brandBle:begin-auto-select');
+    const timer = setTimeout(() => { ipcRenderer.invoke('brandBle:cancel-selection'); }, 8000);
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: BRAND_OPTIONAL_SERVICES,
+      });
+      return attachBrandBluetoothDevice(device);
+    } finally {
+      clearTimeout(timer);
+    }
   },
   onScanResults: (callback) => {
     const listener = (_event, devices) => {
