@@ -67,13 +67,13 @@ describe('brandService.attachWebBle 集成', () => {
     expect(listed.type).toBe('DGLAB');
     expect(listed.data.battery).toBe(88);
 
-    brandService.dglabV2SetStrength(DEVICE_ID, { a: 100, b: 50 });
-    brandService.dglabV2SetWaveform(DEVICE_ID, { channel: 'A', x: 5, y: 200 });
+    brandService.control(DEVICE_ID, { brand: 'dglab', cmd: 'v2_setStrength', a: 100, b: 50 });
+    brandService.control(DEVICE_ID, { brand: 'dglab', cmd: 'v2_setWaveform', channel: 'A', x: 5, y: 200 });
     expect(sent).toHaveLength(2);
     expect(sent[0]).toEqual([{ characteristic: 'pwmAB2', value: v2.packStrength({ a: 100, b: 50 }) }]);
     expect(sent[1]).toEqual([{ characteristic: 'pwmA34', value: v2.packWaveform({ x: 5, y: 200, z: 0 }) }]);
 
-    brandService.dglabV2Stop(DEVICE_ID);
+    brandService.control(DEVICE_ID, { brand: 'dglab', cmd: 'v2_stop' });
     expect(sent[2]).toEqual([{ characteristic: 'pwmAB2', value: v2.packStrength({ a: 0, b: 0 }) }]);
 
     brandService.detachWebBle(DEVICE_ID);
@@ -86,12 +86,12 @@ describe('brandService.attachWebBle 集成', () => {
       { id: DEVICE_ID, name: 'DG V2', type: 'DGLAB', connectionType: 'brandBle' },
       (ops) => { sent.push(ops); return Promise.resolve({ ok: true }); },
     );
-    // 模拟 registry 中 DGLAB 设备类型的 shock.start / strength.set 发出的中性命令
-    brandService.control(DEVICE_ID, { brand: 'dglab', cmd: 'setPattern', pattern: '经典', intensity: 50, ticks: -1 });
+    const deviceService = require('../services/deviceService');
+    deviceService.invokeDeviceCapability(DEVICE_ID, 'shock', 'start', { voltage: 50 });
     expect(sent[0]).toHaveLength(3); // 强度 + A波形 + B波形
     expect(sent[0][0]).toEqual({ characteristic: 'pwmAB2', value: v2.packStrength({ a: v2.uiToHwStrength(50), b: v2.uiToHwStrength(50) }) });
 
-    brandService.control(DEVICE_ID, { brand: 'dglab', cmd: 'stopPattern' });
+    deviceService.invokeDeviceCapability(DEVICE_ID, 'shock', 'stop', {});
     expect(sent[1]).toEqual([{ characteristic: 'pwmAB2', value: v2.packStrength({ a: 0, b: 0 }) }]);
   });
 

@@ -8,6 +8,7 @@ const { DGLabConnection } = require('./dglabConnection');
 const { YCYConnection } = require('./ycyConnection');
 const { DGLabV2WebBleConnection } = require('./webBleConnection');
 const { YcyWebBleConnection } = require('./ycyWebBleConnection');
+const { NativeBridgeConnection } = require('./nativeBridgeConnection');
 const dglabV2 = require('./protocols/dglabV2');
 const discovery = require('./discovery');
 const ycyProto = require('./protocols/ycy');
@@ -28,8 +29,9 @@ const STATUS = {
 };
 
 // 受控连接（后端持有链路）允许轻量自动重连；V2 webble 的 GATT 句柄在渲染进程，后端不可重连。
-function isReconnectable(kind) {
-  return kind !== 'brandBle';
+function isReconnectable(kind, deviceId) {
+  if (kind === 'brandBle') return false;
+  return connections.get(deviceId)?.mode !== 'native';
 }
 
 function setState(deviceId, status, detail = {}) {
@@ -142,7 +144,16 @@ async function connect(brand, opts = {}) {
   let finalName;
   let kind = 'brand';
 
-  if (brand === 'dglab') {
+  if (opts.mode === 'native') {
+    if (!opts.address) throw new Error('本机桥接需要 address');
+    finalDeviceId = deviceId || `${brand}-native-${opts.address}`;
+    finalName = name || opts.address;
+    type = brand === 'dglab' ? 'DGLAB' : resolveDeviceType('ycy', { model: name, mode: 'ble', type: opts.type });
+    connection = new NativeBridgeConnection({
+      brand, deviceId: finalDeviceId, address: opts.address,
+      port: opts.port || (brand === 'dglab' ? 3002 : 3001), type,
+    });
+  } else if (brand === 'dglab') {
     const host = opts.host;
     const port = opts.port;
     if (!host) throw new Error('蓝牙体感设备连接需要 host');
@@ -213,7 +224,7 @@ function handleLinkDown(deviceId, kind, error) {
     setState(deviceId, STATUS.DISCONNECTED, { error });
     return;
   }
-  if (!isReconnectable(kind)) {
+  if (!isReconnectable(kind, deviceId)) {
     setState(deviceId, STATUS.DISCONNECTED, { error });
     return;
   }
@@ -261,6 +272,11 @@ function scheduleReconnect(deviceId, kind, error) {
 
 // 依据既有 metadata 重建一个同类适配器（用于无原生 reconnect 的连接）。
 function rebuildConnection(deviceId, meta) {
+  if (meta.mode === 'native') {
+    return new NativeBridgeConnection({
+      brand: meta.brand, deviceId, address: meta.address, port: meta.port, type: meta.type,
+    });
+  }
   if (meta.brand === 'dglab') {
     return new DGLabConnection({ deviceId, host: meta.host, port: meta.port });
   }
@@ -272,48 +288,11 @@ function rebuildConnection(deviceId, meta) {
 
 // ============ 控制 ============
 
-/** 直接下发品牌命令到指定连接 */
+/** 适配器直发（测试用）。产品通路走 invokeDeviceCapability。 */
 function control(deviceId, brandCommand) {
   const connection = getConnection(deviceId);
   if (!connection) throw new Error('设备未连接');
   return connection.send(brandCommand);
-}
-
-// —— 蓝牙体感设备高层控制 ——
-function dglabSetPattern(deviceId, { pattern = '经典', intensity = 100, ticks = -1 } = {}) {
-  return control(deviceId, { brand: 'dglab', cmd: 'setPattern', pattern, intensity, ticks });
-}
-function dglabStop(deviceId) {
-  return control(deviceId, { brand: 'dglab', cmd: 'stopPattern' });
-}
-function dglabSetMaxIntensity(deviceId, { delta = 0 } = {}) {
-  return control(deviceId, { brand: 'dglab', cmd: 'setMaxIntensity', delta });
-}
-function dglabSetBackground(deviceId, opts = {}) {
-  return control(deviceId, { brand: 'dglab', cmd: 'setBackground', ...opts });
-}
-
-// —— 遥控蓝牙设备高层控制 ——
-function ycyTrigger(deviceId, commandId, token) {
-  return control(deviceId, { brand: 'ycy', cmd: 'triggerInstruction', commandId, token });
-}
-function ycyStop(deviceId) {
-  return control(deviceId, { brand: 'ycy', cmd: 'stopAll' });
-}
-function ycySetStrength(deviceId, { channel = 'A', value = 0 } = {}) {
-  return control(deviceId, { brand: 'ycy', cmd: 'setStrength', channel, value });
-}
-function ycySetMode(deviceId, { channel = 'A', mode = 1 } = {}) {
-  return control(deviceId, { brand: 'ycy', cmd: 'setMode', channel, mode });
-}
-function ycySetSpeed(deviceId, { motor = 'A', speed = 0 } = {}) {
-  return control(deviceId, { brand: 'ycy', cmd: 'setSpeed', motor, speed });
-}
-function ycySetFjb(deviceId, { stroke = 0, vibe = 0, axis = 0 } = {}) {
-  return control(deviceId, { brand: 'ycy', cmd: 'setFjb', stroke, vibe, axis });
-}
-function ycySetToyMode(deviceId, { motor = 'A', mode = 1 } = {}) {
-  return control(deviceId, { brand: 'ycy', cmd: 'setToyMode', motor, mode });
 }
 
 // ============ 断开 / 列表 ============
@@ -421,20 +400,6 @@ function detachWebBle(deviceId) {
     });
 }
 
-// —— 蓝牙体感设备（直连版）高层控制 ——
-function dglabV2SetStrength(deviceId, { a = 0, b = 0 } = {}) {
-  return control(deviceId, { brand: 'dglab', cmd: 'v2_setStrength', a: Number(a) || 0, b: Number(b) || 0 });
-}
-function dglabV2SetWaveform(deviceId, { channel = 'A', x = 5, y = 200, z = 0 } = {}) {
-  return control(deviceId, { brand: 'dglab', cmd: 'v2_setWaveform', channel, x: Number(x) || 0, y: Number(y) || 0, z: Number(z) || 0 });
-}
-function dglabV2Stop(deviceId) {
-  return control(deviceId, { brand: 'dglab', cmd: 'v2_stop' });
-}
-function dglabV2ReadBattery(deviceId) {
-  return control(deviceId, { brand: 'dglab', cmd: 'v2_readBattery' });
-}
-
 // —— 原版 V2 强度位布局（标定用，运行时切换）——
 function getV2StrengthLayout() {
   return dglabV2.getStrengthLayout();
@@ -490,27 +455,9 @@ module.exports = {
   list,
   getStatus,
   resolveDeviceType,
-  // 蓝牙体感设备
-  dglabSetPattern,
-  dglabStop,
-  dglabSetMaxIntensity,
-  dglabSetBackground,
-  // 蓝牙体感设备（直连版）（Web Bluetooth 直连）
   attachWebBle,
   detachWebBle,
-  dglabV2SetStrength,
-  dglabV2SetWaveform,
-  dglabV2Stop,
-  dglabV2ReadBattery,
   getV2StrengthLayout,
   setV2StrengthLayout,
-  // 遥控蓝牙设备
-  ycyTrigger,
-  ycyStop,
-  ycySetStrength,
-  ycySetMode,
-  ycySetSpeed,
-  ycySetFjb,
-  ycySetToyMode,
   YCY_GLOBAL_STOP: ycyProto.GLOBAL_STOP_COMMAND,
 };

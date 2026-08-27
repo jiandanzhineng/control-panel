@@ -157,11 +157,10 @@ frontend/src/web-ble/
 - `GET  /discover?brand=dglab&host=...` — 发现（役次元见 README 参数）
 - `POST /connect` — 连接（`{ brand, ... }`）
 - `GET  /` — 已连接品牌设备列表
-- `POST /:deviceId/control` — 高层控制（`{ action, ... }`）
 - `POST /:deviceId/disconnect` — 断开
 
-通用设备能力（shock/strength）也可经既有 `POST /api/devices/:id/capabilities/:cap/actions/:action`
-触发，品牌设备同样适用（设备类型层会翻译为品牌命令）。
+控制走 `POST /api/devices/:id/capabilities/:cap/actions/:action`（或 operations）。
+Vite 纯浏览器网页蓝牙不保证进设备层；产品以 Electron 为准。
 
 ## 测试
 

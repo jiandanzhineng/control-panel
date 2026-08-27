@@ -76,13 +76,6 @@ export function disconnect(deviceId: string) {
   return request<{ ok: boolean }>(`/${encodeURIComponent(deviceId)}/disconnect`, { method: 'POST' });
 }
 
-export function control(deviceId: string, action: string, params: Record<string, unknown> = {}) {
-  return request<{ ok: boolean; result?: unknown }>(`/${encodeURIComponent(deviceId)}/control`, {
-    method: 'POST',
-    body: JSON.stringify({ action, ...params }),
-  });
-}
-
 // 原版 V2 强度位布局（标定用）
 export function getV2Layout() {
   return request<{ layout: 'official' | 'coyote2'; options: string[] }>('/v2-layout');

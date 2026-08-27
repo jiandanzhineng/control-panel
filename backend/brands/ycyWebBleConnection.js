@@ -3,7 +3,7 @@
  * GATT 句柄在渲染进程；本类把品牌命令翻成 0x35 帧，经 send 闭包写特征值。
  */
 const ycy = require('./protocols/ycy');
-const { mergeFjbState, toLevel255, clampInt } = require('./capabilityMap');
+const { createYcyNormState, normalizeYcyCommand } = require('./capabilityMap');
 
 class YcyWebBleConnection {
   constructor({ deviceId, send, type = 'YCY_CUP' }) {
@@ -13,8 +13,7 @@ class YcyWebBleConnection {
     this.type = type;
     this._transportSend = typeof send === 'function' ? send : null;
     this._statusCb = null;
-    this._fjb = { stroke: 0, vibe: 0, axis: 0 };
-    this._ems = { A: 0, B: 0 };
+    this._norm = createYcyNormState();
   }
 
   onStatus(cb) {
@@ -23,57 +22,7 @@ class YcyWebBleConnection {
   }
 
   _normalize(brandCommand) {
-    const c = brandCommand || {};
-    if (c.cmd === 'setMotors') {
-      const ch = c.channels || {};
-      if (ch.a != null && ch.stroke == null) {
-        return { ...c, cmd: 'setSpeed', speed: toLevel255(ch.a, 20) || 0 };
-      }
-      this._fjb = mergeFjbState(this._fjb, ch);
-      return { brand: 'ycy', cmd: 'setFjb', ...this._fjb };
-    }
-    if (c.cmd === 'setFjb') {
-      this._fjb = {
-        stroke: c.stroke != null ? c.stroke : this._fjb.stroke,
-        vibe: c.vibe != null ? c.vibe : this._fjb.vibe,
-        axis: c.axis != null ? c.axis : this._fjb.axis,
-      };
-      return { ...c, cmd: 'setFjb', ...this._fjb };
-    }
-    if (c.cmd === 'stopFjb' || c.cmd === 'stopToy' || c.cmd === 'stopAll') {
-      this._fjb = { stroke: 0, vibe: 0, axis: 0 };
-      if (c.cmd === 'stopAll') this._ems = { A: 0, B: 0 };
-    }
-    if (c.cmd === 'setStrength') {
-      const channel = String(c.channel || 'A').toUpperCase();
-      const value = Number(c.value) || 0;
-      if (channel === 'AB') this._ems = { A: value, B: value };
-      else if (channel === 'A' || channel === 'B') this._ems[channel] = value;
-      return c;
-    }
-    if (c.cmd === 'setEstim') {
-      const channel = String(c.channel || 'A').toUpperCase();
-      const value = Math.round((clampInt(c.intensity, 0, 255) / 255) * 100);
-      if (channel === 'AB') this._ems = { A: value, B: value };
-      else if (channel === 'A' || channel === 'B') this._ems[channel] = value;
-      return {
-        brand: 'ycy', cmd: 'setStrength',
-        channel: c.channel || 'A',
-        value,
-        wave: c.wave,
-      };
-    }
-    if (c.cmd === 'setMode') {
-      const channel = String(c.channel || 'A').toUpperCase();
-      return {
-        ...c,
-        cmd: 'setStrength',
-        channel,
-        value: channel === 'AB' ? this._ems.A : (this._ems[channel] ?? 0),
-        wave: c.mode,
-      };
-    }
-    return c;
+    return normalizeYcyCommand(this._norm, brandCommand, this.mode);
   }
 
   send(brandCommand) {

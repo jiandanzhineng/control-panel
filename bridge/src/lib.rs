@@ -730,9 +730,6 @@ async fn post_identify(
 }
 
 async fn post_send(State(st): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
-    if st.brand != Brand::Ycy {
-        return Json(json!({ "ok": false, "msg": "not supported for this brand" }));
-    }
     let addr = body
         .get("addr")
         .and_then(|v| v.as_str())

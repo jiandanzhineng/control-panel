@@ -295,3 +295,25 @@ describe('役次元 设备类型推断（resolveDeviceType）', () => {
     expect(resolveDeviceType('ycy', { mode: 'ble', model: 'YISK-003V3' })).toBe('YCY_ENEMA');
   });
 });
+
+describe('本机桥适配器', () => {
+  const { NativeBridgeConnection } = require('../brands/nativeBridgeConnection');
+
+  test('YCY native 把 motors.set 翻成 hex 帧 POST /api/send', async () => {
+    const posts = [];
+    const fetchImpl = async (url, init) => {
+      posts.push({ url, body: JSON.parse(init.body) });
+      return { ok: true, json: async () => ({ ok: true }) };
+    };
+    const conn = new NativeBridgeConnection({
+      brand: 'ycy', deviceId: 'ycy-native-x', address: 'aa:bb', port: 3001, type: 'YCY_CUP', fetchImpl,
+    });
+    await conn.send({
+      brand: 'ycy', cmd: 'setMotors',
+      channels: { stroke: { value: 255, direction: 1 }, vibe: { value: 255 } },
+    });
+    expect(posts[0].url).toContain('127.0.0.1:3001/api/send');
+    expect(posts[0].body.addr).toBe('aa:bb');
+    expect(posts[0].body.frame.toUpperCase()).toBe(hex(ycy.buildFjb03({ stroke: 20, vibe: 20, axis: 0 })));
+  });
+});

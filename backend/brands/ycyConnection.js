@@ -6,7 +6,7 @@
  * 作为 deviceConnectionService 的 transport adapter：实现 send(message) / disconnect()。
  */
 const ycy = require('./protocols/ycy');
-const { mergeFjbState, toLevel255, clampInt } = require('./capabilityMap');
+const { createYcyNormState, normalizeYcyCommand } = require('./capabilityMap');
 
 class YCYConnection {
   constructor({ deviceId, mode = 'bridge', WebSocketClass = null } = {}) {
@@ -19,8 +19,7 @@ class YCYConnection {
     this.auth = null; // { uid, token } 桥接模式鉴权
     this._statusCb = null;
     this._keepAliveTimer = null;
-    this._fjb = { stroke: 0, vibe: 0, axis: 0 };
-    this._ems = { A: 0, B: 0 };
+    this._norm = createYcyNormState();
   }
 
   /** 注册状态回调：brandService 用它接收 close / error，驱动状态机与重连。 */
@@ -74,61 +73,7 @@ class YCYConnection {
   }
 
   _normalize(brandCommand) {
-    const c = brandCommand || {};
-    if (c.cmd === 'setMotors') {
-      const ch = c.channels || {};
-      if (ch.a != null && ch.stroke == null) {
-        return { ...c, cmd: 'setSpeed', speed: toLevel255(ch.a, 20) || 0 };
-      }
-      this._fjb = mergeFjbState(this._fjb, ch);
-      return { brand: 'ycy', cmd: 'setFjb', ...this._fjb };
-    }
-    if (c.cmd === 'setFjb') {
-      this._fjb = {
-        stroke: c.stroke != null ? c.stroke : this._fjb.stroke,
-        vibe: c.vibe != null ? c.vibe : this._fjb.vibe,
-        axis: c.axis != null ? c.axis : this._fjb.axis,
-      };
-      return { ...c, cmd: 'setFjb', ...this._fjb };
-    }
-    if (c.cmd === 'stopFjb' || c.cmd === 'stopToy' || c.cmd === 'stopAll') {
-      this._fjb = { stroke: 0, vibe: 0, axis: 0 };
-      if (c.cmd === 'stopAll') this._ems = { A: 0, B: 0 };
-      if (this.mode === 'bridge' && c.cmd !== 'stopAll') return { brand: 'ycy', cmd: 'stopAll' };
-    }
-    if (c.cmd === 'setStrength') {
-      const channel = String(c.channel || 'A').toUpperCase();
-      const value = Number(c.value) || 0;
-      if (channel === 'AB') this._ems = { A: value, B: value };
-      else if (channel === 'A' || channel === 'B') this._ems[channel] = value;
-      return c;
-    }
-    if (c.cmd === 'setEstim') {
-      const channel = String(c.channel || 'A').toUpperCase();
-      const value = Math.round((clampInt(c.intensity, 0, 255) / 255) * 100);
-      if (channel === 'AB') this._ems = { A: value, B: value };
-      else if (channel === 'A' || channel === 'B') this._ems[channel] = value;
-      return {
-        brand: 'ycy', cmd: 'setStrength',
-        channel: c.channel || 'A',
-        value,
-        wave: c.wave,
-      };
-    }
-    if (c.cmd === 'setMode') {
-      const channel = String(c.channel || 'A').toUpperCase();
-      return {
-        ...c,
-        cmd: 'setStrength',
-        channel,
-        value: channel === 'AB' ? this._ems.A : (this._ems[channel] ?? 0),
-        wave: c.mode,
-      };
-    }
-    if (this.mode === 'bridge' && c.cmd === 'pump' && c.scene === 'stop') {
-      return { brand: 'ycy', cmd: 'stopAll' };
-    }
-    return c;
+    return normalizeYcyCommand(this._norm, brandCommand, this.mode);
   }
 
   /** 接收品牌命令（由 YCY_* 设备类型 emit），翻译并下发 */
