@@ -1,16 +1,10 @@
 <template>
   <div class="brands-page">
-    <div class="page-header">
-      <h2 class="page-title">品牌设备</h2>
-      <span class="page-sub">把两个品牌的设备连到本机，每个品牌都能同时连接多台</span>
-    </div>
-
-    <!-- 总览统计 -->
-    <el-card shadow="never" class="stats-card">
+    <el-card shadow="never" class="stats-card stats-card--compact">
       <div class="stats-row">
-        <el-statistic title="设备总数" :value="totalCount" />
-        <el-statistic title="在线设备" :value="onlineCount" class="online-stat" />
-        <el-statistic title="离线设备" :value="offlineCount" class="offline-stat" />
+        <span class="stat-mini">设备 {{ totalCount }}</span>
+        <span class="stat-mini online-stat">在线 {{ onlineCount }}</span>
+        <span class="stat-mini offline-stat">离线 {{ offlineCount }}</span>
         <div class="stats-actions">
           <el-checkbox v-model="autoRefreshEnabled" @change="(v: any) => v ? startAutoRefresh() : stopAutoRefresh()">自动刷新</el-checkbox>
           <el-button size="small" :icon="Refresh" :loading="refreshing" @click="refreshConnected">刷新</el-button>
@@ -18,10 +12,120 @@
       </div>
     </el-card>
 
-    <el-tabs v-model="activeBrand" class="brand-tabs">
-      <!-- ============ 郊狼 ============ -->
-      <el-tab-pane label="郊狼" name="dglab">
-      <section class="brand-col">
+    <el-tabs v-model="pageTab" class="brand-tabs">
+      <el-tab-pane label="连接" name="connect">
+        <el-card shadow="never" class="section-card">
+          <div class="connect-bar">
+            <el-dropdown trigger="click" @command="startBleConnect">
+              <el-button type="primary" :loading="scanningWebble || scanningYcyWebble">
+                蓝牙连接
+                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="ycy">役次元</el-dropdown-item>
+                  <el-dropdown-item command="dglab">郊狼</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-dropdown trigger="click" @command="openMoreConnect">
+              <el-button>
+                更多连接方式
+                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="native">本机桥接</el-dropdown-item>
+                  <el-dropdown-item command="dglab-phone">郊狼手机连接</el-dropdown-item>
+                  <el-dropdown-item command="ycy-bridge">役次元远程桥接</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-button v-if="scanningWebble" size="small" @click="dglabWebbleCancelScan">取消郊狼扫描</el-button>
+            <el-button v-if="scanningYcyWebble" size="small" @click="ycyWebbleCancelScan">取消役次元扫描</el-button>
+          </div>
+          <p class="op-hint">用电脑蓝牙直连设备。点「蓝牙连接」后选品牌，再在列表里挑设备。</p>
+        </el-card>
+
+        <div v-if="dglabWebbleCandidates.length || ycyWebbleCandidates.length" class="candidate-list">
+          <div v-for="c in dglabWebbleCandidates" :key="'dg-'+c.id" class="candidate-item">
+            <div class="candidate-info">
+              <span class="candidate-name">{{ brandLabel('dglab', c.name) }}</span>
+              <span class="candidate-meta">郊狼 · {{ c.name }}</span>
+            </div>
+            <el-button size="small" type="primary" @click="dglabWebblePick(c)">选择</el-button>
+          </div>
+          <div v-for="c in ycyWebbleCandidates" :key="'ycy-'+c.id" class="candidate-item">
+            <div class="candidate-info">
+              <span class="candidate-name">{{ brandLabel('ycy', c.name) }}</span>
+              <span class="candidate-meta">役次元 · {{ c.name }}</span>
+            </div>
+            <el-button size="small" type="primary" @click="ycyWebblePick(c)">选择</el-button>
+          </div>
+        </div>
+
+        <div class="brand-col__devices">
+          <div v-if="!allConnected.length" class="brand-col__empty">还没有已连接设备。点「蓝牙连接」或「更多连接方式」添加，连上后可在这里试控。</div>
+          <div v-for="dev in allConnected" :key="dev.deviceId" class="device-card">
+            <div class="device-card__head">
+              <div>
+                <span class="device-card__name">{{ brandLabel(dev.brand, dev.name) }}</span>
+                <el-tag size="small" class="tag-brand">{{ BRAND_LABEL[dev.brand] || dev.brand }}</el-tag>
+                <el-tag v-if="dev.type" size="small" type="warning">{{ TYPE_LABEL[dev.type] || ycyPanelType(dev) }}</el-tag>
+              </div>
+              <el-button size="small" :icon="Close" @click="disconnectDevice(dev)">断开</el-button>
+            </div>
+            <div v-if="dev.brand === 'dglab'" class="control-grid">
+              <div class="control-field">
+                <label>强度 {{ ctl(dev).intensity }}</label>
+                <el-slider v-model="ctl(dev).intensity" :min="0" :max="100" />
+              </div>
+              <div class="control-actions">
+                <el-button type="primary" size="small" :loading="opLoading[`dglabApply:${dev.deviceId}`]" @click="dglabApply(dev)">应用</el-button>
+                <el-button size="small" :loading="opLoading[`dglabStop:${dev.deviceId}`]" @click="dglabStop(dev)">停止</el-button>
+              </div>
+            </div>
+            <div v-else-if="ycyPanelType(dev) === 'YCY_CUP'" class="control-grid">
+              <div class="control-field"><label>旋转 {{ ctl(dev).stroke }}</label><el-slider v-model="ctl(dev).stroke" :min="0" :max="40" /></div>
+              <div class="control-field"><label>震动 {{ ctl(dev).vibe }}</label><el-slider v-model="ctl(dev).vibe" :min="0" :max="20" /></div>
+              <div class="control-field"><label>第三轴 {{ ctl(dev).axis }}</label><el-slider v-model="ctl(dev).axis" :min="0" :max="20" /></div>
+              <div class="control-actions">
+                <el-button type="primary" size="small" :loading="opLoading[`ycyFjb:${dev.deviceId}`]" @click="ycyFjbApply(dev)">应用</el-button>
+                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyFjbStop(dev)">停止</el-button>
+              </div>
+            </div>
+            <div v-else-if="ycyPanelType(dev) === 'YCY_EMS'" class="control-grid">
+              <div class="control-field"><label>左通道 {{ ctl(dev).aStrength }}</label><el-slider v-model="ctl(dev).aStrength" :min="0" :max="100" /></div>
+              <div class="control-field"><label>右通道 {{ ctl(dev).bStrength }}</label><el-slider v-model="ctl(dev).bStrength" :min="0" :max="100" /></div>
+              <div class="control-actions">
+                <el-button type="primary" size="small" :loading="opLoading[`ycyEms:${dev.deviceId}`]" @click="ycyEmsApply(dev)">应用</el-button>
+                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">停止</el-button>
+              </div>
+            </div>
+            <div v-else-if="ycyPanelType(dev) === 'YCY_TOY'" class="control-grid">
+              <div class="control-field"><label>速度 {{ ctl(dev).speed }}</label><el-slider v-model="ctl(dev).speed" :min="0" :max="100" /></div>
+              <div class="control-actions">
+                <el-button type="primary" size="small" :loading="opLoading[`ycyToy:${dev.deviceId}`]" @click="ycyToyApply(dev)">应用</el-button>
+                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">停止</el-button>
+              </div>
+            </div>
+            <div v-else-if="ycyPanelType(dev) === 'YCY_ENEMA'" class="control-grid">
+              <div class="control-actions">
+                <el-button type="primary" size="small" :loading="opLoading[`ycyPump:${dev.deviceId}`]" @click="ycyPumpApply(dev)">启动泵</el-button>
+                <el-button size="small" :loading="opLoading[`ycyPumpS:${dev.deviceId}`]" @click="ycyPumpStop(dev)">停止</el-button>
+              </div>
+            </div>
+            <div v-else-if="dev.mode === 'bridge'" class="control-grid">
+              <div class="control-field"><label>玩法编号</label><el-input v-model="ctl(dev).commandId" size="small" /></div>
+              <div class="control-actions">
+                <el-button type="primary" size="small" @click="ycyTrigger(dev)">触发</el-button>
+                <el-button size="small" @click="ycyStop(dev)">停止</el-button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      <section v-if="false" class="brand-col">
         <div class="brand-col__head">
           <h3 class="brand-col__name">郊狼</h3>
           <p class="brand-col__desc">蓝牙体感设备：连上本机即可查看电量与状态，可同时连接多台。</p>
@@ -245,8 +349,8 @@
       </section>
 
       </el-tab-pane>
-      <!-- ============ 役次元 ============ -->
-      <el-tab-pane label="役次元" name="ycy">
+      <!-- 旧分栏保留逻辑，主界面不再展示 -->
+      <el-tab-pane v-if="false" label="役次元" name="ycy">
       <section class="brand-col">
         <div class="brand-col__head">
           <h3 class="brand-col__name">役次元</h3>
@@ -551,7 +655,72 @@
         </div>
       </section>
       </el-tab-pane>
+
+      <el-tab-pane label="支持设备" name="support">
+        <el-card shadow="never" class="section-card">
+          <h3 class="support-h">已测试</h3>
+          <ul class="support-list">
+            <li v-for="item in testedDevices" :key="item">{{ item }}</li>
+          </ul>
+          <h3 class="support-h">理论支持</h3>
+          <ul class="support-list">
+            <li v-for="item in theoreticalDevices" :key="item">{{ item }}</li>
+          </ul>
+          <p class="op-hint">如需更多支持设备请联系客服</p>
+        </el-card>
+      </el-tab-pane>
     </el-tabs>
+
+    <el-dialog v-model="moreOpen" :title="moreTitle" width="560px" class="add-dialog">
+      <template v-if="moreKind === 'native'">
+        <p class="op-hint">本机桥接仅 macOS 可用，用电脑蓝牙经原生程序连接。</p>
+        <template v-if="isMac">
+          <h4>郊狼</h4>
+          <div class="discover-row">
+            <el-tag :type="dglabNativeSummary.type" size="small">{{ dglabNativeSummary.text }}</el-tag>
+            <el-button type="primary" size="small" :loading="busy" :disabled="!dglabNativeDevices.length" @click="dglabNativeConnectAll">全部连接</el-button>
+            <el-button size="small" :loading="busy" @click="dglabNativeRescan">重新扫描</el-button>
+          </div>
+          <h4>役次元</h4>
+          <div class="discover-row">
+            <el-tag :type="ycyNativeSummary.type" size="small">{{ ycyNativeSummary.text }}</el-tag>
+            <el-button type="primary" size="small" :loading="busy" :disabled="!ycyNativeDevices.length" @click="ycyNativeConnectAll">全部连接</el-button>
+            <el-button size="small" :loading="busy" @click="ycyNativeRescan">重新扫描</el-button>
+          </div>
+        </template>
+        <el-alert v-else type="info" :closable="false" title="当前系统不是 Mac，请用「蓝牙连接」。" />
+      </template>
+      <template v-else-if="moreKind === 'dglab-phone'">
+        <div class="discover-row">
+          <el-input v-model="dglabHost" placeholder="手机上显示的地址" class="addr-input" />
+          <el-input v-model="dglabPort" placeholder="端口" class="port-input" />
+          <el-button type="primary" :loading="scanningDglab" @click="discoverDglab">探测</el-button>
+        </div>
+        <p class="op-hint">在配套手机软件打开娱乐模式，填入地址和端口后探测。</p>
+        <div v-for="c in dglabCandidates" :key="c.suggestedDeviceId" class="candidate-item">
+          <span class="candidate-name">{{ c.host }}:{{ c.port }}</span>
+          <el-button size="small" type="primary" :disabled="!c.reachable || busy" @click="connectDglab(c)">连接</el-button>
+        </div>
+      </template>
+      <template v-else-if="moreKind === 'ycy-bridge'">
+        <div class="discover-row">
+          <el-input v-model="ycyBridgeCode" placeholder="连接码（设备编号加空格加口令）" class="addr-input" />
+        </div>
+        <div class="discover-row">
+          <el-select v-model="ycyBridgeType" size="small" class="type-select">
+            <el-option label="电击器" value="YCY_EMS" />
+            <el-option label="玩具 / 电机" value="YCY_TOY" />
+            <el-option label="杯" value="YCY_CUP" />
+            <el-option label="灌肠机" value="YCY_ENEMA" />
+          </el-select>
+        </div>
+        <div class="discover-row">
+          <el-input v-model="ycyBridgeHost" placeholder="桥接地址，留空为本机" class="addr-input" />
+          <el-input v-model="ycyBridgePort" placeholder="端口" class="port-input" />
+          <el-button type="primary" :loading="busy" @click="connectYcyBridge">连接</el-button>
+        </div>
+      </template>
+    </el-dialog>
 
     <!-- 添加设备 对话框 -->
     <el-dialog v-model="addDialog" :title="`添加${BRAND_LABEL[addBrand]}设备`" width="480px" class="add-dialog">
@@ -635,7 +804,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Connection, Switch, Close, CircleCheck, Loading, Plus } from '@element-plus/icons-vue'
+import { Refresh, Connection, Switch, Close, CircleCheck, Loading, Plus, ArrowDown } from '@element-plus/icons-vue'
 import * as brandsApi from '../api/brands'
 import * as ycyBridge from '../api/ycyBridge'
 import type { BrandDevice, DiscoverCandidate } from '../api/brands'
@@ -691,6 +860,23 @@ function ycyTypeLabel(rawName?: string | null): string {
 }
 
 const activeBrand = ref<'dglab' | 'ycy'>('dglab')
+const pageTab = ref<'connect' | 'support'>('connect')
+const moreOpen = ref(false)
+const moreKind = ref<'native' | 'dglab-phone' | 'ycy-bridge'>('native')
+const moreTitle = computed(() => {
+  if (moreKind.value === 'native') return '本机桥接'
+  if (moreKind.value === 'dglab-phone') return '郊狼手机连接'
+  return '役次元远程桥接'
+})
+const testedDevices = [
+  '役次元 YCY-FJB-03 杯（网页蓝牙）',
+]
+const theoreticalDevices = [
+  '郊狼 2.0 / 3.0（网页蓝牙、本机桥接、手机娱乐模式）',
+  '役次元电击主机（网页蓝牙 / 远程桥接）',
+  '役次元电机 / 玩具（网页蓝牙 / 远程桥接）',
+  '役次元灌肠机（网页蓝牙 / 远程桥接）',
+]
 const busy = ref(false)
 const refreshing = ref(false)
 
@@ -835,6 +1021,7 @@ const connectedDevices = computed<BrandDevice[]>(() => backendDevices.value)
 // 按品牌拆分，分别在各栏目展示
 const dglabConnected = computed<BrandDevice[]>(() => connectedDevices.value.filter((d) => d.brand === 'dglab'))
 const ycyConnected = computed<BrandDevice[]>(() => connectedDevices.value.filter((d) => d.brand === 'ycy'))
+const allConnected = computed<BrandDevice[]>(() => connectedDevices.value)
 
 // 统计
 const totalCount = computed(() =>
@@ -1228,6 +1415,18 @@ const scanningYcyWebble = ref(false)
 function ycyWebbleCancelScan() {
   brandBle.cancelSelection().catch(() => {})
 }
+function startBleConnect(kind: string | number) {
+  if (kind === 'dglab') dglabWebbleConnect()
+  else ycyWebbleConnect()
+}
+function openMoreConnect(kind: string | number) {
+  moreKind.value = kind as 'native' | 'dglab-phone' | 'ycy-bridge'
+  moreOpen.value = true
+  if (kind === 'native' && isMac.value) {
+    dglabNativeRescan()
+    ycyNativeRescan()
+  }
+}
 async function ycyWebblePick(c: { id: string; name: string }) {
   try { await brandBle.selectDevice(c.id) } catch (e: any) { ElMessage.error(e?.message || '选择失败') }
 }
@@ -1538,6 +1737,14 @@ onUnmounted(() => { stopAutoRefresh(); stopYcyNativeTimer(); stopDglabNativeTime
 .diag-meta { color: var(--text-muted); font-size: 12px; }
 @keyframes rotating { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 .stats-card { background-color: var(--bg-card, var(--bg-app)); }
-.stats-row { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
+.stats-card--compact { padding: 0; }
+.stats-card--compact :deep(.el-card__body) { padding: 8px 14px; }
+.stat-mini { font-size: 13px; color: var(--text-muted); }
+.stat-mini.online-stat { color: var(--el-color-success); }
+.stat-mini.offline-stat { color: var(--el-color-info); }
+.stats-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
 .stats-actions { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.connect-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.support-h { font-size: 14px; margin: 12px 0 6px; color: var(--text-primary); }
+.support-list { margin: 0 0 12px 18px; padding: 0; color: var(--text-primary); line-height: 1.8; }
 </style>
