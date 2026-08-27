@@ -16,7 +16,7 @@
   const cfg = {
     duration: 20, endCalmLock: 60, surgeWindowMs: 500, surgeRiseKpa: 1.0, midOffsetKpa: 1.0,
     maxMotorIntensity: 50, lowPressureDelay: 5, rampRate: 2, gradualIncrease: 2,
-    randomPercent: 0, minSurgeMs: 100, sendIntervalMs: 2000,
+    randomPercent: 0, minSurgeMs: 100, sendIntervalMs: 2000, maxEdgeSec: 5,
     midIntensityMin: 5, midIntensityMax: 20, shockVoltage: 20, shockDuration: 3,
   };
 
@@ -34,7 +34,7 @@
     lastSentStrength: 0, lastSendTs: 0,
     lastUpdateTs: 0, lastIntensityUpdateTs: 0,
     isShocking: false, shockCount: 0, shockTimer: null,
-    edgingCount: 0, totalStimulationTime: 0,
+    edgingCount: 0, edgeStartTs: 0, totalStimulationTime: 0,
   };
 
   // UI 合并状态
@@ -311,6 +311,7 @@
     rt.midPressure = Number(Math.max(1, Math.max(peakMid, delayFloor)).toFixed(1));
     rt.edgePeak = 0; // 峰值已记录，重置等待下一轮突变
     rt.state = S.EDGING;
+    rt.edgeStartTs = Date.now(); // 记录边缘期开始时间（用于最长时长兜底）
     rt.edgingCount += 1;
     view.edgingCount = rt.edgingCount;
     view.midPressure = rt.midPressure;
@@ -368,8 +369,10 @@
       }
       case S.EDGING: {
         rt.targetIntensity = 0;
-        // 气压回落到前一个窗口平均值+0.2 之下才结束边缘期，进入延迟期
-        if (rt.surgeReleased) {
+        // 结束边缘期：气压回落到触发基准+0.2（泄压），或超过最长持续时间（防锁死）
+        const edgeOver = (now - rt.edgeStartTs) > (Number(cfg.maxEdgeSec) || 5) * 1000;
+        if (rt.surgeReleased || edgeOver) {
+          if (edgeOver) addLog('info', '边缘期超时(' + (Number(cfg.maxEdgeSec) || 5) + 's)，强制进入冷却');
           rt.delayMin = null; // 进入延迟期，重置最小值跟踪
           rt.state = S.DELAY; rt.stateTimer = now;
           view.statusText = '冷却延迟(' + cfg.lowPressureDelay + 's)…';
@@ -564,7 +567,7 @@
     rt.edgePeak = 0; rt.lastEdgePeak = 0; rt.midPressure = 50;
     rt.lastSentStrength = 0; rt.lastSendTs = 0;
     rt.pressureHistory = [];
-    rt.edgingCount = 0; rt.shockCount = 0; rt.totalStimulationTime = 0;
+    rt.edgingCount = 0; rt.edgeStartTs = 0; rt.shockCount = 0; rt.totalStimulationTime = 0;
     rt.lastUpdateTs = now; rt.lastIntensityUpdateTs = now;
     view.startTime = now; view.statusText = '准备就绪';
     view.midPressure = 50; view.edgePeak = 0; view.lastEdgePeak = 0;
