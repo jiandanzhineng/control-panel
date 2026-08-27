@@ -105,13 +105,22 @@ function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandServ
     });
 
     ipcMain.handle('brandBle:begin-auto-select', (event) => {
-      const pending = getBrandService().listSavedBleDevices()
-        .filter((d) => !d.connected && d.name);
+      const brandService = getBrandService();
+      const settings = brandService.getSettings?.() || { autoConnect: true, autoConnectAll: true };
+      const saved = brandService.listSavedBleDevices?.() || [];
+      const skipNames = saved
+        .filter((d) => d.connected && d.name)
+        .map((d) => String(d.name).trim().toUpperCase());
+      const pending = saved
+        .filter((d) => !d.connected && d.name && !skipNames.includes(String(d.name).trim().toUpperCase()))
+        .map((d) => d.name);
       const existing = selectionFor(event.sender) || { callback: null, candidates: new Map() };
-      existing.autoSelect = true;
-      existing.autoNames = pending.map((d) => d.name);
+      existing.autoSelectAll = settings.autoConnectAll !== false;
+      existing.autoSelect = existing.autoSelectAll || settings.autoConnect !== false;
+      existing.autoNames = settings.autoConnect !== false ? pending : [];
+      existing.skipNames = skipNames;
       selections.set(event.sender.id, existing);
-      return { ok: true, names: existing.autoNames };
+      return { ok: true, names: existing.autoNames, all: existing.autoSelectAll };
     });
 
     ipcMain.handle('brandBle:connected', (event, metadata) => {
@@ -198,9 +207,12 @@ function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandServ
 
       if (selection.autoSelect) {
         const wanted = (selection.autoNames || []).map((n) => String(n).trim().toUpperCase()).filter(Boolean);
+        const skip = new Set(selection.skipNames || []);
         for (const device of devices || []) {
           const name = String(device.deviceName || '').trim().toUpperCase();
-          if (!name || !wanted.includes(name)) continue;
+          if (!name || skip.has(name)) continue;
+          const matchAll = selection.autoSelectAll && isBrandName(name);
+          if (!matchAll && !wanted.includes(name)) continue;
           selections.delete(contents.id);
           callback(device.deviceId);
           return;

@@ -22,13 +22,18 @@ describe('品牌蓝牙自动连接设置', () => {
     mockDevices.splice(0, mockDevices.length);
   });
 
-  test('默认开启自动连接', () => {
-    expect(brandService.getSettings()).toEqual({ autoConnect: true });
+  test('默认开启已保存与所有支持自动连接', () => {
+    expect(brandService.getSettings()).toEqual({ autoConnect: true, autoConnectAll: true });
   });
 
   test('PUT 后能读回关闭状态', () => {
-    expect(brandService.setSettings({ autoConnect: false })).toEqual({ autoConnect: false });
-    expect(brandService.getSettings()).toEqual({ autoConnect: false });
+    expect(brandService.setSettings({ autoConnect: false })).toEqual({
+      autoConnect: false, autoConnectAll: true,
+    });
+    expect(brandService.setSettings({ autoConnectAll: false })).toEqual({
+      autoConnect: false, autoConnectAll: false,
+    });
+    expect(brandService.getSettings()).toEqual({ autoConnect: false, autoConnectAll: false });
   });
 
   test('非法 autoConnect 抛错', () => {

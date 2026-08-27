@@ -243,9 +243,40 @@ describe('Electron brandBle (DG-LAB V2) main integration', () => {
       ipcMain,
       getDeviceService: () => ({}),
       getBrandService: () => ({
+        getSettings: () => ({ autoConnect: true, autoConnectAll: false }),
         listSavedBleDevices: () => ([
           { deviceId: 'ycy:old', name: 'YCY-FJB-03-DJ', connected: false },
         ]),
+      }),
+      logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    });
+    integration.registerHandlers();
+    integration.attachWindow({ webContents });
+
+    await ipcMain.invoke('brandBle:begin-auto-select', { sender: webContents });
+    const select = jest.fn();
+    webContents._handlers.get('select-bluetooth-device')(
+      { preventDefault: jest.fn() },
+      [
+        { deviceId: 'a', deviceName: 'AirPods' },
+        { deviceId: 'c', deviceName: 'D-LAB ESTIM01' },
+        { deviceId: 'b', deviceName: 'YCY-FJB-03-DJ' },
+      ],
+      select,
+    );
+    expect(select).toHaveBeenCalledWith('b');
+    expect(webContents.send).not.toHaveBeenCalled();
+  });
+
+  it('自动连接所有支持的设备时按品牌名静默选中未保存设备', async () => {
+    const ipcMain = createIpcMain();
+    const webContents = createWebContents(18);
+    const integration = createBrandBleMainIntegration({
+      ipcMain,
+      getDeviceService: () => ({}),
+      getBrandService: () => ({
+        getSettings: () => ({ autoConnect: false, autoConnectAll: true }),
+        listSavedBleDevices: () => [],
       }),
       logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
     });
@@ -263,6 +294,5 @@ describe('Electron brandBle (DG-LAB V2) main integration', () => {
       select,
     );
     expect(select).toHaveBeenCalledWith('b');
-    expect(webContents.send).not.toHaveBeenCalled();
   });
 });

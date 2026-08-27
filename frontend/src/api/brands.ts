@@ -76,14 +76,19 @@ export function disconnect(deviceId: string) {
   return request<{ ok: boolean }>(`/${encodeURIComponent(deviceId)}/disconnect`, { method: 'POST' });
 }
 
-export function getSettings() {
-  return request<{ autoConnect: boolean }>('/settings');
+export interface BrandSettings {
+  autoConnect: boolean;
+  autoConnectAll: boolean;
 }
 
-export function setSettings(autoConnect: boolean) {
-  return request<{ autoConnect: boolean }>('/settings', {
+export function getSettings() {
+  return request<BrandSettings>('/settings');
+}
+
+export function setSettings(patch: Partial<BrandSettings>) {
+  return request<BrandSettings>('/settings', {
     method: 'PUT',
-    body: JSON.stringify({ autoConnect }),
+    body: JSON.stringify(patch),
   });
 }
 

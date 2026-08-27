@@ -34,8 +34,9 @@
             </el-dropdown>
             <el-button v-if="scanningWebble || scanningYcyWebble" size="small" @click="cancelBleScan">取消扫描</el-button>
             <el-checkbox v-model="bleAutoConnect" @change="onBleAutoConnectChange">自动连接已保存设备</el-checkbox>
+            <el-checkbox v-model="bleAutoConnectAll" @change="onBleAutoConnectAllChange">自动连接所有支持的设备</el-checkbox>
           </div>
-          <p class="op-hint">点「蓝牙连接」扫描附近设备。自动连接按广播名识别已保存设备；不想再连就去设备列表删除。</p>
+          <p class="op-hint">「所有支持」会自动连附近可识别设备；「已保存」只连设备列表里的。不想再连某台就删除并关掉「所有支持」。</p>
         </el-card>
 
         <div v-if="ycyWebbleCandidates.length" class="candidate-list">
@@ -260,6 +261,7 @@ const theoreticalDevices = [
 const busy = ref(false)
 const refreshing = ref(false)
 const bleAutoConnect = ref(true)
+const bleAutoConnectAll = ref(true)
 let bleAutoTimer: number | null = null
 let bleAutoBusy = false
 const BLE_AUTO_MS = 10000
@@ -971,23 +973,32 @@ function startBleAutoConnect() {
   void tryBleAutoConnect()
   bleAutoTimer = window.setInterval(() => { void tryBleAutoConnect() }, BLE_AUTO_MS)
 }
-async function onBleAutoConnectChange(v: boolean | string | number) {
-  const on = v === true
-  bleAutoConnect.value = on
-  try { await brandsApi.setSettings(on) } catch (_) {}
-  if (on) startBleAutoConnect()
+function syncBleAutoTimer() {
+  if (bleAutoConnect.value || bleAutoConnectAll.value) startBleAutoConnect()
   else stopBleAutoConnect()
 }
+async function onBleAutoConnectChange(v: boolean | string | number) {
+  bleAutoConnect.value = v === true
+  try { await brandsApi.setSettings({ autoConnect: bleAutoConnect.value }) } catch (_) {}
+  syncBleAutoTimer()
+}
+async function onBleAutoConnectAllChange(v: boolean | string | number) {
+  bleAutoConnectAll.value = v === true
+  try { await brandsApi.setSettings({ autoConnectAll: bleAutoConnectAll.value }) } catch (_) {}
+  syncBleAutoTimer()
+}
 async function tryBleAutoConnect() {
-  if (!bleAutoConnect.value || scanningWebble.value || scanningYcyWebble.value || bleAutoBusy) return
+  if ((!bleAutoConnect.value && !bleAutoConnectAll.value) || scanningWebble.value || scanningYcyWebble.value || bleAutoBusy) return
   const api = window.brandBleApi
   if (!api?.autoConnectScan) return
   bleAutoBusy = true
   try {
-    const saved = await brandsApi.listSavedBle()
-    const connectedNames = new Set(saved.filter((d) => d.connected && d.name).map((d) => d.name.trim().toUpperCase()))
-    const pending = saved.some((d) => !d.connected && d.name && !connectedNames.has(d.name.trim().toUpperCase()))
-    if (!pending) return
+    if (!bleAutoConnectAll.value) {
+      const saved = await brandsApi.listSavedBle()
+      const connectedNames = new Set(saved.filter((d) => d.connected && d.name).map((d) => d.name.trim().toUpperCase()))
+      const pending = saved.some((d) => !d.connected && d.name && !connectedNames.has(d.name.trim().toUpperCase()))
+      if (!pending) return
+    }
     try { await api.autoConnectScan() } catch (_) {}
     await refreshConnected()
   } catch (_) { /* 本轮失败等下次 */ }
@@ -997,8 +1008,12 @@ async function loadBleAutoConnect() {
   try {
     const s = await brandsApi.getSettings()
     bleAutoConnect.value = s.autoConnect !== false
-  } catch (_) { bleAutoConnect.value = true }
-  if (bleAutoConnect.value) startBleAutoConnect()
+    bleAutoConnectAll.value = s.autoConnectAll !== false
+  } catch (_) {
+    bleAutoConnect.value = true
+    bleAutoConnectAll.value = true
+  }
+  syncBleAutoTimer()
 }
 
 onMounted(() => {

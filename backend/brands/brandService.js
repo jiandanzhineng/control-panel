@@ -449,21 +449,32 @@ function getStatus() {
 
 const SETTINGS_KEY = 'brand-settings';
 
+function normalizeSettings(parsed) {
+  return {
+    autoConnect: parsed && typeof parsed.autoConnect === 'boolean' ? parsed.autoConnect : true,
+    autoConnectAll: parsed && typeof parsed.autoConnectAll === 'boolean' ? parsed.autoConnectAll : true,
+  };
+}
+
 function getSettings() {
   try {
     const parsed = JSON.parse(fileStorage.getItem(SETTINGS_KEY) || 'null');
-    if (parsed && typeof parsed.autoConnect === 'boolean') return { autoConnect: parsed.autoConnect };
+    if (parsed && typeof parsed === 'object') return normalizeSettings(parsed);
   } catch (_) { /* 缺省开启 */ }
-  return { autoConnect: true };
+  return { autoConnect: true, autoConnectAll: true };
 }
 
 function setSettings(patch = {}) {
-  if (typeof patch.autoConnect !== 'boolean') {
-    const err = new Error('autoConnect 必须是布尔值');
+  const hasSaved = typeof patch.autoConnect === 'boolean';
+  const hasAll = typeof patch.autoConnectAll === 'boolean';
+  if (!hasSaved && !hasAll) {
+    const err = new Error('autoConnect 或 autoConnectAll 必须是布尔值');
     err.code = 'AUTO_CONNECT_REQUIRED';
     throw err;
   }
-  const next = { autoConnect: patch.autoConnect };
+  const next = getSettings();
+  if (hasSaved) next.autoConnect = patch.autoConnect;
+  if (hasAll) next.autoConnectAll = patch.autoConnectAll;
   fileStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
   return next;
 }
