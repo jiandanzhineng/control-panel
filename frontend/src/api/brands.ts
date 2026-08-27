@@ -76,6 +76,12 @@ export function disconnect(deviceId: string) {
   return request<{ ok: boolean }>(`/${encodeURIComponent(deviceId)}/disconnect`, { method: 'POST' });
 }
 
+/** 与 MQTT/串口一致：12 位小写 MAC，无冒号。 */
+export function macDeviceId(addr: string) {
+  const hex = String(addr || '').replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+  return hex.length >= 12 ? hex.slice(-12) : '';
+}
+
 export interface BrandSettings {
   autoConnect: boolean;
   autoConnectAll: boolean;

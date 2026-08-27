@@ -531,7 +531,7 @@ async function dglabNativeConnect(d: DglabBridgeDevice) {
     dglabNativeMarkPending(d.id)
     await brandsApi.connect({
       brand: 'dglab', mode: 'native', address: d.id, name: d.name,
-      deviceId: `dglab-v2-${d.id}`, port: 3002,
+      port: 3002,
     })
     ElMessage.success('已发起连接')
     await dglabNativeRefresh()
@@ -544,7 +544,7 @@ async function dglabNativeConnect(d: DglabBridgeDevice) {
 async function dglabNativeDisconnect(d: DglabBridgeDevice) {
   busy.value = true
   try {
-    try { await brandsApi.disconnect(`dglab-v2-${d.id}`) } catch (_) {}
+    try { await brandsApi.disconnect(brandsApi.macDeviceId(d.id)) } catch (_) {}
     if (!dglabNativeManual.value.includes(d.id)) dglabNativeManual.value.push(d.id)
     dglabNativeEver.value = dglabNativeEver.value.filter((x) => x !== d.id)
     ElMessage.success('已断开')
@@ -690,7 +690,7 @@ async function ycyNativeConnect(d: YcyBridgeDevice) {
     ycyNativeMarkPending(d.id)
     await brandsApi.connect({
       brand: 'ycy', mode: 'native', address: d.id, name: d.name,
-      deviceId: `ycy:${d.id}`, port: 3001,
+      port: 3001,
       type: ycyPanelType({ name: d.name }),
     })
     ElMessage.success('已发起连接')
@@ -704,7 +704,7 @@ async function ycyNativeConnect(d: YcyBridgeDevice) {
 async function ycyNativeDisconnect(d: YcyBridgeDevice) {
   busy.value = true
   try {
-    try { await brandsApi.disconnect(`ycy:${d.id}`) } catch (_) {}
+    try { await brandsApi.disconnect(brandsApi.macDeviceId(d.id)) } catch (_) {}
     if (!ycyNativeManual.value.includes(d.id)) ycyNativeManual.value.push(d.id)
     ycyNativeEver.value = ycyNativeEver.value.filter((x) => x !== d.id)
     ElMessage.success('已断开')

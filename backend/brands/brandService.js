@@ -94,7 +94,8 @@ async function discover(brand, opts = {}) {
       });
     return found.map((d) => {
       const address = d.id || d.address;
-      const deviceId = brand === 'dglab' ? `dglab-v2-${address}` : `ycy:${address}`;
+      const deviceId = normalizeMacDeviceId(address);
+      if (!deviceId) return null;
       return {
         brand,
         mode: 'native',
@@ -104,9 +105,9 @@ async function discover(brand, opts = {}) {
         rssi: d.rssi,
         ready: !!d.ready,
         suggestedDeviceId: deviceId,
-        suggestedName: d.name || `${brandLabel(brand)} ${String(address).slice(-4)}`,
+        suggestedName: d.name || `${brandLabel(brand)} ${deviceId.slice(-4)}`,
       };
-    });
+    }).filter(Boolean);
   }
   if (brand === 'ycy') {
     if (opts.mode === 'ble') {
@@ -170,7 +171,8 @@ async function connect(brand, opts = {}) {
 
   if (opts.mode === 'native') {
     if (!opts.address) throw new Error('本机桥接需要 address');
-    finalDeviceId = deviceId || (brand === 'dglab' ? `dglab-v2-${opts.address}` : `ycy:${opts.address}`);
+    finalDeviceId = normalizeMacDeviceId(opts.address);
+    if (!finalDeviceId) throw new Error('本机桥接需要有效 MAC');
     finalName = name || opts.address;
     const stable = { id: finalDeviceId, name: finalName };
     stabilizeBrandBleId(stable);
@@ -514,6 +516,25 @@ function browserIdFromDeviceId(id) {
   return '';
 }
 
+/** 与 MQTT/串口一致：12 位小写 MAC，无冒号、无品牌前缀。 */
+function normalizeMacDeviceId(addr) {
+  let s = String(addr || '');
+  if (s.startsWith('ycy:')) s = s.slice(4);
+  if (s.startsWith('dglab-v2-')) s = s.slice(9);
+  const hex = s.replace(/[^0-9a-fA-F]/g, '').toLowerCase();
+  if (hex.length >= 12) return hex.slice(-12);
+  return '';
+}
+
+function isMacDeviceId(id) {
+  return /^[0-9a-f]{12}$/.test(String(id || ''));
+}
+
+function isBrandBleRecord(d) {
+  if (browserIdFromDeviceId(d.id)) return true;
+  return isMacDeviceId(d.id) && (d.type === 'DGLAB' || String(d.type || '').startsWith('YCY_'));
+}
+
 function bleNamesMatch(a, b) {
   const x = String(a || '').trim().toUpperCase();
   const y = String(b || '').trim().toUpperCase();
@@ -522,6 +543,7 @@ function bleNamesMatch(a, b) {
 
 function stabilizeBrandBleId(metadata) {
   if (!metadata?.name) return metadata;
+  if (isMacDeviceId(metadata.id)) return metadata;
   const all = listSavedBleDevices().filter((d) => bleNamesMatch(d.name, metadata.name));
   const hit = all.find((d) => d.connected) || all[0];
   if (hit) metadata.id = hit.deviceId;
@@ -530,10 +552,10 @@ function stabilizeBrandBleId(metadata) {
 
 function listSavedBleDevices() {
   return deviceService.listDevicesForApi()
-    .filter((d) => browserIdFromDeviceId(d.id))
+    .filter((d) => isBrandBleRecord(d))
     .map((d) => ({
       deviceId: d.id,
-      browserDeviceId: browserIdFromDeviceId(d.id),
+      browserDeviceId: browserIdFromDeviceId(d.id) || d.id,
       name: d.name,
       type: d.type,
       connected: !!d.connected,
@@ -605,6 +627,7 @@ module.exports = {
   listSavedBleDevices,
   bleNamesMatch,
   stabilizeBrandBleId,
+  normalizeMacDeviceId,
   startAutoConnect,
   stopAutoConnect,
   YCY_GLOBAL_STOP: ycyProto.GLOBAL_STOP_COMMAND,

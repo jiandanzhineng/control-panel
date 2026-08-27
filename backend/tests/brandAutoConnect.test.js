@@ -26,6 +26,11 @@ describe('品牌蓝牙自动连接设置', () => {
     brandService.stopAutoConnect();
   });
 
+  test('MAC 设备 ID 小写无冒号无前缀', () => {
+    expect(brandService.normalizeMacDeviceId('FF:26:02:28:4C:CD')).toBe('ff2602284ccd');
+    expect(brandService.normalizeMacDeviceId('ycy:AA:BB:CC:DD:EE:FF')).toBe('aabbccddeeff');
+  });
+
   test('默认开启已保存与所有支持自动连接', () => {
     expect(brandService.getSettings()).toEqual({ autoConnect: true, autoConnectAll: true });
   });
@@ -56,6 +61,8 @@ describe('品牌蓝牙自动连接设置', () => {
     ]);
     mockDevices.splice(0, 1);
     expect(brandService.listSavedBleDevices().map((d) => d.deviceId)).toEqual(['dglab-v2-chrome-2']);
+    mockDevices.push({ id: 'ff2602284ccd', name: '杯2', type: 'YCY_CUP', connected: false });
+    expect(brandService.listSavedBleDevices().map((d) => d.deviceId)).toEqual(['dglab-v2-chrome-2', 'ff2602284ccd']);
   });
 
   test('广播名相同则沿用已保存设备 id', () => {
@@ -73,20 +80,20 @@ describe('品牌蓝牙自动连接设置', () => {
         return { ok: true, json: async () => ({ ok: true, id: 'AA:BB' }) };
       }
       if (String(url).includes('/api/devices')) {
-        return { ok: true, json: async () => ({ devices: [{ id: 'AA:BB', name: 'YCY-FJB-03-DJ', ready: true }] }) };
+        return { ok: true, json: async () => ({ devices: [{ id: 'AA:BB:CC:DD:EE:FF', name: 'YCY-FJB-03-DJ', ready: true }] }) };
       }
       return { ok: true, json: async () => ({ ok: true }) };
     });
     const deviceService = require('../services/deviceService');
     await brandService.connect('ycy', {
-      mode: 'native', address: 'AA:BB', name: 'YCY-FJB-03-DJ', fetchImpl,
+      mode: 'native', address: 'AA:BB:CC:DD:EE:FF', name: 'YCY-FJB-03-DJ', fetchImpl,
     });
     expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('/api/connect?addr=AA'), expect.anything());
     expect(deviceService.connectTransportDevice).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'ycy:AA:BB', connectionType: 'brand' }),
+      expect.objectContaining({ id: 'aabbccddeeff', connectionType: 'brand' }),
       expect.anything(),
     );
-    await brandService.disconnect('ycy:AA:BB');
+    await brandService.disconnect('aabbccddeeff');
   });
 
   test('native 扫描走本机桥并过滤非品牌名', async () => {
@@ -108,7 +115,7 @@ describe('品牌蓝牙自动连接设置', () => {
     expect(found).toHaveLength(1);
     expect(found[0]).toMatchObject({
       address: 'AA:BB:CC:DD:EE:FF',
-      deviceId: 'ycy:AA:BB:CC:DD:EE:FF',
+      deviceId: 'aabbccddeeff',
       mode: 'native',
     });
   });
