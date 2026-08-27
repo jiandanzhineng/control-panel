@@ -20,6 +20,10 @@ describe('品牌蓝牙自动连接设置', () => {
   beforeEach(() => {
     mockMem.clear();
     mockDevices.splice(0, mockDevices.length);
+    brandService.stopAutoConnect();
+  });
+  afterEach(() => {
+    brandService.stopAutoConnect();
   });
 
   test('默认开启已保存与所有支持自动连接', () => {
@@ -61,6 +65,52 @@ describe('品牌蓝牙自动连接设置', () => {
     const meta = { id: 'ycy:new-id', name: 'YCY-FJB-03-DJ' };
     brandService.stabilizeBrandBleId(meta);
     expect(meta.id).toBe('ycy:old-id');
+  });
+
+  test('native 连接经本机桥并用地址作设备 id', async () => {
+    const fetchImpl = jest.fn(async (url) => {
+      if (String(url).includes('/api/connect')) {
+        return { ok: true, json: async () => ({ ok: true, id: 'AA:BB' }) };
+      }
+      if (String(url).includes('/api/devices')) {
+        return { ok: true, json: async () => ({ devices: [{ id: 'AA:BB', name: 'YCY-FJB-03-DJ', ready: true }] }) };
+      }
+      return { ok: true, json: async () => ({ ok: true }) };
+    });
+    const deviceService = require('../services/deviceService');
+    await brandService.connect('ycy', {
+      mode: 'native', address: 'AA:BB', name: 'YCY-FJB-03-DJ', fetchImpl,
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('/api/connect?addr=AA'), expect.anything());
+    expect(deviceService.connectTransportDevice).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'ycy:AA:BB', connectionType: 'brand' }),
+      expect.anything(),
+    );
+    await brandService.disconnect('ycy:AA:BB');
+  });
+
+  test('native 扫描走本机桥并过滤非品牌名', async () => {
+    const fetchImpl = jest.fn(async (url) => {
+      if (String(url).includes('/api/devices')) {
+        return {
+          ok: true,
+          json: async () => ({
+            devices: [
+              { id: 'AA:BB:CC:DD:EE:FF', name: 'YCY-FJB-03-DJ', rssi: -50, ready: false },
+              { id: '11:22', name: 'AirPods', rssi: -40, ready: false },
+            ],
+          }),
+        };
+      }
+      return { ok: true, json: async () => ({ ok: true }) };
+    });
+    const found = await brandService.discover('ycy', { mode: 'native', fetchImpl });
+    expect(found).toHaveLength(1);
+    expect(found[0]).toMatchObject({
+      address: 'AA:BB:CC:DD:EE:FF',
+      deviceId: 'ycy:AA:BB:CC:DD:EE:FF',
+      mode: 'native',
+    });
   });
 
   test('同名多条时优先沿用已连接记录', () => {

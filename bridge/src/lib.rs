@@ -19,12 +19,11 @@ use btleplug::api::{
     Central, CentralEvent, CentralState, CharPropFlags, Manager as _, Peripheral as _, ScanFilter,
     Service, Characteristic, WriteType,
 };
-use btleplug::platform::{Adapter, Manager, Peripheral, PeripheralId};
+use btleplug::platform::{Adapter, Manager, Peripheral};
 use futures::StreamExt;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 use tower_http::cors::{Any, CorsLayer};
-use uuid::Uuid;
 
 const BATTERY_SERVICE: &str = "180f";
 const BATTERY_CHAR: &str = "2a19";
@@ -46,7 +45,7 @@ impl Brand {
         }
     }
     fn auto_connect(&self) -> bool {
-        *self == Brand::Ycy
+        false
     }
     fn candidate_services(&self) -> &'static [&'static str] {
         &[
@@ -367,15 +366,28 @@ async fn on_disconnected(state: Shared, key: String) {
 }
 
 async fn reconnect(state: Shared, key: String) {
-    let adapter = state.adapter.clone();
-    let uuid = match Uuid::parse_str(&key) {
-        Ok(u) => u,
-        Err(_) => return,
+    let cached = {
+        let devices = state.devices.lock().await;
+        devices.get(&key).and_then(|d| d.peripheral.clone())
     };
-    let pid: PeripheralId = uuid.into();
-    if let Ok(p) = adapter.peripheral(&pid).await {
-        let _ = connect_internal(state.clone(), key).await;
-        let _ = p;
+    if cached.is_some() {
+        let _ = connect_internal(state, key).await;
+        return;
+    }
+    if let Ok(list) = state.adapter.peripherals().await {
+        for p in list {
+            if p.id().to_string() != key {
+                continue;
+            }
+            {
+                let mut devices = state.devices.lock().await;
+                if let Some(d) = devices.get_mut(&key) {
+                    d.peripheral = Some(p);
+                }
+            }
+            let _ = connect_internal(state, key).await;
+            return;
+        }
     }
 }
 

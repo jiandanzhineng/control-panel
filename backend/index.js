@@ -87,7 +87,12 @@ function startRuntimeServices() {
         logger.warn('Serial connection service start failed', error?.message || error);
         return { autoConnect: false, error: error?.message || String(error) };
       }),
-  ]).then(([mqtt, mdns, serial]) => ({ mqtt, mdns, serial }));
+  ]).then(([mqtt, mdns, serial]) => {
+    try { require('./brands/brandService').startAutoConnect(); } catch (error) {
+      logger.warn('Brand BLE auto-connect start failed', error?.message || error);
+    }
+    return { mqtt, mdns, serial };
+  });
 
   return runtimeServicesStartPromise;
 }
@@ -97,6 +102,7 @@ function stopRuntimeServices() {
 
   runtimeServicesStopPromise = (async () => {
     if (runtimeServicesStartPromise) await runtimeServicesStartPromise;
+    try { require('./brands/brandService').stopAutoConnect(); } catch (_) { /* 无自动连 */ }
     const serial = await serialConnectionService.shutdown()
       .then(() => ({ running: false }))
       .catch((error) => ({ running: false, error: error?.message || String(error) }));

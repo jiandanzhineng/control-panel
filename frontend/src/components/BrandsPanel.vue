@@ -262,9 +262,6 @@ const busy = ref(false)
 const refreshing = ref(false)
 const bleAutoConnect = ref(true)
 const bleAutoConnectAll = ref(true)
-let bleAutoTimer: number | null = null
-let bleAutoBusy = false
-const BLE_AUTO_MS = 10000
 
 // 郊狼 发现
 const isMac = computed(() => /Mac/i.test(navigator.userAgent || navigator.platform || ''))
@@ -532,10 +529,9 @@ async function dglabNativeConnect(d: DglabBridgeDevice) {
   try {
     dglabNativeManual.value = dglabNativeManual.value.filter((x) => x !== d.id)
     dglabNativeMarkPending(d.id)
-    await dglabBridge.connect(d.id)
     await brandsApi.connect({
       brand: 'dglab', mode: 'native', address: d.id, name: d.name,
-      deviceId: `dglab-native-${d.id}`, port: 3002,
+      deviceId: `dglab-v2-${d.id}`, port: 3002,
     })
     ElMessage.success('已发起连接')
     await dglabNativeRefresh()
@@ -548,8 +544,7 @@ async function dglabNativeConnect(d: DglabBridgeDevice) {
 async function dglabNativeDisconnect(d: DglabBridgeDevice) {
   busy.value = true
   try {
-    try { await brandsApi.disconnect(`dglab-native-${d.id}`) } catch (_) {}
-    await dglabBridge.disconnect(d.id)
+    try { await brandsApi.disconnect(`dglab-v2-${d.id}`) } catch (_) {}
     if (!dglabNativeManual.value.includes(d.id)) dglabNativeManual.value.push(d.id)
     dglabNativeEver.value = dglabNativeEver.value.filter((x) => x !== d.id)
     ElMessage.success('已断开')
@@ -693,10 +688,9 @@ async function ycyNativeConnect(d: YcyBridgeDevice) {
   try {
     ycyNativeManual.value = ycyNativeManual.value.filter((x) => x !== d.id)
     ycyNativeMarkPending(d.id)
-    await ycyBridge.connect(d.id)
     await brandsApi.connect({
       brand: 'ycy', mode: 'native', address: d.id, name: d.name,
-      deviceId: `ycy-native-${d.id}`, port: 3001,
+      deviceId: `ycy:${d.id}`, port: 3001,
       type: ycyPanelType({ name: d.name }),
     })
     ElMessage.success('已发起连接')
@@ -710,8 +704,7 @@ async function ycyNativeConnect(d: YcyBridgeDevice) {
 async function ycyNativeDisconnect(d: YcyBridgeDevice) {
   busy.value = true
   try {
-    try { await brandsApi.disconnect(`ycy-native-${d.id}`) } catch (_) {}
-    await ycyBridge.disconnect(d.id)
+    try { await brandsApi.disconnect(`ycy:${d.id}`) } catch (_) {}
     if (!ycyNativeManual.value.includes(d.id)) ycyNativeManual.value.push(d.id)
     ycyNativeEver.value = ycyNativeEver.value.filter((x) => x !== d.id)
     ElMessage.success('已断开')
@@ -770,7 +763,7 @@ function stopYcyNativeTimer() {
 // 同一套设备名识别 / 类型标签 / 电量展示逻辑，与 macOS 原生桥一致；仅连接通道不同。
 interface YcyWebbleDevice { id: string; name: string; battery?: number | null; ready: boolean }
 const ycyWebbleDevices = ref<YcyWebbleDevice[]>([])
-const ycyWebbleCandidates = ref<Array<{ id: string; name: string }>>([])
+const ycyWebbleCandidates = ref<Array<{ id: string; name: string; address?: string; deviceId?: string; brand?: string }>>([])
 let ycyScanUnsub: (() => void) | null = null
 const scanningYcyWebble = ref(false)
 function ycyWebbleCancelScan() {
@@ -788,21 +781,23 @@ function cancelBleScan() {
 async function startBleConnect() {
   scanningYcyWebble.value = true
   ycyWebbleCandidates.value = []
-  ycyScanUnsub = brandBle.onScanResults((list) => { ycyWebbleCandidates.value = list })
   try {
-    if (window.brandBleApi?.connect) {
-      const meta = await window.brandBleApi.connect()
-      await refreshConnected()
-      ElMessage.success('已连接 ' + brandLabel(classifyBleBrand(meta.name), meta.name))
-      return
-    }
-    await ycyWebbleConnect()
+    const [y, d] = await Promise.all([
+      brandsApi.discover('ycy', { mode: 'native' }),
+      brandsApi.discover('dglab', { mode: 'native' }),
+    ])
+    const list = [...(y.devices || []), ...(d.devices || [])]
+    ycyWebbleCandidates.value = list.map((c) => ({
+      id: c.address || c.deviceId || '',
+      name: c.name || c.suggestedName || '',
+      address: c.address,
+      deviceId: c.deviceId,
+      brand: c.brand,
+    }))
+    if (!list.length) ElMessage.info('附近没有可识别设备')
   } catch (e: any) {
-    const msg = String(e?.message || '')
-    if (!/cancel|Cancelled|User cancelled|NavigatorUserAgent/i.test(msg)) ElMessage.error(msg || '连接失败')
+    ElMessage.error(e?.message || '扫描失败')
   } finally {
-    ycyScanUnsub?.(); ycyScanUnsub = null
-    ycyWebbleCandidates.value = []
     scanningYcyWebble.value = false
   }
 }
@@ -814,8 +809,20 @@ function openMoreConnect(kind: string | number) {
     ycyNativeRescan()
   }
 }
-async function ycyWebblePick(c: { id: string; name: string }) {
-  try { await brandBle.selectDevice(c.id) } catch (e: any) { ElMessage.error(e?.message || '选择失败') }
+async function ycyWebblePick(c: { id: string; name: string; address?: string; deviceId?: string; brand?: string }) {
+  try {
+    const brand = (c.brand as 'ycy' | 'dglab') || classifyBleBrand(c.name)
+    await brandsApi.connect({
+      brand,
+      mode: 'native',
+      address: c.address || c.id,
+      name: c.name,
+      deviceId: c.deviceId,
+    })
+    ycyWebbleCandidates.value = []
+    await refreshConnected()
+    ElMessage.success('已连接 ' + brandLabel(brand, c.name))
+  } catch (e: any) { ElMessage.error(e?.message || '连接失败') }
 }
 const ycyWebbleUnlisten = new Map<string, () => void>()
 const ycyWebbleHint = computed(() => {
@@ -965,44 +972,13 @@ async function probeBridgeAndPickDefault() {
   if (dglabMode.value === 'native' && !dUp && webbleSupported.value) dglabMode.value = 'webble'
 }
 
-function stopBleAutoConnect() {
-  if (bleAutoTimer) { clearInterval(bleAutoTimer); bleAutoTimer = null }
-}
-function startBleAutoConnect() {
-  stopBleAutoConnect()
-  void tryBleAutoConnect()
-  bleAutoTimer = window.setInterval(() => { void tryBleAutoConnect() }, BLE_AUTO_MS)
-}
-function syncBleAutoTimer() {
-  if (bleAutoConnect.value || bleAutoConnectAll.value) startBleAutoConnect()
-  else stopBleAutoConnect()
-}
 async function onBleAutoConnectChange(v: boolean | string | number) {
   bleAutoConnect.value = v === true
   try { await brandsApi.setSettings({ autoConnect: bleAutoConnect.value }) } catch (_) {}
-  syncBleAutoTimer()
 }
 async function onBleAutoConnectAllChange(v: boolean | string | number) {
   bleAutoConnectAll.value = v === true
   try { await brandsApi.setSettings({ autoConnectAll: bleAutoConnectAll.value }) } catch (_) {}
-  syncBleAutoTimer()
-}
-async function tryBleAutoConnect() {
-  if ((!bleAutoConnect.value && !bleAutoConnectAll.value) || scanningWebble.value || scanningYcyWebble.value || bleAutoBusy) return
-  const api = window.brandBleApi
-  if (!api?.autoConnectScan) return
-  bleAutoBusy = true
-  try {
-    if (!bleAutoConnectAll.value) {
-      const saved = await brandsApi.listSavedBle()
-      const connectedNames = new Set(saved.filter((d) => d.connected && d.name).map((d) => d.name.trim().toUpperCase()))
-      const pending = saved.some((d) => !d.connected && d.name && !connectedNames.has(d.name.trim().toUpperCase()))
-      if (!pending) return
-    }
-    try { await api.autoConnectScan() } catch (_) {}
-    await refreshConnected()
-  } catch (_) { /* 本轮失败等下次 */ }
-  finally { bleAutoBusy = false }
 }
 async function loadBleAutoConnect() {
   try {
@@ -1013,7 +989,6 @@ async function loadBleAutoConnect() {
     bleAutoConnect.value = true
     bleAutoConnectAll.value = true
   }
-  syncBleAutoTimer()
 }
 
 onMounted(() => {
@@ -1025,7 +1000,7 @@ onMounted(() => {
   loadBleAutoConnect()
 })
 onUnmounted(() => {
-  stopAutoRefresh(); stopYcyNativeTimer(); stopDglabNativeTimer(); stopBleAutoConnect()
+  stopAutoRefresh(); stopYcyNativeTimer(); stopDglabNativeTimer()
 })
 </script>
 

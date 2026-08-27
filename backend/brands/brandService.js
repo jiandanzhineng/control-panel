@@ -85,18 +85,28 @@ function ensureBrand(brand) {
 
 async function discover(brand, opts = {}) {
   ensureBrand(brand);
-  if (brand === 'dglab') {
-    const hosts = Array.isArray(opts.hosts) ? opts.hosts : (opts.host ? [opts.host] : []);
-    const probed = await discovery.discoverDGLab({ hosts, port: opts.port, WebSocketClass: opts.WebSocketClass });
-    return probed.map((p, i) => ({
-      brand: 'dglab',
-      host: p.host,
-      port: p.port,
-      reachable: p.ok,
-      error: p.error,
-      suggestedDeviceId: `dglab-${p.host}`,
-      suggestedName: `蓝牙体感设备 ${p.host}`,
-    }));
+  if (opts.mode === 'native') {
+    const found = (await discovery.listNativeBle({ brand, port: opts.port, fetchImpl: opts.fetchImpl }))
+      .filter((d) => {
+        const n = String(d.name || '').toUpperCase();
+        if (brand === 'dglab') return ['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k));
+        return ['YCY', 'YYC', 'YOKO', 'YISK', 'DJ-V2', 'FJB', 'ENEMA', 'GLJ', 'DJ'].some((k) => n.includes(k));
+      });
+    return found.map((d) => {
+      const address = d.id || d.address;
+      const deviceId = brand === 'dglab' ? `dglab-v2-${address}` : `ycy:${address}`;
+      return {
+        brand,
+        mode: 'native',
+        deviceId,
+        name: d.name,
+        address,
+        rssi: d.rssi,
+        ready: !!d.ready,
+        suggestedDeviceId: deviceId,
+        suggestedName: d.name || `${brandLabel(brand)} ${String(address).slice(-4)}`,
+      };
+    });
   }
   if (brand === 'ycy') {
     if (opts.mode === 'ble') {
@@ -125,6 +135,19 @@ async function discover(brand, opts = {}) {
       suggestedName: `遥控蓝牙设备(桥接) ${probe.host}`,
     }];
   }
+  if (brand === 'dglab') {
+    const hosts = Array.isArray(opts.hosts) ? opts.hosts : (opts.host ? [opts.host] : []);
+    const probed = await discovery.discoverDGLab({ hosts, port: opts.port, WebSocketClass: opts.WebSocketClass });
+    return probed.map((p) => ({
+      brand: 'dglab',
+      host: p.host,
+      port: p.port,
+      reachable: p.ok,
+      error: p.error,
+      suggestedDeviceId: `dglab-${p.host}`,
+      suggestedName: `蓝牙体感设备 ${p.host}`,
+    }));
+  }
   return [];
 }
 
@@ -147,12 +170,16 @@ async function connect(brand, opts = {}) {
 
   if (opts.mode === 'native') {
     if (!opts.address) throw new Error('本机桥接需要 address');
-    finalDeviceId = deviceId || `${brand}-native-${opts.address}`;
+    finalDeviceId = deviceId || (brand === 'dglab' ? `dglab-v2-${opts.address}` : `ycy:${opts.address}`);
     finalName = name || opts.address;
+    const stable = { id: finalDeviceId, name: finalName };
+    stabilizeBrandBleId(stable);
+    finalDeviceId = stable.id;
     type = brand === 'dglab' ? 'DGLAB' : resolveDeviceType('ycy', { model: name, mode: 'ble', type: opts.type });
     connection = new NativeBridgeConnection({
       brand, deviceId: finalDeviceId, address: opts.address,
       port: opts.port || (brand === 'dglab' ? 3002 : 3001), type,
+      fetchImpl: opts.fetchImpl,
     });
   } else if (brand === 'dglab') {
     const host = opts.host;
@@ -476,6 +503,7 @@ function setSettings(patch = {}) {
   if (hasSaved) next.autoConnect = patch.autoConnect;
   if (hasAll) next.autoConnectAll = patch.autoConnectAll;
   fileStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+  startAutoConnect();
   return next;
 }
 
@@ -512,6 +540,52 @@ function listSavedBleDevices() {
     }));
 }
 
+let autoTimer = null;
+let autoBusy = false;
+const AUTO_MS = 10000;
+
+async function tickAutoConnect() {
+  if (autoBusy) return;
+  const settings = getSettings();
+  if (!settings.autoConnect && !settings.autoConnectAll) return;
+  autoBusy = true;
+  try {
+    const on = new Set(listSavedBleDevices().filter((d) => d.connected && d.name).map((d) => d.name.trim().toUpperCase()));
+    const saved = listSavedBleDevices();
+    for (const brand of SUPPORTED) {
+      let found = [];
+      try { found = await discover(brand, { mode: 'native' }); } catch (_) { continue; }
+      for (const d of found) {
+        const name = String(d.name || '').trim().toUpperCase();
+        if (name && on.has(name)) continue;
+        const savedHit = saved.some((s) => bleNamesMatch(s.name, d.name));
+        if (!settings.autoConnectAll && !(settings.autoConnect && savedHit)) continue;
+        try {
+          await connect(brand, { mode: 'native', address: d.address, name: d.name, deviceId: d.deviceId });
+          if (name) on.add(name);
+        } catch (_) { /* 下一轮 */ }
+      }
+    }
+  } finally { autoBusy = false; }
+}
+
+function stopAutoConnect() {
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+}
+
+function startAutoConnect() {
+  const settings = getSettings();
+  if (!settings.autoConnect && !settings.autoConnectAll) {
+    stopAutoConnect();
+    return settings;
+  }
+  if (!autoTimer) {
+    tickAutoConnect().catch(() => {});
+    autoTimer = setInterval(() => { tickAutoConnect().catch(() => {}); }, AUTO_MS);
+  }
+  return settings;
+}
+
 module.exports = {
   SUPPORTED,
   getConnection,
@@ -531,5 +605,7 @@ module.exports = {
   listSavedBleDevices,
   bleNamesMatch,
   stabilizeBrandBleId,
+  startAutoConnect,
+  stopAutoConnect,
   YCY_GLOBAL_STOP: ycyProto.GLOBAL_STOP_COMMAND,
 };

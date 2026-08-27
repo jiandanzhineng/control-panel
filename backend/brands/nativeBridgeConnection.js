@@ -20,7 +20,22 @@ class NativeBridgeConnection {
   }
 
   onStatus(cb) { this._statusCb = cb; return this; }
-  async connect() { return this; }
+
+  async connect() {
+    const base = `http://127.0.0.1:${this.port}`;
+    const res = await this._fetch(`${base}/api/connect?addr=${encodeURIComponent(this.address)}`, { method: 'POST' });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json.ok === false) throw new Error(json.msg || '本机桥连接失败');
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline) {
+      const st = await this._fetch(`${base}/api/devices`);
+      const data = await st.json().catch(() => ({}));
+      const hit = (data.devices || []).find((d) => d.id === this.address);
+      if (hit?.ready) return this;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    return this;
+  }
 
   async _postSend(body) {
     const res = await this._fetch(`http://127.0.0.1:${this.port}/api/send`, {

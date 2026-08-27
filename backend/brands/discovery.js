@@ -56,9 +56,28 @@ async function scanYcyBle({ timeoutMs = 5000 } = {}) {
   return transport.scan(timeoutMs);
 }
 
+function nativeBridgePort(brand, port) {
+  if (port) return Number(port);
+  return brand === 'dglab' ? 3002 : 3001;
+}
+
+/** 经本机桥列出附近品牌蓝牙，不走 noble / 网页蓝牙。 */
+async function listNativeBle({ brand, port, fetchImpl } = {}) {
+  const p = nativeBridgePort(brand, port);
+  const fetchFn = fetchImpl || globalThis.fetch.bind(globalThis);
+  const base = `http://127.0.0.1:${p}`;
+  try { await fetchFn(`${base}/api/rescan`, { method: 'POST' }); } catch (_) { /* 扫描已在跑 */ }
+  const res = await fetchFn(`${base}/api/devices`);
+  if (!res.ok) throw new Error('本机桥不可用');
+  const json = await res.json().catch(() => ({}));
+  return Array.isArray(json.devices) ? json.devices : [];
+}
+
 module.exports = {
   probeDGLab,
   discoverDGLab,
   probeYcyBridge,
   scanYcyBle,
+  listNativeBle,
+  nativeBridgePort,
 };
