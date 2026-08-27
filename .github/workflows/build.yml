@@ -78,7 +78,13 @@ jobs:
         cd ../frontend
         npm install
       shell: powershell
-      
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build native BLE bridges
+      run: npm run build:bridge
+
     - name: Build and publish application
       run: npm run build:installer
       env:

@@ -55,4 +55,15 @@ describe('device control connection route', () => {
       .put('/api/devices/aabbccddeeff/control-connection')
       .send({ type: 'ble' })).status).toBe(409);
   });
+
+  it('accepts a brandBle control connection', async () => {
+    deviceService.setControlConnection.mockReturnValue({
+      id: 'aabbccddeeff', controlConnection: 'brandBle', connections: [{ type: 'brandBle' }],
+    });
+    const response = await request(createApp())
+      .put('/api/devices/aabbccddeeff/control-connection')
+      .send({ type: 'brandBle' });
+    expect(response.status).toBe(200);
+    expect(deviceService.setControlConnection).toHaveBeenCalledWith('aabbccddeeff', 'brandBle');
+  });
 });

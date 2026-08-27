@@ -9,12 +9,14 @@ const { autoUpdater } = require('electron-updater');
 const express = require('express');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const fs = require('fs');
+const { spawn } = require('child_process');
 const { fileURLToPath, pathToFileURL } = require('url');
 const { BRIDGE_INTERNAL_HEADER } = require('../backend/constants/bridgeAccess.js');
 const externalGameAccessService = require('../backend/services/externalGameAccessService.js');
 const gameHost = require('./gameHost.js');
 const { createLocalAppWindowController } = require('./localAppWindow.js');
 const { createBleMainIntegration } = require('./ble/mainIntegration.js');
+const { createBrandBleMainIntegration } = require('./ble/brandMainIntegration.js');
 const { createQuitCoordinator } = require('./shutdownCoordinator.js');
 const { createAppTray } = require('./tray.js');
 const {
@@ -32,6 +34,7 @@ let updateInitialized = false;
 let browserDevicePreloadPath = '';
 const browserWebviewOrigins = new Map();
 let bleMainIntegration = null;
+let brandBleMainIntegration = null;
 let appTray = null;
 let closeAskInFlight = false;
 let localAppWindow = null;
@@ -243,6 +246,56 @@ function getResourcePath(relativePath) {
 
 function getAppRoot() {
   return app.isPackaged ? app.getAppPath() : path.join(__dirname, '..');
+}
+
+// 监管原生桥进程：Electron 在 app 启动时拉起 ycy_bridge / dglab_bridge，崩溃后 1s 自动重启。
+// 这样"本机桥接"通道对所有用户、所有平台开箱即稳定——由主进程统一监管，
+// 不再依赖开发机专属的 launchd plist（launchd 是 macOS 专属，无法覆盖 Windows / Linux）。
+// 二进制由跨平台 Rust 桥(bridge/)构建：macOS 为 tools/ycy_bridge，Windows 为 tools/ycy_bridge.exe。
+// 路径解析复用 getResourcePath：开发环境走项目 tools/，打包后走 resources/tools/。
+function superviseBridge(name, binaryRelBase) {
+  if (process.platform !== 'darwin' && process.platform !== 'win32') return;
+  const ext = process.platform === 'win32' ? '.exe' : '';
+  const binaryRelPath = binaryRelBase + ext;
+  const binPath = getResourcePath(binaryRelPath);
+  if (!fs.existsSync(binPath)) {
+    console.warn(`[bridge] ${name} 二进制缺失，跳过监管: ${binPath}`);
+    return;
+  }
+  try { fs.chmodSync(binPath, 0o755); } catch (_) { /* 已可执行则忽略 */ }
+  const cwd = getResourcePath('tools');
+  let child = null;
+  let stopping = false;
+  const launch = () => {
+    if (stopping) return;
+    try {
+      child = spawn(binPath, [], { cwd, stdio: 'ignore', detached: false });
+    } catch (err) {
+      console.error(`[bridge] 启动 ${name} 失败:`, err);
+      return;
+    }
+    child.on('exit', (code, signal) => {
+      console.warn(`[bridge] ${name} 退出 (code=${code}, signal=${signal})，1s 后重启`);
+      child = null;
+      if (!stopping) setTimeout(launch, 1000);
+    });
+    child.on('error', (err) => {
+      console.error(`[bridge] ${name} 错误:`, err);
+      child = null;
+      if (!stopping) setTimeout(launch, 1000);
+    });
+  };
+  launch();
+  // app 退出时一并结束桥进程
+  app.on('before-quit', () => {
+    stopping = true;
+    if (child) { try { child.kill(); } catch (_) {} }
+  });
+}
+
+function superviseBridges() {
+  superviseBridge('ycy_bridge', 'tools/ycy_bridge');
+  superviseBridge('dglab_bridge', 'tools/dglab_bridge');
 }
 
 function getBackendModule(modulePath) {
@@ -595,6 +648,7 @@ function createWindow() {
   });
   mainWindow = win;
   bleMainIntegration.attachWindow(win);
+  brandBleMainIntegration?.attachWindow(win);
   win.on('close', (event) => quitCoordinator.handleWindowClose(event));
 
   // 外部链接（target="_blank" 或 window.open）使用系统默认浏览器打开，而非 Electron 新窗口
@@ -885,14 +939,28 @@ if (!hasSingleInstanceLock) {
   });
 }
 
+// 启用 Web Bluetooth：使打包后的 Electron 内 navigator.bluetooth 可用。
+// 非 Mac 品牌设备（役次元/郊狼）的"网页蓝牙直连"依赖此开关；
+// macOS 仍走原生桥(ycy_bridge/dglab_bridge)，不触发 Web BLE，故不受影响。
+// 必须在 app ready 之前设置。
+app.commandLine.appendSwitch('enable-features', 'WebBluetooth');
+
 app.whenReady().then(() => {
   if (!hasSingleInstanceLock) return;
+  superviseBridges();
   bleMainIntegration = createBleMainIntegration({
     ipcMain,
     getDeviceService,
     logger: console,
   });
   bleMainIntegration.registerHandlers();
+  brandBleMainIntegration = createBrandBleMainIntegration({
+    ipcMain,
+    getDeviceService,
+    getBrandService: () => getBackendModule(path.join('brands', 'brandService.js')),
+    logger: console,
+  });
+  brandBleMainIntegration.registerHandlers();
   registerUpdateIpcHandlers();
   registerWindowIpcHandlers();
   registerPluginIpcHandlers();
@@ -935,13 +1003,14 @@ const quitCoordinator = createQuitCoordinator({
   shutdown: async () => {
     if (typeof backendApp?.shutdownBackend === 'function') {
       await backendApp.shutdownBackend('electron-before-quit', {
-        beforeTransportShutdown: () => bleMainIntegration?.requestDisconnectAll(
-          mainWindow,
-          { timeoutMs: 3000 },
-        ),
+        beforeTransportShutdown: () => Promise.all([
+          bleMainIntegration?.requestDisconnectAll(mainWindow, { timeoutMs: 3000 }),
+          brandBleMainIntegration?.requestDisconnectAll(mainWindow, { timeoutMs: 3000 }),
+        ]),
       });
     } else {
       await bleMainIntegration?.requestDisconnectAll(mainWindow, { timeoutMs: 3000 });
+      await brandBleMainIntegration?.requestDisconnectAll(mainWindow, { timeoutMs: 3000 });
       await closeServer(server);
     }
     localAppWindow?.destroyForQuit();

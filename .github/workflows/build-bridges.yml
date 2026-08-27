@@ -1,0 +1,103 @@
+# 跨平台本机桥二进制构建（作为 control-panel ELE 端的扩展产物）。
+# 在 macOS(arm64/x64) / Windows(x64) / Linux(x64) 上 cargo build --release 产出
+# ycy_bridge(+.exe) / dglab_bridge(+.exe)，上传为 artifact。
+# 拿到后把对应二进制放入 control-panel/tools/，macOS 覆盖 tools/ycy_bridge，
+# Windows 放 tools/ycy_bridge.exe（electron-builder 的 extraResources 会自动随安装包分发）。
+#
+# 注意：本工作流只产出二进制，不含代码签名；macOS 需本地 codesign、
+# Windows 需 Authenticode/SmartScreen 信誉（见 docs/windows-native-bridge-plan.md）。
+
+name: Build Native Bridges
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/brand-devices-dglab-ycy]
+    paths:
+      - 'bridge/**'
+      - '.github/workflows/build-bridges.yml'
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos-arm64:
+    name: macOS arm64
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build release
+        run: cargo build --release --manifest-path bridge/Cargo.toml
+      - name: Stage binaries
+        run: |
+          mkdir -p dist
+          cp bridge/target/release/ycy_bridge dist/
+          cp bridge/target/release/dglab_bridge dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bridges-macos-arm64
+          path: dist/*
+
+  build-macos-x64:
+    name: macOS x64
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build release
+        run: cargo build --release --manifest-path bridge/Cargo.toml
+      - name: Stage binaries
+        run: |
+          mkdir -p dist
+          cp bridge/target/release/ycy_bridge dist/
+          cp bridge/target/release/dglab_bridge dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bridges-macos-x64
+          path: dist/*
+
+  build-windows-x64:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build release
+        run: cargo build --release --manifest-path bridge/Cargo.toml
+      - name: Stage binaries
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp bridge/target/release/ycy_bridge.exe dist/
+          cp bridge/target/release/dglab_bridge.exe dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bridges-windows-x64
+          path: dist/*
+
+  build-linux-x64:
+    name: Linux x64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install BlueZ dev libs (btleplug Linux backend)
+        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev libbluetooth-dev pkg-config
+      - name: Build release
+        run: cargo build --release --manifest-path bridge/Cargo.toml
+      - name: Stage binaries
+        run: |
+          mkdir -p dist
+          cp bridge/target/release/ycy_bridge dist/
+          cp bridge/target/release/dglab_bridge dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bridges-linux-x64
+          path: dist/*

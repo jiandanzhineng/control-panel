@@ -67,4 +67,86 @@ describe('Electron BLE preload API', () => {
     dispose();
     expect(ipcRenderer.removeListener).toHaveBeenCalledWith('ble:scan-results', listener);
   });
+
+  it('includes the official YCY EMS service for Windows Web Bluetooth', async () => {
+    const cancelled = Object.assign(new Error('Selection cancelled'), { name: 'NotFoundError' });
+    const requestDevice = jest.fn().mockRejectedValue(cancelled);
+    global.window = { fetch: jest.fn() };
+    Object.defineProperty(global, 'navigator', {
+      configurable: true,
+      value: { bluetooth: { requestDevice } },
+    });
+
+    require('../../electron/preload');
+
+    await expect(global.window.ycyBleApi.connect()).rejects.toBe(cancelled);
+    expect(requestDevice).toHaveBeenCalledWith(expect.objectContaining({
+      acceptAllDevices: true,
+      optionalServices: expect.arrayContaining(['98a9cd00-ca0a-4cf8-9f85-e93949467558']),
+    }));
+  });
+
+  it('brandBle connect scans all nearby brand devices without namePrefix', async () => {
+    const cancelled = Object.assign(new Error('Selection cancelled'), { name: 'NotFoundError' });
+    const requestDevice = jest.fn().mockRejectedValue(cancelled);
+    global.window = { fetch: jest.fn() };
+    Object.defineProperty(global, 'navigator', {
+      configurable: true,
+      value: { bluetooth: { requestDevice } },
+    });
+    jest.resetModules();
+    require('../../electron/preload');
+    await expect(global.window.brandBleApi.connect()).rejects.toBe(cancelled);
+    expect(requestDevice).toHaveBeenCalledWith(expect.objectContaining({
+      acceptAllDevices: true,
+      optionalServices: expect.arrayContaining([
+        '955a180b-0fe2-f5aa-a094-84b8d4f3e8ad',
+        '0000ff40-0000-1000-8000-00805f9b34fb',
+      ]),
+    }));
+  });
+
+  it('getKnownDevices 用 getDevices，不弹选择框', async () => {
+    const requestDevice = jest.fn();
+    const getDevices = jest.fn().mockResolvedValue([{ id: 'chrome-1', name: 'YCY-FJB-03' }]);
+    global.window = { fetch: jest.fn() };
+    Object.defineProperty(global, 'navigator', {
+      configurable: true,
+      value: { bluetooth: { requestDevice, getDevices } },
+    });
+    require('../../electron/preload');
+    await expect(global.window.brandBleApi.getKnownDevices()).resolves.toEqual([
+      { id: 'chrome-1', name: 'YCY-FJB-03' },
+    ]);
+    expect(requestDevice).not.toHaveBeenCalled();
+  });
+
+  it('connectKnown 找不到已授权设备时不调用 requestDevice', async () => {
+    const requestDevice = jest.fn();
+    const getDevices = jest.fn().mockResolvedValue([]);
+    global.window = { fetch: jest.fn() };
+    Object.defineProperty(global, 'navigator', {
+      configurable: true,
+      value: { bluetooth: { requestDevice, getDevices } },
+    });
+    require('../../electron/preload');
+    await expect(global.window.brandBleApi.connectKnown('chrome-1')).rejects.toThrow(/不可见/);
+    expect(requestDevice).not.toHaveBeenCalled();
+  });
+
+  it('autoConnectScan 先 begin-auto-select 再 requestDevice', async () => {
+    const { ipcRenderer } = require('electron');
+    const cancelled = Object.assign(new Error('Selection cancelled'), { name: 'NotFoundError' });
+    const requestDevice = jest.fn().mockRejectedValue(cancelled);
+    global.window = { fetch: jest.fn() };
+    Object.defineProperty(global, 'navigator', {
+      configurable: true,
+      value: { bluetooth: { requestDevice } },
+    });
+    ipcRenderer.invoke.mockResolvedValue({ ok: true });
+    require('../../electron/preload');
+    await expect(global.window.brandBleApi.autoConnectScan()).rejects.toBe(cancelled);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('brandBle:begin-auto-select');
+    expect(requestDevice).toHaveBeenCalled();
+  });
 });

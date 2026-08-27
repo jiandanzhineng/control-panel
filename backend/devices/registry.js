@@ -113,6 +113,196 @@ const registeredTypes = [
     ],
     close: (ctx) => ctx.writeProps({ shock: 0, voltage: 0, power: 0 }),
   }),
+
+  // 郊狼：shock=双通道同强度；estim=分通道+波形预设。
+  new BaseDeviceType({
+    type: 'DGLAB',
+    name: '蓝牙体感设备',
+    capabilities: {
+      shock: {
+        actions: {
+          start: (ctx, params) => ctx.sendMessage({
+            brand: 'dglab', cmd: 'setPattern',
+            pattern: '经典',
+            intensity: Math.max(0, Math.min(100, Math.round(Number(params.voltage) || 0))),
+            ticks: -1,
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'dglab', cmd: 'stopPattern' }),
+        },
+      },
+      estim: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({
+            brand: 'dglab', cmd: 'setEstim',
+            channel: params.channel || 'ab',
+            intensity: Math.max(0, Math.min(255, Math.round(Number(params.intensity) || 0))),
+            wave: params.wave,
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'dglab', cmd: 'stopPattern' }),
+        },
+      },
+    },
+    operations: [
+      { key: 'start', name: '启动', capability: 'shock', action: 'start', input: { voltage: 60 } },
+      { key: 'stop', name: '停止', capability: 'shock', action: 'stop', input: {} },
+    ],
+    close: (ctx) => ctx.sendMessage({ brand: 'dglab', cmd: 'stopPattern' }),
+  }),
+
+  // YCY 电击：shock=AB 同强度；estim=分通道+预设波。
+  new BaseDeviceType({
+    type: 'YCY_EMS',
+    name: '电击型设备',
+    capabilities: {
+      shock: {
+        actions: {
+          start: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'setStrength', channel: 'AB',
+            value: Math.max(0, Math.min(100, Math.round(Number(params.voltage) || 0))),
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+        },
+      },
+      estim: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'setEstim',
+            channel: String(params.channel || 'a').toUpperCase(),
+            intensity: Math.max(0, Math.min(255, Math.round(Number(params.intensity) || 0))),
+            wave: params.wave,
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+        },
+      },
+    },
+    operations: [
+      { key: 'start', name: '启动', capability: 'shock', action: 'start', input: { voltage: 40 } },
+      { key: 'stop', name: '停止', capability: 'shock', action: 'stop', input: {} },
+    ],
+    close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+  }),
+
+  // 玩具：strength / motors.a 都映射主电机 0–255 → 0–20。
+  new BaseDeviceType({
+    type: 'YCY_TOY',
+    name: '电机型设备',
+    capabilities: {
+      strength: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'setMotors',
+            channels: { a: { value: params.value, direction: 1 } },
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopToy' }),
+        },
+      },
+      motors: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'setMotors', channels: params.channels || {},
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopToy' }),
+        },
+      },
+    },
+    operations: [
+      { key: 'start', name: '启动', capability: 'strength', action: 'set', input: { value: 204 } },
+      { key: 'stop', name: '停止', capability: 'strength', action: 'stop', input: {} },
+    ],
+    close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopToy' }),
+  }),
+
+  // 杯：strength 同时改旋转（只正转）和震动；motors 三路，未写的保持。
+  new BaseDeviceType({
+    type: 'YCY_CUP',
+    name: '杯型设备',
+    capabilities: {
+      strength: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'setMotors',
+            channels: {
+              stroke: { value: params.value, direction: 1 },
+              vibe: { value: params.value },
+            },
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopFjb' }),
+        },
+      },
+      motors: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'setMotors', channels: params.channels || {},
+          }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopFjb' }),
+        },
+      },
+    },
+    operations: [
+      { key: 'start', name: '启动旋转', capability: 'strength', action: 'set', input: { value: 191 } },
+      { key: 'stop', name: '停止', capability: 'strength', action: 'stop', input: {} },
+      {
+        key: 'trigger', name: '触发指令(桥接兜底)',
+        invoke: (ctx, params) => {
+          if (!params || !params.commandId) throw new Error('缺少指令 ID (commandId)');
+          return ctx.sendMessage({ brand: 'ycy', cmd: 'triggerInstruction', commandId: params.commandId });
+        },
+      },
+    ],
+    close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopFjb' }),
+  }),
+
+  // 灌肠：只挂 pump，不冒充 strength。
+  new BaseDeviceType({
+    type: 'YCY_ENEMA',
+    name: '灌肠型设备',
+    capabilities: {
+      pump: {
+        actions: {
+          start: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'pump',
+            protocol: params?.protocol || 'v1',
+            scene: params?.scene || 'guan',
+            rate: params?.rate, ss: params?.ss,
+          }),
+          stop: (ctx, params) => ctx.sendMessage({
+            brand: 'ycy', cmd: 'pump',
+            protocol: params?.protocol || 'v1', scene: 'stop',
+          }),
+        },
+      },
+    },
+    operations: [
+      {
+        key: 'pumpStart', name: '启动泵(注水)',
+        invoke: (ctx, params) => ctx.sendMessage({
+          brand: 'ycy', cmd: 'pump',
+          protocol: params?.protocol || 'v1',
+          scene: params?.scene || 'guan',
+          rate: params?.rate, ss: params?.ss,
+        }),
+      },
+      {
+        key: 'pumpStop', name: '停止泵',
+        invoke: (ctx, params) => ctx.sendMessage({
+          brand: 'ycy', cmd: 'pump', protocol: params?.protocol || 'v1', scene: 'stop',
+        }),
+      },
+      {
+        key: 'trigger', name: '触发指令(桥接兜底)',
+        invoke: (ctx, params) => {
+          if (!params || !params.commandId) throw new Error('缺少指令 ID (commandId)');
+          return ctx.sendMessage({ brand: 'ycy', cmd: 'triggerInstruction', commandId: params.commandId });
+        },
+      },
+      {
+        key: 'stop', name: '全部停止',
+        invoke: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+      },
+    ],
+    // 灌肠机的输出通道是泵；stopAll 仅是电刺激帧，不能保证泵停止。
+    close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'stop' }),
+  }),
 ];
 
 const registry = new Map(registeredTypes.map((dt) => [dt.type, dt]));

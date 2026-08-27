@@ -35,6 +35,22 @@ interface Window {
     getSettings: () => Promise<WindowSettings>;
     setSettings: (settings: WindowSettings) => Promise<WindowSettings>;
   };
+  ycyBleApi?: {
+    isSupported: () => boolean;
+    connect: () => Promise<{
+      id: string;
+      name: string;
+      type: string;
+      brand?: string;
+      connectionType: string;
+      browserDeviceId?: string;
+      data?: Record<string, unknown>;
+    }>;
+    disconnect: (id: string) => Promise<{ ok: boolean; alreadyDisconnected?: boolean }>;
+    selectDevice: (deviceId: string) => Promise<{ ok: boolean }>;
+    cancelSelection: () => Promise<{ ok: boolean }>;
+    onScanResults: (callback: (devices: Array<{ id: string; name: string }>) => void) => () => void;
+  };
   provisionApi?: {
     isSupported: () => boolean;
     provision: (

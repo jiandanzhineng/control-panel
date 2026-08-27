@@ -161,6 +161,36 @@ const reporting = {
   },
 };
 
+const motors = {
+  key: 'motors',
+  name: '多路电机',
+  actions: {
+    set: (ctx, params) => ctx.sendMessage({ method: 'motors', channels: params.channels || {} }),
+    stop: (ctx) => ctx.sendMessage({ method: 'motorsStop' }),
+  },
+  events: {},
+};
+
+const estim = {
+  key: 'estim',
+  name: '多路电击',
+  actions: {
+    set: (ctx, params) => ctx.sendMessage({ method: 'estim', ...params }),
+    stop: (ctx) => ctx.sendMessage({ method: 'estimStop' }),
+  },
+  events: {},
+};
+
+const pump = {
+  key: 'pump',
+  name: '泵控制',
+  actions: {
+    start: (ctx, params) => ctx.sendMessage({ method: 'pump', ...params }),
+    stop: (ctx) => ctx.sendMessage({ method: 'pumpStop' }),
+  },
+  events: {},
+};
+
 const capabilityDefinitions = {
   shock,
   strength,
@@ -171,6 +201,9 @@ const capabilityDefinitions = {
   buttonInput,
   weight,
   reporting,
+  motors,
+  estim,
+  pump,
 };
 
 function getCapabilityDefinition(key) {
@@ -211,4 +244,7 @@ module.exports = {
   buttonInput,
   weight,
   reporting,
+  motors,
+  estim,
+  pump,
 };

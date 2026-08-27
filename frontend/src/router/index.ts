@@ -21,6 +21,8 @@ const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/home' },
   { path: '/home', name: 'home', component: HomeView, meta: { title: '首页' } },
   { path: '/devices', name: 'devices', component: DevicesView, meta: { title: '设备管理' } },
+  // 品牌设备已并入设备管理页的「品牌设备」标签
+  { path: '/brands', redirect: '/devices' },
   {
     path: '/devices/firmware',
     component: FirmwareUpdate,

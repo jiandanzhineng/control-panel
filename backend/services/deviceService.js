@@ -660,8 +660,25 @@ function invokeDeviceClose(deviceId) {
   if (!device) return;
   const deviceType = deviceRegistry.getDeviceType(device.type);
   try {
-    deviceType.invokeClose(deviceId, devicePublishFn);
+    return deviceType.invokeClose(deviceId, devicePublishFn);
   } catch (_) {}
+}
+
+// 关机、watchdog 和用户断开需要确认 Web Bluetooth 的异步 GATT 写入已经完成。
+// 普通控制仍使用 invokeDeviceClose/sendDeviceMessage 的即发语义，避免改变旧调用方。
+async function invokeDeviceCloseAndWait(deviceId) {
+  const device = getDeviceById(deviceId);
+  if (!device) return null;
+  const deviceType = deviceRegistry.getDeviceType(device.type);
+  const pending = [];
+  let command = null;
+  command = deviceType.invokeClose(deviceId, (id, message) => {
+    if (_interceptVirtualWrite(id, message)) return message;
+    pending.push(sendDeviceMessageAndWait(id, message));
+    return message;
+  });
+  await Promise.all(pending);
+  return command;
 }
 
 function stopExecutionDevice(deviceId) {
@@ -673,7 +690,7 @@ function stopExecutionDevice(deviceId) {
   }
 
   const deviceType = deviceRegistry.getDeviceType(device.type);
-  const capabilities = ['shock', 'strength'].filter((key) => deviceType.hasCapability(key));
+  const capabilities = ['shock', 'strength', 'motors', 'estim', 'pump'].filter((key) => deviceType.hasCapability(key));
   if (capabilities.length === 0) {
     return {
       deviceId,
@@ -697,6 +714,42 @@ function stopExecutionDevice(deviceId) {
     capabilities,
     commandSent: true,
     confirmed: false,
+    command,
+  };
+}
+
+async function stopExecutionDeviceAndWait(deviceId) {
+  const device = getDeviceById(deviceId);
+  if (!device) {
+    const error = new Error('设备不存在');
+    error.code = 'DEVICE_NOT_FOUND';
+    throw error;
+  }
+
+  const deviceType = deviceRegistry.getDeviceType(device.type);
+  const capabilities = ['shock', 'strength', 'motors', 'estim', 'pump'].filter((key) => deviceType.hasCapability(key));
+  if (capabilities.length === 0) {
+    return {
+      deviceId,
+      eligible: false,
+      capabilities: [],
+      commandSent: false,
+      confirmed: false,
+    };
+  }
+
+  const command = await invokeDeviceCloseAndWait(deviceId);
+  if (!command) {
+    const error = new Error(`设备类型 ${device.type} 未定义执行输出复位`);
+    error.code = 'DEVICE_STOP_NOT_SUPPORTED';
+    throw error;
+  }
+  return {
+    deviceId,
+    eligible: true,
+    capabilities,
+    commandSent: true,
+    confirmed: true,
     command,
   };
 }
@@ -767,7 +820,9 @@ module.exports = {
   invokeDeviceCapability,
   invokeDeviceCapabilityAndWait,
   invokeDeviceClose,
+  invokeDeviceCloseAndWait,
   stopExecutionDevice,
+  stopExecutionDeviceAndWait,
   devicePublishFn,
   getDeviceTypeConfigForApi,
   deviceHasOperations,

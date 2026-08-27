@@ -2,6 +2,8 @@ const { ipcRenderer } = require('electron');
 const { BleDeviceClient } = require('./ble/deviceClient');
 const { BLE_UUIDS } = require('./ble/protocol');
 const { BlufiProvisionClient } = require('./blufi/provisionClient');
+const { BrandBleClient, V2_UUIDS } = require('./ble/brandDeviceClient');
+const { YcyBleClient } = require('./ble/ycyDeviceClient');
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
 const bleClients = new Map();
@@ -111,6 +113,216 @@ window.bleApi = {
     ipcRenderer.on('ble:scan-results', listener);
     return () => ipcRenderer.removeListener('ble:scan-results', listener);
   },
+};
+
+// ============ DG-LAB 原版 V2（Web Bluetooth 直连）============
+const brandClients = new Map();
+
+function emitBrandBleClientEvent(event, payload) {
+  if (event === 'property') {
+    ipcRenderer.send('brandBle:property', payload);
+  } else if (event === 'message') {
+    ipcRenderer.send('brandBle:message', payload);
+  } else if (event === 'disconnected') {
+    brandClients.delete(payload.id);
+    ipcRenderer.send('brandBle:disconnected', payload);
+  } else if (event === 'error') {
+    ipcRenderer.send('brandBle:command-error', payload);
+  }
+}
+
+async function disconnectAllBrandClients() {
+  await Promise.allSettled([...brandClients.values()].map((client) => client.disconnect()));
+  brandClients.clear();
+  return { ok: true };
+}
+
+ipcRenderer.on('brandBle:command', async (_event, request) => {
+  const client = brandClients.get(request?.id);
+  if (!client) {
+    ipcRenderer.send('brandBle:command-result', {
+      id: request?.id,
+      requestId: request?.requestId,
+      ok: false,
+      code: 'BRAND_BLE_DEVICE_NOT_CONNECTED',
+      error: 'Brand BLE device is not connected',
+    });
+    return;
+  }
+  try {
+    const result = await client.send(request.message);
+    ipcRenderer.send('brandBle:command-result', {
+      id: request.id,
+      requestId: request.requestId,
+      ok: true,
+      result,
+    });
+  } catch (error) {
+    ipcRenderer.send('brandBle:command-result', {
+      id: request.id,
+      requestId: request.requestId,
+      ok: false,
+      code: error?.code || 'BRAND_BLE_COMMAND_FAILED',
+      error: error?.message || String(error),
+      message: request.message,
+    });
+  }
+});
+
+ipcRenderer.on('brandBle:disconnect-all', async (_event, request) => {
+  let ok = false;
+  try {
+    const result = await disconnectAllBrandClients();
+    ok = result.ok;
+  } finally {
+    ipcRenderer.send('brandBle:disconnect-all-complete', {
+      requestId: request?.requestId,
+      ok,
+    });
+  }
+});
+
+const BRAND_OPTIONAL_SERVICES = [
+  V2_UUIDS.service,
+  '0000ff30-0000-1000-8000-00805f9b34fb',
+  '0000ff40-0000-1000-8000-00805f9b34fb',
+  '0000ff70-0000-1000-8000-00805f9b34fb',
+  '0000ae00-0000-1000-8000-00805f9b34fb',
+  '98a9cd00-ca0a-4cf8-9f85-e93949467558',
+  '0000180f-0000-1000-8000-00805f9b34fb',
+];
+
+async function attachBrandBluetoothDevice(device) {
+  const n = String(device.name || '').toUpperCase();
+  const dglab = ['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k));
+  const client = dglab
+    ? new BrandBleClient(device, { onEvent: emitBrandBleClientEvent })
+    : new YcyBleClient(device, { onEvent: emitBrandBleClientEvent });
+  try {
+    const metadata = await client.connect();
+    const attached = await ipcRenderer.invoke('brandBle:connected', metadata);
+    const id = attached?.device?.id || metadata.id;
+    client.id = id;
+    brandClients.set(id, client);
+    return { ...metadata, id };
+  } catch (error) {
+    brandClients.delete(client.id);
+    try { await client.disconnect(); } catch (_) {}
+    throw error;
+  }
+}
+
+window.brandBleApi = {
+  isSupported: () => !!navigator.bluetooth?.requestDevice,
+  connect: async () => {
+    if (!navigator.bluetooth?.requestDevice) {
+      const error = new Error('This PC does not support Web Bluetooth');
+      error.code = 'BLE_NOT_SUPPORTED';
+      throw error;
+    }
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: BRAND_OPTIONAL_SERVICES,
+    });
+    return attachBrandBluetoothDevice(device);
+  },
+  disconnect: async (id) => {
+    const client = brandClients.get(id);
+    if (!client) return { ok: true, alreadyDisconnected: true };
+    await client.disconnect();
+    brandClients.delete(id);
+    return { ok: true };
+  },
+  disconnectAll: disconnectAllBrandClients,
+  connectedDeviceIds: () => [...brandClients.keys()],
+  selectDevice: (deviceId) => ipcRenderer.invoke('brandBle:select-device', deviceId),
+  cancelSelection: () => ipcRenderer.invoke('brandBle:cancel-selection'),
+  getKnownDevices: async () => {
+    if (!navigator.bluetooth?.getDevices) return [];
+    const devices = await navigator.bluetooth.getDevices();
+    return devices.map((d) => ({ id: d.id, name: d.name || '' }));
+  },
+  connectKnown: async (browserDeviceId, name) => {
+    if (!navigator.bluetooth?.getDevices) throw new Error('当前环境不支持已授权设备列表');
+    const existing = [...brandClients.values()].find((c) => (
+      c.browserDeviceId === browserDeviceId
+      || (name && String(c.device?.name || '').toUpperCase() === String(name).toUpperCase())
+    ));
+    if (existing) return { id: existing.id, alreadyConnected: true };
+    const devices = await navigator.bluetooth.getDevices();
+    const want = String(name || '').trim().toUpperCase();
+    const device = devices.find((d) => d.id === browserDeviceId)
+      || (want ? devices.find((d) => String(d.name || '').trim().toUpperCase() === want) : null);
+    if (!device) {
+      const error = new Error('已保存设备当前不可见');
+      error.code = 'BRAND_BLE_DEVICE_NOT_AVAILABLE';
+      throw error;
+    }
+    return attachBrandBluetoothDevice(device);
+  },
+  autoConnectScan: async () => {
+    await ipcRenderer.invoke('brandBle:begin-auto-select');
+    const timer = setTimeout(() => { ipcRenderer.invoke('brandBle:cancel-selection'); }, 8000);
+    try {
+      const device = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: BRAND_OPTIONAL_SERVICES,
+      });
+      return attachBrandBluetoothDevice(device);
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+  onScanResults: (callback) => {
+    const listener = (_event, devices) => {
+      try { callback(devices); } catch (_) {}
+    };
+    ipcRenderer.on('brandBle:scan-results', listener);
+    return () => ipcRenderer.removeListener('brandBle:scan-results', listener);
+  },
+};
+
+window.ycyBleApi = {
+  isSupported: () => !!navigator.bluetooth?.requestDevice,
+  connect: async () => {
+    if (!navigator.bluetooth?.requestDevice) {
+      const error = new Error('This PC does not support Web Bluetooth');
+      error.code = 'BLE_NOT_SUPPORTED';
+      throw error;
+    }
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [
+        '0000ff30-0000-1000-8000-00805f9b34fb',
+        '0000ff40-0000-1000-8000-00805f9b34fb',
+        '0000ff70-0000-1000-8000-00805f9b34fb',
+        '0000ae00-0000-1000-8000-00805f9b34fb',
+        '98a9cd00-ca0a-4cf8-9f85-e93949467558',
+        '0000180f-0000-1000-8000-00805f9b34fb',
+      ],
+    });
+    const client = new YcyBleClient(device, { onEvent: emitBrandBleClientEvent });
+    try {
+      const metadata = await client.connect();
+      brandClients.set(metadata.id, client);
+      await ipcRenderer.invoke('brandBle:connected', metadata);
+      return metadata;
+    } catch (error) {
+      brandClients.delete(client.id);
+      try { await client.disconnect(); } catch (_) {}
+      throw error;
+    }
+  },
+  disconnect: async (id) => {
+    const client = brandClients.get(id);
+    if (!client) return { ok: true, alreadyDisconnected: true };
+    await client.disconnect();
+    brandClients.delete(id);
+    return { ok: true };
+  },
+  selectDevice: (deviceId) => ipcRenderer.invoke('brandBle:select-device', deviceId),
+  cancelSelection: () => ipcRenderer.invoke('brandBle:cancel-selection'),
+  onScanResults: (callback) => window.brandBleApi.onScanResults(callback),
 };
 
 window.provisionApi = {

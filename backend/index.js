@@ -89,7 +89,12 @@ function startRuntimeServices() {
         logger.warn('Serial connection service start failed', error?.message || error);
         return { autoConnect: false, error: error?.message || String(error) };
       }),
-  ]).then(([mqtt, mdns, serial]) => ({ mqtt, mdns, serial }));
+  ]).then(([mqtt, mdns, serial]) => {
+    try { require('./brands/brandService').startAutoConnect(); } catch (error) {
+      logger.warn('Brand BLE auto-connect start failed', error?.message || error);
+    }
+    return { mqtt, mdns, serial };
+  });
 
   return runtimeServicesStartPromise;
 }
@@ -99,6 +104,7 @@ function stopRuntimeServices() {
 
   runtimeServicesStopPromise = (async () => {
     if (runtimeServicesStartPromise) await runtimeServicesStartPromise;
+    try { require('./brands/brandService').stopAutoConnect(); } catch (_) { /* 无自动连 */ }
     const serial = await serialConnectionService.shutdown()
       .then(() => ({ running: false }))
       .catch((error) => ({ running: false, error: error?.message || String(error) }));
@@ -197,6 +203,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/voice', require('./routes/voice'));
 app.use('/api/remote-projection', require('./routes/remoteProjection'));
 app.use('/api/dev-access', require('./routes/devAccess'));
+app.use('/api/brands', require('./routes/brands'));
 
 app.get('/api/hello', (req, res) => { res.json({ message: 'Hello from Express backend!' }); });
 app.get('/api', (req, res) => { res.send('Backend is running'); });

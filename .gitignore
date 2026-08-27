@@ -50,6 +50,13 @@ __pycache__/
 .temp/
 *.tmp
 
+# launchd / runtime logs
+tools/*.launchd.*
+
+# 本机桥 Windows 二进制由 cargo 构建
+tools/ycy_bridge.exe
+tools/dglab_bridge.exe
+
 # Keep config files tracked (do NOT ignore)
 # backend/config/mosquitto.conf
 

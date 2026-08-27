@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YCY 设备控制台 (原生 BLE 桥)</title>
+<style>
+  :root { --bg:#0f1419; --panel:#1a212b; --panel2:#222c38; --fg:#e6edf3; --muted:#8b98a5;
+         --good:#3fb950; --bad:#f85149; --warn:#d29922; --acc:#58a6ff; --acc2:#bc8cff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+         background:var(--bg); color:var(--fg); padding:16px; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:12px; margin-bottom:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; }
+  .card { background:var(--panel); border:1px solid #2a3441; border-radius:10px; padding:14px; }
+  .card h2 { font-size:14px; margin:0 0 10px; color:var(--acc); }
+  button { background:var(--acc); color:#04101f; border:none; border-radius:7px; padding:8px 12px;
+           font-size:13px; font-weight:600; cursor:pointer; }
+  button.sec { background:var(--panel2); color:var(--fg); border:1px solid #333f4d; }
+  button.danger { background:var(--bad); color:#fff; }
+  button:active { transform:translateY(1px); }
+  label { font-size:12px; color:var(--muted); display:block; margin:8px 0 3px; }
+  input[type=range]{ width:100%; }
+  input[type=text], select { width:100%; background:var(--panel2); color:var(--fg);
+           border:1px solid #333f4d; border-radius:6px; padding:7px 9px; font-size:13px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .row > * { flex:1; min-width:60px; }
+  .dev { background:var(--panel2); border:1px solid #2a3441; border-radius:8px; padding:10px; margin-bottom:8px; }
+  .dev .nm { font-weight:600; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:var(--muted); margin-right:6px; }
+  .dot.on { background:var(--good); } .dot.busy { background:var(--warn); }
+  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; word-break:break-all; }
+  .uuid { color:var(--acc2); font-size:10.5px; }
+  .log { background:#0b0f14; border:1px solid #222c38; border-radius:8px; height:160px; overflow:auto;
+         padding:8px; font-family:ui-monospace,Menlo,monospace; font-size:11px; }
+  .log .n { color:var(--good); } .log .w { color:var(--warn); } .log .e { color:var(--bad); }
+  .pill { font-size:11px; padding:2px 7px; border-radius:20px; background:#222c38; color:var(--muted); }
+  .pill.ok { color:var(--good); } .pill.no { color:var(--bad); }
+  .hint { font-size:11px; color:var(--muted); line-height:1.5; }
+  hr { border:none; border-top:1px solid #222c38; margin:12px 0; }
+</style>
+</head>
+<body>
+<h1>YCY 设备控制台</h1>
+<div class="sub">原生 BLE↔HTTP 桥 (端口 <span id="port">3001</span>) · 浏览器不直连蓝牙,只通过 localhost 发指令,绕开 macOS Web Bluetooth 限制</div>
+
+<div class="row" style="margin-bottom:12px">
+  <button id="rescan">重新扫描</button>
+  <button class="sec" id="refresh">立即刷新</button>
+  <span class="pill" id="btstate">蓝牙:?</span>
+  <label style="flex:2;margin:0"><input type="checkbox" id="broadcast"> 对所有已就绪设备广播</label>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>已发现设备</h2>
+    <div id="devices"><span class="hint">等待桥上报设备…</span></div>
+    <hr>
+    <div class="hint">设备卡死(只广播不连)时,请<b>断电重开</b>设备,桥会自动重连并 dump 真实 UUID。</div>
+  </div>
+
+  <div class="card">
+    <h2>电机 / 玩具</h2>
+    <label>速度 <span id="msval">0</span> (0–20)</label>
+    <input type="range" id="motor" min="0" max="20" value="0">
+    <div class="row">
+      <button id="motorSend">下发电机</button>
+      <button class="sec" id="motorStop">停止(0)</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>泵 (杯 / 灌肠机)</h2>
+    <div class="row">
+      <select id="pumpProto"><option value="v3">明文 v3</option><option value="v1">AES v1</option><option value="v2">AES v2</option></select>
+      <select id="pumpScene"><option value="add">加 (add)</option><option value="cut">切 (cut)</option><option value="guan">灌 (guan)</option><option value="stop">停 (stop)</option></select>
+    </div>
+    <div class="row">
+      <div><label>速率</label><input type="text" id="pumpRate" value="3"></div>
+      <div><label>强度(ss)</label><input type="text" id="pumpSs" value="0"></div>
+    </div>
+    <div class="row"><button id="pumpSend">下发泵帧</button></div>
+    <div class="hint">泵帧由面板本地计算(含 AES-128-ECB),桥只负责发原始字节。语义待真机对拍。</div>
+  </div>
+
+  <div class="card">
+    <h2>电刺激 EMS</h2>
+    <div class="row">
+      <select id="emsCh"><option value="A">通道 A</option><option value="B">通道 B</option><option value="AB">AB 双通道</option></select>
+    </div>
+    <label>强度 <span id="esval">0</span> (0–100)</label>
+    <input type="range" id="ems" min="0" max="100" value="0">
+    <div class="row">
+      <button id="emsSend">下发强度</button>
+      <button class="danger" id="emsStop">全部停止</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>原始帧 (hex)</h2>
+    <input type="text" id="raw" placeholder="例如 35120047">
+    <div class="row" style="margin-top:8px"><button id="rawSend">下发原始帧</button>
+      <button class="sec" id="rawSendAll">广播原始帧</button></div>
+    <hr>
+    <div class="hint">常用帧: 电机10=<b>35120A51</b> · 电机停=<b>35120047</b> · EMS停=<b>3511030000000100004A</b></div>
+  </div>
+
+  <div class="card">
+    <h2>通知 / 响应日志</h2>
+    <div class="log" id="log"></div>
+  </div>
+</div>
+
+<script>
+// ============ AES-128-ECB (内联, 来自 aes128.js) ============
+const SBOX=[0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,0xb7,0xfd,0x93,0x26,0x36,0x3f,0xf7,0xcc,0x34,0xa5,0xe5,0xf1,0x71,0xd8,0x31,0x15,0x04,0xc7,0x23,0xc3,0x18,0x96,0x05,0x9a,0x07,0x12,0x80,0xe2,0xeb,0x27,0xb2,0x75,0x09,0x83,0x2c,0x1a,0x1b,0x6e,0x5a,0xa0,0x52,0x3b,0xd6,0xb3,0x29,0xe3,0x2f,0x84,0x53,0xd1,0x00,0xed,0x20,0xfc,0xb1,0x5b,0x6a,0xcb,0xbe,0x39,0x4a,0x4c,0x58,0xcf,0xd0,0xef,0xaa,0xfb,0x43,0x4d,0x33,0x85,0x45,0xf9,0x02,0x7f,0x50,0x3c,0x9f,0xa8,0x51,0xa3,0x40,0x8f,0x92,0x9d,0x38,0xf5,0xbc,0xb6,0xda,0x21,0x10,0xff,0xf3,0xd2,0xcd,0x0c,0x13,0xec,0x5f,0x97,0x44,0x17,0xc4,0xa7,0x7e,0x3d,0x64,0x5d,0x19,0x73,0x60,0x81,0x4f,0xdc,0x22,0x2a,0x90,0x88,0x46,0xee,0xb8,0x14,0xde,0x5e,0x0b,0xdb,0xe0,0x32,0x3a,0x0a,0x49,0x06,0x24,0x5c,0xc2,0xd3,0xac,0x62,0x91,0x95,0xe4,0x79,0xe7,0xc8,0x37,0x6d,0x8d,0xd5,0x4e,0xa9,0x6c,0x56,0xf4,0xea,0x65,0x7a,0xae,0x08,0xba,0x78,0x25,0x2e,0x1c,0xa6,0xb4,0xc6,0xe8,0xdd,0x74,0x1f,0x4b,0xbd,0x8b,0x8a,0x70,0x3e,0xb5,0x66,0x48,0x03,0xf6,0x0e,0x61,0x35,0x57,0xb9,0x86,0xc1,0x1d,0x9e,0xe1,0xf8,0x98,0x11,0x69,0xd9,0x8e,0x94,0x9b,0x1e,0x87,0xe9,0xce,0x55,0x28,0xdf,0x8c,0xa1,0x89,0x0d,0xbf,0xe6,0x42,0x68,0x41,0x99,0x2d,0x0f,0xb0,0x54,0xbb,0x16];
+const RCON=[0x00,0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36,0x6c];
+function xtime(a){return((a<<1)^((a&0x80)?0x1b:0))&0xff;}
+function gmul(a,b){let p=0;for(let i=0;i<8;i++){if(b&1)p^=a;const hi=a&0x80;a=(a<<1)&0xff;if(hi)a^=0x1b;b>>=1;}return p&0xff;}
+function hexToBytes(h){h=h.replace(/\s+/g,'');const u=new Uint8Array(h.length/2);for(let i=0;i<u.length;i++)u[i]=parseInt(h.substr(i*2,2),16);return Array.from(u);}
+function bytesToHex(b){return b.map(x=>x.toString(16).padStart(2,'0')).join('').toUpperCase();}
+function keyExpansion(key){const Nk=4,Nr=10,w=[];for(let i=0;i<Nk;i++)w.push([key[i*4],key[i*4+1],key[i*4+2],key[i*4+3]]);for(let i=Nk;i<Nk*(Nr+1);i++){let temp=w[i-1].slice();if(i%Nk===0){temp=[temp[1],temp[2],temp[3],temp[0]];temp=temp.map((b,j)=>SBOX[b]^(j===0?RCON[i/Nk]:0));}w.push([w[i-Nk][0]^temp[0],w[i-Nk][1]^temp[1],w[i-Nk][2]^temp[2],w[i-Nk][3]^temp[3]]);}return w;}
+function addRoundKey(s,w,r){for(let c=0;c<4;c++){const wk=w[r*4+c];for(let j=0;j<4;j++)s[c*4+j]^=wk[j];}}
+function subBytes(s){for(let i=0;i<16;i++)s[i]=SBOX[s[i]];}
+function shiftRows(s){const t=s.slice();for(let r=1;r<4;r++)for(let c=0;c<4;c++)s[r+c*4]=t[r+((c+r)%4)*4];}
+function mixColumns(s){for(let c=0;c<4;c++){const i=c*4;const a=[s[i],s[i+1],s[i+2],s[i+3]];s[i]=gmul(a[0],2)^gmul(a[1],3)^a[2]^a[3];s[i+1]=a[0]^gmul(a[1],2)^gmul(a[2],3)^a[3];s[i+2]=a[0]^a[1]^gmul(a[2],2)^gmul(a[3],3);s[i+3]=gmul(a[0],3)^a[1]^a[2]^gmul(a[3],2);}}
+function aes128EcbHex(hexKey,hexPlain){const K=hexToBytes(hexKey),P=hexToBytes(hexPlain);if(K.length!==16||P.length!==16)throw new Error('AES-128 需 16 字节');const state=P.slice();const w=keyExpansion(K);addRoundKey(state,w,0);for(let r=1;r<=9;r++){subBytes(state);shiftRows(state);mixColumns(state);addRoundKey(state,w,r);}subBytes(state);shiftRows(state);addRoundKey(state,w,10);return bytesToHex(state);}
+
+// ============ 帧构造 (对齐 ycy.js) ============
+const PUMP_KEY='F638BC9CFA477480AB3242F6B04557A1';
+const PUMP_HDR='BF0FA0';
+const CH={A:0x01,B:0x02,AB:0x03};
+function sum(arr){let s=0;for(const b of arr)s=(s+(b&0xff))&0xff;return s&0xff;}
+function hex2(n){n=Math.max(0,Math.min(0xff,Math.round(Number(n))));return n.toString(16).padStart(2,'0').toUpperCase();}
+function hex4(n){n=Math.max(0,Math.min(0xffff,Math.round(Number(n))));return n.toString(16).padStart(4,'0').toUpperCase();}
+function mapStrength(v){v=Number(v);if(!isFinite(v)||v<=0)return 0;return Math.max(1,Math.min(276,Math.round((v/100)*275)+1));}
+
+function buildMotor(speed){speed=Math.max(0,Math.min(20,Math.round(Number(speed))));const b=[0x35,0x12,speed];b.push(sum(b));return bytesToHex(b);}
+function buildPumpV3(scene,air,water){let body;scene=scene||'stop';air=Math.max(0,Math.min(0xff,Number(air)||1));water=Math.max(0,Math.min(0xff,Number(water)||1));
+  if(scene==='cut')body=[0x12,0xff,0x00,0x00];else if(scene==='add')body=[0x12,0x00,air,0x00];else if(scene==='guan')body=[0x12,0x00,0x00,water];else body=[0x12,0x00,0x00,0x00];
+  const b=[0x35,...body];b.push(sum(b));return bytesToHex(b);}
+function buildPumpEncrypted(protocol,scene,rate,ss){rate=Math.max(1,Math.min(0xff,Number(rate)||3));ss=Math.max(0,Math.min(0xffff,Number(ss)||0));
+  const ssH=hex4(ss),rH=hex2(rate);let plain;
+  if(protocol==='v2'){if(scene==='add')plain=PUMP_HDR+'01'+rH+ssH;else if(scene==='cut')plain=PUMP_HDR+'01FF'+ssH;else if(scene==='guan')plain=PUMP_HDR+'02'+'01'+ssH;else plain=PUMP_HDR+'03';}
+  else{if(scene==='add')plain=PUMP_HDR+'01'+'01'+ssH;else if(scene==='cut')plain=PUMP_HDR+'01'+'02'+ssH;else if(scene==='guan')plain=PUMP_HDR+'02'+'01'+ssH;else plain=PUMP_HDR+'03';}
+  const pb=hexToBytes(plain);const padded=new Array(16).fill(0);for(let i=0;i<pb.length&&i<16;i++)padded[i]=pb[i];
+  return aes128EcbHex(PUMP_KEY,bytesToHex(padded));}
+function buildEmsStop(){const b=[0x35,0x11,CH.AB,0x00,0x00,0x00,0x01,0x00,0x00];b.push(sum(b));return bytesToHex(b);}
+function buildEmsStrength(channel,value,freq,pulse){channel=(channel||'A').toUpperCase();const ch=CH[channel]||CH.A;const s=mapStrength(value);const en=s>0?1:0;const custom=(Number(freq)>0||Number(pulse)>0);const mode=custom?0x11:0x01;const f=custom?Math.max(0,Math.min(100,Number(freq)||0)):0;const p=custom?Math.max(0,Math.min(100,Number(pulse)||0)):0;const b=[0x35,0x11,ch,en,(s>>8)&0xff,s&0xff,mode,f,p];b.push(sum(b));return bytesToHex(b);}
+
+// ============ 与桥通信 ============
+const API=(p,opt)=>fetch(p,opt).then(r=>r.json()).catch(e=>({ok:false,msg:String(e)}));
+let lastStatus=null;
+
+async function refresh(){
+  const st=await API('/api/status');
+  lastStatus=st;
+  document.getElementById('btstate').textContent='蓝牙:'+(st.bluetoothOn?'开':'关/未就绪');
+  document.getElementById('btstate').className='pill '+(st.bluetoothOn?'ok':'no');
+  const devs=st.devices||[];
+  const box=document.getElementById('devices');
+  if(!devs.length){box.innerHTML='<span class="hint">未发现设备。确认设备已开机且在范围内;卡死请断电重开。</span>';}
+  else{
+    box.innerHTML=devs.map(d=>{
+      const ready=d.ready;const ci=d.connection||{};
+      const svcHtml=(d.services||[]).map(s=>{
+        const cs=(s.chars||[]).map(c=>`<span class="uuid">↳ ${c.uuid}</span> <span class="hint">[${c.props.join(',')}]</span>`).join('<br>');
+        return `<div style="margin:4px 0"><span class="uuid">${s.uuid}</span><br>${cs}</div>`;
+      }).join('');
+      return `<div class="dev"><div><span class="dot ${ready?'on':(d.isTarget?'busy':'')}"></span><span class="nm">${d.name||'(无名)'}</span> <span class="hint">rssi=${d.rssi}</span></div>
+        <div class="mono" style="margin:2px 0">${d.id}</div>
+        <div style="margin:4px 0">状态: <span class="pill ${ready?'ok':'no'}">${ready?'就绪':'未就绪'}</span> ${ci.write?`<span class="hint">写=${ci.write}</span>`:''}</div>
+        ${svcHtml||'<span class="hint">（无服务）</span>'}
+        <div class="row" style="margin-top:6px"><button class="sec" onclick="connectDev('${d.id}')">连接</button></div></div>`;
+    }).join('');
+  }
+  // 通知日志
+  const log=document.getElementById('log');const n=st.notifications||{};
+  let lines=[];for(const id in n){for(const h of (n[id]||[]))lines.push(`<div class="n">[${shortId(id)}] &lt;- ${h}</div>`);}
+  if(!lines.length)lines=['<span class="hint">（暂无通知）</span>'];
+  log.innerHTML=lines.slice(-60).join('');log.scrollTop=log.scrollHeight;
+}
+function shortId(id){return id.split('-')[0];}
+async function connectDev(id){const r=await API('/api/connect?addr='+encodeURIComponent(id),{method:'POST'});logMsg(r.ok?'连接中…':('连接失败:'+(r.msg||'')),r.ok?'n':'e');await refresh();}
+
+function readyDevices(){const ds=(lastStatus&&lastStatus.devices)||[];return ds.filter(d=>d.ready&&d.connection&&d.connection.write);}
+async function sendTo(frame){
+  const broadcast=document.getElementById('broadcast').checked;
+  if(broadcast){
+    const ds=readyDevices();if(!ds.length){logMsg('无就绪设备可广播','w');return;}
+    for(const d of ds){const r=await API('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({addr:d.id,frame})});logMsg(`[${shortId(d.id)}] ${frame} -> ${r.ok?'OK':'失败:'+(r.msg||'')}`,r.ok?'n':'e');}
+  } else {
+    const r=await API('/api/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({frame})});
+    logMsg(`${frame} -> ${r.ok?'OK'+(r.written?(' ('+r.written.join(',')+')'):''):'失败:'+(r.msg||'')}`,r.ok?'n':'e');
+  }
+}
+function logMsg(t,cls){const log=document.getElementById('log');const d=document.createElement('div');d.className=cls||'';d.textContent='• '+t;log.appendChild(d);log.scrollTop=log.scrollHeight;while(log.children.length>120)log.removeChild(log.firstChild);}
+
+// ============ 事件绑定 ============
+document.getElementById('motor').addEventListener('input',e=>document.getElementById('msval').textContent=e.target.value);
+document.getElementById('ems').addEventListener('input',e=>document.getElementById('esval').textContent=e.target.value);
+document.getElementById('motorSend').onclick=()=>sendTo(buildMotor(document.getElementById('motor').value));
+document.getElementById('motorStop').onclick=()=>sendTo(buildMotor(0));
+document.getElementById('pumpSend').onclick=()=>{const p=document.getElementById('pumpProto').value;const s=document.getElementById('pumpScene').value;const r=document.getElementById('pumpRate').value;const ss=document.getElementById('pumpSs').value;const fr=(p==='v3')?buildPumpV3(s,r,ss):buildPumpEncrypted(p,s,r,ss);logMsg(`泵帧(${p}/${s})=${fr}`,'n');sendTo(fr);};
+document.getElementById('emsSend').onclick=()=>sendTo(buildEmsStrength(document.getElementById('emsCh').value,document.getElementById('ems').value,0,0));
+document.getElementById('emsStop').onclick=()=>sendTo(buildEmsStop());
+document.getElementById('rawSend').onclick=()=>{const v=document.getElementById('raw').value.trim();if(v)sendTo(v);};
+document.getElementById('rawSendAll').onclick=()=>{const v=document.getElementById('raw').value.trim();if(v){document.getElementById('broadcast').checked=true;sendTo(v);document.getElementById('broadcast').checked=false;}};
+document.getElementById('rescan').onclick=async()=>{await API('/api/rescan',{method:'POST'});logMsg('已触发重新扫描','w');};
+document.getElementById('refresh').onclick=refresh;
+
+// 自测:面板自带帧构造 sanity check
+(function(){const t1=buildMotor(10),t2=buildPumpEncrypted('v1','stop'),t3=buildEmsStop();
+  console.log('self-test motor(10)=',t1,'pumpStop=',t2,'emsStop=',t3);
+})();
+
+refresh();setInterval(refresh,2000);
+</script>
+</body>
+</html>

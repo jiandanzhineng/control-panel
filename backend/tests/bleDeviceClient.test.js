@@ -296,3 +296,14 @@ describe('Electron BLE device client', () => {
     expect(device.gatt.disconnect).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('役次元型号分类', () => {
+  const { resolveType } = require('../../electron/ble/ycyDeviceClient');
+
+  test('未知型号默认电击型，YISK 识别为灌肠型', () => {
+    expect(resolveType('YSKJ-2024')).toBe('YCY_EMS');
+    expect(resolveType('YYC-DJ-V2')).toBe('YCY_EMS');
+    expect(resolveType('YISK-003V3')).toBe('YCY_ENEMA');
+    expect(resolveType('YCY-FJB-03')).toBe('YCY_CUP');
+  });
+});
