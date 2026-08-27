@@ -31,6 +31,7 @@ function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandServ
   function isBrandName(name) {
     const n = String(name || '').toUpperCase();
     return DGLAB_V2_NAMES.some((k) => n.includes(k.toUpperCase()))
+      || n.includes('47L')
       || YCY_NAMES.some((k) => n.includes(k.toUpperCase()));
   }
 

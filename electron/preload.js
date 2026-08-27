@@ -191,15 +191,22 @@ window.brandBleApi = {
       throw error;
     }
     const device = await navigator.bluetooth.requestDevice({
-      filters: [
-        { namePrefix: 'D-LAB' },
-        { namePrefix: 'DG-LAB' },
-        { namePrefix: 'COYOTE' },
-        { namePrefix: 'YSKJ' },
+      acceptAllDevices: true,
+      optionalServices: [
+        V2_UUIDS.service,
+        '0000ff30-0000-1000-8000-00805f9b34fb',
+        '0000ff40-0000-1000-8000-00805f9b34fb',
+        '0000ff70-0000-1000-8000-00805f9b34fb',
+        '0000ae00-0000-1000-8000-00805f9b34fb',
+        '98a9cd00-ca0a-4cf8-9f85-e93949467558',
+        '0000180f-0000-1000-8000-00805f9b34fb',
       ],
-      optionalServices: [V2_UUIDS.service],
     });
-    const client = new BrandBleClient(device, { onEvent: emitBrandBleClientEvent });
+    const n = String(device.name || '').toUpperCase();
+    const dglab = ['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k));
+    const client = dglab
+      ? new BrandBleClient(device, { onEvent: emitBrandBleClientEvent })
+      : new YcyBleClient(device, { onEvent: emitBrandBleClientEvent });
     try {
       const metadata = await client.connect();
       brandClients.set(metadata.id, client);

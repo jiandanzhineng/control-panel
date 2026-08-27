@@ -16,18 +16,9 @@
       <el-tab-pane label="连接" name="connect">
         <el-card shadow="never" class="section-card">
           <div class="connect-bar">
-            <el-dropdown trigger="click" @command="startBleConnect">
-              <el-button type="primary" :loading="scanningWebble || scanningYcyWebble">
-                蓝牙连接
-                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-              </el-button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <el-dropdown-item command="ycy">役次元</el-dropdown-item>
-                  <el-dropdown-item command="dglab">郊狼</el-dropdown-item>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
+            <el-button type="primary" :loading="scanningWebble || scanningYcyWebble" @click="startBleConnect">
+              蓝牙连接
+            </el-button>
             <el-dropdown trigger="click" @command="openMoreConnect">
               <el-button>
                 更多连接方式
@@ -41,24 +32,16 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-button v-if="scanningWebble" size="small" @click="dglabWebbleCancelScan">取消郊狼扫描</el-button>
-            <el-button v-if="scanningYcyWebble" size="small" @click="ycyWebbleCancelScan">取消役次元扫描</el-button>
+            <el-button v-if="scanningWebble || scanningYcyWebble" size="small" @click="cancelBleScan">取消扫描</el-button>
           </div>
-          <p class="op-hint">用电脑蓝牙直连设备。点「蓝牙连接」后选品牌，再在列表里挑设备。</p>
+          <p class="op-hint">点「蓝牙连接」扫描附近设备，列表里会包含郊狼、役次元等可识别设备，选一台连接。</p>
         </el-card>
 
-        <div v-if="dglabWebbleCandidates.length || ycyWebbleCandidates.length" class="candidate-list">
-          <div v-for="c in dglabWebbleCandidates" :key="'dg-'+c.id" class="candidate-item">
+        <div v-if="ycyWebbleCandidates.length" class="candidate-list">
+          <div v-for="c in ycyWebbleCandidates" :key="c.id" class="candidate-item">
             <div class="candidate-info">
-              <span class="candidate-name">{{ brandLabel('dglab', c.name) }}</span>
-              <span class="candidate-meta">郊狼 · {{ c.name }}</span>
-            </div>
-            <el-button size="small" type="primary" @click="dglabWebblePick(c)">选择</el-button>
-          </div>
-          <div v-for="c in ycyWebbleCandidates" :key="'ycy-'+c.id" class="candidate-item">
-            <div class="candidate-info">
-              <span class="candidate-name">{{ brandLabel('ycy', c.name) }}</span>
-              <span class="candidate-meta">役次元 · {{ c.name }}</span>
+              <span class="candidate-name">{{ brandLabel(classifyBleBrand(c.name), c.name) }}</span>
+              <span class="candidate-meta">{{ classifyBleBrand(c.name) === 'dglab' ? '郊狼' : '役次元' }} · {{ c.name }}</span>
             </div>
             <el-button size="small" type="primary" @click="ycyWebblePick(c)">选择</el-button>
           </div>
@@ -1415,9 +1398,35 @@ const scanningYcyWebble = ref(false)
 function ycyWebbleCancelScan() {
   brandBle.cancelSelection().catch(() => {})
 }
-function startBleConnect(kind: string | number) {
-  if (kind === 'dglab') dglabWebbleConnect()
-  else ycyWebbleConnect()
+function classifyBleBrand(name?: string): 'dglab' | 'ycy' {
+  const n = String(name || '').toUpperCase()
+  if (['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k))) return 'dglab'
+  return 'ycy'
+}
+function cancelBleScan() {
+  dglabWebbleCancelScan()
+  ycyWebbleCancelScan()
+}
+async function startBleConnect() {
+  scanningYcyWebble.value = true
+  ycyWebbleCandidates.value = []
+  ycyScanUnsub = brandBle.onScanResults((list) => { ycyWebbleCandidates.value = list })
+  try {
+    if (window.brandBleApi?.connect) {
+      const meta = await window.brandBleApi.connect()
+      await refreshConnected()
+      ElMessage.success('已连接 ' + brandLabel(classifyBleBrand(meta.name), meta.name))
+      return
+    }
+    await ycyWebbleConnect()
+  } catch (e: any) {
+    const msg = String(e?.message || '')
+    if (!/cancel|Cancelled|User cancelled|NavigatorUserAgent/i.test(msg)) ElMessage.error(msg || '连接失败')
+  } finally {
+    ycyScanUnsub?.(); ycyScanUnsub = null
+    ycyWebbleCandidates.value = []
+    scanningYcyWebble.value = false
+  }
 }
 function openMoreConnect(kind: string | number) {
   moreKind.value = kind as 'native' | 'dglab-phone' | 'ycy-bridge'

@@ -85,4 +85,24 @@ describe('Electron BLE preload API', () => {
       optionalServices: expect.arrayContaining(['98a9cd00-ca0a-4cf8-9f85-e93949467558']),
     }));
   });
+
+  it('brandBle connect scans all nearby brand devices without namePrefix', async () => {
+    const cancelled = Object.assign(new Error('Selection cancelled'), { name: 'NotFoundError' });
+    const requestDevice = jest.fn().mockRejectedValue(cancelled);
+    global.window = { fetch: jest.fn() };
+    Object.defineProperty(global, 'navigator', {
+      configurable: true,
+      value: { bluetooth: { requestDevice } },
+    });
+    jest.resetModules();
+    require('../../electron/preload');
+    await expect(global.window.brandBleApi.connect()).rejects.toBe(cancelled);
+    expect(requestDevice).toHaveBeenCalledWith(expect.objectContaining({
+      acceptAllDevices: true,
+      optionalServices: expect.arrayContaining([
+        '955a180b-0fe2-f5aa-a094-84b8d4f3e8ad',
+        '0000ff40-0000-1000-8000-00805f9b34fb',
+      ]),
+    }));
+  });
 });
