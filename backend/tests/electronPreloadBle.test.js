@@ -105,4 +105,32 @@ describe('Electron BLE preload API', () => {
       ]),
     }));
   });
+
+  it('getKnownDevices 用 getDevices，不弹选择框', async () => {
+    const requestDevice = jest.fn();
+    const getDevices = jest.fn().mockResolvedValue([{ id: 'chrome-1', name: 'YCY-FJB-03' }]);
+    global.window = { fetch: jest.fn() };
+    Object.defineProperty(global, 'navigator', {
+      configurable: true,
+      value: { bluetooth: { requestDevice, getDevices } },
+    });
+    require('../../electron/preload');
+    await expect(global.window.brandBleApi.getKnownDevices()).resolves.toEqual([
+      { id: 'chrome-1', name: 'YCY-FJB-03' },
+    ]);
+    expect(requestDevice).not.toHaveBeenCalled();
+  });
+
+  it('connectKnown 找不到已授权设备时不调用 requestDevice', async () => {
+    const requestDevice = jest.fn();
+    const getDevices = jest.fn().mockResolvedValue([]);
+    global.window = { fetch: jest.fn() };
+    Object.defineProperty(global, 'navigator', {
+      configurable: true,
+      value: { bluetooth: { requestDevice, getDevices } },
+    });
+    require('../../electron/preload');
+    await expect(global.window.brandBleApi.connectKnown('chrome-1')).rejects.toThrow(/不可见/);
+    expect(requestDevice).not.toHaveBeenCalled();
+  });
 });

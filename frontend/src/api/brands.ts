@@ -76,6 +76,29 @@ export function disconnect(deviceId: string) {
   return request<{ ok: boolean }>(`/${encodeURIComponent(deviceId)}/disconnect`, { method: 'POST' });
 }
 
+export function getSettings() {
+  return request<{ autoConnect: boolean }>('/settings');
+}
+
+export function setSettings(autoConnect: boolean) {
+  return request<{ autoConnect: boolean }>('/settings', {
+    method: 'PUT',
+    body: JSON.stringify({ autoConnect }),
+  });
+}
+
+export interface SavedBleDevice {
+  deviceId: string;
+  browserDeviceId: string;
+  name?: string;
+  type?: string;
+  connected: boolean;
+}
+
+export function listSavedBle() {
+  return request<SavedBleDevice[]>('/saved-ble');
+}
+
 // 原版 V2 强度位布局（标定用）
 export function getV2Layout() {
   return request<{ layout: 'official' | 'coyote2'; options: string[] }>('/v2-layout');

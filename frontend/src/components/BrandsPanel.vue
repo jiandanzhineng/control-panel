@@ -33,8 +33,9 @@
               </template>
             </el-dropdown>
             <el-button v-if="scanningWebble || scanningYcyWebble" size="small" @click="cancelBleScan">取消扫描</el-button>
+            <el-checkbox v-model="bleAutoConnect" @change="onBleAutoConnectChange">自动连接已保存设备</el-checkbox>
           </div>
-          <p class="op-hint">点「蓝牙连接」扫描附近设备，列表里会包含郊狼、役次元等可识别设备，选一台连接。</p>
+          <p class="op-hint">点「蓝牙连接」扫描附近设备。自动连接只连以前授权过、且还在设备列表里的设备；不想再连就去设备列表删除。</p>
         </el-card>
 
         <div v-if="ycyWebbleCandidates.length" class="candidate-list">
@@ -258,6 +259,10 @@ const theoreticalDevices = [
 ]
 const busy = ref(false)
 const refreshing = ref(false)
+const bleAutoConnect = ref(true)
+let bleAutoTimer: number | null = null
+let bleAutoBusy = false
+const BLE_AUTO_MS = 10000
 
 // 郊狼 发现
 const isMac = computed(() => /Mac/i.test(navigator.userAgent || navigator.platform || ''))
@@ -958,14 +963,57 @@ async function probeBridgeAndPickDefault() {
   if (dglabMode.value === 'native' && !dUp && webbleSupported.value) dglabMode.value = 'webble'
 }
 
+function stopBleAutoConnect() {
+  if (bleAutoTimer) { clearInterval(bleAutoTimer); bleAutoTimer = null }
+}
+function startBleAutoConnect() {
+  stopBleAutoConnect()
+  void tryBleAutoConnect()
+  bleAutoTimer = window.setInterval(() => { void tryBleAutoConnect() }, BLE_AUTO_MS)
+}
+async function onBleAutoConnectChange(v: boolean | string | number) {
+  const on = v === true
+  bleAutoConnect.value = on
+  try { await brandsApi.setSettings(on) } catch (_) {}
+  if (on) startBleAutoConnect()
+  else stopBleAutoConnect()
+}
+async function tryBleAutoConnect() {
+  if (!bleAutoConnect.value || scanningWebble.value || scanningYcyWebble.value || bleAutoBusy) return
+  const api = window.brandBleApi
+  if (!api?.getKnownDevices || !api.connectKnown) return
+  bleAutoBusy = true
+  try {
+    const pending = (await brandsApi.listSavedBle()).filter((d) => !d.connected && d.browserDeviceId)
+    if (!pending.length) return
+    const knownIds = new Set((await api.getKnownDevices()).map((k) => k.id))
+    for (const d of pending) {
+      if (!knownIds.has(d.browserDeviceId)) continue
+      try { await api.connectKnown(d.browserDeviceId) } catch (_) {}
+    }
+    await refreshConnected()
+  } catch (_) { /* 本轮失败等下次 */ }
+  finally { bleAutoBusy = false }
+}
+async function loadBleAutoConnect() {
+  try {
+    const s = await brandsApi.getSettings()
+    bleAutoConnect.value = s.autoConnect !== false
+  } catch (_) { bleAutoConnect.value = true }
+  if (bleAutoConnect.value) startBleAutoConnect()
+}
+
 onMounted(() => {
   refreshConnected()
   if (autoRefreshEnabled.value) startAutoRefresh()
   if (isMac.value) startYcyNativeTimer()
   if (isMac.value) startDglabNativeTimer()
   probeBridgeAndPickDefault()
+  loadBleAutoConnect()
 })
-onUnmounted(() => { stopAutoRefresh(); stopYcyNativeTimer(); stopDglabNativeTimer() })
+onUnmounted(() => {
+  stopAutoRefresh(); stopYcyNativeTimer(); stopDglabNativeTimer(); stopBleAutoConnect()
+})
 </script>
 
 <style scoped>

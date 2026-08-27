@@ -182,6 +182,34 @@ ipcRenderer.on('brandBle:disconnect-all', async (_event, request) => {
   }
 });
 
+const BRAND_OPTIONAL_SERVICES = [
+  V2_UUIDS.service,
+  '0000ff30-0000-1000-8000-00805f9b34fb',
+  '0000ff40-0000-1000-8000-00805f9b34fb',
+  '0000ff70-0000-1000-8000-00805f9b34fb',
+  '0000ae00-0000-1000-8000-00805f9b34fb',
+  '98a9cd00-ca0a-4cf8-9f85-e93949467558',
+  '0000180f-0000-1000-8000-00805f9b34fb',
+];
+
+async function attachBrandBluetoothDevice(device) {
+  const n = String(device.name || '').toUpperCase();
+  const dglab = ['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k));
+  const client = dglab
+    ? new BrandBleClient(device, { onEvent: emitBrandBleClientEvent })
+    : new YcyBleClient(device, { onEvent: emitBrandBleClientEvent });
+  try {
+    const metadata = await client.connect();
+    brandClients.set(metadata.id, client);
+    await ipcRenderer.invoke('brandBle:connected', metadata);
+    return metadata;
+  } catch (error) {
+    brandClients.delete(client.id);
+    try { await client.disconnect(); } catch (_) {}
+    throw error;
+  }
+}
+
 window.brandBleApi = {
   isSupported: () => !!navigator.bluetooth?.requestDevice,
   connect: async () => {
@@ -192,31 +220,9 @@ window.brandBleApi = {
     }
     const device = await navigator.bluetooth.requestDevice({
       acceptAllDevices: true,
-      optionalServices: [
-        V2_UUIDS.service,
-        '0000ff30-0000-1000-8000-00805f9b34fb',
-        '0000ff40-0000-1000-8000-00805f9b34fb',
-        '0000ff70-0000-1000-8000-00805f9b34fb',
-        '0000ae00-0000-1000-8000-00805f9b34fb',
-        '98a9cd00-ca0a-4cf8-9f85-e93949467558',
-        '0000180f-0000-1000-8000-00805f9b34fb',
-      ],
+      optionalServices: BRAND_OPTIONAL_SERVICES,
     });
-    const n = String(device.name || '').toUpperCase();
-    const dglab = ['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k));
-    const client = dglab
-      ? new BrandBleClient(device, { onEvent: emitBrandBleClientEvent })
-      : new YcyBleClient(device, { onEvent: emitBrandBleClientEvent });
-    try {
-      const metadata = await client.connect();
-      brandClients.set(metadata.id, client);
-      await ipcRenderer.invoke('brandBle:connected', metadata);
-      return metadata;
-    } catch (error) {
-      brandClients.delete(client.id);
-      try { await client.disconnect(); } catch (_) {}
-      throw error;
-    }
+    return attachBrandBluetoothDevice(device);
   },
   disconnect: async (id) => {
     const client = brandClients.get(id);
@@ -229,6 +235,24 @@ window.brandBleApi = {
   connectedDeviceIds: () => [...brandClients.keys()],
   selectDevice: (deviceId) => ipcRenderer.invoke('brandBle:select-device', deviceId),
   cancelSelection: () => ipcRenderer.invoke('brandBle:cancel-selection'),
+  getKnownDevices: async () => {
+    if (!navigator.bluetooth?.getDevices) return [];
+    const devices = await navigator.bluetooth.getDevices();
+    return devices.map((d) => ({ id: d.id, name: d.name || '' }));
+  },
+  connectKnown: async (browserDeviceId) => {
+    if (!navigator.bluetooth?.getDevices) throw new Error('当前环境不支持已授权设备列表');
+    const existing = [...brandClients.values()].find((c) => c.browserDeviceId === browserDeviceId);
+    if (existing) return { id: existing.id, alreadyConnected: true };
+    const devices = await navigator.bluetooth.getDevices();
+    const device = devices.find((d) => d.id === browserDeviceId);
+    if (!device) {
+      const error = new Error('已保存设备当前不可见');
+      error.code = 'BRAND_BLE_DEVICE_NOT_AVAILABLE';
+      throw error;
+    }
+    return attachBrandBluetoothDevice(device);
+  },
   onScanResults: (callback) => {
     const listener = (_event, devices) => {
       try { callback(devices); } catch (_) {}

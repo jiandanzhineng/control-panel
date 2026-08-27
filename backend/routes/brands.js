@@ -70,12 +70,36 @@ router.post('/connect', async (req, res) => {
   }
 });
 
-// 已连接品牌设备列表
 router.get('/', (req, res) => {
   try {
     res.json(brandService.list());
   } catch (e) {
     sendError(res, 'BRAND_LIST_FAILED', e.message || String(e), 500);
+  }
+});
+
+router.get('/settings', (req, res) => {
+  try {
+    res.json(brandService.getSettings());
+  } catch (e) {
+    sendError(res, 'BRAND_SETTINGS_FAILED', e.message || String(e), 500);
+  }
+});
+
+router.put('/settings', (req, res) => {
+  try {
+    res.json(brandService.setSettings(req.body || {}));
+  } catch (e) {
+    const status = e.code === 'AUTO_CONNECT_REQUIRED' ? 400 : 500;
+    sendError(res, e.code || 'BRAND_SETTINGS_FAILED', e.message || String(e), status);
+  }
+});
+
+router.get('/saved-ble', (req, res) => {
+  try {
+    res.json(brandService.listSavedBleDevices());
+  } catch (e) {
+    sendError(res, 'BRAND_SAVED_BLE_FAILED', e.message || String(e), 500);
   }
 });
 

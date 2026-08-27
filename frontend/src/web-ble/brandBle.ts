@@ -48,6 +48,8 @@ declare global {
       connectedDeviceIds: () => string[];
       selectDevice: (deviceId: string) => Promise<{ ok: boolean }>;
       cancelSelection: () => Promise<{ ok: boolean }>;
+      getKnownDevices?: () => Promise<Array<{ id: string; name: string }>>;
+      connectKnown?: (browserDeviceId: string) => Promise<BrandBleMetadata | { id: string; alreadyConnected: true }>;
       onScanResults: (cb: (devices: BrandBleCandidate[]) => void) => () => void;
     };
   }

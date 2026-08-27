@@ -14,6 +14,7 @@ const discovery = require('./discovery');
 const ycyProto = require('./protocols/ycy');
 const { brandLabel, typeLabel } = require('./brandLabels');
 const logger = require('../utils/logger');
+const fileStorage = require('../utils/fileStorage');
 
 const SUPPORTED = ['dglab', 'ycy'];
 const connections = new Map(); // deviceId -> connection adapter
@@ -445,6 +446,46 @@ function getStatus() {
   };
 }
 
+const SETTINGS_KEY = 'brand-settings';
+
+function getSettings() {
+  try {
+    const parsed = JSON.parse(fileStorage.getItem(SETTINGS_KEY) || 'null');
+    if (parsed && typeof parsed.autoConnect === 'boolean') return { autoConnect: parsed.autoConnect };
+  } catch (_) { /* 缺省开启 */ }
+  return { autoConnect: true };
+}
+
+function setSettings(patch = {}) {
+  if (typeof patch.autoConnect !== 'boolean') {
+    const err = new Error('autoConnect 必须是布尔值');
+    err.code = 'AUTO_CONNECT_REQUIRED';
+    throw err;
+  }
+  const next = { autoConnect: patch.autoConnect };
+  fileStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+  return next;
+}
+
+function browserIdFromDeviceId(id) {
+  const s = String(id || '');
+  if (s.startsWith('ycy:')) return s.slice(4);
+  if (s.startsWith('dglab-v2-')) return s.slice(9);
+  return '';
+}
+
+function listSavedBleDevices() {
+  return deviceService.listDevicesForApi()
+    .filter((d) => browserIdFromDeviceId(d.id))
+    .map((d) => ({
+      deviceId: d.id,
+      browserDeviceId: browserIdFromDeviceId(d.id),
+      name: d.name,
+      type: d.type,
+      connected: !!d.connected,
+    }));
+}
+
 module.exports = {
   SUPPORTED,
   getConnection,
@@ -459,5 +500,8 @@ module.exports = {
   detachWebBle,
   getV2StrengthLayout,
   setV2StrengthLayout,
+  getSettings,
+  setSettings,
+  listSavedBleDevices,
   YCY_GLOBAL_STOP: ycyProto.GLOBAL_STOP_COMMAND,
 };
