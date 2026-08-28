@@ -82,7 +82,7 @@ class SosexyBleClient {
       this.device.addEventListener('gattserverdisconnected', this.onGattDisconnected);
       return {
         id: this.id,
-        name: this.device.name || 'SOSEXY PID 0004',
+        name: this.device.name || '啵啵贝',
         type: 'SOSEXY_PID0004',
         brand: 'sosexy',
         connectionType: 'brandBle',

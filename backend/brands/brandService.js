@@ -95,7 +95,7 @@ async function discover(brand, opts = {}) {
         const n = String(d.name || '').toUpperCase();
         if (brand === 'dglab') return ['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k));
         if (brand === 'sosexy') return n.includes('SOSEXY');
-        return ['YCY', 'YYC', 'YOKO', 'YISK', 'DJ-V2', 'FJB', 'ENEMA', 'GLJ', 'DJ', 'SOSEXY'].some((k) => n.includes(k));
+        return ['YCY', 'YYC', 'YOKO', 'YISK', 'DJ-V2', 'FJB', 'ENEMA', 'GLJ', 'DJ'].some((k) => n.includes(k));
       });
     return found.map((d) => {
       const address = d.id || d.address;
@@ -399,7 +399,7 @@ function attachWebBle(metadata, send) {
   deviceService.connectTransportDevice(
     {
       id: metadata.id,
-      name: metadata.name || `${isBrandSosexy ? 'SOSEXY' : (isYcy ? '役次元' : '蓝牙体感设备')} ${String(metadata.id).slice(-4)}`,
+      name: metadata.name || `${isBrandSosexy ? '啵啵贝' : (isYcy ? '役次元' : '蓝牙体感设备')} ${String(metadata.id).slice(-4)}`,
       type,
       connectionType: 'brandBle',
       transportMetadata: connection.toMetadata(),

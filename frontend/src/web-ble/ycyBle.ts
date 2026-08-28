@@ -19,7 +19,7 @@ export interface YcyBleMetadata {
 }
 
 // 设备名关键字（与 ycy.js 对齐 + 真机实测 YYC-DJ-V2 / YCY-FJB-03-DJ / YISK-003V3）
-const YCY_NAME_KEYWORDS = ['YCY', 'YYC', 'YSKJ', 'YOKO', 'YOKONEX', 'YISK', 'DJ-V2', 'FJB', 'SOSEXY', '灌肠', 'ENEMA', 'GLJ', 'DJ'];
+const YCY_NAME_KEYWORDS = ['YCY', 'YYC', 'YSKJ', 'YOKO', 'YOKONEX', 'YISK', 'DJ-V2', 'FJB', '灌肠', 'ENEMA', 'GLJ', 'DJ'];
 
 // 已知写/通知特征 UUID（动态发现为主，这里做兜底匹配；来自 ycy_bridge 真机实测）。
 // 电击器 YYC-DJ-V2: FF30 写 / FF32 通知

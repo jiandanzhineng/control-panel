@@ -4,7 +4,7 @@
 const BRAND_LABEL = {
   dglab: '蓝牙体感设备',
   ycy: '遥控蓝牙设备',
-  sosexy: 'SOSEXY 设备',
+  sosexy: '繁野设备',
 };
 
 const TYPE_LABEL = {
@@ -14,7 +14,7 @@ const TYPE_LABEL = {
   YCY_TOY: '电机型设备',
   YCY_CUP: '杯型设备',
   YCY_ENEMA: '灌肠型设备',
-  SOSEXY_PID0004: 'SOSEXY PID 0004',
+  SOSEXY_PID0004: '啵啵贝',
 };
 
 function brandLabel(brand) {

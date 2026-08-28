@@ -29,6 +29,7 @@ describe('SOSEXY PID 0004 协议', () => {
   });
 
   test('设备类型四能力和下行命令', () => {
+    expect(registry.getDeviceType('SOSEXY_PID0004').name).toBe('啵啵贝');
     expect(registry.getDeviceCapabilities('SOSEXY_PID0004')).toEqual(['strength', 'vibration', 'suction', 'shock']);
     const sent = [];
     const type = registry.getDeviceType('SOSEXY_PID0004');

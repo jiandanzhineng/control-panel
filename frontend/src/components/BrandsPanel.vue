@@ -43,7 +43,7 @@
           <div v-for="c in ycyWebbleCandidates" :key="c.id" class="candidate-item">
             <div class="candidate-info">
               <span class="candidate-name">{{ brandLabel(classifyBleBrand(c.name), c.name) }}</span>
-              <span class="candidate-meta">{{ classifyBleBrand(c.name) === 'dglab' ? '郊狼' : '役次元' }} · {{ c.name }}</span>
+              <span class="candidate-meta">{{ BRAND_LABEL[classifyBleBrand(c.name)] || '役次元' }} · {{ c.name }}</span>
             </div>
             <el-button size="small" type="primary" @click="ycyWebblePick(c)">选择</el-button>
           </div>
@@ -70,15 +70,27 @@
                 <el-button size="small" :loading="opLoading[`dglabStop:${dev.deviceId}`]" @click="dglabStop(dev)">停止</el-button>
               </div>
             </div>
-            <div v-else-if="ycyPanelType(dev) === 'SOSEXY_PID0004'" class="control-grid">
-              <div class="control-field"><label>总强度 {{ ctl(dev).sosexyStrength }}</label><el-slider v-model="ctl(dev).sosexyStrength" :min="0" :max="255" /></div>
-              <div class="control-actions"><el-button type="primary" size="small" :loading="opLoading[`sosexyStrength:${dev.deviceId}`]" @click="sosexyStrengthApply(dev)">震动+吸吮</el-button></div>
-              <div class="control-field"><label>震动 {{ ctl(dev).sosexyVibration }}</label><el-slider v-model="ctl(dev).sosexyVibration" :min="0" :max="255" /></div>
-              <div class="control-actions"><el-button size="small" :loading="opLoading[`sosexyVibration:${dev.deviceId}`]" @click="sosexyVibrationApply(dev)">应用震动</el-button></div>
-              <div class="control-field"><label>吸吮 {{ ctl(dev).sosexySuction }}</label><el-slider v-model="ctl(dev).sosexySuction" :min="0" :max="255" /></div>
-              <div class="control-actions"><el-button size="small" :loading="opLoading[`sosexySuction:${dev.deviceId}`]" @click="sosexySuctionApply(dev)">应用吸吮</el-button></div>
-              <div class="control-field"><label>电击 {{ ctl(dev).sosexyShock }}</label><el-slider v-model="ctl(dev).sosexyShock" :min="0" :max="100" /></div>
-              <div class="control-actions"><el-button type="danger" size="small" :loading="opLoading[`sosexyShock:${dev.deviceId}`]" @click="sosexyShockApply(dev)">应用电击</el-button><el-button size="small" :loading="opLoading[`sosexyQuery:${dev.deviceId}`]" @click="sosexyQuery(dev)">查询状态</el-button><el-button size="small" :loading="opLoading[`sosexyStop:${dev.deviceId}`]" @click="sosexyStop(dev)">全部停止</el-button></div>
+            <div v-else-if="ycyPanelType(dev) === 'SOSEXY_PID0004'" class="control-stack">
+              <div class="control-row">
+                <div class="control-field"><label>总强度 {{ ctl(dev).sosexyStrength }}</label><el-slider v-model="ctl(dev).sosexyStrength" :min="0" :max="255" /></div>
+                <div class="control-actions"><el-button type="primary" size="small" :loading="opLoading[`sosexyStrength:${dev.deviceId}`]" @click="sosexyStrengthApply(dev)">震动+吸吮</el-button></div>
+              </div>
+              <div class="control-row">
+                <div class="control-field"><label>震动 {{ ctl(dev).sosexyVibration }}</label><el-slider v-model="ctl(dev).sosexyVibration" :min="0" :max="255" /></div>
+                <div class="control-actions"><el-button size="small" :loading="opLoading[`sosexyVibration:${dev.deviceId}`]" @click="sosexyVibrationApply(dev)">应用震动</el-button></div>
+              </div>
+              <div class="control-row">
+                <div class="control-field"><label>吸吮 {{ ctl(dev).sosexySuction }}</label><el-slider v-model="ctl(dev).sosexySuction" :min="0" :max="255" /></div>
+                <div class="control-actions"><el-button size="small" :loading="opLoading[`sosexySuction:${dev.deviceId}`]" @click="sosexySuctionApply(dev)">应用吸吮</el-button></div>
+              </div>
+              <div class="control-row">
+                <div class="control-field"><label>电击 {{ ctl(dev).sosexyShock }}</label><el-slider v-model="ctl(dev).sosexyShock" :min="0" :max="100" /></div>
+                <div class="control-actions">
+                  <el-button type="danger" size="small" :loading="opLoading[`sosexyShock:${dev.deviceId}`]" @click="sosexyShockApply(dev)">应用电击</el-button>
+                  <el-button size="small" :loading="opLoading[`sosexyQuery:${dev.deviceId}`]" @click="sosexyQuery(dev)">查询状态</el-button>
+                  <el-button size="small" :loading="opLoading[`sosexyStop:${dev.deviceId}`]" @click="sosexyStop(dev)">全部停止</el-button>
+                </div>
+              </div>
             </div>
             <div v-else-if="ycyPanelType(dev) === 'YCY_CUP'" class="control-grid">
               <div class="control-field"><label>旋转 {{ ctl(dev).stroke }}</label><el-slider v-model="ctl(dev).stroke" :min="0" :max="255" /></div>
@@ -205,11 +217,11 @@ import type { DglabBridgeDevice } from '../api/dglabBridge'
 import * as brandBle from '../web-ble/brandBle'
 import * as ycyBle from '../web-ble/ycyBle'
 
-// 品牌中文显示名（按页面要求显示：郊狼 / 役次元）。
+// 品牌中文显示名（按页面要求显示：郊狼 / 役次元 / 繁野）。
 const BRAND_LABEL: Record<string, string> = {
   dglab: '郊狼',
   ycy: '役次元',
-  sosexy: 'SOSEXY',
+  sosexy: '繁野',
 }
 const TYPE_LABEL: Record<string, string> = {
   DGLAB: '郊狼',
@@ -218,7 +230,7 @@ const TYPE_LABEL: Record<string, string> = {
   YCY_TOY: '电机/玩具',
   YCY_CUP: '杯',
   YCY_ENEMA: '灌肠机',
-  SOSEXY_PID0004: 'SOSEXY PID 0004',
+  SOSEXY_PID0004: '啵啵贝',
 }
 
 // 设备名映射为友好中文名（仅显示层，不改连接/电量逻辑）
@@ -230,6 +242,7 @@ function brandLabel(brand: string, rawName?: string | null): string {
     if (up.startsWith('47L')) return '郊狼3.0'
     return name || '郊狼'
   }
+  if (brand === 'sosexy') return '啵啵贝'
   if (brand === 'ycy') {
     // 按广播名/设备名识别设备类型，映射到中文友好名：
     // 杯(FJB)、灌肠机(YISK/灌肠/ENEMA/GLJ/GLS)、电击主机(DJ)；其余役次元家族统称“役次元设备”
@@ -263,6 +276,7 @@ const moreTitle = computed(() => {
 })
 const testedDevices = [
   '役次元 YCY-FJB-03 杯（网页蓝牙）',
+  '繁野 啵啵贝（蓝牙）',
 ]
 const theoreticalDevices = [
   '郊狼 2.0 / 3.0（网页蓝牙、本机桥接、手机娱乐模式）',
@@ -418,7 +432,7 @@ function withLoading(key: string, fn: () => Promise<void>) {
 function ycyPanelType(dev: { type?: string; name?: string }) {
   if (dev.type && TYPE_LABEL[dev.type]) return dev.type
   const n = String(dev.name || '')
-  if (/SOSEXY/i.test(n)) return 'SOSEXY_PID0004'
+  if (/SOSEXY|啵啵贝/i.test(n)) return 'SOSEXY_PID0004'
   if (/灌肠|enema|glj|yisk/i.test(n)) return 'YCY_ENEMA'
   if (/杯|cup|fjb/i.test(n)) return 'YCY_CUP'
   if (/toy|玩具|tdd/i.test(n)) return 'YCY_TOY'
@@ -647,7 +661,7 @@ const ycyNativeEver = ref<string[]>([])
 const ycyNativeManual = ref<string[]>([])
 const ycyNativeTimer = ref<number | null>(null)
 // 役次元全系设备名关键字：电击主机(DJ)、杯(FJB)、灌肠机(灌肠/ENEMA/GLJ)，以及 YCY/YYC/YSKJ/YOKO 等系列
-const YCY_RE = /YCY|YYC|YSKJ|YOKO|YOKONEX|YISK|DJ-V2|YICIYUAN|DJ|FJB|SOSEXY|灌肠|ENEMA|GLJ/i
+const YCY_RE = /YCY|YYC|YSKJ|YOKO|YOKONEX|YISK|DJ-V2|YICIYUAN|DJ|FJB|灌肠|ENEMA|GLJ/i
 
 const ycyNativeSummary = computed(() => {
   if (!ycyBridgeUp.value) return { type: 'warning' as const, text: '本机桥未连接（请用客户端打开，或切到“网页蓝牙”）' }
@@ -783,9 +797,10 @@ const scanningYcyWebble = ref(false)
 function ycyWebbleCancelScan() {
   brandBle.cancelSelection().catch(() => {})
 }
-function classifyBleBrand(name?: string): 'dglab' | 'ycy' {
+function classifyBleBrand(name?: string): 'dglab' | 'ycy' | 'sosexy' {
   const n = String(name || '').toUpperCase()
   if (['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k))) return 'dglab'
+  if (n.includes('SOSEXY') || name?.includes('啵啵贝') || name?.includes('繁野')) return 'sosexy'
   return 'ycy'
 }
 function cancelBleScan() {
@@ -796,11 +811,12 @@ async function startBleConnect() {
   scanningYcyWebble.value = true
   ycyWebbleCandidates.value = []
   try {
-    const [y, d] = await Promise.all([
+    const [y, d, s] = await Promise.all([
       brandsApi.discover('ycy', { mode: 'native' }),
       brandsApi.discover('dglab', { mode: 'native' }),
+      brandsApi.discover('sosexy', { mode: 'native' }),
     ])
-    const list = [...(y.devices || []), ...(d.devices || [])]
+    const list = [...(y.devices || []), ...(d.devices || []), ...(s.devices || [])]
     ycyWebbleCandidates.value = list.map((c) => ({
       id: c.address || c.deviceId || '',
       name: c.name || c.suggestedName || '',
@@ -825,14 +841,14 @@ function openMoreConnect(kind: string | number) {
 }
 async function ycyWebblePick(c: { id: string; name: string; address?: string; deviceId?: string; brand?: string }) {
   try {
-    const brand = (c.brand as 'ycy' | 'dglab') || classifyBleBrand(c.name)
+    const brand = classifyBleBrand(c.name)
     await brandsApi.connect({
       brand,
       mode: 'native',
       address: c.address || c.id,
       name: c.name,
       deviceId: c.deviceId,
-      ...(brand === 'ycy' ? { type: ycyPanelType({ name: c.name }) } : {}),
+      ...(brand === 'dglab' ? {} : { type: ycyPanelType({ name: c.name }) }),
     })
     ycyWebbleCandidates.value = []
     await refreshConnected()
@@ -1089,13 +1105,18 @@ onUnmounted(() => {
 .candidate-info { display: flex; flex-direction: column; gap: 2px; }
 .candidate-name { color: var(--text-primary); font-weight: 600; }
 .candidate-meta { color: var(--text-muted); font-size: 12px; display: flex; align-items: center; gap: 6px; }
-.device-card { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 14px; background-color: var(--bg-app); }
-.device-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.device-card { border: 1px solid var(--border-subtle); border-radius: 10px; padding: 14px; background-color: var(--bg-app); min-width: 0; }
+.device-card__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
 .device-card__name { color: var(--text-primary); font-weight: 700; margin-right: 8px; }
 .tag-brand { margin-right: 6px; }
 .control-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; align-items: end; }
-.control-field { display: flex; flex-direction: column; gap: 6px; }
+.control-stack { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.control-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.control-row .control-field { flex: 1 1 180px; min-width: 0; }
+.control-row .control-actions { flex: 0 1 auto; }
+.control-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .control-field label { color: var(--text-muted); font-size: 12px; }
+.control-field :deep(.el-slider) { width: 100%; min-width: 0; }
 .control-input { width: 100%; }
 .control-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .control-hint { grid-column: 1 / -1; color: var(--text-muted); font-size: 12px; }

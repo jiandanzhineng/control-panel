@@ -304,10 +304,10 @@ const registeredTypes = [
     close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'stop' }),
   }),
 
-  // SOSEXY PID 0004：strength 同时映射震动与吸吮；shock 映射微电流通道。
+  // 繁野啵啵贝（广播名 SOSEXY PID 0004）：strength 同时映射震动与吸吮；shock 映射微电流通道。
   new BaseDeviceType({
     type: 'SOSEXY_PID0004',
-    name: 'SOSEXY PID 0004',
+    name: '啵啵贝',
     capabilities: {
       strength: {
         actions: {
