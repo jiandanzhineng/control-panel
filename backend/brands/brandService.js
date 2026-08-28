@@ -8,6 +8,7 @@ const { DGLabConnection } = require('./dglabConnection');
 const { YCYConnection } = require('./ycyConnection');
 const { DGLabV2WebBleConnection } = require('./webBleConnection');
 const { YcyWebBleConnection } = require('./ycyWebBleConnection');
+const { SosexyWebBleConnection } = require('./sosexyWebBleConnection');
 const { NativeBridgeConnection } = require('./nativeBridgeConnection');
 const dglabV2 = require('./protocols/dglabV2');
 const discovery = require('./discovery');
@@ -16,7 +17,7 @@ const { brandLabel, typeLabel } = require('./brandLabels');
 const logger = require('../utils/logger');
 const fileStorage = require('../utils/fileStorage');
 
-const SUPPORTED = ['dglab', 'ycy'];
+const SUPPORTED = ['dglab', 'ycy', 'sosexy'];
 const connections = new Map(); // deviceId -> connection adapter
 // 连接状态机（基础连接状态管理，轻量）：
 //   connecting | connected | disconnected | error
@@ -60,6 +61,9 @@ function getConnection(deviceId) {
 /** 设备类型推断：根据品牌与发现的型号决定 registry 中的 type */
 function resolveDeviceType(brand, { model, mode, type } = {}) {
   if (brand === 'dglab') return 'DGLAB';
+  if (brand === 'sosexy' || type === 'SOSEXY_PID0004' || /SOSEXY/i.test(String(model || ''))) {
+    return 'SOSEXY_PID0004';
+  }
   if (brand === 'ycy') {
     // 前端显式选择优先（杯 / 灌肠机 / 电击器 / 玩具 等）
     if (type) return type;
@@ -90,7 +94,8 @@ async function discover(brand, opts = {}) {
       .filter((d) => {
         const n = String(d.name || '').toUpperCase();
         if (brand === 'dglab') return ['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k));
-        return ['YCY', 'YYC', 'YOKO', 'YISK', 'DJ-V2', 'FJB', 'ENEMA', 'GLJ', 'DJ'].some((k) => n.includes(k));
+        if (brand === 'sosexy') return n.includes('SOSEXY');
+        return ['YCY', 'YYC', 'YOKO', 'YISK', 'DJ-V2', 'FJB', 'ENEMA', 'GLJ', 'DJ', 'SOSEXY'].some((k) => n.includes(k));
       });
     return found.map((d) => {
       const address = d.id || d.address;
@@ -177,7 +182,9 @@ async function connect(brand, opts = {}) {
     const stable = { id: finalDeviceId, name: finalName };
     stabilizeBrandBleId(stable);
     finalDeviceId = stable.id;
-    type = brand === 'dglab' ? 'DGLAB' : resolveDeviceType('ycy', { model: name, mode: 'ble', type: opts.type });
+    type = brand === 'dglab'
+      ? 'DGLAB'
+      : resolveDeviceType(brand, { model: name, mode: 'ble', type: opts.type });
     connection = new NativeBridgeConnection({
       brand, deviceId: finalDeviceId, address: opts.address,
       port: opts.port || (brand === 'dglab' ? 3002 : 3001), type,
@@ -191,11 +198,12 @@ async function connect(brand, opts = {}) {
     finalName = name || `蓝牙体感设备 ${host}`;
     type = 'DGLAB';
     connection = new DGLabConnection({ deviceId: finalDeviceId, host, port, WebSocketClass });
-  } else if (brand === 'ycy') {
+  } else if (brand === 'ycy' || brand === 'sosexy') {
+    if (brand === 'sosexy') throw new Error('SOSEXY 仅支持本机桥或 BLE 直连');
     const mode = opts.mode === 'ble' ? 'ble' : 'bridge';
     finalDeviceId = deviceId || (mode === 'ble' ? `ycy-${opts.address || opts.deviceId}` : `ycy-bridge-${opts.host || '127.0.0.1'}`);
     finalName = name || (mode === 'ble' ? `遥控蓝牙设备 ${opts.name || finalDeviceId}` : `遥控蓝牙设备(桥接) ${opts.host || '127.0.0.1'}`);
-    type = resolveDeviceType('ycy', { model, mode, type: opts.type });
+    type = resolveDeviceType(brand, { model, mode, type: opts.type });
     connection = new YCYConnection({ deviceId: finalDeviceId, mode, WebSocketClass });
   }
 
@@ -210,7 +218,7 @@ async function safeConnect(connection, brand, opts, finalDeviceId, type, finalNa
   const attemptConnect = async () => {
     if (brand === 'dglab') {
       await connection.connect();
-    } else if (brand === 'ycy') {
+    } else if (brand === 'ycy' || brand === 'sosexy') {
       await connection.connect({ connectCode: opts.connectCode, uid: opts.uid, token: opts.token, host: opts.host, port: opts.port, serviceUuid: opts.serviceUuid, writeUuid: opts.writeUuid });
     }
   };
@@ -366,26 +374,32 @@ function attachWebBle(metadata, send) {
   const explicitYcyType = /^YCY_(EMS|TOY|CUP|ENEMA)$/.test(String(metadata.type || ''))
     ? metadata.type
     : null;
+  const isSosexy = metadata.brand === 'sosexy'
+    || String(metadata.type || '') === 'SOSEXY_PID0004'
+    || /SOSEXY/i.test(metadata.name || '');
   const ycyType = explicitYcyType
     ? explicitYcyType
-    : resolveDeviceType('ycy', { mode: 'ble', model: metadata.name });
-  const isYcy = metadata.brand === 'ycy' || String(metadata.type || '').startsWith('YCY')
-    || /FJB|YCY|YYC|YOKO|TDD/i.test(metadata.name || '');
+    : (isSosexy ? 'SOSEXY_PID0004' : resolveDeviceType('ycy', { mode: 'ble', model: metadata.name }));
+  const isYcy = !isSosexy && (metadata.brand === 'ycy' || String(metadata.type || '').startsWith('YCY')
+    || /FJB|YCY|YYC|YOKO|TDD/i.test(metadata.name || ''));
+  const isBrandSosexy = isSosexy;
   let connection = connections.get(metadata.id);
   if (!connection) {
-    connection = isYcy
+    connection = isBrandSosexy
+      ? new SosexyWebBleConnection({ deviceId: metadata.id, send, type: 'SOSEXY_PID0004' })
+      : isYcy
       ? new YcyWebBleConnection({ deviceId: metadata.id, send, type: ycyType })
       : new DGLabV2WebBleConnection({ deviceId: metadata.id, send });
     connections.set(metadata.id, connection);
   } else if (typeof send === 'function') {
     connection._transportSend = send;
   }
-  const type = isYcy ? ycyType : 'DGLAB';
-  const brand = isYcy ? 'ycy' : 'dglab';
+  const type = isBrandSosexy ? 'SOSEXY_PID0004' : (isYcy ? ycyType : 'DGLAB');
+  const brand = isBrandSosexy ? 'sosexy' : (isYcy ? 'ycy' : 'dglab');
   deviceService.connectTransportDevice(
     {
       id: metadata.id,
-      name: metadata.name || `${isYcy ? '役次元' : '蓝牙体感设备'} ${String(metadata.id).slice(-4)}`,
+      name: metadata.name || `${isBrandSosexy ? 'SOSEXY' : (isYcy ? '役次元' : '蓝牙体感设备')} ${String(metadata.id).slice(-4)}`,
       type,
       connectionType: 'brandBle',
       transportMetadata: connection.toMetadata(),
@@ -513,6 +527,7 @@ function browserIdFromDeviceId(id) {
   const s = String(id || '');
   if (s.startsWith('ycy:')) return s.slice(4);
   if (s.startsWith('dglab-v2-')) return s.slice(9);
+  if (s.startsWith('sosexy:')) return s.slice(7);
   return '';
 }
 
@@ -532,7 +547,9 @@ function isMacDeviceId(id) {
 
 function isBrandBleRecord(d) {
   if (browserIdFromDeviceId(d.id)) return true;
-  return isMacDeviceId(d.id) && (d.type === 'DGLAB' || String(d.type || '').startsWith('YCY_'));
+  return isMacDeviceId(d.id) && (d.type === 'DGLAB'
+    || String(d.type || '').startsWith('YCY_')
+    || d.type === 'SOSEXY_PID0004');
 }
 
 function bleNamesMatch(a, b) {

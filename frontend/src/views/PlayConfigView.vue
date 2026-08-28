@@ -523,6 +523,8 @@ const CAPABILITY_LABELS: Record<string, string> = {
   buttonInput: '按钮输入',
   shock: '电击',
   strength: '强度控制',
+  vibration: '震动',
+  suction: '吸吮',
   lock: '锁定',
 };
 

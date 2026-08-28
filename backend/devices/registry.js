@@ -303,6 +303,44 @@ const registeredTypes = [
     // 灌肠机的输出通道是泵；stopAll 仅是电刺激帧，不能保证泵停止。
     close: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'stop' }),
   }),
+
+  // SOSEXY PID 0004：strength 同时映射震动与吸吮；shock 映射微电流通道。
+  new BaseDeviceType({
+    type: 'SOSEXY_PID0004',
+    name: 'SOSEXY PID 0004',
+    capabilities: {
+      strength: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({ brand: 'sosexy', cmd: 'setStrength', value: params.value }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'sosexy', cmd: 'setStrength', value: 0 }),
+        },
+      },
+      vibration: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({ brand: 'sosexy', cmd: 'setVibration', value: params.value, mode: params.mode }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'sosexy', cmd: 'setVibration', value: 0 }),
+        },
+      },
+      suction: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({ brand: 'sosexy', cmd: 'setSuction', value: params.value, mode: params.mode }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'sosexy', cmd: 'setSuction', value: 0 }),
+        },
+      },
+      shock: {
+        actions: {
+          start: (ctx, params) => ctx.sendMessage({ brand: 'sosexy', cmd: 'setShock', voltage: params.voltage, mode: params.mode }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'sosexy', cmd: 'setShock', voltage: 0 }),
+        },
+      },
+    },
+    operations: [
+      { key: 'start', name: '启动强度', capability: 'strength', action: 'set', input: { value: 128 } },
+      { key: 'stop', name: '全部停止', invoke: (ctx) => ctx.sendMessage({ brand: 'sosexy', cmd: 'stopAll' }) },
+      { key: 'queryStatus', name: '查询状态', invoke: (ctx) => ctx.sendMessage({ brand: 'sosexy', cmd: 'queryStatus' }) },
+    ],
+    close: (ctx) => ctx.sendMessage({ brand: 'sosexy', cmd: 'stopAll' }),
+  }),
 ];
 
 const registry = new Map(registeredTypes.map((dt) => [dt.type, dt]));

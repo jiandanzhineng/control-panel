@@ -70,6 +70,16 @@
                 <el-button size="small" :loading="opLoading[`dglabStop:${dev.deviceId}`]" @click="dglabStop(dev)">停止</el-button>
               </div>
             </div>
+            <div v-else-if="ycyPanelType(dev) === 'SOSEXY_PID0004'" class="control-grid">
+              <div class="control-field"><label>总强度 {{ ctl(dev).sosexyStrength }}</label><el-slider v-model="ctl(dev).sosexyStrength" :min="0" :max="255" /></div>
+              <div class="control-actions"><el-button type="primary" size="small" :loading="opLoading[`sosexyStrength:${dev.deviceId}`]" @click="sosexyStrengthApply(dev)">震动+吸吮</el-button></div>
+              <div class="control-field"><label>震动 {{ ctl(dev).sosexyVibration }}</label><el-slider v-model="ctl(dev).sosexyVibration" :min="0" :max="255" /></div>
+              <div class="control-actions"><el-button size="small" :loading="opLoading[`sosexyVibration:${dev.deviceId}`]" @click="sosexyVibrationApply(dev)">应用震动</el-button></div>
+              <div class="control-field"><label>吸吮 {{ ctl(dev).sosexySuction }}</label><el-slider v-model="ctl(dev).sosexySuction" :min="0" :max="255" /></div>
+              <div class="control-actions"><el-button size="small" :loading="opLoading[`sosexySuction:${dev.deviceId}`]" @click="sosexySuctionApply(dev)">应用吸吮</el-button></div>
+              <div class="control-field"><label>电击 {{ ctl(dev).sosexyShock }}</label><el-slider v-model="ctl(dev).sosexyShock" :min="0" :max="100" /></div>
+              <div class="control-actions"><el-button type="danger" size="small" :loading="opLoading[`sosexyShock:${dev.deviceId}`]" @click="sosexyShockApply(dev)">应用电击</el-button><el-button size="small" :loading="opLoading[`sosexyQuery:${dev.deviceId}`]" @click="sosexyQuery(dev)">查询状态</el-button><el-button size="small" :loading="opLoading[`sosexyStop:${dev.deviceId}`]" @click="sosexyStop(dev)">全部停止</el-button></div>
+            </div>
             <div v-else-if="ycyPanelType(dev) === 'YCY_CUP'" class="control-grid">
               <div class="control-field"><label>旋转 {{ ctl(dev).stroke }}</label><el-slider v-model="ctl(dev).stroke" :min="0" :max="255" /></div>
               <div class="control-field"><label>震动 {{ ctl(dev).vibe }}</label><el-slider v-model="ctl(dev).vibe" :min="0" :max="255" /></div>
@@ -199,6 +209,7 @@ import * as ycyBle from '../web-ble/ycyBle'
 const BRAND_LABEL: Record<string, string> = {
   dglab: '郊狼',
   ycy: '役次元',
+  sosexy: 'SOSEXY',
 }
 const TYPE_LABEL: Record<string, string> = {
   DGLAB: '郊狼',
@@ -207,6 +218,7 @@ const TYPE_LABEL: Record<string, string> = {
   YCY_TOY: '电机/玩具',
   YCY_CUP: '杯',
   YCY_ENEMA: '灌肠机',
+  SOSEXY_PID0004: 'SOSEXY PID 0004',
 }
 
 // 设备名映射为友好中文名（仅显示层，不改连接/电量逻辑）
@@ -406,6 +418,7 @@ function withLoading(key: string, fn: () => Promise<void>) {
 function ycyPanelType(dev: { type?: string; name?: string }) {
   if (dev.type && TYPE_LABEL[dev.type]) return dev.type
   const n = String(dev.name || '')
+  if (/SOSEXY/i.test(n)) return 'SOSEXY_PID0004'
   if (/灌肠|enema|glj|yisk/i.test(n)) return 'YCY_ENEMA'
   if (/杯|cup|fjb/i.test(n)) return 'YCY_CUP'
   if (/toy|玩具|tdd/i.test(n)) return 'YCY_TOY'
@@ -418,6 +431,7 @@ function ctl(dev: BrandDevice) {
       pattern: '经典', intensity: 60, ticks: -1,
       commandId: '', aStrength: 102, bStrength: 102, wave: 1,
       speed: 153, mode: 1, stroke: 96, vibe: 0, axis: 0, scene: 'guan',
+      sosexyStrength: 0, sosexyVibration: 0, sosexySuction: 0, sosexyShock: 0,
       v2AStrength: 0, v2BStrength: 0, v2Ax: 5, v2Ay: 200, v2Bx: 5, v2By: 200,
     }
   }
@@ -633,7 +647,7 @@ const ycyNativeEver = ref<string[]>([])
 const ycyNativeManual = ref<string[]>([])
 const ycyNativeTimer = ref<number | null>(null)
 // 役次元全系设备名关键字：电击主机(DJ)、杯(FJB)、灌肠机(灌肠/ENEMA/GLJ)，以及 YCY/YYC/YSKJ/YOKO 等系列
-const YCY_RE = /YCY|YYC|YSKJ|YOKO|YOKONEX|YISK|DJ-V2|YICIYUAN|DJ|FJB|灌肠|ENEMA|GLJ/i
+const YCY_RE = /YCY|YYC|YSKJ|YOKO|YOKONEX|YISK|DJ-V2|YICIYUAN|DJ|FJB|SOSEXY|灌肠|ENEMA|GLJ/i
 
 const ycyNativeSummary = computed(() => {
   if (!ycyBridgeUp.value) return { type: 'warning' as const, text: '本机桥未连接（请用客户端打开，或切到“网页蓝牙”）' }
@@ -818,6 +832,7 @@ async function ycyWebblePick(c: { id: string; name: string; address?: string; de
       address: c.address || c.id,
       name: c.name,
       deviceId: c.deviceId,
+      ...(brand === 'ycy' ? { type: ycyPanelType({ name: c.name }) } : {}),
     })
     ycyWebbleCandidates.value = []
     await refreshConnected()
@@ -887,11 +902,49 @@ async function ycyTrigger(dev: BrandDevice) {
 async function ycyStop(dev: BrandDevice) {
   await withLoading(`ycyStop:${dev.deviceId}`, async () => {
     const type = ycyPanelType(dev)
-    if (type === 'YCY_TOY') await devicesApi.invokeCapability(dev.deviceId, 'strength', 'stop', {})
+    if (type === 'SOSEXY_PID0004') await devicesApi.executeDeviceOperation(dev.deviceId, 'stop', {})
+    else if (type === 'YCY_TOY') await devicesApi.invokeCapability(dev.deviceId, 'strength', 'stop', {})
     else if (dev.mode === 'bridge') await devicesApi.executeDeviceOperation(dev.deviceId, 'stop', {})
     else await devicesApi.invokeCapability(dev.deviceId, 'estim', 'stop', {})
     ElMessage.success('已停止')
   }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
+}
+
+async function sosexyStrengthApply(dev: BrandDevice) {
+  await withLoading(`sosexyStrength:${dev.deviceId}`, async () => {
+    await devicesApi.invokeCapability(dev.deviceId, 'strength', 'set', { value: ctl(dev).sosexyStrength })
+    ElMessage.success('已下发')
+  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+}
+async function sosexyVibrationApply(dev: BrandDevice) {
+  await withLoading(`sosexyVibration:${dev.deviceId}`, async () => {
+    await devicesApi.invokeCapability(dev.deviceId, 'vibration', 'set', { value: ctl(dev).sosexyVibration })
+    ElMessage.success('已下发')
+  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+}
+async function sosexySuctionApply(dev: BrandDevice) {
+  await withLoading(`sosexySuction:${dev.deviceId}`, async () => {
+    await devicesApi.invokeCapability(dev.deviceId, 'suction', 'set', { value: ctl(dev).sosexySuction })
+    ElMessage.success('已下发')
+  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+}
+async function sosexyShockApply(dev: BrandDevice) {
+  await withLoading(`sosexyShock:${dev.deviceId}`, async () => {
+    await devicesApi.invokeCapability(dev.deviceId, 'shock', 'start', { voltage: ctl(dev).sosexyShock })
+    ElMessage.success('已下发')
+  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+}
+async function sosexyStop(dev: BrandDevice) {
+  await withLoading(`sosexyStop:${dev.deviceId}`, async () => {
+    await devicesApi.executeDeviceOperation(dev.deviceId, 'stop', {})
+    ElMessage.success('已停止')
+  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
+}
+async function sosexyQuery(dev: BrandDevice) {
+  await withLoading(`sosexyQuery:${dev.deviceId}`, async () => {
+    await devicesApi.executeDeviceOperation(dev.deviceId, 'queryStatus', {})
+    ElMessage.success('已请求状态')
+  }).catch((e: any) => { ElMessage.error(e?.message || '查询失败') })
 }
 
 async function ycyEmsApply(dev: BrandDevice) {

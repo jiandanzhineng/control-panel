@@ -39,7 +39,7 @@ impl Brand {
     fn keywords(&self) -> &'static [&'static str] {
         match self {
             Brand::Ycy => &[
-                "YCY", "YYC", "YSKJ", "YOKO", "YOKONEX", "YISK", "DJ-V2", "YICIYUAN", "DJ",
+                "YCY", "YYC", "YSKJ", "YOKO", "YOKONEX", "YISK", "DJ-V2", "YICIYUAN", "DJ", "SOSEXY",
             ],
             Brand::Dglab => &["D-LAB", "DG-LAB", "47L", "COYOTE", "YSKJ", "ESTIM"],
         }
@@ -52,6 +52,7 @@ impl Brand {
             "0000ff30-0000-1000-8000-00805f9b34fb",
             "0000ff40-0000-1000-8000-00805f9b34fb",
             "98a9cd00-ca0a-4cf8-9f85-e93949467558",
+            "0000ee01-0000-1000-8000-00805f9b34fb",
             "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
         ]
     }
@@ -799,7 +800,7 @@ async fn post_send(State(st): State<Shared>, Json(body): Json<Value>) -> Json<Va
     };
 
     let mut written = Vec::new();
-    for fr in &frames {
+    for (index, fr) in frames.iter().enumerate() {
         let data = match from_hex(fr) {
             Some(d) => d,
             None => return Json(json!({ "ok": false, "msg": format!("非法 hex 帧: {}", fr) })),
@@ -813,6 +814,9 @@ async fn post_send(State(st): State<Shared>, Json(body): Json<Value>) -> Json<Va
             return Json(json!({ "ok": false, "msg": format!("写失败: {}", e) }));
         }
         written.push(to_hex(&data));
+        if index + 1 < frames.len() {
+            tokio::time::sleep(Duration::from_millis(30)).await;
+        }
     }
     Json(json!({ "ok": true, "written": written, "id": key }))
 }

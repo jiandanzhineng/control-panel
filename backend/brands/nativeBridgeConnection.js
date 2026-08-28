@@ -3,18 +3,21 @@
  */
 const dglabV2 = require('./protocols/dglabV2');
 const { YcyWebBleConnection } = require('./ycyWebBleConnection');
+const { SosexyWebBleConnection } = require('./sosexyWebBleConnection');
 const { DGLabV2WebBleConnection } = require('./webBleConnection');
 
 class NativeBridgeConnection {
   constructor({ brand, deviceId, address, port, type, fetchImpl } = {}) {
-    this.brand = brand;
+    this.brand = type === 'SOSEXY_PID0004' ? 'sosexy' : brand;
     this.deviceId = deviceId;
     this.address = address;
     this.port = Number(port);
     this.type = type;
     this.mode = 'native';
     this._fetch = fetchImpl || globalThis.fetch.bind(globalThis);
-    this._inner = brand === 'ycy'
+    this._inner = type === 'SOSEXY_PID0004'
+      ? new SosexyWebBleConnection({ deviceId, type, mode: 'native', send: (msg) => this._sendYcy(msg) })
+      : brand === 'ycy'
       ? new YcyWebBleConnection({ deviceId, type, send: (msg) => this._sendYcy(msg) })
       : new DGLabV2WebBleConnection({ deviceId, send: (ops) => this._sendDglab(ops) });
   }
@@ -50,6 +53,12 @@ class NativeBridgeConnection {
 
   _sendYcy(msg) {
     if (msg?.method === 'disconnect') return this.disconnect();
+    if (msg?.op === 'writeMany' && Array.isArray(msg.values)) {
+      return this._postSend({
+        addr: this.address,
+        frames: msg.values.map((value) => Buffer.from(value || []).toString('hex')),
+      });
+    }
     const frame = Buffer.from(msg.value || []);
     return this._postSend({ addr: this.address, frame: frame.toString('hex') });
   }

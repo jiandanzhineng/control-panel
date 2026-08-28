@@ -4,6 +4,7 @@ const { BLE_UUIDS } = require('./ble/protocol');
 const { BlufiProvisionClient } = require('./blufi/provisionClient');
 const { BrandBleClient, V2_UUIDS } = require('./ble/brandDeviceClient');
 const { YcyBleClient } = require('./ble/ycyDeviceClient');
+const { SosexyBleClient } = require('./ble/sosexyDeviceClient');
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
 const bleClients = new Map();
@@ -190,12 +191,15 @@ const BRAND_OPTIONAL_SERVICES = [
   '0000ae00-0000-1000-8000-00805f9b34fb',
   '98a9cd00-ca0a-4cf8-9f85-e93949467558',
   '0000180f-0000-1000-8000-00805f9b34fb',
+  '0000ee01-0000-1000-8000-00805f9b34fb',
 ];
 
 async function attachBrandBluetoothDevice(device) {
   const n = String(device.name || '').toUpperCase();
   const dglab = ['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k));
-  const client = dglab
+  const client = n.includes('SOSEXY')
+    ? new SosexyBleClient(device, { onEvent: emitBrandBleClientEvent })
+    : dglab
     ? new BrandBleClient(device, { onEvent: emitBrandBleClientEvent })
     : new YcyBleClient(device, { onEvent: emitBrandBleClientEvent });
   try {
@@ -299,14 +303,19 @@ window.ycyBleApi = {
         '0000ae00-0000-1000-8000-00805f9b34fb',
         '98a9cd00-ca0a-4cf8-9f85-e93949467558',
         '0000180f-0000-1000-8000-00805f9b34fb',
+        '0000ee01-0000-1000-8000-00805f9b34fb',
       ],
     });
-    const client = new YcyBleClient(device, { onEvent: emitBrandBleClientEvent });
+    const client = /SOSEXY/i.test(device.name || '')
+      ? new SosexyBleClient(device, { onEvent: emitBrandBleClientEvent })
+      : new YcyBleClient(device, { onEvent: emitBrandBleClientEvent });
     try {
       const metadata = await client.connect();
-      brandClients.set(metadata.id, client);
-      await ipcRenderer.invoke('brandBle:connected', metadata);
-      return metadata;
+      const attached = await ipcRenderer.invoke('brandBle:connected', metadata);
+      const id = attached?.device?.id || metadata.id;
+      client.id = id;
+      brandClients.set(id, client);
+      return { ...metadata, id };
     } catch (error) {
       brandClients.delete(client.id);
       try { await client.disconnect(); } catch (_) {}
