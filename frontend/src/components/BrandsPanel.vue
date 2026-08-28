@@ -76,11 +76,11 @@
                 <div class="control-actions"><el-button type="primary" size="small" :loading="opLoading[`sosexyStrength:${dev.deviceId}`]" @click="sosexyStrengthApply(dev)">震动+吸吮</el-button></div>
               </div>
               <div class="control-row">
-                <div class="control-field"><label>震动 {{ ctl(dev).sosexyVibration }}</label><el-slider v-model="ctl(dev).sosexyVibration" :min="0" :max="255" /></div>
+                <div class="control-field"><label>震动 {{ ctl(dev).sosexyVibration }}</label><el-slider v-model="ctl(dev).sosexyVibration" :min="0" :max="100" /></div>
                 <div class="control-actions"><el-button size="small" :loading="opLoading[`sosexyVibration:${dev.deviceId}`]" @click="sosexyVibrationApply(dev)">应用震动</el-button></div>
               </div>
               <div class="control-row">
-                <div class="control-field"><label>吸吮 {{ ctl(dev).sosexySuction }}</label><el-slider v-model="ctl(dev).sosexySuction" :min="0" :max="255" /></div>
+                <div class="control-field"><label>吸吮 {{ ctl(dev).sosexySuction }}</label><el-slider v-model="ctl(dev).sosexySuction" :min="0" :max="100" /></div>
                 <div class="control-actions"><el-button size="small" :loading="opLoading[`sosexySuction:${dev.deviceId}`]" @click="sosexySuctionApply(dev)">应用吸吮</el-button></div>
               </div>
               <div class="control-row">

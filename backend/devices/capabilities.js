@@ -39,7 +39,7 @@ const vibration = {
   key: 'vibration',
   name: '震动控制',
   actions: {
-    set: (ctx, params) => ctx.writeProps({ vibration: Math.round(Math.max(0, Math.min(255, Number(params.value) || 0))) }),
+    set: (ctx, params) => ctx.writeProps({ vibration: Math.round(Math.max(0, Math.min(100, Number(params.value) || 0))) }),
     stop: (ctx) => ctx.writeProps({ vibration: 0 }),
   },
   events: {},
@@ -49,7 +49,7 @@ const suction = {
   key: 'suction',
   name: '吸吮控制',
   actions: {
-    set: (ctx, params) => ctx.writeProps({ suction: Math.round(Math.max(0, Math.min(255, Number(params.value) || 0))) }),
+    set: (ctx, params) => ctx.writeProps({ suction: Math.round(Math.max(0, Math.min(100, Number(params.value) || 0))) }),
     stop: (ctx) => ctx.writeProps({ suction: 0 }),
   },
   events: {},

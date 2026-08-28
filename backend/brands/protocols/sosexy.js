@@ -49,8 +49,8 @@ function encodeProperties(properties) {
   return Buffer.from(out);
 }
 
-function channelProperties(id, modeId, value, mode = 1) {
-  return [property(id, 0x11, strengthToDevice(value)), property(modeId, 0x11, clamp(mode, 0, 4))];
+function channelProperties(id, modeId, value, mode = 1, toDevice = strengthToDevice) {
+  return [property(id, 0x11, toDevice(value)), property(modeId, 0x11, clamp(mode, 0, 4))];
 }
 
 function buildStrength({ value = 0, vibrationMode = 1, suctionMode = 1 } = {}) {
@@ -61,11 +61,11 @@ function buildStrength({ value = 0, vibrationMode = 1, suctionMode = 1 } = {}) {
 }
 
 function buildVibration({ value = 0, mode = 1 } = {}) {
-  return encodeProperties(channelProperties(0x0001, 0x0002, value, mode));
+  return encodeProperties(channelProperties(0x0001, 0x0002, value, mode, levelToDevice));
 }
 
 function buildSuction({ value = 0, mode = 1 } = {}) {
-  return encodeProperties(channelProperties(0x0007, 0x0008, value, mode));
+  return encodeProperties(channelProperties(0x0007, 0x0008, value, mode, levelToDevice));
 }
 
 function buildShock({ voltage = 0, mode = 1 } = {}) {

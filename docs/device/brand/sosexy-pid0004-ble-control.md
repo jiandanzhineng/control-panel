@@ -398,8 +398,8 @@ python sosexy_test_gui.py
 `control-panel` 中该型号注册为 `SOSEXY_PID0004`，品牌页会显示四个能力：
 
 - `strength`：对外 0–255，同时映射属性 `0001`（震动）和 `0007`（吸吮）。
-- `vibration`：单独写属性 `0001`，对外 0–255，内部换算为设备 0–100。
-- `suction`：单独写属性 `0007`，对外 0–255，内部换算为设备 0–100。
+- `vibration`：单独写属性 `0001`，对外 0–100，直接下发，不换算。
+- `suction`：单独写属性 `0007`，对外 0–100，直接下发，不换算。
 - `shock`：写微电流属性 `0003`，对外 0–100，模式写入 `0004`。
 
 设备类型定义在 `backend/devices/registry.js`，报文编码在 `backend/brands/protocols/sosexy.js`。Windows 本机桥接复用 `ycy_bridge` 的 `127.0.0.1:3001/api/send`，Electron Web Bluetooth 使用 EE01/EE02/EE03；两条路径都遵守设备层单控制连接和断开前 `stopAll` 复位。

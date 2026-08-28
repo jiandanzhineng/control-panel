@@ -15,8 +15,9 @@ describe('SOSEXY PID 0004 协议', () => {
 
   test('四个能力映射到正确属性', () => {
     expect(hex(sosexy.buildStrength({ value: 255 }))).toBe('0400011164000211010007116400081101');
-    expect(hex(sosexy.buildVibration({ value: 128 }))).toBe('020001113200021101');
-    expect(hex(sosexy.buildSuction({ value: 128 }))).toBe('020007113200081101');
+    expect(hex(sosexy.buildVibration({ value: 50 }))).toBe('020001113200021101');
+    expect(hex(sosexy.buildSuction({ value: 50 }))).toBe('020007113200081101');
+    expect(hex(sosexy.buildVibration({ value: 255 }))).toBe('020001116400021101');
     expect(hex(sosexy.buildShock({ voltage: 40 }))).toBe('020003112800041101');
     expect(hex(sosexy.buildStopAll())).toBe('03000111000003110000071100');
   });
