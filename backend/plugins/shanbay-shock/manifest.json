@@ -2,7 +2,7 @@
   "id": "shanbay-shock",
   "title": "扇贝单词电击",
   "description": "在扇贝网页版背单词时，检测到答错或不会后触发电击惩罚。",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "homeUrl": "https://web.shanbay.com/wordsweb/",
   "matchUrls": [
     "*://web.shanbay.com/wordsweb*",
@@ -39,5 +39,16 @@
       "default": false,
       "label": "对“没想起来”也惩罚"
     }
-  ]
+  ],
+  "i18n": {
+    "en": {
+      "title": "Shanbay word shock",
+      "description": "Shock when a wrong or unknown answer is detected on Shanbay web.",
+      "params": {
+        "shockVoltage": "Shock intensity (V)",
+        "shockDuration": "Shock duration (s)",
+        "punishForgotten": "Also punish forgotten answers"
+      }
+    }
+  }
 }

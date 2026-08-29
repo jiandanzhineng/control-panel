@@ -1,9 +1,9 @@
 <template>
   <div class="support-page">
     <section class="support-hero">
-      <p class="section-label">遇到问题 · 随时联系</p>
-      <h1 class="support-title">客服与反馈</h1>
-      <p class="support-desc">使用中有任何疑问、建议或需要人工协助，都可以通过以下方式联系我们。</p>
+      <p class="section-label">{{ t('support.label') }}</p>
+      <h1 class="support-title">{{ t('support.title') }}</h1>
+      <p class="support-desc">{{ t('support.desc') }}</p>
     </section>
 
     <el-row :gutter="16" class="support-cards">
@@ -11,10 +11,10 @@
         <el-card shadow="never" class="support-card">
           <div class="support-card-body">
             <div class="support-icon"><el-icon><ChatDotRound /></el-icon></div>
-            <h3>微信客服</h3>
-            <p class="support-tip">扫码添加客服微信，人工协助</p>
+            <h3>{{ t('support.wechat') }}</h3>
+            <p class="support-tip">{{ t('support.wechatTip') }}</p>
             <div class="qr-wrap">
-              <img class="qr-img" src="/img/wechat-kefu.png" alt="微信客服二维码" />
+              <img class="qr-img" src="/img/wechat-kefu.png" :alt="t('support.wechatAlt')" />
             </div>
           </div>
         </el-card>
@@ -24,10 +24,10 @@
         <el-card shadow="never" class="support-card">
           <div class="support-card-body">
             <div class="support-icon"><el-icon><ChatLineRound /></el-icon></div>
-            <h3>QQ 客服</h3>
-            <p class="support-tip">添加 QQ 好友，备注问题类型</p>
+            <h3>{{ t('support.qq') }}</h3>
+            <p class="support-tip">{{ t('support.qqTip') }}</p>
             <div class="qq-number mono">4690734</div>
-            <el-button type="primary" plain @click="copyQQ">复制 QQ 号</el-button>
+            <el-button type="primary" plain @click="copyQQ">{{ t('support.copyQq') }}</el-button>
           </div>
         </el-card>
       </el-col>
@@ -36,8 +36,8 @@
         <el-card shadow="never" class="support-card">
           <div class="support-card-body">
             <div class="support-icon"><el-icon><EditPen /></el-icon></div>
-            <h3>建议与反馈</h3>
-            <p class="support-tip">提交产品建议或问题反馈，我们会认真阅读每一条</p>
+            <h3>{{ t('support.feedback') }}</h3>
+            <p class="support-tip">{{ t('support.feedbackTip') }}</p>
             <el-link
               type="primary"
               :href="FEEDBACK_URL"
@@ -45,7 +45,7 @@
               :underline="false"
               class="feedback-link"
             >
-              填写反馈表单
+              {{ t('support.feedbackLink') }}
               <el-icon class="el-icon--right"><TopRight /></el-icon>
             </el-link>
           </div>
@@ -56,18 +56,20 @@
 </template>
 
 <script setup lang="ts">
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ChatDotRound, ChatLineRound, EditPen, TopRight } from '@element-plus/icons-vue'
 
+const { t } = useI18n()
 const FEEDBACK_URL = 'https://rcnhcfc58y3x.feishu.cn/share/base/form/shrcn9waNH8Jjmqe4JDvwu9DGql'
 const QQ_NUMBER = '4690734'
 
 async function copyQQ() {
   try {
     await navigator.clipboard.writeText(QQ_NUMBER)
-    ElMessage.success('QQ 号已复制')
+    ElMessage.success(t('support.copied'))
   } catch {
-    ElMessage.error('复制失败，请手动记录')
+    ElMessage.error(t('support.copyFailed'))
   }
 }
 </script>

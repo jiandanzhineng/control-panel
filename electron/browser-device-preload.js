@@ -65,6 +65,8 @@ contextBridge.exposeInMainWorld('DeviceAPI', {
   getDevices: () => command('getDevices', {}),
   getDeviceMap: () => command('getDeviceMap', {}),
   params: {},
+  locale: 'zh',
+  localeTag: 'zh-CN',
 });
 
 // GameHost：与 DeviceAPI 分离的跨端统一游戏启动契约。

@@ -259,6 +259,8 @@
     },
     params: paramsData,
     deviceMap: deviceMapData,
+    locale: 'zh',
+    localeTag: 'zh-CN',
     ready: readyPromise,
     _setConfig: function (cfg) {
       if (cfg.deviceMap) {
@@ -268,6 +270,10 @@
       if (cfg.params) {
         paramsData = cfg.params;
         window.DeviceAPI.params = paramsData;
+      }
+      if (cfg.locale) {
+        window.DeviceAPI.locale = cfg.locale === 'en' ? 'en' : 'zh';
+        window.DeviceAPI.localeTag = cfg.localeTag || (window.DeviceAPI.locale === 'en' ? 'en-US' : 'zh-CN');
       }
     },
   };
@@ -290,8 +296,14 @@
     var urlParams = new URLSearchParams(location.search);
     var dmStr = urlParams.get('deviceMap');
     var pStr = urlParams.get('params');
+    var localeStr = urlParams.get('locale');
+    var localeTagStr = urlParams.get('localeTag');
     if (dmStr) { deviceMapData = JSON.parse(decodeURIComponent(dmStr)); window.DeviceAPI.deviceMap = deviceMapData; }
     if (pStr) { var urlP = JSON.parse(decodeURIComponent(pStr)); Object.assign(paramsData, urlP); window.DeviceAPI.params = paramsData; }
+    if (localeStr) {
+      window.DeviceAPI.locale = localeStr === 'en' ? 'en' : 'zh';
+      window.DeviceAPI.localeTag = localeTagStr || (window.DeviceAPI.locale === 'en' ? 'en-US' : 'zh-CN');
+    }
   } catch (_) {}
 
   connect();

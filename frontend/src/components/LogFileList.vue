@@ -1,18 +1,18 @@
 <template>
   <div class="log-file-list">
     <div class="file-header">
-      <h3>历史日志文件</h3>
+      <h3>{{ t('logs.historyTitle') }}</h3>
       <button @click="refreshFiles" :disabled="loading">
-        {{ loading ? '刷新中...' : '刷新' }}
+{{ loading ? t('logs.refreshing') : t('common.refresh') }}
       </button>
     </div>
 
     <div v-if="loading" class="loading">
-      加载中...
+      {{ t('logs.loading') }}
     </div>
 
     <div v-else-if="files.length === 0" class="no-files">
-      暂无日志文件
+      {{ t('logs.empty') }}
     </div>
 
     <div v-else class="file-list">
@@ -31,7 +31,7 @@
         </div>
         <div class="file-actions">
           <button @click="downloadFile(file.filename)" class="download-btn">
-            下载
+            {{ t('logs.download') }}
           </button>
         </div>
       </div>
@@ -41,6 +41,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 interface LogFile {
   filename: string
@@ -49,6 +50,7 @@ interface LogFile {
   lastModified: string
 }
 
+const { t } = useI18n()
 const files = ref<LogFile[]>([])
 const loading = ref(false)
 

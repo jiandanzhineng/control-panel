@@ -1,22 +1,19 @@
 <template>
   <div class="settings-page">
     <section class="settings-hero">
-      <p class="section-label">应用偏好</p>
-      <h1 class="settings-title">设置</h1>
-      <p class="settings-desc">窗口行为和本机语音渠道。语音配置一次，数字人和其他游戏共用。</p>
+      <p class="section-label">{{ t('settings.label') }}</p>
+      <h1 class="settings-title">{{ t('settings.title') }}</h1>
+      <p class="settings-desc">{{ t('settings.desc') }}</p>
     </section>
 
     <el-card shadow="never" class="settings-card">
       <template #header>
-        <div class="settings-header">窗口</div>
+        <div class="settings-header">{{ t('settings.window') }}</div>
       </template>
       <div class="settings-row">
         <div class="settings-copy">
-          <div class="settings-name">关闭时最小化到托盘</div>
-          <p class="settings-hint">
-            打开后，点右上角关闭只会隐藏窗口，设备连接和后台服务继续运行。
-            关掉则点关闭会退出程序。第一次关闭且还没选过时会弹窗询问。
-          </p>
+          <div class="settings-name">{{ t('settings.closeToTray') }}</div>
+          <p class="settings-hint">{{ t('settings.closeToTrayHint') }}</p>
         </div>
         <el-switch
           :model-value="closeToTray === true"
@@ -25,33 +22,54 @@
           @change="onCloseToTrayChange"
         />
       </div>
-      <p v-if="!hasWindowApi" class="settings-note">当前不是桌面客户端，此项不可用。</p>
+      <p v-if="!hasWindowApi" class="settings-note">{{ t('settings.notDesktop') }}</p>
       <p v-else-if="message" class="settings-note">{{ message }}</p>
     </el-card>
 
     <el-card shadow="never" class="settings-card">
       <template #header>
-        <div class="settings-header">语音服务</div>
+        <div class="settings-header">{{ t('locale.language') }}</div>
+      </template>
+      <div class="settings-row">
+        <div class="settings-copy">
+          <div class="settings-name">{{ t('locale.language') }}</div>
+          <p class="settings-hint">{{ t('locale.hint') }}</p>
+        </div>
+        <el-select
+          :model-value="preference"
+          style="width: 160px"
+          @change="onLocaleChange"
+        >
+          <el-option :label="t('locale.system')" value="system" />
+          <el-option :label="t('locale.zh')" value="zh" />
+          <el-option :label="t('locale.en')" value="en" />
+        </el-select>
+      </div>
+    </el-card>
+
+    <el-card shadow="never" class="settings-card">
+      <template #header>
+        <div class="settings-header">{{ t('settings.voice') }}</div>
       </template>
       <div class="settings-copy">
-        <div class="settings-name">MiMo 通路</div>
+        <div class="settings-name">{{ t('settings.voiceName') }}</div>
         <p class="settings-hint">
-          {{ voice.hint || '官方渠道可能比较慢，建议使用个人 API key。' }}
+          {{ voice.hint || t('settings.voiceHint') }}
           Token Plan
-          <a :href="voice.tokenplan_url || 'https://platform.xiaomimimo.com/token-plan'" target="_blank" rel="noopener">注册</a>
-          ，邀请码 <b>{{ voice.invite_code || '8SNDXF' }}</b>
-          <a :href="voice.invite_url || 'https://platform.xiaomimimo.com?ref=8SNDXF'" target="_blank" rel="noopener">带邀请打开</a>。
+          <a :href="voice.tokenplan_url || 'https://platform.xiaomimimo.com/token-plan'" target="_blank" rel="noopener">{{ t('settings.register') }}</a>
+          ，{{ t('settings.inviteCode') }} <b>{{ voice.invite_code || '8SNDXF' }}</b>
+          <a :href="voice.invite_url || 'https://platform.xiaomimimo.com?ref=8SNDXF'" target="_blank" rel="noopener">{{ t('settings.inviteOpen') }}</a>。
         </p>
       </div>
       <el-radio-group v-model="voiceRoute" class="voice-routes" :disabled="voiceBusy">
-        <el-radio-button value="panel">官方渠道</el-radio-button>
-        <el-radio-button value="own_key">自备 MiMo key</el-radio-button>
+        <el-radio-button value="panel">{{ t('settings.routePanel') }}</el-radio-button>
+        <el-radio-button value="own_key">{{ t('settings.routeOwnKey') }}</el-radio-button>
       </el-radio-group>
       <div class="voice-key-row">
         <el-input v-model="voiceKey" type="password" show-password
-          placeholder="个人 API key，留空则不改已保存的" autocomplete="off" />
-        <el-button type="primary" :loading="voiceBusy" @click="saveVoice">保存</el-button>
-        <el-button :disabled="voiceBusy || !voice.has_key" @click="clearVoiceKey">清除 key</el-button>
+          :placeholder="t('settings.keyPlaceholder')" autocomplete="off" />
+        <el-button type="primary" :loading="voiceBusy" @click="saveVoice">{{ t('common.save') }}</el-button>
+        <el-button :disabled="voiceBusy || !voice.has_key" @click="clearVoiceKey">{{ t('settings.clearKey') }}</el-button>
       </div>
       <p class="settings-note">{{ voiceStatusText }}</p>
     </el-card>
@@ -60,9 +78,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { getVoiceStatus, saveVoiceSettings, type VoiceStatus } from '../api/voice'
+import { useLocale } from '../i18n/useLocale'
+import type { LocalePreference } from '../i18n/locale'
 
+const { t } = useI18n()
+const { preference, setPreference } = useLocale()
 const closeToTray = ref<boolean | null>(null)
 const loading = ref(false)
 const message = ref('')
@@ -74,12 +97,12 @@ const voiceBusy = ref(false)
 
 const voiceStatusText = computed(() => {
   const v = voice.value
-  if (!v.route) return '正在读取语音设置…'
-  const bits = [v.ready ? (v.mode === 'direct' ? '当前可用：直连' : '当前可用：官方中转') : '当前不可用']
-  if (v.key_masked) bits.push(`已存 key ${v.key_masked}`)
-  if (v.panel_email) bits.push(`面板 ${v.panel_email}`)
-  else if (v.route === 'panel') bits.push('请先在账号页登录')
-  if (v.route === 'own_key' && !v.has_key) bits.push('请填写个人 API key')
+  if (!v.route) return t('settings.reading')
+  const bits = [v.ready ? (v.mode === 'direct' ? t('settings.availableDirect') : t('settings.availableRelay')) : t('settings.unavailable')]
+  if (v.key_masked) bits.push(t('settings.savedKey', { key: v.key_masked }))
+  if (v.panel_email) bits.push(t('settings.panelUser', { email: v.panel_email }))
+  else if (v.route === 'panel') bits.push(t('settings.loginFirst'))
+  if (v.route === 'own_key' && !v.has_key) bits.push(t('settings.fillKey'))
   return bits.join(' · ')
 })
 
@@ -90,7 +113,7 @@ async function loadSettings() {
     const settings = await window.windowApi.getSettings()
     closeToTray.value = settings.closeToTray
   } catch (error: any) {
-    message.value = error?.message || '设置读取失败'
+    message.value = error?.message || t('settings.loadFailed')
   } finally {
     loading.value = false
   }
@@ -101,14 +124,24 @@ async function onCloseToTrayChange(value: string | number | boolean) {
   loading.value = true
   message.value = ''
   try {
-    const settings = await window.windowApi.setSettings({ closeToTray: !!value })
+    const current = await window.windowApi.getSettings()
+    const settings = await window.windowApi.setSettings({ ...current, closeToTray: !!value })
     closeToTray.value = settings.closeToTray
-    message.value = settings.closeToTray ? '已开启：关闭窗口将最小化到托盘' : '已关闭：关闭窗口将退出程序'
+    message.value = settings.closeToTray ? t('settings.trayOn') : t('settings.trayOff')
   } catch (error: any) {
-    message.value = error?.message || '设置保存失败'
+    message.value = error?.message || t('settings.saveFailed')
     ElMessage.error(message.value)
   } finally {
     loading.value = false
+  }
+}
+
+async function onLocaleChange(value: string) {
+  try {
+    await setPreference(value as LocalePreference)
+    ElMessage.success(t('locale.saved'))
+  } catch (error: any) {
+    ElMessage.error(error?.message || t('locale.saveFailed'))
   }
 }
 
@@ -121,7 +154,7 @@ async function loadVoice() {
   try {
     applyVoice(await getVoiceStatus())
   } catch (error: any) {
-    ElMessage.error(error?.message || '语音设置读取失败')
+    ElMessage.error(error?.message || t('settings.voiceLoadFailed'))
   }
 }
 
@@ -132,9 +165,9 @@ async function saveVoice() {
     if (voiceKey.value.trim()) body.api_key = voiceKey.value.trim()
     applyVoice(await saveVoiceSettings(body))
     voiceKey.value = ''
-    ElMessage.success('语音设置已保存')
+    ElMessage.success(t('settings.voiceSaved'))
   } catch (error: any) {
-    ElMessage.error(error?.message || '语音设置保存失败')
+    ElMessage.error(error?.message || t('settings.voiceSaveFailed'))
   } finally {
     voiceBusy.value = false
   }
@@ -145,9 +178,9 @@ async function clearVoiceKey() {
   try {
     applyVoice(await saveVoiceSettings({ api_key: '' }))
     voiceKey.value = ''
-    ElMessage.success('已清除个人 key')
+    ElMessage.success(t('settings.keyCleared'))
   } catch (error: any) {
-    ElMessage.error(error?.message || '清除失败')
+    ElMessage.error(error?.message || t('settings.clearFailed'))
   } finally {
     voiceBusy.value = false
   }

@@ -2,12 +2,12 @@
   <div class="page">
     <div class="header-row">
       <div>
-        <h1>本地游戏</h1>
-        <p class="muted">本机已保存和内置的游戏与插件，选择一个配置并接入设备运行。</p>
+        <h1>{{ t('plays.title') }}</h1>
+        <p class="muted">{{ t('plays.desc') }}</p>
       </div>
       <div class="header-actions">
-        <el-button :icon="Reading" @click="openDevGuide">开发指南</el-button>
-        <el-button :icon="Refresh" :loading="busy.refresh" @click="refresh">刷新</el-button>
+        <el-button :icon="Reading" @click="openDevGuide">{{ t('plays.guide') }}</el-button>
+        <el-button :icon="Refresh" :loading="busy.refresh" @click="refresh">{{ t('common.refresh') }}</el-button>
       </div>
     </div>
 
@@ -21,10 +21,10 @@
     >
       <template #title>
         <div class="banner-inner">
-          <span>当前运行：{{ activePlay.title }}</span>
+          <span>{{ t('plays.running', { title: activePlay.title }) }}</span>
           <span class="banner-actions">
-            <el-button size="small" type="primary" @click="resumeRun">返回运行页</el-button>
-            <el-button size="small" type="danger" :loading="busy.stop" @click="stopCurrent">停止</el-button>
+            <el-button size="small" type="primary" @click="resumeRun">{{ t('plays.resume') }}</el-button>
+            <el-button size="small" type="danger" :loading="busy.stop" @click="stopCurrent">{{ t('common.stop') }}</el-button>
           </span>
         </div>
       </template>
@@ -35,12 +35,12 @@
         <el-input
           v-model="search"
           class="search"
-          placeholder="搜索本地游戏或插件..."
+          :placeholder="t('plays.search')"
           clearable
           :prefix-icon="Search"
         />
-        <el-button :icon="Upload" :loading="busy.upload" @click="triggerUpload">加载外部游戏</el-button>
-        <el-button :icon="Close" :loading="busy.stop" type="danger" plain @click="stopCurrent">停止当前运行</el-button>
+        <el-button :icon="Upload" :loading="busy.upload" @click="triggerUpload">{{ t('plays.loadExternal') }}</el-button>
+        <el-button :icon="Close" :loading="busy.stop" type="danger" plain @click="stopCurrent">{{ t('plays.stopCurrent') }}</el-button>
         <input ref="fileInput" type="file" accept=".js" style="display:none" @change="onFileSelected" />
       </div>
       <el-alert
@@ -53,7 +53,7 @@
       />
     </section>
 
-    <el-empty v-if="!busy.refresh && filteredItems.length === 0 && localApps.length === 0" description="暂无本地游戏或插件" />
+    <el-empty v-if="!busy.refresh && filteredItems.length === 0 && localApps.length === 0" :description="t('plays.empty')" />
 
     <div class="play-grid">
       <LocalAppCard
@@ -76,37 +76,37 @@
             <div class="title-row">
               <h2>{{ titleOf(item) }}</h2>
               <el-tag size="small" :type="item.carrierType === 'game' ? 'primary' : 'success'">
-                {{ item.carrierType === 'game' ? '游戏' : '插件' }}
+                {{ item.carrierType === 'game' ? t('plays.game') : t('plays.plugin') }}
               </el-tag>
             </div>
             <p v-if="descOf(item)" class="desc">{{ descOf(item) }}</p>
             <div class="meta">
               <!-- 插件：目标域名 / 版本 / 来源 -->
               <template v-if="item.carrierType === 'plugin'">
-                <el-tag size="small" type="info">{{ hostOf(item.homeUrl) || '未配置目标站点' }}</el-tag>
+                <el-tag size="small" type="info">{{ hostOf(item.homeUrl) || t('plays.noSite') }}</el-tag>
                 <el-tag size="small">v{{ item.version || '1.0.0' }}</el-tag>
-                <el-tag v-if="item.source" size="small" type="success">{{ item.source === 'builtin' ? '内置' : '用户' }}</el-tag>
+                <el-tag v-if="item.source" size="small" type="success">{{ item.source === 'builtin' ? t('plays.builtin') : t('plays.user') }}</el-tag>
               </template>
               <!-- 游戏：版本 / 来源 / 最后游玩 / 参数 -->
               <template v-else>
-                <el-tag size="small" type="info">版本：{{ item.version || '-' }}</el-tag>
-                <el-tag v-if="item.source === 'saved'" size="small" type="warning" effect="plain">已保存</el-tag>
-                <el-tag v-else size="small" type="success" effect="plain">本地</el-tag>
-                <el-tag v-if="isCachedGame(item)" size="small" type="success">已缓存</el-tag>
-                <el-tag size="small" type="success">最后游玩：{{ formatLastPlayed(item.lastPlayed) }}</el-tag>
-                <el-tag v-if="item.arguments" size="small">参数：{{ item.arguments }}</el-tag>
+                <el-tag size="small" type="info">{{ t('plays.version', { version: item.version || '-' }) }}</el-tag>
+                <el-tag v-if="item.source === 'saved'" size="small" type="warning" effect="plain">{{ t('plays.saved') }}</el-tag>
+                <el-tag v-else size="small" type="success" effect="plain">{{ t('plays.local') }}</el-tag>
+                <el-tag v-if="isCachedGame(item)" size="small" type="success">{{ t('plays.cached') }}</el-tag>
+                <el-tag size="small" type="success">{{ t('plays.lastPlayed', { time: formatLastPlayed(item.lastPlayed) }) }}</el-tag>
+                <el-tag v-if="item.arguments" size="small">{{ t('plays.params', { value: item.arguments }) }}</el-tag>
               </template>
             </div>
             <div v-if="devicesOf(item).length" class="devices">
               <span v-for="d in devicesOf(item)" :key="d.id || d.name" class="device-tag">
-                {{ d.required ? '●' : '○' }} {{ d.name || d.id || '设备' }}
+                {{ d.required ? '●' : '○' }} {{ d.name || d.id || t('plays.deviceFallback') }}
               </span>
             </div>
           </div>
         </div>
         <div class="play-actions">
-          <el-button type="primary" :icon="VideoPlay" @click="goConfig(item)">{{ item.carrierType === 'game' ? '启动' : '配置启动' }}</el-button>
-          <el-button v-if="item.carrierType === 'game'" type="danger" plain :icon="Delete" @click="deleteGame(item)">删除</el-button>
+          <el-button type="primary" :icon="VideoPlay" @click="goConfig(item)">{{ item.carrierType === 'game' ? t('plays.start') : t('plays.configStart') }}</el-button>
+          <el-button v-if="item.carrierType === 'game'" type="danger" plain :icon="Delete" @click="deleteGame(item)">{{ t('common.delete') }}</el-button>
         </div>
       </article>
     </div>
@@ -114,11 +114,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, markRaw } from 'vue';
+import { ref, computed, onMounted, watch, markRaw } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { track } from '../analytics';
 import { useActivePlay, clearActivePlay } from '../composables/useActivePlay';
 import LocalAppCard from '../components/LocalAppCard.vue';
+import { currentLocale } from '../i18n';
+import { localizePlay } from '../i18n/play';
 import {
   Close, Delete, Operation, Reading, Refresh, Search, Upload, VideoPlay,
 } from '@element-plus/icons-vue';
@@ -150,6 +153,7 @@ interface PlayItem {
 }
 
 const router = useRouter();
+const { t, locale } = useI18n();
 const { activePlay } = useActivePlay();
 
 const games = ref<PlayItem[]>([]);
@@ -177,6 +181,7 @@ const filteredItems = computed(() => {
 });
 
 onMounted(loadAll);
+watch(locale, () => { void loadAll(); });
 
 async function loadAll() {
   error.value = '';
@@ -189,20 +194,20 @@ async function loadAll() {
 
   try {
     const localGames: PlayItem[] = (gRes && Array.isArray(gRes))
-      ? gRes.map((g: any) => ({ ...g, carrierType: 'game' as const, source: g.source || 'builtin' }))
+      ? gRes.map((g: any) => ({ ...localizePlay(g, currentLocale()), carrierType: 'game' as const, source: g.source || 'builtin' }))
       : [];
     games.value = localGames;
   } catch (e: any) {
-    error.value = e?.message || '游戏列表获取失败';
+    error.value = e?.message || t('plays.loadGamesFailed');
   }
   try {
     if (pRes && Array.isArray(pRes)) {
-      plugins.value = pRes.map((p: any) => ({ ...p, carrierType: 'plugin' as const }));
+      plugins.value = pRes.map((p: any) => ({ ...localizePlay(p, currentLocale()), carrierType: 'plugin' as const }));
     } else if (pRes && pRes.error) {
-      throw new Error(pRes.error?.message || '插件列表获取失败');
+      throw new Error(pRes.error?.message || t('plays.loadPluginsFailed'));
     }
   } catch (e: any) {
-    error.value = e?.message || '插件列表获取失败';
+    error.value = e?.message || t('plays.loadPluginsFailed');
   }
 }
 
@@ -217,10 +222,10 @@ async function refresh() {
     // 游戏侧：触发后端重扫；插件侧：仅重新拉取列表
     const res = await fetch('/api/games/reload', { method: 'POST' });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok || data.error) throw new Error(data?.message || '刷新失败');
+    if (!res.ok || data.error) throw new Error(data?.message || t('plays.refreshFailed'));
     await loadAll();
   } catch (e: any) {
-    error.value = e?.message || '刷新失败';
+    error.value = e?.message || t('plays.refreshFailed');
   } finally {
     busy.value.refresh = false;
   }
@@ -242,11 +247,11 @@ async function onFileSelected(ev: Event) {
     fd.append('file', file);
     const res = await fetch('/api/games/upload', { method: 'POST', body: fd });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data?.message || '上传失败');
+    if (!res.ok || data.error) throw new Error(data?.message || t('plays.uploadFailed'));
     track('game_upload');
     await loadAll();
   } catch (e: any) {
-    error.value = e?.message || '上传失败';
+    error.value = e?.message || t('plays.uploadFailed');
   } finally {
     busy.value.upload = false;
   }
@@ -259,19 +264,19 @@ async function stopCurrent() {
     const current = activePlay.value;
     if (current?.carrierType === 'plugin') {
       if (!window.pluginApi) {
-        throw new Error('当前环境不支持停止插件，请在 Electron 中打开控制面板');
+        throw new Error(t('plays.pluginStopUnsupported'));
       }
       const result = await window.pluginApi.stopCurrent();
-      if (result?.ok === false) throw new Error(result.error || '停止插件失败');
+      if (result?.ok === false) throw new Error(result.error || t('plays.stopPluginFailed'));
       track('plugin_stop', { plugin_id: current.id });
     } else {
       const res = await fetch('/api/games/stop-current', { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (res.status === 501) {
-        alert(data?.error?.message || '停止接口待实现');
+        alert(data?.error?.message || t('plays.stopPending'));
         return;
       }
-      if (!res.ok || data.error) throw new Error(data?.message || '停止失败');
+      if (!res.ok || data.error) throw new Error(data?.message || t('plays.stopFailed'));
       track('game_stop');
     }
     if (current?.carrierType === 'local-app') {
@@ -280,23 +285,23 @@ async function stopCurrent() {
     clearActivePlay();
     await loadAll();
   } catch (e: any) {
-    error.value = e?.message || '停止失败';
+    error.value = e?.message || t('plays.stopFailed');
   } finally {
     busy.value.stop = false;
   }
 }
 
 async function deleteGame(item: PlayItem) {
-  const sure = confirm('确定删除该玩法？本地游戏文件和下载缓存将一并清理。');
+  const sure = confirm(t('plays.deleteConfirm'));
   if (!sure) return;
   try {
     const res = await fetch(`/api/games/${encodeURIComponent(item.id)}?removeFile=1`, { method: 'DELETE' });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data?.message || '删除失败');
+    if (!res.ok || data.error) throw new Error(data?.message || t('plays.deleteFailed'));
     track('game_delete', { game_id: item.id });
     games.value = games.value.filter((x) => x.id !== item.id);
   } catch (e: any) {
-    alert(e?.message || '删除失败');
+    alert(e?.message || t('plays.deleteFailed'));
   }
 }
 
@@ -345,9 +350,9 @@ function hostOf(url?: string) {
 }
 
 function formatLastPlayed(ts?: number | null) {
-  if (!ts) return '从未游玩';
+  if (!ts) return t('plays.neverPlayed');
   try {
-    return new Date(ts).toLocaleString('zh-CN');
+    return new Date(ts).toLocaleString(locale.value === 'en' ? 'en-US' : 'zh-CN');
   } catch {
     return String(ts);
   }

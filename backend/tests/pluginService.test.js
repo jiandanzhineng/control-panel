@@ -74,9 +74,22 @@ describe('pluginService', () => {
       pluginId: 'demo',
       deviceMap: { shock: ['dev-1'] },
       params: { shockVoltage: 12, cooldownMs: 3000 },
+      locale: 'zh',
+      localeTag: 'zh-CN',
       homeUrl: 'https://example.test/',
       matchUrls: ['*://example.test/*'],
     });
+  });
+
+  it('stores locale from activate payload', () => {
+    const pluginService = require('../services/pluginService');
+    pluginService.activate('demo', {
+      deviceMap: { shock: 'dev-1' },
+      locale: 'en',
+      localeTag: 'en-US',
+    });
+    const active = JSON.parse(fs.readFileSync(path.join(dataDir, 'active-plugin.json'), 'utf-8'));
+    expect(active).toMatchObject({ locale: 'en', localeTag: 'en-US' });
   });
 });
 

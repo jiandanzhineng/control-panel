@@ -2,55 +2,55 @@
   <div class="brands-page">
     <el-card shadow="never" class="stats-card stats-card--compact">
       <div class="stats-row">
-        <span class="stat-mini">设备 {{ totalCount }}</span>
-        <span class="stat-mini online-stat">在线 {{ onlineCount }}</span>
-        <span class="stat-mini offline-stat">离线 {{ offlineCount }}</span>
+        <span class="stat-mini">{{ t('brands.devices', { n: totalCount }) }}</span>
+        <span class="stat-mini online-stat">{{ t('brands.online', { n: onlineCount }) }}</span>
+        <span class="stat-mini offline-stat">{{ t('brands.offline', { n: offlineCount }) }}</span>
         <div class="stats-actions">
-          <el-checkbox v-model="autoRefreshEnabled" @change="(v: any) => v ? startAutoRefresh() : stopAutoRefresh()">自动刷新</el-checkbox>
-          <el-button size="small" :icon="Refresh" :loading="refreshing" @click="refreshConnected">刷新</el-button>
+          <el-checkbox v-model="autoRefreshEnabled" @change="(v: any) => v ? startAutoRefresh() : stopAutoRefresh()">{{ t('brands.autoRefresh') }}</el-checkbox>
+          <el-button size="small" :icon="Refresh" :loading="refreshing" @click="refreshConnected">{{ t('common.refresh') }}</el-button>
         </div>
       </div>
     </el-card>
 
     <el-tabs v-model="pageTab" class="brand-tabs">
-      <el-tab-pane label="连接" name="connect">
+      <el-tab-pane :label="t('brands.connect')" name="connect">
         <el-card shadow="never" class="section-card">
           <div class="connect-bar">
             <el-button type="primary" :loading="scanningWebble || scanningYcyWebble" @click="startBleConnect">
-              蓝牙连接
+              {{ t('brands.bleConnect') }}
             </el-button>
             <el-dropdown trigger="click" @command="openMoreConnect">
               <el-button>
-                更多连接方式
+                {{ t('brands.moreWays') }}
                 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
               </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
-                  <el-dropdown-item command="native">本机桥接</el-dropdown-item>
-                  <el-dropdown-item command="dglab-phone">郊狼手机连接</el-dropdown-item>
-                  <el-dropdown-item command="ycy-bridge">役次元远程桥接</el-dropdown-item>
+                  <el-dropdown-item command="native">{{ t('brands.native') }}</el-dropdown-item>
+                  <el-dropdown-item command="dglab-phone">{{ t('brands.dglabPhone') }}</el-dropdown-item>
+                  <el-dropdown-item command="ycy-bridge">{{ t('brands.ycyRemote') }}</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
-            <el-button v-if="scanningWebble || scanningYcyWebble" size="small" @click="cancelBleScan">取消扫描</el-button>
-            <el-checkbox v-model="bleAutoConnect" @change="onBleAutoConnectChange">自动连接已保存设备</el-checkbox>
-            <el-checkbox v-model="bleAutoConnectAll" @change="onBleAutoConnectAllChange">自动连接所有支持的设备</el-checkbox>
+            <el-button v-if="scanningWebble || scanningYcyWebble" size="small" @click="cancelBleScan">{{ t('brands.cancelScan') }}</el-button>
+            <el-checkbox v-model="bleAutoConnect" @change="onBleAutoConnectChange">{{ t('brands.autoSaved') }}</el-checkbox>
+            <el-checkbox v-model="bleAutoConnectAll" @change="onBleAutoConnectAllChange">{{ t('brands.autoAll') }}</el-checkbox>
           </div>
-          <p class="op-hint">「所有支持」会自动连附近可识别设备；「已保存」只连设备列表里的。不想再连某台就删除并关掉「所有支持」。</p>
+          <p class="op-hint">{{ t('brands.autoHint') }}</p>
         </el-card>
 
         <div v-if="ycyWebbleCandidates.length" class="candidate-list">
           <div v-for="c in ycyWebbleCandidates" :key="c.id" class="candidate-item">
             <div class="candidate-info">
               <span class="candidate-name">{{ brandLabel(classifyBleBrand(c.name), c.name) }}</span>
-              <span class="candidate-meta">{{ BRAND_LABEL[classifyBleBrand(c.name)] || '役次元' }} · {{ c.name }}</span>
+              <span class="candidate-meta">{{ BRAND_LABEL[classifyBleBrand(c.name)] || t('brands.ycy') }} · {{ c.name }}</span>
             </div>
-            <el-button size="small" type="primary" @click="ycyWebblePick(c)">选择</el-button>
+            <el-button size="small" type="primary" @click="ycyWebblePick(c)">{{ t('brands.select') }}</el-button>
           </div>
         </div>
 
         <div class="brand-col__devices">
-          <div v-if="!allConnected.length" class="brand-col__empty">还没有已连接设备。点「蓝牙连接」或「更多连接方式」添加，连上后可在这里试控。</div>
+          <div v-if="!allConnected.length" class="brand-col__empty">{{ t('brands.empty') }}</div>
           <div v-for="dev in allConnected" :key="dev.deviceId" class="device-card">
             <div class="device-card__head">
               <div>
@@ -58,75 +58,75 @@
                 <el-tag size="small" class="tag-brand">{{ BRAND_LABEL[dev.brand] || dev.brand }}</el-tag>
                 <el-tag v-if="dev.type" size="small" type="warning">{{ TYPE_LABEL[dev.type] || ycyPanelType(dev) }}</el-tag>
               </div>
-              <el-button size="small" :icon="Close" @click="disconnectDevice(dev)">断开</el-button>
+              <el-button size="small" :icon="Close" @click="disconnectDevice(dev)">{{ t('brands.disconnect') }}</el-button>
             </div>
             <div v-if="dev.brand === 'dglab'" class="control-grid">
               <div class="control-field">
-                <label>强度 {{ ctl(dev).intensity }}</label>
+                <label>{{ t('brands.intensity', { n: ctl(dev).intensity }) }}</label>
                 <el-slider v-model="ctl(dev).intensity" :min="0" :max="100" />
               </div>
               <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`dglabApply:${dev.deviceId}`]" @click="dglabApply(dev)">应用</el-button>
-                <el-button size="small" :loading="opLoading[`dglabStop:${dev.deviceId}`]" @click="dglabStop(dev)">停止</el-button>
+                <el-button type="primary" size="small" :loading="opLoading[`dglabApply:${dev.deviceId}`]" @click="dglabApply(dev)">{{ t('brands.apply') }}</el-button>
+                <el-button size="small" :loading="opLoading[`dglabStop:${dev.deviceId}`]" @click="dglabStop(dev)">{{ t('brands.stop') }}</el-button>
               </div>
             </div>
             <div v-else-if="ycyPanelType(dev) === 'SOSEXY_PID0004'" class="control-stack">
               <div class="control-row">
-                <div class="control-field"><label>总强度 {{ ctl(dev).sosexyStrength }}</label><el-slider v-model="ctl(dev).sosexyStrength" :min="0" :max="255" /></div>
-                <div class="control-actions"><el-button type="primary" size="small" :loading="opLoading[`sosexyStrength:${dev.deviceId}`]" @click="sosexyStrengthApply(dev)">震动+吸吮</el-button></div>
+                <div class="control-field"><label>{{ t('brands.totalStrength', { n: ctl(dev).sosexyStrength }) }}</label><el-slider v-model="ctl(dev).sosexyStrength" :min="0" :max="255" /></div>
+                <div class="control-actions"><el-button type="primary" size="small" :loading="opLoading[`sosexyStrength:${dev.deviceId}`]" @click="sosexyStrengthApply(dev)">{{ t('brands.vibeSuck') }}</el-button></div>
               </div>
               <div class="control-row">
-                <div class="control-field"><label>震动 {{ ctl(dev).sosexyVibration }}</label><el-slider v-model="ctl(dev).sosexyVibration" :min="0" :max="100" /></div>
-                <div class="control-actions"><el-button size="small" :loading="opLoading[`sosexyVibration:${dev.deviceId}`]" @click="sosexyVibrationApply(dev)">应用震动</el-button></div>
+                <div class="control-field"><label>{{ t('brands.vibration', { n: ctl(dev).sosexyVibration }) }}</label><el-slider v-model="ctl(dev).sosexyVibration" :min="0" :max="100" /></div>
+                <div class="control-actions"><el-button size="small" :loading="opLoading[`sosexyVibration:${dev.deviceId}`]" @click="sosexyVibrationApply(dev)">{{ t('brands.applyVibe') }}</el-button></div>
               </div>
               <div class="control-row">
-                <div class="control-field"><label>吸吮 {{ ctl(dev).sosexySuction }}</label><el-slider v-model="ctl(dev).sosexySuction" :min="0" :max="100" /></div>
-                <div class="control-actions"><el-button size="small" :loading="opLoading[`sosexySuction:${dev.deviceId}`]" @click="sosexySuctionApply(dev)">应用吸吮</el-button></div>
+                <div class="control-field"><label>{{ t('brands.suction', { n: ctl(dev).sosexySuction }) }}</label><el-slider v-model="ctl(dev).sosexySuction" :min="0" :max="100" /></div>
+                <div class="control-actions"><el-button size="small" :loading="opLoading[`sosexySuction:${dev.deviceId}`]" @click="sosexySuctionApply(dev)">{{ t('brands.applySuck') }}</el-button></div>
               </div>
               <div class="control-row">
-                <div class="control-field"><label>电击 {{ ctl(dev).sosexyShock }}</label><el-slider v-model="ctl(dev).sosexyShock" :min="0" :max="100" /></div>
+                <div class="control-field"><label>{{ t('brands.shock', { n: ctl(dev).sosexyShock }) }}</label><el-slider v-model="ctl(dev).sosexyShock" :min="0" :max="100" /></div>
                 <div class="control-actions">
-                  <el-button type="danger" size="small" :loading="opLoading[`sosexyShock:${dev.deviceId}`]" @click="sosexyShockApply(dev)">应用电击</el-button>
-                  <el-button size="small" :loading="opLoading[`sosexyQuery:${dev.deviceId}`]" @click="sosexyQuery(dev)">查询状态</el-button>
-                  <el-button size="small" :loading="opLoading[`sosexyStop:${dev.deviceId}`]" @click="sosexyStop(dev)">全部停止</el-button>
+                  <el-button type="danger" size="small" :loading="opLoading[`sosexyShock:${dev.deviceId}`]" @click="sosexyShockApply(dev)">{{ t('brands.applyShock') }}</el-button>
+                  <el-button size="small" :loading="opLoading[`sosexyQuery:${dev.deviceId}`]" @click="sosexyQuery(dev)">{{ t('brands.query') }}</el-button>
+                  <el-button size="small" :loading="opLoading[`sosexyStop:${dev.deviceId}`]" @click="sosexyStop(dev)">{{ t('brands.stopAll') }}</el-button>
                 </div>
               </div>
             </div>
             <div v-else-if="ycyPanelType(dev) === 'YCY_CUP'" class="control-grid">
-              <div class="control-field"><label>旋转 {{ ctl(dev).stroke }}</label><el-slider v-model="ctl(dev).stroke" :min="0" :max="255" /></div>
-              <div class="control-field"><label>震动 {{ ctl(dev).vibe }}</label><el-slider v-model="ctl(dev).vibe" :min="0" :max="255" /></div>
-              <div class="control-field"><label>第三轴 {{ ctl(dev).axis }}</label><el-slider v-model="ctl(dev).axis" :min="0" :max="255" /></div>
+              <div class="control-field"><label>{{ t('brands.rotate', { n: ctl(dev).stroke }) }}</label><el-slider v-model="ctl(dev).stroke" :min="0" :max="255" /></div>
+              <div class="control-field"><label>{{ t('brands.vibe', { n: ctl(dev).vibe }) }}</label><el-slider v-model="ctl(dev).vibe" :min="0" :max="255" /></div>
+              <div class="control-field"><label>{{ t('brands.axis', { n: ctl(dev).axis }) }}</label><el-slider v-model="ctl(dev).axis" :min="0" :max="255" /></div>
               <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`ycyFjb:${dev.deviceId}`]" @click="ycyFjbApply(dev)">应用</el-button>
-                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyFjbStop(dev)">停止</el-button>
+                <el-button type="primary" size="small" :loading="opLoading[`ycyFjb:${dev.deviceId}`]" @click="ycyFjbApply(dev)">{{ t('brands.apply') }}</el-button>
+                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyFjbStop(dev)">{{ t('brands.stop') }}</el-button>
               </div>
             </div>
             <div v-else-if="ycyPanelType(dev) === 'YCY_EMS'" class="control-grid">
-              <div class="control-field"><label>左通道 {{ ctl(dev).aStrength }}</label><el-slider v-model="ctl(dev).aStrength" :min="0" :max="255" /></div>
-              <div class="control-field"><label>右通道 {{ ctl(dev).bStrength }}</label><el-slider v-model="ctl(dev).bStrength" :min="0" :max="255" /></div>
+              <div class="control-field"><label>{{ t('brands.left', { n: ctl(dev).aStrength }) }}</label><el-slider v-model="ctl(dev).aStrength" :min="0" :max="255" /></div>
+              <div class="control-field"><label>{{ t('brands.right', { n: ctl(dev).bStrength }) }}</label><el-slider v-model="ctl(dev).bStrength" :min="0" :max="255" /></div>
               <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`ycyEms:${dev.deviceId}`]" @click="ycyEmsApply(dev)">应用</el-button>
-                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">停止</el-button>
+                <el-button type="primary" size="small" :loading="opLoading[`ycyEms:${dev.deviceId}`]" @click="ycyEmsApply(dev)">{{ t('brands.apply') }}</el-button>
+                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">{{ t('brands.stop') }}</el-button>
               </div>
             </div>
             <div v-else-if="ycyPanelType(dev) === 'YCY_TOY'" class="control-grid">
-              <div class="control-field"><label>速度 {{ ctl(dev).speed }}</label><el-slider v-model="ctl(dev).speed" :min="0" :max="255" /></div>
+              <div class="control-field"><label>{{ t('brands.speed', { n: ctl(dev).speed }) }}</label><el-slider v-model="ctl(dev).speed" :min="0" :max="255" /></div>
               <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`ycyToy:${dev.deviceId}`]" @click="ycyToyApply(dev)">应用</el-button>
-                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">停止</el-button>
+                <el-button type="primary" size="small" :loading="opLoading[`ycyToy:${dev.deviceId}`]" @click="ycyToyApply(dev)">{{ t('brands.apply') }}</el-button>
+                <el-button size="small" :loading="opLoading[`ycyStop:${dev.deviceId}`]" @click="ycyStop(dev)">{{ t('brands.stop') }}</el-button>
               </div>
             </div>
             <div v-else-if="ycyPanelType(dev) === 'YCY_ENEMA'" class="control-grid">
               <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`ycyPump:${dev.deviceId}`]" @click="ycyPumpApply(dev)">启动泵</el-button>
-                <el-button size="small" :loading="opLoading[`ycyPumpS:${dev.deviceId}`]" @click="ycyPumpStop(dev)">停止</el-button>
+                <el-button type="primary" size="small" :loading="opLoading[`ycyPump:${dev.deviceId}`]" @click="ycyPumpApply(dev)">{{ t('brands.startPump') }}</el-button>
+                <el-button size="small" :loading="opLoading[`ycyPumpS:${dev.deviceId}`]" @click="ycyPumpStop(dev)">{{ t('brands.stop') }}</el-button>
               </div>
             </div>
             <div v-else-if="dev.mode === 'bridge'" class="control-grid">
-              <div class="control-field"><label>玩法编号</label><el-input v-model="ctl(dev).commandId" size="small" /></div>
+              <div class="control-field"><label>{{ t('brands.playId') }}</label><el-input v-model="ctl(dev).commandId" size="small" /></div>
               <div class="control-actions">
-                <el-button type="primary" size="small" @click="ycyTrigger(dev)">触发</el-button>
-                <el-button size="small" @click="ycyStop(dev)">停止</el-button>
+                <el-button type="primary" size="small" @click="ycyTrigger(dev)">{{ t('brands.trigger') }}</el-button>
+                <el-button size="small" @click="ycyStop(dev)">{{ t('brands.stop') }}</el-button>
               </div>
             </div>
           </div>
@@ -134,68 +134,68 @@
 
       </el-tab-pane>
 
-      <el-tab-pane label="支持设备" name="support">
+      <el-tab-pane :label="t('brands.support')" name="support">
         <el-card shadow="never" class="section-card">
-          <h3 class="support-h">已测试</h3>
+          <h3 class="support-h">{{ t('brands.tested') }}</h3>
           <ul class="support-list">
             <li v-for="item in testedDevices" :key="item">{{ item }}</li>
           </ul>
-          <h3 class="support-h">理论支持</h3>
+          <h3 class="support-h">{{ t('brands.theoretical') }}</h3>
           <ul class="support-list">
             <li v-for="item in theoreticalDevices" :key="item">{{ item }}</li>
           </ul>
-          <p class="op-hint">如需更多支持设备请联系客服</p>
+          <p class="op-hint">{{ t('brands.moreSupport') }}</p>
         </el-card>
       </el-tab-pane>
     </el-tabs>
 
     <el-dialog v-model="moreOpen" :title="moreTitle" width="560px" class="add-dialog">
       <template v-if="moreKind === 'native'">
-        <p class="op-hint">本机桥接仅 macOS 可用，用电脑蓝牙经原生程序连接。</p>
+        <p class="op-hint">{{ t('brands.nativeHint') }}</p>
         <template v-if="isMac">
-          <h4>郊狼</h4>
+          <h4>{{ t('brands.dglab') }}</h4>
           <div class="discover-row">
             <el-tag :type="dglabNativeSummary.type" size="small">{{ dglabNativeSummary.text }}</el-tag>
-            <el-button type="primary" size="small" :loading="busy" :disabled="!dglabNativeDevices.length" @click="dglabNativeConnectAll">全部连接</el-button>
-            <el-button size="small" :loading="busy" @click="dglabNativeRescan">重新扫描</el-button>
+            <el-button type="primary" size="small" :loading="busy" :disabled="!dglabNativeDevices.length" @click="dglabNativeConnectAll">{{ t('brands.connectAll') }}</el-button>
+            <el-button size="small" :loading="busy" @click="dglabNativeRescan">{{ t('brands.rescan') }}</el-button>
           </div>
-          <h4>役次元</h4>
+          <h4>{{ t('brands.ycy') }}</h4>
           <div class="discover-row">
             <el-tag :type="ycyNativeSummary.type" size="small">{{ ycyNativeSummary.text }}</el-tag>
-            <el-button type="primary" size="small" :loading="busy" :disabled="!ycyNativeDevices.length" @click="ycyNativeConnectAll">全部连接</el-button>
-            <el-button size="small" :loading="busy" @click="ycyNativeRescan">重新扫描</el-button>
+            <el-button type="primary" size="small" :loading="busy" :disabled="!ycyNativeDevices.length" @click="ycyNativeConnectAll">{{ t('brands.connectAll') }}</el-button>
+            <el-button size="small" :loading="busy" @click="ycyNativeRescan">{{ t('brands.rescan') }}</el-button>
           </div>
         </template>
-        <el-alert v-else type="info" :closable="false" title="当前系统不是 Mac，请用「蓝牙连接」。" />
+        <el-alert v-else type="info" :closable="false" :title="t('brands.notMac')" />
       </template>
       <template v-else-if="moreKind === 'dglab-phone'">
         <div class="discover-row">
-          <el-input v-model="dglabHost" placeholder="手机上显示的地址" class="addr-input" />
-          <el-input v-model="dglabPort" placeholder="端口" class="port-input" />
-          <el-button type="primary" :loading="scanningDglab" @click="discoverDglab">探测</el-button>
+          <el-input v-model="dglabHost" :placeholder="t('brands.phoneAddr')" class="addr-input" />
+          <el-input v-model="dglabPort" :placeholder="t('brands.port')" class="port-input" />
+          <el-button type="primary" :loading="scanningDglab" @click="discoverDglab">{{ t('brands.probe') }}</el-button>
         </div>
-        <p class="op-hint">在配套手机软件打开娱乐模式，填入地址和端口后探测。</p>
+        <p class="op-hint">{{ t('brands.phoneHint') }}</p>
         <div v-for="c in dglabCandidates" :key="c.suggestedDeviceId" class="candidate-item">
           <span class="candidate-name">{{ c.host }}:{{ c.port }}</span>
-          <el-button size="small" type="primary" :disabled="!c.reachable || busy" @click="connectDglab(c)">连接</el-button>
+          <el-button size="small" type="primary" :disabled="!c.reachable || busy" @click="connectDglab(c)">{{ t('brands.connectBtn') }}</el-button>
         </div>
       </template>
       <template v-else-if="moreKind === 'ycy-bridge'">
         <div class="discover-row">
-          <el-input v-model="ycyBridgeCode" placeholder="连接码（设备编号加空格加口令）" class="addr-input" />
+          <el-input v-model="ycyBridgeCode" :placeholder="t('brands.codePlaceholder')" class="addr-input" />
         </div>
         <div class="discover-row">
           <el-select v-model="ycyBridgeType" size="small" class="type-select">
-            <el-option label="电击器" value="YCY_EMS" />
-            <el-option label="玩具 / 电机" value="YCY_TOY" />
-            <el-option label="杯" value="YCY_CUP" />
-            <el-option label="灌肠机" value="YCY_ENEMA" />
+            <el-option :label="t('brands.ems')" value="YCY_EMS" />
+            <el-option :label="t('brands.toy')" value="YCY_TOY" />
+            <el-option :label="t('brands.cup')" value="YCY_CUP" />
+            <el-option :label="t('brands.enema')" value="YCY_ENEMA" />
           </el-select>
         </div>
         <div class="discover-row">
-          <el-input v-model="ycyBridgeHost" placeholder="桥接地址，留空为本机" class="addr-input" />
-          <el-input v-model="ycyBridgePort" placeholder="端口" class="port-input" />
-          <el-button type="primary" :loading="busy" @click="connectYcyBridge">连接</el-button>
+          <el-input v-model="ycyBridgeHost" :placeholder="t('brands.bridgeHost')" class="addr-input" />
+          <el-input v-model="ycyBridgePort" :placeholder="t('brands.port')" class="port-input" />
+          <el-button type="primary" :loading="busy" @click="connectYcyBridge">{{ t('brands.connectBtn') }}</el-button>
         </div>
       </template>
     </el-dialog>
@@ -205,6 +205,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Refresh, Close, ArrowDown } from '@element-plus/icons-vue'
 import * as brandsApi from '../api/brands'
@@ -217,52 +218,50 @@ import type { DglabBridgeDevice } from '../api/dglabBridge'
 import * as brandBle from '../web-ble/brandBle'
 import * as ycyBle from '../web-ble/ycyBle'
 
-// 品牌中文显示名（按页面要求显示：郊狼 / 役次元 / 繁野）。
-const BRAND_LABEL: Record<string, string> = {
-  dglab: '郊狼',
-  ycy: '役次元',
-  sosexy: '繁野',
-}
-const TYPE_LABEL: Record<string, string> = {
-  DGLAB: '郊狼',
-  DGLAB_V2: '郊狼（直连版）',
-  YCY_EMS: '电击主机',
-  YCY_TOY: '电机/玩具',
-  YCY_CUP: '杯',
-  YCY_ENEMA: '灌肠机',
-  SOSEXY_PID0004: '啵啵贝',
-}
+const { t, tm } = useI18n()
+
+const BRAND_LABEL = computed<Record<string, string>>(() => ({
+  dglab: t('brands.brandDglab'),
+  ycy: t('brands.brandYcy'),
+  sosexy: t('brands.brandSosexy'),
+}))
+const TYPE_LABEL = computed<Record<string, string>>(() => ({
+  DGLAB: t('brands.typeDglab'),
+  DGLAB_V2: t('brands.typeDglabV2'),
+  YCY_EMS: t('brands.typeEms'),
+  YCY_TOY: t('brands.typeToy'),
+  YCY_CUP: t('brands.typeCup'),
+  YCY_ENEMA: t('brands.typeEnema'),
+  SOSEXY_PID0004: t('brands.typeBobobei'),
+}))
 
 // 设备名映射为友好中文名（仅显示层，不改连接/电量逻辑）
 function brandLabel(brand: string, rawName?: string | null): string {
   const name = (rawName || '').trim()
   const up = name.toUpperCase()
   if (brand === 'dglab') {
-    if (up.startsWith('D-LAB') || up.startsWith('DG-LAB')) return '郊狼2.0'
-    if (up.startsWith('47L')) return '郊狼3.0'
-    return name || '郊狼'
+    if (up.startsWith('D-LAB') || up.startsWith('DG-LAB')) return t('brands.dglab20')
+    if (up.startsWith('47L')) return t('brands.dglab30')
+    return name || t('brands.dglab')
   }
-  if (brand === 'sosexy') return '啵啵贝'
+  if (brand === 'sosexy') return t('brands.bobobei')
   if (brand === 'ycy') {
-    // 按广播名/设备名识别设备类型，映射到中文友好名：
-    // 杯(FJB)、灌肠机(YISK/灌肠/ENEMA/GLJ/GLS)、电击主机(DJ)；其余役次元家族统称“役次元设备”
-    if (/FJB/i.test(name)) return '杯'
-    if (/(YISK|灌肠|ENEMA|GLJ|GLS)/i.test(name)) return '灌肠机'
-    if (/DJ/i.test(name)) return '电击主机'
-    if (/(YSKJ|YOKO|YOKONEX|YCY|YYC|YICIYUAN)/i.test(name)) return '役次元设备'
-    return '役次元主机2.0'
+    if (/FJB/i.test(name)) return t('brands.cup')
+    if (/(YISK|灌肠|ENEMA|GLJ|GLS)/i.test(name)) return t('brands.enema')
+    if (/DJ/i.test(name)) return t('brands.typeEms')
+    if (/(YSKJ|YOKO|YOKONEX|YCY|YYC|YICIYUAN)/i.test(name)) return t('brands.ycyDevice')
+    return t('brands.ycyHost')
   }
   return name || brand
 }
 
-// 役次元设备类型标签（与 brandLabel 一致的识别规则），用于卡片上的小标签
 function ycyTypeLabel(rawName?: string | null): string {
   const n = rawName || ''
-  if (/FJB/i.test(n)) return '杯'
-  if (/(YISK|灌肠|ENEMA|GLJ|GLS)/i.test(n)) return '灌肠机'
-  if (/DJ/i.test(n)) return '电击主机'
-  if (/(YSKJ|YOKO|YOKONEX|YCY|YYC|YICIYUAN)/i.test(n)) return '役次元设备'
-  return '役次元主机'
+  if (/FJB/i.test(n)) return t('brands.cup')
+  if (/(YISK|灌肠|ENEMA|GLJ|GLS)/i.test(n)) return t('brands.enema')
+  if (/DJ/i.test(n)) return t('brands.typeEms')
+  if (/(YSKJ|YOKO|YOKONEX|YCY|YYC|YICIYUAN)/i.test(n)) return t('brands.ycyDevice')
+  return t('brands.ycyHostShort')
 }
 
 const activeBrand = ref<'dglab' | 'ycy'>('dglab')
@@ -270,20 +269,18 @@ const pageTab = ref<'connect' | 'support'>('connect')
 const moreOpen = ref(false)
 const moreKind = ref<'native' | 'dglab-phone' | 'ycy-bridge'>('native')
 const moreTitle = computed(() => {
-  if (moreKind.value === 'native') return '本机桥接'
-  if (moreKind.value === 'dglab-phone') return '郊狼手机连接'
-  return '役次元远程桥接'
+  if (moreKind.value === 'native') return t('brands.native')
+  if (moreKind.value === 'dglab-phone') return t('brands.dglabPhone')
+  return t('brands.ycyRemote')
 })
-const testedDevices = [
-  '役次元 YCY-FJB-03 杯（蓝牙连接）',
-  '繁野 啵啵贝（蓝牙连接）',
-]
-const theoreticalDevices = [
-  '郊狼 2.0 / 3.0（蓝牙连接、本机桥接、手机连接）',
-  '役次元电击主机（蓝牙连接 / 远程桥接）',
-  '役次元电机 / 玩具（蓝牙连接 / 远程桥接）',
-  '役次元灌肠机（蓝牙连接 / 远程桥接）',
-]
+const testedDevices = computed(() => {
+  const v = tm('brands.testedList')
+  return Array.isArray(v) ? (v as string[]) : []
+})
+const theoreticalDevices = computed(() => {
+  const v = tm('brands.theoreticalList')
+  return Array.isArray(v) ? (v as string[]) : []
+})
 const busy = ref(false)
 const refreshing = ref(false)
 const bleAutoConnect = ref(true)
@@ -430,7 +427,7 @@ function withLoading(key: string, fn: () => Promise<void>) {
 }
 
 function ycyPanelType(dev: { type?: string; name?: string }) {
-  if (dev.type && TYPE_LABEL[dev.type]) return dev.type
+  if (dev.type && TYPE_LABEL.value[dev.type]) return dev.type
   const n = String(dev.name || '')
   if (/SOSEXY|啵啵贝/i.test(n)) return 'SOSEXY_PID0004'
   if (/灌肠|enema|glj|yisk/i.test(n)) return 'YCY_ENEMA'

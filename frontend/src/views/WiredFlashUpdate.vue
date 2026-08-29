@@ -13,11 +13,11 @@
     <el-card shadow="never" class="step-card">
       <template #header>
         <div class="step-header">
-          <span>1. 连接与识别</span>
+          <span>{{ t('wired.step1') }}</span>
           <div class="header-actions">
-            <el-tag v-if="selectedPort" type="success" size="small">已选择 {{ selectedPort }}</el-tag>
+            <el-tag v-if="selectedPort" type="success" size="small">{{ t('wired.selected', { port: selectedPort }) }}</el-tag>
             <el-button size="small" :icon="Refresh" :loading="portsLoading" :disabled="flashing" @click="loadPorts">
-              刷新串口
+              {{ t('wired.refreshPorts') }}
             </el-button>
           </div>
         </div>
@@ -26,7 +26,7 @@
       <div class="connect-row">
         <el-select
           v-model="selectedPort"
-          placeholder="请选择设备串口"
+          :placeholder="t('wired.pickPort')"
           :loading="portsLoading"
           :disabled="flashing"
           class="port-select"
@@ -44,30 +44,28 @@
 
         <template v-if="selectedPort">
           <span v-if="identifying" class="inline-status">
-            <el-icon class="is-loading"><Loading /></el-icon> 正在识别设备型号（约 5~7 秒）...
+            <el-icon class="is-loading"><Loading /></el-icon> {{ t('wired.identifying') }}
           </span>
           <template v-else-if="identifyDone">
             <el-select
               v-model="deviceType"
-              placeholder="设备型号"
+              :placeholder="t('wired.model')"
               :disabled="flashing"
               class="type-select"
               @change="handleDeviceTypeChange"
             >
               <el-option v-for="type in DEVICE_TYPES" :key="type" :label="type" :value="type" />
             </el-select>
-            <span class="kv">版本 <strong>{{ currentVersion || '未知' }}</strong></span>
-            <span class="kv">ID <strong>{{ deviceId || '未知' }}</strong></span>
-            <span v-if="identified" class="info-hint">
-              已自动识别{{ identifySource === 'protocol' ? '（协议）' : '（启动日志）' }}，如有误可改选
-            </span>
+            <span class="kv">{{ t('wired.version') }} <strong>{{ currentVersion || t('common.unknown') }}</strong></span>
+            <span class="kv">{{ t('wired.id') }} <strong>{{ deviceId || t('common.unknown') }}</strong></span>
+            <span v-if="identified" class="info-hint">{{ identifySource === 'protocol' ? t('wired.identifiedProtocol') : t('wired.identifiedLog') }}</span>
           </template>
         </template>
       </div>
 
       <el-alert
         v-if="identifyDone && !identified"
-        title="未能自动识别型号，请手动选择"
+        :title="t('wired.identifyFail')"
         type="warning"
         :closable="false"
         show-icon
@@ -76,7 +74,7 @@
 
       <el-alert
         v-if="!portsLoading && ports.length === 0"
-        title="未检测到串口设备，请确认设备已通过 USB 连接电脑后点击「刷新串口」"
+        :title="t('wired.noPorts')"
         type="warning"
         :closable="false"
         show-icon
@@ -85,11 +83,11 @@
 
       <el-alert v-if="driverMissing" type="error" :closable="false" show-icon class="step-alert">
         <template #title>
-          检测到 CH34x 设备但驱动未安装，请先
+          {{ t('wired.driverMissing') }}
           <el-link type="danger" href="https://www.wch.cn/downloads/ch341ser_exe.html" target="_blank" :underline="false">
-            下载并安装驱动
+            {{ t('wired.downloadDriver') }}
           </el-link>
-          ，安装完成后点击「刷新串口」
+          {{ t('wired.afterInstall') }}
         </template>
       </el-alert>
     </el-card>
@@ -98,19 +96,19 @@
     <el-card v-if="deviceType" shadow="never" class="step-card">
       <template #header>
         <div class="step-header">
-          <span>2. 固件与烧录</span>
+          <span>{{ t('wired.step2') }}</span>
           <el-button size="small" :icon="Refresh" :loading="firmwareLoading" :disabled="flashing" @click="loadFirmwareInfo">
-            重新检查
+            {{ t('wired.recheck') }}
           </el-button>
         </div>
       </template>
 
-      <div v-if="firmwareLoading" class="fw-loading" v-loading="true" element-loading-text="正在获取固件信息..." />
+      <div v-if="firmwareLoading" class="fw-loading" v-loading="true" :element-loading-text="t('wired.loadingInfo')" />
 
       <template v-else-if="firmwareInfo">
         <el-alert
           v-if="!firmwareInfo.supported"
-          :title="`暂不支持型号 ${deviceType} 的插线固件更新`"
+          :title="t('wired.unsupported', { type: deviceType })"
           type="error"
           :closable="false"
           show-icon
@@ -118,7 +116,7 @@
         />
         <el-alert
           v-else-if="!firmwareInfo.updateAvailable"
-          title="当前设备固件已是最新版本，如需重装可重新刷入"
+          :title="t('wired.alreadyLatest')"
           type="info"
           :closable="false"
           show-icon
@@ -126,14 +124,14 @@
         />
 
         <div class="fw-row">
-          <span class="kv">当前 <strong>{{ currentVersion || '未知' }}</strong></span>
-          <span class="kv">最新
+          <span class="kv">{{ t('wired.current') }} <strong>{{ currentVersion || t('common.unknown') }}</strong></span>
+          <span class="kv">{{ t('wired.latest') }}
             <strong :class="firmwareInfo.updateAvailable ? 'text-warning' : 'text-success'">
               {{ firmwareInfo.latestVersion || '-' }}
             </strong>
           </span>
-          <span class="kv">文件 <strong>{{ firmwareInfo.firmware?.filename || '-' }}</strong></span>
-          <span class="kv">大小 <strong>{{ formatSize(firmwareInfo.firmware?.sizeBytes) }}</strong></span>
+          <span class="kv">{{ t('wired.file') }} <strong>{{ firmwareInfo.firmware?.filename || '-' }}</strong></span>
+          <span class="kv">{{ t('wired.size') }} <strong>{{ formatSize(firmwareInfo.firmware?.sizeBytes) }}</strong></span>
           <el-button
             type="primary"
             class="flash-btn"
@@ -142,7 +140,7 @@
             :loading="flashing"
             @click="confirmAndFlash"
           >
-            {{ firmwareInfo.updateAvailable ? '更新固件' : '重新刷入' }}
+            {{ firmwareInfo.updateAvailable ? t('wired.updateFw') : t('wired.reflash') }}
           </el-button>
         </div>
 
@@ -161,7 +159,7 @@
 
           <el-alert
             v-if="flashing"
-            title="烧录过程中请勿拔下 USB 线或关闭页面"
+            :title="t('wired.dontUnplug')"
             type="warning"
             :closable="false"
             show-icon
@@ -169,7 +167,7 @@
           />
           <el-alert
             v-if="flashStatus === 'success'"
-            title="固件烧录成功！设备已重启，请重新配网"
+            :title="t('wired.flashOk')"
             type="success"
             :closable="false"
             show-icon
@@ -177,13 +175,13 @@
           />
           <template v-if="flashStatus === 'failed'">
             <el-alert
-              :title="flashError || '烧录失败'"
+              :title="flashError || t('wired.flashFailed')"
               type="error"
               :closable="false"
               show-icon
               class="step-alert"
             />
-            <el-button type="primary" size="small" :icon="Refresh" @click="confirmAndFlash">重试烧录</el-button>
+            <el-button type="primary" size="small" :icon="Refresh" @click="confirmAndFlash">{{ t('wired.retryFlash') }}</el-button>
           </template>
         </div>
       </template>
@@ -202,9 +200,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Loading, Refresh, Upload } from '@element-plus/icons-vue';
 import { track } from '../analytics';
+
+const { t } = useI18n();
 
 interface SerialPort {
   path: string;
@@ -227,15 +228,15 @@ interface FirmwareInfo {
 // 型号列表与 hardware 仓库 CI 构建矩阵保持一致，后端固件按此型号区分
 const DEVICE_TYPES = ['TD01', 'DIANJI', 'QTZ', 'ZIDONGSUO', 'PJ01', 'QIYA', 'DZC01', 'CUNZHI01'];
 
-const FLASH_STATUS_LABELS: Record<string, string> = {
-  downloading: '下载固件中',
-  verifying: '校验固件中',
-  entering_bootloader: '进入下载模式中',
-  flashing: '烧录中',
-  resetting: '重启设备中',
-  success: '烧录成功',
-  failed: '烧录失败',
-};
+const FLASH_STATUS_LABELS = computed<Record<string, string>>(() => ({
+  downloading: t('wired.downloadingFw'),
+  verifying: t('wired.verifying'),
+  entering_bootloader: t('wired.enteringBootloader'),
+  flashing: t('wired.flashing'),
+  resetting: t('wired.resetting'),
+  success: t('wired.flashSuccess'),
+  failed: t('wired.flashFailedStatus'),
+}));
 
 const ports = ref<SerialPort[]>([]);
 const portsLoading = ref(false);
@@ -270,7 +271,7 @@ const canFlash = computed(() => (
   && !flashing.value
 ));
 
-const flashStatusLabel = computed(() => FLASH_STATUS_LABELS[flashStatus.value] || flashStatus.value || '准备中');
+const flashStatusLabel = computed(() => FLASH_STATUS_LABELS.value[flashStatus.value] || flashStatus.value || t('wired.preparing'));
 
 const flashTagType = computed<'success' | 'warning' | 'danger' | 'info' | 'primary'>(() => {
   if (flashStatus.value === 'success') return 'success';

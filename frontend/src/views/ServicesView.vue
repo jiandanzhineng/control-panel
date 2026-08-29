@@ -1,65 +1,65 @@
 <template>
   <div class="page">
     <header class="page-head">
-      <p class="section-label">服务管理</p>
-      <h1 class="page-title">网络与服务</h1>
-      <p class="page-desc">mDNS 发现、MQTT 服务与客户端连接的统一管理入口。</p>
+      <p class="section-label">{{ t('network.label') }}</p>
+      <h1 class="page-title">{{ t('network.title') }}</h1>
+      <p class="page-desc">{{ t('network.desc') }}</p>
     </header>
 
     <div class="card-grid">
       <section class="card">
         <div class="card-head">
-          <h2>mDNS 服务</h2>
+          <h2>{{ t('network.mdns') }}</h2>
           <el-tag size="small" :type="mdnsStatus.running ? 'success' : 'info'">{{ mdnsStatusText }}</el-tag>
         </div>
         <div class="stat-rows">
-          <p v-if="currentMdnsIp"><span class="k">当前 IP</span><span class="v mono">{{ currentMdnsIp }}</span></p>
+          <p v-if="currentMdnsIp"><span class="k">{{ t('network.currentIp') }}</span><span class="v mono">{{ currentMdnsIp }}</span></p>
           <p v-if="mdnsError" class="error">{{ mdnsError }}</p>
         </div>
         <div class="row actions">
-          <el-button type="primary" size="small" :loading="mdnsBusy" @click="startMdns">启动 mDNS</el-button>
-          <el-button size="small" :disabled="mdnsBusy" @click="stopMdns">暂停</el-button>
-          <el-button size="small" text :loading="mdnsStatusLoading" @click="refreshMdnsStatus">刷新状态</el-button>
+          <el-button type="primary" size="small" :loading="mdnsBusy" @click="startMdns">{{ t('network.startMdns') }}</el-button>
+          <el-button size="small" :disabled="mdnsBusy" @click="stopMdns">{{ t('network.pause') }}</el-button>
+          <el-button size="small" text :loading="mdnsStatusLoading" @click="refreshMdnsStatus">{{ t('network.refreshStatus') }}</el-button>
           <span v-if="mdnsStatusError" class="error">{{ mdnsStatusError }}</span>
-          <span v-if="mdnsStatusUpdated" class="ok">已更新</span>
+          <span v-if="mdnsStatusUpdated" class="ok">{{ t('network.updated') }}</span>
         </div>
       </section>
 
       <section class="card">
         <div class="card-head">
-          <h2>MQTT 服务</h2>
+          <h2>{{ t('network.mqtt') }}</h2>
           <el-tag size="small" :type="mqttStatus.running ? 'success' : (mqttStatus.starting ? 'warning' : 'info')">
-            {{ mqttStatus.running ? '运行中' : (mqttStatus.starting ? '启动中' : '已停止') }}
+            {{ mqttStatus.running ? t('network.running') : (mqttStatus.starting ? t('network.starting') : t('network.stopped')) }}
           </el-tag>
         </div>
         <div class="stat-rows">
-          <p v-if="mqttStatus.port"><span class="k">端口</span><span class="v mono">{{ mqttStatus.port }}</span></p>
+          <p v-if="mqttStatus.port"><span class="k">{{ t('network.port') }}</span><span class="v mono">{{ mqttStatus.port }}</span></p>
           <p v-if="mqttError" class="error">{{ mqttError }}</p>
         </div>
         <div class="row actions">
-          <el-button type="primary" size="small" :loading="mqttBusy" @click="startMqtt">启动 MQTT</el-button>
-          <el-button size="small" :disabled="mqttBusy" @click="stopMqtt">暂停</el-button>
-          <el-button size="small" text :loading="mqttStatusLoading" @click="refreshMqttStatus">刷新状态</el-button>
+          <el-button type="primary" size="small" :loading="mqttBusy" @click="startMqtt">{{ t('network.startMqtt') }}</el-button>
+          <el-button size="small" :disabled="mqttBusy" @click="stopMqtt">{{ t('network.pause') }}</el-button>
+          <el-button size="small" text :loading="mqttStatusLoading" @click="refreshMqttStatus">{{ t('network.refreshStatus') }}</el-button>
           <span v-if="mqttStatusError" class="error">{{ mqttStatusError }}</span>
-          <span v-if="mqttStatusUpdated" class="ok">已更新</span>
+          <span v-if="mqttStatusUpdated" class="ok">{{ t('network.updated') }}</span>
         </div>
       </section>
 
       <section class="card">
         <div class="card-head">
-          <h2>MQTT 客户端</h2>
+          <h2>{{ t('network.mqttClient') }}</h2>
           <el-tag size="small" :type="mqttClientStatus.connected ? 'success' : (mqttClientStatus.connecting ? 'warning' : 'info')">
-            {{ mqttClientStatus.connected ? '已连接' : (mqttClientStatus.connecting ? '连接中' : '未连接') }}
+            {{ mqttClientStatus.connected ? t('common.connected') : (mqttClientStatus.connecting ? t('network.connecting') : t('common.disconnected')) }}
           </el-tag>
         </div>
         <div class="stat-rows">
           <p v-if="mqttClientStatus.url"><span class="k">Broker</span><span class="v mono">{{ mqttClientStatus.url }}</span></p>
           <p v-if="mqttClientStatus.clientId"><span class="k">Client ID</span><span class="v mono">{{ mqttClientStatus.clientId }}</span></p>
-          <p v-if="mqttClientStatus.subscriptions?.length"><span class="k">订阅主题</span><span class="v mono">{{ mqttClientStatus.subscriptions.join(', ') }}</span></p>
-          <p v-if="mqttClientStatus.lastError" class="error">最后错误：{{ mqttClientStatus.lastError }}</p>
+          <p v-if="mqttClientStatus.subscriptions?.length"><span class="k">{{ t('network.topics') }}</span><span class="v mono">{{ mqttClientStatus.subscriptions.join(', ') }}</span></p>
+          <p v-if="mqttClientStatus.lastError" class="error">{{ t('network.lastError', { error: mqttClientStatus.lastError }) }}</p>
         </div>
         <div class="row actions">
-          <el-button size="small" text :loading="mqttClientLoading" @click="loadMqttClientStatus">刷新状态</el-button>
+          <el-button size="small" text :loading="mqttClientLoading" @click="loadMqttClientStatus">{{ t('network.refreshStatus') }}</el-button>
           <span v-if="mqttClientError" class="error">{{ mqttClientError }}</span>
         </div>
       </section>
@@ -67,25 +67,20 @@
 
     <section class="card dev-card">
       <div class="card-head">
-        <h2>开发者：外部本地游戏放行</h2>
+        <h2>{{ t('network.devTitle') }}</h2>
         <el-switch
           v-model="devAccessEnabled"
           :disabled="devAccessBusy"
-          active-text="允许"
-          inactive-text="关闭"
+          :active-text="t('network.allow')"
+          :inactive-text="t('network.off')"
           inline-prompt
           @change="saveDevAccess"
         />
       </div>
-      <p class="muted" style="margin-top:0;">
-        开启后，本机浏览器里任意端口的本地网页（localhost / 127.0.0.1）以及下方显式添加的来源，
-        可直接连接本机后台试玩自研游戏。关闭时仅面板自身可访问控制接口。
-      </p>
-      <p class="warn-text">
-        ⚠ 安全提示：这会让你浏览器访问过的本地页面具备控制真实设备的能力，仅在本机开发调试时开启，用完请关闭。
-      </p>
+      <p class="muted" style="margin-top:0;">{{ t('network.devHint') }}</p>
+      <p class="warn-text">{{ t('network.devWarn') }}</p>
       <div class="row">
-        <span v-if="devAccessSaved" class="ok">已保存</span>
+        <span v-if="devAccessSaved" class="ok">{{ t('network.saved') }}</span>
         <span v-if="devAccessError" class="error">{{ devAccessError }}</span>
       </div>
 
@@ -94,23 +89,24 @@
           <input
             v-model="newOrigin"
             type="text"
-            placeholder="额外来源，如 http://192.168.1.10:8080"
+            :placeholder="t('network.originPlaceholder')"
             class="origin-input"
             @keyup.enter="addOrigin"
           />
-          <el-button size="small" :disabled="devAccessBusy" @click="addOrigin">添加来源</el-button>
+          <el-button size="small" :disabled="devAccessBusy" @click="addOrigin">{{ t('network.addOrigin') }}</el-button>
         </div>
         <ul class="origin-list">
           <li v-for="o in devAccessOrigins" :key="o">
             <span class="mono">{{ o }}</span>
-            <button class="link-btn" @click="removeOrigin(o)" :disabled="devAccessBusy">移除</button>
+            <button class="link-btn" @click="removeOrigin(o)" :disabled="devAccessBusy">{{ t('network.remove') }}</button>
           </li>
-          <li v-if="!devAccessOrigins.length" class="muted">（本地任意端口已自动放行，如需非回环地址可在此添加）</li>
+          <li v-if="!devAccessOrigins.length" class="muted">{{ t('network.originEmpty') }}</li>
         </ul>
         <p class="muted hint">
-          游戏页接入方式：引用
-          <code>&lt;script src="http://127.0.0.1:5278/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;</code>，
-          脚本会自动连回后台 <code>/bridge</code>。
+          {{ t('network.gameHint') }}
+          <code>&lt;script src="http://127.0.0.1:5278/bridge-api/device-api-bridge.js"&gt;&lt;/script&gt;</code>
+          {{ t('network.gameHint2') }}
+          <code>/bridge</code>.
         </p>
       </div>
     </section>
@@ -128,7 +124,10 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import RealTimeLog from '@/components/RealTimeLog.vue';
+
+const { t } = useI18n();
 
 // mDNS 状态（对象形式）
 const mdnsStatus = ref<{ ip?: string; pid?: number; running: boolean }>({ running: false });
@@ -136,7 +135,7 @@ const mdnsStatus = ref<{ ip?: string; pid?: number; running: boolean }>({ runnin
 const mdnsBusy = ref(false);
 const mdnsError = ref('');
 const currentMdnsIp = computed(() => mdnsStatus.value.ip || '');
-const mdnsStatusText = computed(() => (mdnsStatus.value.running ? '运行中' : '已停止'));
+const mdnsStatusText = computed(() => (mdnsStatus.value.running ? t('network.running') : t('network.stopped')));
 
 const mdnsStatusLoading = ref(false);
 const mdnsStatusError = ref('');
@@ -183,7 +182,7 @@ async function saveDevAccess() {
       body: JSON.stringify({ enabled: devAccessEnabled.value, origins: devAccessOrigins.value }),
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data?.error?.message || data.message || '保存失败');
+    if (!res.ok || data.error) throw new Error(data?.error?.message || data.message || t('network.saveFailed'));
     devAccessEnabled.value = !!data.enabled;
     devAccessOrigins.value = Array.isArray(data.origins) ? data.origins : [];
     devAccessSaved.value = true;
@@ -208,7 +207,7 @@ function addOrigin() {
     newOrigin.value = '';
     saveDevAccess();
   } catch {
-    devAccessError.value = '无效的来源地址，需形如 http://host:port';
+    devAccessError.value = t('network.invalidOrigin');
   }
 }
 
@@ -236,10 +235,10 @@ async function refreshMdnsStatus() {
   mdnsStatusUpdated.value = false;
   try {
     const ok = await loadMdnsStatus();
-    if (!ok) throw new Error('状态获取失败');
+    if (!ok) throw new Error(t('network.statusFailed'));
     mdnsStatusUpdated.value = true;
   } catch (e: any) {
-    mdnsStatusError.value = e?.message || '状态获取失败';
+    mdnsStatusError.value = e?.message || t('network.statusFailed');
   } finally {
     mdnsStatusLoading.value = false;
     setTimeout(() => (mdnsStatusUpdated.value = false), 1500);
@@ -256,10 +255,10 @@ async function startMdns() {
       body: JSON.stringify({}),
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || 'mDNS 启动失败');
+    if (!res.ok || data.error) throw new Error(data.message || t('network.mdnsStartFailed'));
     await loadMdnsStatus();
   } catch (e: any) {
-    mdnsError.value = e?.message || 'mDNS 启动失败';
+    mdnsError.value = e?.message || t('network.mdnsStartFailed');
   } finally {
     mdnsBusy.value = false;
   }
@@ -275,10 +274,10 @@ async function stopMdns() {
       body: JSON.stringify({}),
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || 'mDNS 暂停失败');
+    if (!res.ok || data.error) throw new Error(data.message || t('network.mdnsStopFailed'));
     await loadMdnsStatus();
   } catch (e: any) {
-    mdnsError.value = e?.message || 'mDNS 暂停失败';
+    mdnsError.value = e?.message || t('network.mdnsStopFailed');
   } finally {
     mdnsBusy.value = false;
   }
@@ -297,11 +296,11 @@ async function refreshMqttStatus() {
   mqttStatusUpdated.value = false;
   try {
     const res = await fetch('/api/mqtt/status');
-    if (!res.ok) throw new Error('状态获取失败');
+    if (!res.ok) throw new Error(t('network.statusFailed'));
     mqttStatus.value = await res.json();
     mqttStatusUpdated.value = true;
   } catch (e: any) {
-    mqttStatusError.value = e?.message || '状态获取失败';
+    mqttStatusError.value = e?.message || t('network.statusFailed');
   } finally {
     mqttStatusLoading.value = false;
     setTimeout(() => (mqttStatusUpdated.value = false), 1500);
@@ -314,10 +313,10 @@ async function loadMqttClientStatus() {
   try {
     const res = await fetch('/api/mqtt-client/status');
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || '状态获取失败');
+    if (!res.ok || data.error) throw new Error(data.message || t('network.statusFailed'));
     mqttClientStatus.value = data;
   } catch (e: any) {
-    mqttClientError.value = e?.message || '状态获取失败';
+    mqttClientError.value = e?.message || t('network.statusFailed');
   } finally {
     mqttClientLoading.value = false;
   }
@@ -333,10 +332,10 @@ async function startMqtt() {
       body: JSON.stringify({ port: 1883, bind: '0.0.0.0' }),
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || 'MQTT 启动失败');
+    if (!res.ok || data.error) throw new Error(data.message || t('network.mqttStartFailed'));
     await loadMqttStatus();
   } catch (e: any) {
-    mqttError.value = e?.message || 'MQTT 启动失败';
+    mqttError.value = e?.message || t('network.mqttStartFailed');
   } finally {
     mqttBusy.value = false;
   }
@@ -348,10 +347,10 @@ async function stopMqtt() {
   try {
     const res = await fetch('/api/mqtt/stop', { method: 'POST' });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || 'MQTT 暂停失败');
+    if (!res.ok || data.error) throw new Error(data.message || t('network.mqttStopFailed'));
     await loadMqttStatus();
   } catch (e: any) {
-    mqttError.value = e?.message || 'MQTT 暂停失败';
+    mqttError.value = e?.message || t('network.mqttStopFailed');
   } finally {
     mqttBusy.value = false;
   }

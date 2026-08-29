@@ -5,16 +5,16 @@
         :class="{ active: activeTab === 'realtime' }" 
         @click="activeTab = 'realtime'"
       >
-        实时日志
+        {{ t('logs.realtime') }}
       </button>
       <button 
         :class="{ active: activeTab === 'files' }" 
         @click="activeTab = 'files'"
       >
-        历史文件
+        {{ t('logs.files') }}
       </button>
       <button class="upload-btn" :disabled="uploading" @click="uploadDiagnostics">
-        {{ uploading ? '上传中...' : '上传诊断日志' }}
+{{ uploading ? t('logs.uploading') : t('logs.upload') }}
       </button>
     </div>
     <p v-if="uploadHint" class="upload-hint">{{ uploadHint }}</p>
@@ -28,9 +28,11 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import RealTimeLog from '../components/RealTimeLog.vue'
 import LogFileList from '../components/LogFileList.vue'
 
+const { t } = useI18n()
 const activeTab = ref('realtime')
 const uploading = ref(false)
 const uploadHint = ref('')
@@ -45,14 +47,14 @@ async function uploadDiagnostics() {
     if (!res.ok) {
       const code = data?.error?.code || ''
       if (res.status === 429 || code === 'TOO_MANY_REQUESTS') {
-        throw new Error('上传太频繁，请 10 分钟后再试')
+        throw new Error(t('logs.tooFrequent'))
       }
-      throw new Error(data?.error?.message || '上传失败')
+      throw new Error(data?.error?.message || t('logs.uploadFailed'))
     }
     const shortId = String(data.id || '').slice(0, 8)
-    uploadHint.value = shortId ? `诊断日志已上传：${shortId}` : '诊断日志已上传'
+    uploadHint.value = shortId ? t('logs.uploadedId', { id: shortId }) : t('logs.uploaded')
   } catch (error: any) {
-    uploadHint.value = error?.message || '上传失败'
+    uploadHint.value = error?.message || t('logs.uploadFailed')
   } finally {
     uploading.value = false
   }

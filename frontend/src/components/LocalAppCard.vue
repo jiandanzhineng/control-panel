@@ -4,14 +4,14 @@
       <div class="play-content">
         <div class="title-row">
           <h2>{{ app.title || app.id }}</h2>
-          <el-tag size="small" type="warning">本机应用</el-tag>
+          <el-tag size="small" type="warning">{{ t('plays.localApp') }}</el-tag>
         </div>
         <p class="desc">{{ app.description || '' }}</p>
         <div class="meta">
           <el-tag size="small" type="info">{{ versionLabel }}</el-tag>
-          <el-tag v-if="app.installed && !app.needsUpdate" size="small" type="success">已安装</el-tag>
-          <el-tag v-else-if="app.needsUpdate && app.installed" size="small" type="warning">有更新</el-tag>
-          <el-tag v-else size="small">未安装</el-tag>
+          <el-tag v-if="app.installed && !app.needsUpdate" size="small" type="success">{{ t('plays.installed') }}</el-tag>
+          <el-tag v-else-if="app.needsUpdate && app.installed" size="small" type="warning">{{ t('plays.hasUpdate') }}</el-tag>
+          <el-tag v-else size="small">{{ t('plays.notInstalled') }}</el-tag>
         </div>
         <el-progress
           v-if="busy"
@@ -23,19 +23,21 @@
       </div>
     </div>
     <div class="play-actions">
-      <el-button v-if="!app.installed" type="primary" :loading="busy" @click="syncOnly">安装</el-button>
-      <el-button v-if="app.needsUpdate && app.installed" :loading="busy" @click="syncOnly">更新</el-button>
-      <el-button v-if="app.installed" type="primary" :loading="busy" @click="startOnly">启动</el-button>
+      <el-button v-if="!app.installed" type="primary" :loading="busy" @click="syncOnly">{{ t('common.install') }}</el-button>
+      <el-button v-if="app.needsUpdate && app.installed" :loading="busy" @click="syncOnly">{{ t('common.update') }}</el-button>
+      <el-button v-if="app.installed" type="primary" :loading="busy" @click="startOnly">{{ t('common.start') }}</el-button>
     </div>
   </article>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { ElMessageBox } from 'element-plus';
 import { setActivePlay } from '../composables/useActivePlay';
 import { useAuth } from '../composables/useAuth';
 
+const { t } = useI18n();
 const props = defineProps<{ app: Record<string, any> }>();
 const emit = defineEmits<{ (e: 'refresh'): void }>();
 const { authState, checkSession } = useAuth();
@@ -52,8 +54,8 @@ let launching = false;
 const versionLabel = computed(() => {
   const latest = props.app.version || '-';
   const local = props.app.installedVersion;
-  if (props.app.installed && local && local !== latest) return `本地 ${local} / 最新 ${latest}`;
-  return `版本：${latest}`;
+  if (props.app.installed && local && local !== latest) return t('plays.localLatest', { local, latest });
+  return t('plays.version', { version: latest });
 });
 
 const percent = computed(() => {
@@ -86,23 +88,23 @@ const statusText = computed(() => {
   if (progress.value.detail) return String(progress.value.detail);
   if (progress.value.phase === 'downloading') {
     const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`;
-    return `下载 ${mb(progress.value.doneBytes)} / ${mb(progress.value.totalBytes)}`;
+    return t('localApp.downloading', { done: mb(progress.value.doneBytes), total: mb(progress.value.totalBytes) });
   }
-  if (progress.value.phase === 'verifying') return '正在校验安装包';
+  if (progress.value.phase === 'verifying') return t('localApp.verifying');
   if (progress.value.phase === 'installing') {
     const extra = progress.value.extractTotal
-      ? ` ${progress.value.extractDone}/${progress.value.extractTotal} 个文件`
+      ? t('localApp.files', { done: progress.value.extractDone, total: progress.value.extractTotal })
       : '';
-    return `正在解压安装${extra}`;
+    return t('localApp.extracting', { extra });
   }
-  if (progress.value.phase === 'checking') return '正在检查更新';
-  if (processInfo.value.phase === 'starting') return processInfo.value.detail || '正在启动数字人进程';
+  if (progress.value.phase === 'checking') return t('localApp.checking');
+  if (processInfo.value.phase === 'starting') return processInfo.value.detail || t('localApp.starting');
   if (processInfo.value.phase === 'waiting') {
     const sec = Math.max(0, Math.floor((processInfo.value.elapsedMs || 0) / 1000));
-    return `等待数字人服务就绪（已 ${sec} 秒）`;
+    return t('localApp.waiting', { sec });
   }
-  if (processInfo.value.phase === 'ready') return '正在打开窗口';
-  return '处理中…';
+  if (processInfo.value.phase === 'ready') return t('localApp.opening');
+  return t('localApp.processing');
 });
 
 function stopPoll() {
@@ -122,9 +124,9 @@ async function confirmGuestLaunch() {
   await checkSession();
   if (authState.status === 'authed') return true;
   try {
-    await ElMessageBox.confirm('未登录可能部分功能不可用，是否继续？', '未登录', {
-      confirmButtonText: '是',
-      cancelButtonText: '否',
+    await ElMessageBox.confirm(t('localApp.guestConfirm'), t('localApp.guestTitle'), {
+      confirmButtonText: t('common.yes'),
+      cancelButtonText: t('common.no'),
       type: 'warning',
     });
     return true;
@@ -155,8 +157,8 @@ async function syncOnly() {
   await withBusy(async () => {
     const res = await fetch(`/api/local-apps/${encodeURIComponent(props.app.id)}/sync`, { method: 'POST' });
     const data = await res.json();
-    if (!res.ok) throw new Error(data?.error?.message || '同步失败');
-  }, '同步失败');
+    if (!res.ok) throw new Error(data?.error?.message || t('localApp.syncFailed'));
+  }, t('localApp.syncFailed'));
 }
 
 async function startOnly() {
@@ -164,7 +166,7 @@ async function startOnly() {
   await withBusy(async () => {
     const startRes = await fetch(`/api/local-apps/${encodeURIComponent(props.app.id)}/start`, { method: 'POST' });
     const started = await startRes.json();
-    if (!startRes.ok) throw new Error(started?.error?.message || '启动失败');
+    if (!startRes.ok) throw new Error(started?.error?.message || t('localApp.startFailed'));
     const url = String(started.url || 'http://127.0.0.1:8020/').replace(/\/api\/info$/, '/');
     const title = props.app.title || props.app.id;
     setActivePlay({
@@ -173,11 +175,11 @@ async function startOnly() {
     });
     if (window.localAppWindowApi) {
       const opened = await window.localAppWindowApi.open({ url, id: props.app.id, title });
-      if (!opened?.ok) throw new Error(opened?.error || '打开窗口失败');
+      if (!opened?.ok) throw new Error(opened?.error || t('localApp.openFailed'));
     } else {
       window.open(url, 'local-app-xiaoya');
     }
-  }, '启动失败');
+  }, t('localApp.startFailed'));
 }
 
 onBeforeUnmount(stopPoll);

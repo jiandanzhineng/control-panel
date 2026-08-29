@@ -3,14 +3,14 @@
     <el-card shadow="never" class="shell-card">
       <div class="shell-header">
         <div class="shell-title">
-          <h2>固件更新</h2>
-          <span>在线升级（OTA）或 USB 插线烧录</span>
+          <h2>{{ t('firmware.title') }}</h2>
+          <span>{{ t('firmware.subtitle') }}</span>
         </div>
-        <el-button :icon="Back" @click="$router.push('/devices')">返回设备管理</el-button>
+        <el-button :icon="Back" @click="$router.push('/devices')">{{ t('firmware.back') }}</el-button>
       </div>
       <el-tabs :model-value="activeTab" class="shell-tabs" @tab-change="handleTabChange">
-        <el-tab-pane label="在线升级（OTA）" name="ota" />
-        <el-tab-pane label="插线烧录" name="wired" />
+        <el-tab-pane :label="t('firmware.ota')" name="ota" />
+        <el-tab-pane :label="t('firmware.wired')" name="wired" />
       </el-tabs>
     </el-card>
 
@@ -20,8 +20,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { Back } from '@element-plus/icons-vue';
+
+const { t } = useI18n();
 
 const route = useRoute();
 const router = useRouter();

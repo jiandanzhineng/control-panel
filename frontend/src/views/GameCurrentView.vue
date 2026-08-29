@@ -10,12 +10,12 @@
 
     <div v-else-if="waitingForButton" class="wait-overlay">
       <div class="wait-card">
-        <h2>即将开始</h2>
-        <p class="wait-desc">请按下「{{ triggerLabel }}」的按键，正式开始玩法。</p>
-        <p class="wait-hint">进入游戏后由玩法自己控制设备，开始机制不再监听按键。</p>
+        <h2>{{ t('gameRun.soon') }}</h2>
+        <p class="wait-desc">{{ t('gameRun.pressToStart', { label: triggerLabel }) }}</p>
+        <p class="wait-hint">{{ t('gameRun.afterStart') }}</p>
         <div class="wait-actions">
-          <el-button @click="cancelWait">取消</el-button>
-          <el-button type="primary" @click="beginGame">强制开始</el-button>
+          <el-button @click="cancelWait">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" @click="beginGame">{{ t('gameRun.forceStart') }}</el-button>
         </div>
       </div>
     </div>
@@ -23,29 +23,31 @@
     <el-empty
       v-else
       class="game-empty"
-      description="未提供游戏配置，请先在本地游戏启动"
+      :description="t('gameRun.empty')"
       :image-size="120"
     >
-      <el-button type="primary" @click="$router.push('/plays')">前往本地游戏</el-button>
+      <el-button type="primary" @click="$router.push('/plays')">{{ t('gameRun.goPlays') }}</el-button>
     </el-empty>
   </PlayCarrierShell>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { track } from '../analytics';
 import { clearActivePlay } from '../composables/useActivePlay';
 import { listenDeviceButtonPress } from '../composables/useButtonStart';
 import PlayCarrierShell from '../components/PlayCarrierShell.vue';
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const iframeSrc = ref('');
 const stopping = ref(false);
 const triggerId = String(route.query.startTriggerDeviceId || '');
 const waitingForButton = ref(String(route.query.startMode || '') === 'button' && !!triggerId);
-const triggerLabel = ref('触发设备');
+const triggerLabel = ref('');
 let stopped = false;
 let stopWait: null | (() => void) = null;
 
@@ -58,6 +60,8 @@ function buildSrc(): string {
   const deviceMap = String(q.deviceMap || '{}');
   const params = String(q.params || '{}');
   const id = String(q.id || '');
+  const locale = String(q.locale || 'zh');
+  const localeTag = String(q.localeTag || (locale === 'en' ? 'en-US' : 'zh-CN'));
 
   // 基础游戏 URL：
   // - 外部游戏：后端已返回前缀代理路径 gamePath（/games/proxy/...）
@@ -68,7 +72,7 @@ function buildSrc(): string {
   if (!base) return '';
 
   const sep = base.includes('?') ? '&' : '?';
-  return `${base}${sep}deviceMap=${encodeURIComponent(deviceMap)}&params=${encodeURIComponent(params)}`;
+  return `${base}${sep}deviceMap=${encodeURIComponent(deviceMap)}&params=${encodeURIComponent(params)}&locale=${encodeURIComponent(locale)}&localeTag=${encodeURIComponent(localeTag)}`;
 }
 
 function beginGame() {
@@ -114,7 +118,7 @@ function cancelWait() {
 
 async function startWaiting(deviceId: string) {
   waitingForButton.value = true;
-  triggerLabel.value = deviceId;
+  triggerLabel.value = t('gameRun.triggerFallback');
   try {
     const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}`);
     const data = await res.json().catch(() => ({}));

@@ -2,23 +2,23 @@
   <div class="home-page">
     <!-- Hero：大标题 + 青色标签 + 蓝色径向辉光（参考 shop.undersilicon.cn 首屏） -->
     <section class="hero">
-      <p class="section-label">硅基之下 · 控制中心</p>
-      <h1 class="hero-title">设备管理与控制面板</h1>
-      <p class="hero-desc">管理连接设备、启动本地游戏、配置网络通信 —— 围绕控制链路的一站式入口。</p>
+      <p class="section-label">{{ t('home.label') }}</p>
+      <h1 class="hero-title">{{ t('home.title') }}</h1>
+      <p class="hero-desc">{{ t('home.desc') }}</p>
     </section>
 
     <div class="stats-strip">
       <div class="stat">
         <span class="stat-value mono">{{ onlineCount }}</span>
-        <span class="stat-label">在线设备</span>
+        <span class="stat-label">{{ t('home.onlineDevices') }}</span>
       </div>
       <div class="stat">
         <span class="stat-value mono">v{{ frontendVersion }}</span>
-        <span class="stat-label">当前版本</span>
+        <span class="stat-label">{{ t('home.currentVersion') }}</span>
       </div>
       <div class="stat">
         <span class="stat-value mono" :class="{ 'accent-text': updateChannel === 'test' }">{{ updateChannelText }}</span>
-        <span class="stat-label">更新渠道</span>
+        <span class="stat-label">{{ t('home.updateChannel') }}</span>
       </div>
     </div>
 
@@ -27,32 +27,32 @@
         <div class="feature-card" @click="$router.push('/devices')">
           <div class="feature-num mono">01</div>
           <el-icon class="feature-icon"><Monitor /></el-icon>
-          <h3>设备管理</h3>
-          <p>管理和监控所有连接的设备</p>
+          <h3>{{ t('home.devicesTitle') }}</h3>
+          <p>{{ t('home.devicesDesc') }}</p>
         </div>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <div class="feature-card" @click="$router.push('/plays')">
           <div class="feature-num mono">02</div>
           <el-icon class="feature-icon"><VideoPlay /></el-icon>
-          <h3>本地游戏</h3>
-          <p>启动和管理本地游戏与插件</p>
+          <h3>{{ t('home.playsTitle') }}</h3>
+          <p>{{ t('home.playsDesc') }}</p>
         </div>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <div class="feature-card" @click="$router.push('/network')">
           <div class="feature-num mono">03</div>
           <el-icon class="feature-icon"><Connection /></el-icon>
-          <h3>网络设置</h3>
-          <p>配置网络连接和通信设置</p>
+          <h3>{{ t('home.networkTitle') }}</h3>
+          <p>{{ t('home.networkDesc') }}</p>
         </div>
       </el-col>
       <el-col :xs="24" :sm="12" :md="6">
         <div class="feature-card" @click="$router.push('/support')">
           <div class="feature-num mono">04</div>
           <el-icon class="feature-icon"><Service /></el-icon>
-          <h3>客服与反馈</h3>
-          <p>微信 / QQ 人工客服与建议反馈</p>
+          <h3>{{ t('home.supportTitle') }}</h3>
+          <p>{{ t('home.supportDesc') }}</p>
         </div>
       </el-col>
     </el-row>
@@ -61,31 +61,31 @@
       <template #header>
         <div class="info-header">
           <el-icon><InfoFilled /></el-icon>
-          <span>系统信息</span>
+          <span>{{ t('home.systemInfo') }}</span>
         </div>
       </template>
       <el-descriptions :column="2" border class="info-list" :size="'default'">
-        <el-descriptions-item label="在线设备">
-          <el-tag type="info" effect="plain">{{ onlineCount }} 台</el-tag>
+        <el-descriptions-item :label="t('home.onlineDevices')">
+          <el-tag type="info" effect="plain">{{ t('common.countDevices', { n: onlineCount }) }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="当前版本">
+        <el-descriptions-item :label="t('home.currentVersion')">
           <el-tag type="success" effect="plain">v{{ frontendVersion }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="更新渠道">
+        <el-descriptions-item :label="t('home.updateChannel')">
           <div class="update-channel">
             <el-tag :type="updateChannelTagType" effect="plain">{{ updateChannelText }}</el-tag>
             <el-switch
               v-model="receiveTestUpdates"
               :loading="updateSettingsLoading"
               :disabled="!hasUpdateApi"
-              active-text="测试版"
-              inactive-text="正式版"
+              :active-text="t('home.channelTest')"
+              :inactive-text="t('home.channelStable')"
               inline-prompt
               @change="saveUpdateSettings"
             />
           </div>
         </el-descriptions-item>
-        <el-descriptions-item label="应用更新">
+        <el-descriptions-item :label="t('home.appUpdate')">
           <div class="update-actions">
             <el-button
               size="small"
@@ -93,20 +93,20 @@
               :disabled="!hasUpdateApi"
               @click="checkForUpdates"
             >
-              检查更新
+              {{ t('home.checkUpdate') }}
             </el-button>
             <span v-if="updateMessage" :class="updateMessageClass">{{ updateMessage }}</span>
           </div>
         </el-descriptions-item>
-        <el-descriptions-item label="淘宝店">
+        <el-descriptions-item :label="t('home.taobao')">
           <a href="http://guijizhixia.taobao.com/" target="_blank" class="link-text">guijizhixia.taobao.com</a>
         </el-descriptions-item>
-        <el-descriptions-item label="文档地址">
+        <el-descriptions-item :label="t('home.docs')">
           <a href="https://docs.undersilicon.cn" target="_blank" class="link-text">docs.undersilicon.cn</a>
         </el-descriptions-item>
-        <el-descriptions-item label="交流QQ群" :span="2">
+        <el-descriptions-item :label="t('home.qqGroup')" :span="2">
           <span class="info-text">970326066</span>
-          <el-tag size="small" type="warning" effect="plain" style="margin-left: 8px">验证：硅基之下</el-tag>
+          <el-tag size="small" type="warning" effect="plain" style="margin-left: 8px">{{ t('home.qqVerify') }}</el-tag>
         </el-descriptions-item>
       </el-descriptions>
     </el-card>
@@ -115,9 +115,12 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { Monitor, VideoPlay, Connection, InfoFilled, Service } from '@element-plus/icons-vue'
 import packageInfo from '../../package.json'
+
+const { t } = useI18n()
 
 const frontendVersion = packageInfo.version
 const onlineCount = ref(0)
@@ -129,7 +132,7 @@ const updateMessage = ref('')
 const updateMessageType = ref<'info' | 'success' | 'error'>('info')
 
 const hasUpdateApi = computed(() => !!window.updateApi)
-const updateChannelText = computed(() => updateChannel.value === 'test' ? '测试版' : '正式版')
+const updateChannelText = computed(() => updateChannel.value === 'test' ? t('home.channelTest') : t('home.channelStable'))
 const updateChannelTagType = computed(() => updateChannel.value === 'test' ? 'warning' : 'success')
 const updateMessageClass = computed(() => ({
   'update-message': true,
@@ -150,7 +153,7 @@ async function loadUpdateSettings() {
     applyUpdateStatus(status)
   } catch (error: any) {
     updateMessageType.value = 'error'
-    updateMessage.value = error?.message || '更新设置读取失败'
+    updateMessage.value = error?.message || t('home.loadSettingsFailed')
   } finally {
     updateSettingsLoading.value = false
   }
@@ -166,11 +169,11 @@ async function saveUpdateSettings() {
     })
     applyUpdateStatus(status)
     updateMessageType.value = 'success'
-    updateMessage.value = `已切换到${updateChannelText.value}`
+    updateMessage.value = t('home.switchedTo', { channel: updateChannelText.value })
   } catch (error: any) {
     receiveTestUpdates.value = !receiveTestUpdates.value
     updateMessageType.value = 'error'
-    updateMessage.value = error?.message || '更新设置保存失败'
+    updateMessage.value = error?.message || t('home.saveSettingsFailed')
     ElMessage.error(updateMessage.value)
   } finally {
     updateSettingsLoading.value = false
@@ -197,17 +200,17 @@ async function checkForUpdates() {
       return
     }
     if (status.skipped) {
-      showUpdateResult('info', '开发环境不检查更新')
+      showUpdateResult('info', t('home.skipDev'))
       return
     }
     if (status.available) {
       const versionText = status.latestVersion ? ` v${status.latestVersion}` : ''
-      showUpdateResult('success', `发现新版本${versionText}，开始下载`)
+      showUpdateResult('success', t('home.foundVersion', { version: versionText }))
       return
     }
-    showUpdateResult('success', '已是最新版本')
+    showUpdateResult('success', t('home.alreadyLatest'))
   } catch (error: any) {
-    showUpdateResult('error', error?.message || '检查更新失败')
+    showUpdateResult('error', error?.message || t('home.checkFailed'))
   } finally {
     checkingUpdates.value = false
   }

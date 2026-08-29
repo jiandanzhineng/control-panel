@@ -1,13 +1,13 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="`设备数据监控 - ${deviceInfo?.name || deviceInfo?.id || '未知设备'}`"
+    :title="t('monitor.title', { name: deviceInfo?.name || deviceInfo?.id || t('monitor.unknownDevice') })"
     width="80%"
     @close="$emit('close')"
     destroy-on-close
   >
     <div v-if="loading" v-loading="loading" class="loading-container">
-      <p>正在加载监控数据...</p>
+      <p>{{ t('monitor.loading') }}</p>
     </div>
     
     <div v-else-if="error" class="error-container">
@@ -15,16 +15,16 @@
     </div>
     
     <div v-else-if="!hasMonitorData" class="no-data-container">
-      <el-empty description="该设备不支持监控数据" />
+      <el-empty :description="t('monitor.unsupported')" />
     </div>
     
     <div v-else class="monitor-content">
       <div class="monitor-status">
         <el-tag :type="connected ? 'success' : 'danger'" size="small">
-          {{ connected ? '实时连接' : '连接断开' }}
+          {{ connected ? t('monitor.live') : t('monitor.disconnected') }}
         </el-tag>
         <span class="last-update">
-          最后更新: {{ lastUpdateTime || '暂无数据' }}
+          {{ t('monitor.lastUpdate', { time: lastUpdateTime || t('monitor.noData') }) }}
         </span>
       </div>
       
@@ -37,7 +37,7 @@
           <div class="chart-header">
             <h4>{{ config.name }} ({{ config.unit || '' }})</h4>
             <span class="current-value">
-              当前值: {{ formatValue(currentData[key], config.unit) }}
+              {{ t('monitor.current', { value: formatValue(currentData[key], config.unit) }) }}
             </span>
           </div>
           <div class="chart-wrapper">
@@ -51,20 +51,23 @@
       </div>
       
       <div v-if="Object.keys(monitorConfig).length === 0" class="no-charts">
-        <el-empty description="暂无监控数据配置" />
+        <el-empty :description="t('monitor.noConfig')" />
       </div>
     </div>
     
     <template #footer>
-      <el-button @click="$emit('close')">关闭</el-button>
+      <el-button @click="$emit('close')">{{ t('common.close') }}</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
 import { ref, computed, watch, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import SimpleChart from './SimpleChart.vue'
+
+const { t } = useI18n()
 
 const props = defineProps({
   visible: Boolean,

@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const logger = require('../utils/logger');
+const { withPlayI18n } = require('../utils/playI18n');
 
 const backendRoot = path.resolve(__dirname, '..');
 const projectRoot = path.resolve(backendRoot, '..');
@@ -52,7 +53,7 @@ function readManifest(pluginDir) {
   if (!id) return null;
 
   const detectorPath = path.join(pluginDir, 'detector.js');
-  return {
+  return withPlayI18n({
     id,
     title: manifest.title || manifest.name || id,
     name: manifest.name || manifest.title || id,
@@ -66,7 +67,7 @@ function readManifest(pluginDir) {
     folder: path.basename(pluginDir),
     pluginDir,
     source: pluginDir.startsWith(path.resolve(getUserPluginsDir())) ? 'user' : 'builtin',
-  };
+  }, manifest);
 }
 
 function scanPluginRoot(rootDir) {
@@ -161,6 +162,8 @@ function activate(id, payload = {}) {
       ...defaultsFromParams(plugin.params),
       ...(payload.params || payload.parameters || {}),
     },
+    locale: payload.locale === 'en' ? 'en' : 'zh',
+    localeTag: payload.localeTag || (payload.locale === 'en' ? 'en-US' : 'zh-CN'),
     homeUrl: plugin.homeUrl,
     matchUrls: plugin.matchUrls,
     bridgeUrl: getBridgeUrl(),

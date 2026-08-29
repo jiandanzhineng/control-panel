@@ -14,7 +14,7 @@
   >
     <template #toolbar-actions>
       <el-tag v-if="grantStatus.origin" size="small" :type="grantStatus.granted ? 'success' : 'info'" effect="plain">
-        {{ grantStatus.granted ? '设备已授权' : '设备未授权' }}
+        {{ grantStatus.granted ? t('browser.granted') : t('browser.notGranted') }}
       </el-tag>
       <el-button
         v-if="grantStatus.granted"
@@ -22,7 +22,7 @@
         plain
         @click="stopOrigin"
       >
-        停止设备
+        {{ t('browser.stopDevices') }}
       </el-button>
       <el-button
         v-if="grantStatus.granted"
@@ -31,15 +31,15 @@
         plain
         @click="revokeOrigin"
       >
-        撤销授权
+        {{ t('browser.revoke') }}
       </el-button>
     </template>
 
     <template v-if="detected" #banner>
       <el-alert class="play-banner" type="success" :closable="false" show-icon>
         <div class="banner-inner">
-          <span>检测到可接入设备的玩法：<b>{{ detected.name }}</b></span>
-          <el-button size="small" type="primary" @click="runDetected">配置并运行</el-button>
+          <span>{{ t('browser.detected') }}<b>{{ detected.name }}</b></span>
+          <el-button size="small" type="primary" @click="runDetected">{{ t('browser.configRun') }}</el-button>
         </div>
       </el-alert>
     </template>
@@ -54,18 +54,19 @@
 
     <div v-if="loadError" class="load-error">
       <el-icon class="load-error__icon"><Warning /></el-icon>
-      <div class="load-error__title">页面加载失败</div>
+      <div class="load-error__title">{{ t('browser.loadFailed') }}</div>
       <div class="load-error__desc">{{ loadErrorText }}</div>
       <div class="load-error__hint">
-        常见原因：本地代理未开启或网络不可用。请检查代理/网络后重试。
+        {{ t('browser.loadHint') }}
       </div>
-      <el-button type="primary" @click="retryLoad">重新加载</el-button>
+      <el-button type="primary" @click="retryLoad">{{ t('browser.reload') }}</el-button>
     </div>
   </PlayCarrierShell>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Warning } from '@element-plus/icons-vue';
@@ -83,6 +84,7 @@ type DetectedPlay =
   | { kind: 'game'; name: string; externalUrl: string }
   | { kind: 'plugin'; id: string; name: string };
 
+const { t } = useI18n();
 const router = useRouter();
 const HOME = import.meta.env.VITE_BROWSER_HOME_URL || 'https://game.undersilicon.cn/';
 
@@ -162,7 +164,7 @@ async function detectExternalGame(url: string): Promise<{ name: string; external
     if (!r.ok) return null; // 422 NO_MANIFEST = 普通网页，静默
     const g = await r.json();
     return {
-      name: g.name || g.title || '未命名玩法',
+      name: g.name || g.title || t('browser.unnamed'),
       externalUrl: g.externalUrl || url,
     };
   } catch {
@@ -225,10 +227,10 @@ async function revokeOrigin() {
   if (!id || !window.browserDeviceApi?.revokeAccessForWebview) return;
   const res = await window.browserDeviceApi.revokeAccessForWebview(id);
   if (!res.ok) {
-    ElMessage.error(res.error || '撤销授权失败');
+    ElMessage.error(res.error || t('browser.revokeFailed'));
     return;
   }
-  ElMessage.success('已撤销当前网站设备授权');
+  ElMessage.success(t('browser.revoked'));
   await refreshGrantStatus();
 }
 
@@ -237,10 +239,10 @@ async function stopOrigin() {
   if (!id || !window.browserDeviceApi?.stopOriginForWebview) return;
   const res = await window.browserDeviceApi.stopOriginForWebview(id);
   if (!res.ok) {
-    ElMessage.error(res.error || '停止设备失败');
+    ElMessage.error(res.error || t('browser.stopFailed'));
     return;
   }
-  ElMessage.success('已停止当前网站设备会话');
+  ElMessage.success(t('browser.stopped'));
 }
 
 function onNavigated() {
@@ -287,7 +289,7 @@ function bindEvents() {
     loading.value = false;
     loadErrorText.value = e?.errorDescription
       ? `${e.errorDescription}（${e.validatedURL || currentUrl.value || ''}）`
-      : '无法连接到目标地址';
+      : t('browser.cannotConnect');
     loadError.value = true;
   });
   refreshGrantStatus();

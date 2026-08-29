@@ -24,14 +24,15 @@
       allowpopups
     ></webview>
 
-    <el-empty v-else class="empty" description="插件未运行或正在加载" :image-size="120">
-      <el-button type="primary" @click="$router.push('/plays')">返回本地游戏</el-button>
+    <el-empty v-else class="empty" :description="t('pluginRun.empty')" :image-size="120">
+      <el-button type="primary" @click="$router.push('/plays')">{{ t('pluginRun.back') }}</el-button>
     </el-empty>
   </PlayCarrierShell>
 </template>
 
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { clearActivePlay } from '../composables/useActivePlay';
 import PlayCarrierShell from '../components/PlayCarrierShell.vue';
@@ -42,6 +43,7 @@ interface RuntimeInfo {
   detectorUrl: string;
 }
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 const pluginId = String(route.params.id || '');
@@ -66,14 +68,14 @@ onBeforeUnmount(() => {
 async function loadRuntime() {
   error.value = '';
   try {
-    if (!window.pluginApi) throw new Error('当前环境不支持插件运行，请在 Electron 中打开控制面板');
+    if (!window.pluginApi) throw new Error(t('pluginRun.unsupported'));
     const info = await window.pluginApi.getRuntimeInfo(pluginId);
     runtime.value = info;
     currentUrl.value = info.homeUrl;
     await nextTick();
     setTimeout(bindWebviewEvents, 0);
   } catch (e: any) {
-    error.value = e?.message || '插件运行信息加载失败';
+    error.value = e?.message || t('pluginRun.loadFailed');
   }
 }
 
@@ -86,7 +88,7 @@ function bindWebviewEvents() {
   wv.addEventListener('did-navigate-in-page', syncNavState);
   wv.addEventListener('did-fail-load', (event: any) => {
     if (event?.errorCode === -3) return;
-    error.value = event?.errorDescription || '目标页面加载失败';
+    error.value = event?.errorDescription || t('pluginRun.pageFailed');
   });
   syncNavState();
 }

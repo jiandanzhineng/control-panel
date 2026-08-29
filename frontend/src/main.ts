@@ -7,6 +7,9 @@ import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import './style.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
+import i18n, { bootstrapLocale } from './i18n'
+
+bootstrapLocale()
 
 const app = createApp(App)
 
@@ -18,6 +21,7 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 app
   .use(router)
   .use(ElementPlus)
+  .use(i18n)
   .mount('#app')
 
 initAnalytics(router)

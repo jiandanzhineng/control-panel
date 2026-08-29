@@ -1,9 +1,9 @@
 <template>
   <div class="real-time-log">
     <div v-if="!compact" class="log-header">
-      <h3>实时日志</h3>
+      <h3>{{ t('logs.realtime') }}</h3>
       <div class="controls">
-        <button @click="clearLogs">清空</button>
+        <button @click="clearLogs">{{ t('logs.clear') }}</button>
       </div>
     </div>
     
@@ -19,7 +19,7 @@
         <span class="message">{{ log.message }}</span>
       </div>
       <div v-if="filteredLogs.length === 0" class="no-logs">
-        暂无日志数据
+        {{ t('logs.emptyRealtime') }}
       </div>
     </div>
   </div>
@@ -27,6 +27,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 interface LogEntry {
   id: number
@@ -42,6 +43,7 @@ interface Props {
   compact?: boolean
 }
 
+const { t } = useI18n()
 const props = withDefaults(defineProps<Props>(), {
   moduleFilter: () => [],
   height: '400px',

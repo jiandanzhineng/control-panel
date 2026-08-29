@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const fileStorage = require('../utils/fileStorage');
 const logger = require('../utils/logger');
+const { withPlayI18n } = require('../utils/playI18n');
 
 const backendRoot = path.resolve(__dirname, '..');
 const projectRoot = path.resolve(backendRoot, '..');
@@ -76,7 +77,7 @@ function scanHtmlGames() {
       const manifest = extractManifestFromHtml(html);
       if (!manifest) continue;
       const gameId = manifest.id || ent.name;
-      results.push({
+      results.push(withPlayI18n({
         id: gameId,
         name: manifest.title || ent.name,
         description: manifest.description || '',
@@ -90,7 +91,7 @@ function scanHtmlGames() {
         version: manifest.version || '1.0.0',
         createdAt: Date.now(),
         lastPlayed: null,
-      });
+      }, manifest));
     } catch (e) {
       logger.warn('Scan HTML game failed', { dir: ent.name, err: e?.message });
     }
@@ -195,7 +196,7 @@ function normalizeSavedGame(input, { existing = null, markPlayed = true } = {}) 
   const packageSha256 = cleanString(input.packageSha256 || existing?.packageSha256);
   const cached = input.cached === true || existing?.cached === true || gamePath.startsWith('/games/cache/');
 
-  return {
+  return withPlayI18n({
     id,
     title,
     name: title,
@@ -219,7 +220,7 @@ function normalizeSavedGame(input, { existing = null, markPlayed = true } = {}) 
     playCount: Number(existing?.playCount || input.playCount || 0) + (markPlayed ? 1 : 0),
     lastDeviceMap,
     lastParams,
-  };
+  }, input.i18n || existing?.i18n);
 }
 
 function savePlayedGame(input) {

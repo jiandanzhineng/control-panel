@@ -4,9 +4,9 @@
       <template #header>
         <div class="card-header">
           <el-icon><Setting /></el-icon>
-          <span>启动前配置</span>
+          <span>{{ t('playConfig.title') }}</span>
           <el-tag class="carrier-type-tag" size="small" :type="carrierType === 'game' ? 'primary' : 'success'">
-            {{ carrierType === 'game' ? '游戏' : '插件' }}
+            {{ carrierType === 'game' ? t('plays.game') : t('plays.plugin') }}
           </el-tag>
         </div>
       </template>
@@ -16,12 +16,12 @@
           <p v-if="play?.description" class="play-description">{{ play?.description }}</p>
           <div class="play-meta">
             <template v-if="carrierType === 'plugin'">
-              <el-tag size="small" type="info">{{ hostOf(play?.homeUrl) || '未配置目标站点' }}</el-tag>
-              <el-tag size="small">版本：{{ play?.version || '-' }}</el-tag>
+              <el-tag size="small" type="info">{{ hostOf(play?.homeUrl) || t('plays.noSite') }}</el-tag>
+              <el-tag size="small">{{ t('plays.version', { version: play?.version || '-' }) }}</el-tag>
             </template>
             <template v-else>
-              <el-tag size="small" type="info">版本：{{ play?.version || '-' }}</el-tag>
-              <el-tag size="small" type="success">最后游玩：{{ formatLastPlayed(play?.lastPlayed) }}</el-tag>
+              <el-tag size="small" type="info">{{ t('plays.version', { version: play?.version || '-' }) }}</el-tag>
+              <el-tag size="small" type="success">{{ t('plays.lastPlayed', { time: formatLastPlayed(play?.lastPlayed) }) }}</el-tag>
             </template>
           </div>
           <el-alert
@@ -31,14 +31,14 @@
             :closable="false"
             show-icon
           >
-            <template #title>怎么玩</template>
+            <template #title>{{ t('playConfig.howTo') }}</template>
             <div class="howto-body">{{ playHowTo }}</div>
           </el-alert>
         </div>
         <div class="loading-status">
           <div v-if="loadingAll" class="loading-info">
             <el-icon class="is-loading"><Loading /></el-icon>
-            <span>加载中...</span>
+            <span>{{ t('common.loading') }}</span>
           </div>
           <el-alert
             v-if="error"
@@ -56,7 +56,7 @@
       <template #header>
         <div class="card-header">
           <el-icon><Connection /></el-icon>
-          <span>设备映射</span>
+          <span>{{ t('playConfig.mapping') }}</span>
         </div>
       </template>
       <div v-if="loadingDevices" class="loading-container">
@@ -72,18 +72,18 @@
       <div v-else>
         <!-- 桌面端表格布局 -->
         <el-table :data="deviceMappings" stripe style="width: 100%">
-          <el-table-column prop="roleName" label="设备角色" width="200">
+          <el-table-column prop="roleName" :label="t('playConfig.role')" width="200">
             <template #default="{ row }">
               <div class="role-info">
                 <strong>{{ row.roleLabel || row.roleName }}</strong>
                 <div class="role-description">
                   <span v-if="row.roleLabel && row.roleName && row.roleLabel !== row.roleName" class="role-id">{{ row.roleName }}</span>
-                  <span v-if="row.capabilities && row.capabilities.length">能力：{{ formatCapabilities(row.capabilities) }}</span>
+                  <span v-if="row.capabilities && row.capabilities.length">{{ t('playConfig.capabilityPrefix', { caps: formatCapabilities(row.capabilities) }) }}</span>
                 </div>
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="映射设备" width="380">
+          <el-table-column :label="t('playConfig.mappedDevices')" width="380">
             <template #default="{ row }">
               <el-checkbox-group v-model="row.deviceIds" @change="updateMapping(row)" style="display:flex;flex-wrap:wrap;gap:8px">
                 <el-checkbox
@@ -94,11 +94,11 @@
               </el-checkbox-group>
             </template>
           </el-table-column>
-          <el-table-column label="设备状态" width="160">
+          <el-table-column :label="t('playConfig.deviceStatus')" width="160">
             <template #default="{ row }">
-              <el-tag :type="row.required ? 'danger' : 'success'" size="small" style="margin-right:8px">{{ row.required ? '必需' : '可选' }}</el-tag>
-              <el-tag v-if="(row.deviceIds && row.deviceIds.length > 0)" type="success" size="small">已选 {{ row.deviceIds.length }} 台</el-tag>
-              <el-tag v-else type="info" size="small">未选择</el-tag>
+              <el-tag :type="row.required ? 'danger' : 'success'" size="small" style="margin-right:8px">{{ row.required ? t('common.required') : t('common.optional') }}</el-tag>
+              <el-tag v-if="(row.deviceIds && row.deviceIds.length > 0)" type="success" size="small">{{ t('common.selectedCount', { n: row.deviceIds.length }) }}</el-tag>
+              <el-tag v-else type="info" size="small">{{ t('common.unselected') }}</el-tag>
             </template>
           </el-table-column>
         </el-table>
@@ -108,13 +108,13 @@
           <div v-for="row in deviceMappings" :key="row.logicalId || row.roleName" class="device-card">
             <div class="device-card-header">
               <div class="device-card-title">{{ row.roleLabel || row.roleName }}</div>
-              <el-tag :type="row.required ? 'danger' : 'success'" size="small" style="margin-right:8px">{{ row.required ? '必需' : '可选' }}</el-tag>
-              <el-tag v-if="(row.deviceIds && row.deviceIds.length > 0)" type="success" size="small">已选 {{ row.deviceIds.length }} 台</el-tag>
-              <el-tag v-else type="info" size="small">未选择</el-tag>
+              <el-tag :type="row.required ? 'danger' : 'success'" size="small" style="margin-right:8px">{{ row.required ? t('common.required') : t('common.optional') }}</el-tag>
+              <el-tag v-if="(row.deviceIds && row.deviceIds.length > 0)" type="success" size="small">{{ t('common.selectedCount', { n: row.deviceIds.length }) }}</el-tag>
+              <el-tag v-else type="info" size="small">{{ t('common.unselected') }}</el-tag>
             </div>
             <div class="device-card-description">
-              <span v-if="row.roleLabel && row.roleName && row.roleLabel !== row.roleName">角色：{{ row.roleName }} · </span>
-              <span v-if="row.capabilities && row.capabilities.length">能力：{{ formatCapabilities(row.capabilities) }}</span>
+              <span v-if="row.roleLabel && row.roleName && row.roleLabel !== row.roleName">{{ t('playConfig.rolePrefix', { name: row.roleName }) }}</span>
+              <span v-if="row.capabilities && row.capabilities.length">{{ t('playConfig.capabilityPrefix', { caps: formatCapabilities(row.capabilities) }) }}</span>
             </div>
             <el-checkbox-group v-model="row.deviceIds" @change="updateMapping(row)" class="device-card-select" style="display:flex;flex-direction:column;gap:8px">
               <el-checkbox
@@ -133,15 +133,15 @@
       <template #header>
         <div class="card-header">
           <el-icon><Tools /></el-icon>
-          <span>参数配置</span>
+          <span>{{ t('playConfig.params') }}</span>
           <div style="margin-left:auto;display:flex;gap:8px">
-            <el-button size="small" @click="resetToDefault">恢复默认配置</el-button>
+            <el-button size="small" @click="resetToDefault">{{ t('playConfig.reset') }}</el-button>
           </div>
         </div>
       </template>
       <el-empty
         v-if="schemaEntries.length === 0"
-        description="暂无参数元信息"
+        :description="t('playConfig.noParams')"
         :image-size="80"
       />
       <el-form
@@ -188,7 +188,7 @@
               <el-select
                 v-else-if="p.type === 'enum'"
                 v-model="parameters[p.key]"
-                placeholder="请选择"
+                :placeholder="t('playConfig.select')"
                 :style="{ width: isMobile ? '100%' : '200px' }"
               >
                 <el-option
@@ -213,14 +213,14 @@
             <div v-if="p.description || p.recommended || p.default !== undefined" class="param-hint">
               <div v-if="p.description" class="param-desc">{{ p.description }}</div>
               <div class="param-meta-line">
-                <span v-if="p.recommended">建议：{{ p.recommended }}</span>
-                <span v-if="p.default !== undefined">默认：{{ formatDefault(p.default) }}</span>
-                <span v-if="p.min !== undefined || p.max !== undefined">范围：{{ formatRange(p) }}</span>
+                <span v-if="p.recommended">{{ t('playConfig.recommended', { value: p.recommended }) }}</span>
+                <span v-if="p.default !== undefined">{{ t('playConfig.default', { value: formatDefault(p.default) }) }}</span>
+                <span v-if="p.min !== undefined || p.max !== undefined">{{ t('playConfig.range', { value: formatRange(p) }) }}</span>
               </div>
             </div>
 
             <div v-if="p.required && (parameters[p.key] === undefined || parameters[p.key] === null || parameters[p.key] === '')" class="param-warning">
-              <el-text type="warning" size="small">必填</el-text>
+              <el-text type="warning" size="small">{{ t('playConfig.requiredField') }}</el-text>
             </div>
           </el-form-item>
         </div>
@@ -232,7 +232,7 @@
         >
           <el-collapse-item name="advanced">
             <template #title>
-              <span>高级配置（{{ advancedSchemaEntries.length }}项）</span>
+              <span>{{ t('playConfig.advanced', { n: advancedSchemaEntries.length }) }}</span>
             </template>
 
             <div
@@ -272,7 +272,7 @@
                   <el-select
                     v-else-if="p.type === 'enum'"
                     v-model="parameters[p.key]"
-                    placeholder="请选择"
+                    :placeholder="t('playConfig.select')"
                     :style="{ width: isMobile ? '100%' : '200px' }"
                   >
                     <el-option
@@ -297,9 +297,9 @@
                 <div v-if="p.description || p.recommended || p.default !== undefined" class="param-hint">
                   <div v-if="p.description" class="param-desc">{{ p.description }}</div>
                   <div class="param-meta-line">
-                    <span v-if="p.recommended">建议：{{ p.recommended }}</span>
-                    <span v-if="p.default !== undefined">默认：{{ formatDefault(p.default) }}</span>
-                    <span v-if="p.min !== undefined || p.max !== undefined">范围：{{ formatRange(p) }}</span>
+                    <span v-if="p.recommended">{{ t('playConfig.recommended', { value: p.recommended }) }}</span>
+                    <span v-if="p.default !== undefined">{{ t('playConfig.default', { value: formatDefault(p.default) }) }}</span>
+                    <span v-if="p.min !== undefined || p.max !== undefined">{{ t('playConfig.range', { value: formatRange(p) }) }}</span>
                   </div>
                 </div>
               </el-form-item>
@@ -314,13 +314,13 @@
       <template #header>
         <div class="card-header">
           <el-icon><DocumentChecked /></el-icon>
-          <span>摘要与校验</span>
+          <span>{{ t('playConfig.summary') }}</span>
           <div class="status-badge">
             <el-tag v-if="blocking.length === 0" type="success" size="small">
-              校验通过
+              {{ t('playConfig.valid') }}
             </el-tag>
             <el-tag v-else type="warning" size="small">
-              有阻塞 {{ blocking.length }} 项
+              {{ t('playConfig.blocked', { n: blocking.length }) }}
             </el-tag>
           </div>
         </div>
@@ -328,7 +328,7 @@
 
       <div class="summary-content">
         <div class="summary-section">
-          <h4>设备映射</h4>
+          <h4>{{ t('playConfig.mappingSection') }}</h4>
           <ul class="mapping-list">
             <li v-for="d in requiredDevices" :key="d.id">
               {{ deviceRoleLabel(d) }} → {{ formatMapping(d) }}
@@ -337,7 +337,7 @@
         </div>
 
         <div class="summary-section">
-          <h4>参数</h4>
+          <h4>{{ t('playConfig.paramsSection') }}</h4>
           <el-input
             type="textarea"
             :value="safeStringify(parameters)"
@@ -361,13 +361,13 @@
 
         <div class="action-buttons">
           <el-button @click="cancel" :icon="ArrowLeft">
-            取消返回
+            {{ t('playConfig.cancelBack') }}
           </el-button>
           <el-button
             :disabled="startBusy || loadingAll"
             @click="start(true)"
           >
-            强行启动
+            {{ t('playConfig.forceStart') }}
           </el-button>
           <el-button
             type="primary"
@@ -376,7 +376,7 @@
             :disabled="loadingAll || blocking.length > 0 || startBusy"
             @click="startImmediate()"
           >
-            {{ startBusy && pendingStartMode === 'immediate' ? '启动中...' : (carrierType === 'plugin' ? '启动插件' : '启动') }}
+            {{ startBusy && pendingStartMode === 'immediate' ? t('playConfig.starting') : (carrierType === 'plugin' ? t('playConfig.startPlugin') : t('common.start')) }}
           </el-button>
           <el-button
             v-if="carrierType === 'game'"
@@ -384,13 +384,13 @@
             :disabled="loadingAll || blocking.length > 0 || startBusy"
             @click="openButtonStartDialog"
           >
-            设备按键开始
+            {{ t('playConfig.buttonStart') }}
           </el-button>
         </div>
       </div>
 
       <div v-if="blocking.length > 0" class="blocking-section">
-        <h4>阻塞项</h4>
+        <h4>{{ t('playConfig.blocking') }}</h4>
         <el-alert
           v-for="b in blocking"
           :key="b"
@@ -412,24 +412,24 @@
     >
       <p class="carrier-confirm-message">{{ carrierConfirm.message }}</p>
       <template #footer>
-        <el-button @click="resolveCarrierConfirm(false)">取消</el-button>
-        <el-button type="primary" @click="resolveCarrierConfirm(true)">继续</el-button>
+        <el-button @click="resolveCarrierConfirm(false)">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" @click="resolveCarrierConfirm(true)">{{ t('common.continue') }}</el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="buttonStartDialog.visible"
-      title="选择按键触发源"
+      :title="t('playConfig.pickTrigger')"
       width="480px"
       append-to-body
       @closed="onButtonStartDialogClosed"
     >
-      <p class="button-start-hint">选一台带按键的在线设备，先按一下确认能收到，再进入待命。</p>
+      <p class="button-start-hint">{{ t('playConfig.pickTriggerHint') }}</p>
       <el-form label-width="88px">
-        <el-form-item label="触发设备">
+        <el-form-item :label="t('playConfig.triggerDevice')">
           <el-select
             v-model="startTriggerDeviceId"
-            placeholder="选择带按键的设备"
+            :placeholder="t('playConfig.pickButtonDevice')"
             filterable
             style="width: 100%"
           >
@@ -441,34 +441,34 @@
             />
           </el-select>
         </el-form-item>
-        <el-form-item label="按键测试">
+        <el-form-item :label="t('playConfig.buttonTest')">
           <div class="start-trigger-row">
             <el-button
               :disabled="!startTriggerDeviceId || triggerTestStatus === 'waiting'"
               :loading="triggerTestStatus === 'waiting'"
               @click="testTriggerDevice"
-            >按一下测试</el-button>
-            <el-tag v-if="triggerTestStatus === 'ok'" type="success" size="small">已收到按键</el-tag>
-            <el-tag v-else-if="triggerTestStatus === 'fail'" type="danger" size="small">未收到按键</el-tag>
-            <el-tag v-else-if="triggerTestStatus === 'waiting'" type="warning" size="small">等待按键…</el-tag>
+            >{{ t('playConfig.testOnce') }}</el-button>
+            <el-tag v-if="triggerTestStatus === 'ok'" type="success" size="small">{{ t('playConfig.gotPress') }}</el-tag>
+            <el-tag v-else-if="triggerTestStatus === 'fail'" type="danger" size="small">{{ t('playConfig.noPress') }}</el-tag>
+            <el-tag v-else-if="triggerTestStatus === 'waiting'" type="warning" size="small">{{ t('playConfig.waitingPress') }}</el-tag>
           </div>
         </el-form-item>
       </el-form>
       <el-alert
         v-if="buttonInputDevices.length === 0"
-        title="没有在线的按键设备，无法使用设备按键开始"
+        :title="t('playConfig.noButtonDevice')"
         type="warning"
         :closable="false"
         show-icon
       />
       <template #footer>
-        <el-button @click="closeButtonStartDialog">取消</el-button>
+        <el-button @click="closeButtonStartDialog">{{ t('common.cancel') }}</el-button>
         <el-button
           type="primary"
           :loading="startBusy"
           :disabled="!canConfirmButtonStart"
           @click="confirmButtonStart"
-        >确认</el-button>
+        >{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -476,10 +476,14 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { track } from '../analytics';
 import { setActivePlay } from '../composables/useActivePlay';
 import { listenDeviceButtonPress } from '../composables/useButtonStart';
+import { currentLocale } from '../i18n';
+import { localeTag } from '../i18n/locale';
+import { localizePlay } from '../i18n/play';
 
 import {
   Setting,
@@ -549,11 +553,12 @@ interface DeviceItem { id: string; name?: string; nickname?: string; type?: stri
 
 const route = useRoute();
 const router = useRouter();
+const { t } = useI18n();
 
 // carrierType 来自路由参数：game | plugin
 const carrierType = computed<'game' | 'plugin'>(() => {
-  const t = String(route.params.type || 'game');
-  return t === 'plugin' ? 'plugin' : 'game';
+  const type = String(route.params.type || 'game');
+  return type === 'plugin' ? 'plugin' : 'game';
 });
 const playId = computed(() => String(route.params.id || ''));
 
@@ -576,37 +581,25 @@ const buttonStartDialog = reactive({ visible: false });
 const isMobile = ref(window.innerWidth <= 768);
 function onResize() { isMobile.value = window.innerWidth <= 768; }
 
-const title = computed(() => play.value?.title || play.value?.name || play.value?.id || '未知玩法');
+const title = computed(() => play.value?.title || play.value?.name || play.value?.id || t('playConfig.unknownPlay'));
 
 const requiredDevices = computed(() => {
   const arr = (play.value?.devices || []).filter(Boolean);
   return Array.isArray(arr) ? arr : [];
 });
 
-const CAPABILITY_LABELS: Record<string, string> = {
-  weight: '称重',
-  reporting: '上报',
-  sphincterPressure: '提肛气压',
-  tiptoePressure: '踮脚压力',
-  distance: '距离',
-  buttonInput: '按钮输入',
-  shock: '电击',
-  strength: '强度控制',
-  vibration: '震动',
-  suction: '吸吮',
-  lock: '锁定',
-};
+function capabilityLabel(cap: string) {
+  const key = `playConfig.caps.${cap}`;
+  const translated = t(key);
+  return translated === key ? cap : translated;
+}
 
 const GROUP_ORDER = ['core', 'difficulty', 'punish', 'reward', 'device', 'advanced', 'other'];
-const GROUP_TITLES: Record<string, string> = {
-  core: '基础设置',
-  difficulty: '难度调节',
-  punish: '惩罚设置',
-  reward: '奖励设置',
-  device: '设备相关',
-  advanced: '高级',
-  other: '其他',
-};
+function groupTitle(key: string) {
+  const i18nKey = `playConfig.groups.${key}`;
+  const translated = t(i18nKey);
+  return translated === i18nKey ? key : translated;
+}
 
 // 参数 schema：提取 label 括号说明为 tooltip，默认值回填。基础/高级按 required 切分。
 // 若参数声明了 device，且对应角色未映射设备，则隐藏该参数。
@@ -669,7 +662,7 @@ function groupParams(list: any[]) {
   const onlyOther = keys.length === 1 && (keys[0] === 'other' || !list.some(x => x.group));
   return keys.map(k => ({
     key: k,
-    title: onlyOther ? '' : (GROUP_TITLES[k] || k),
+    title: onlyOther ? '' : groupTitle(k),
     items: buckets.get(k) || [],
   }));
 }
@@ -684,7 +677,7 @@ const playHowTo = computed(() => {
 
 const deviceMappings = computed(() => {
   return requiredDevices.value.map(rd => ({
-    roleName: rd.id || '未知角色',
+    roleName: rd.id || t('playConfig.unknownRole'),
     roleLabel: deviceRoleLabel(rd),
     deviceIds: deviceMapping[rdKey(rd)] || [],
     logicalId: rd.id,
@@ -695,11 +688,12 @@ const deviceMappings = computed(() => {
 
 function deviceRoleLabel(rd: { id?: string; label?: string } | any): string {
   if (rd?.label) return String(rd.label);
-  return String(rd?.id || '未知角色');
+  return String(rd?.id || t('playConfig.unknownRole'));
 }
 
 function formatCapabilities(caps: string[]): string {
-  return (caps || []).map(c => CAPABILITY_LABELS[c] || c).join('、');
+  const sep = currentLocale() === 'en' ? ', ' : '、';
+  return (caps || []).map(c => capabilityLabel(c)).join(sep);
 }
 
 function enumOptions(p: any): Array<{ value: any; label: string }> {
@@ -721,12 +715,12 @@ function paramHelpText(p: any): string {
   const parts: string[] = [];
   if (p.description) parts.push(String(p.description));
   else if (p.placeholder) parts.push(String(p.placeholder));
-  if (p.recommended) parts.push(`建议：${p.recommended}`);
+  if (p.recommended) parts.push(t('playConfig.recommended', { value: p.recommended }));
   return parts.join('\n');
 }
 
 function formatDefault(v: any): string {
-  if (typeof v === 'boolean') return v ? '开' : '关';
+  if (typeof v === 'boolean') return v ? t('playConfig.on') : t('playConfig.off');
   return String(v);
 }
 
@@ -764,8 +758,8 @@ function getAvailableDevicesForRole(row: any) {
 }
 
 function formatLastPlayed(ts?: number | null) {
-  if (!ts) return '从未游玩';
-  try { return new Date(ts).toLocaleString('zh-CN'); } catch { return String(ts); }
+  if (!ts) return t('plays.neverPlayed');
+  try { return new Date(ts).toLocaleString(currentLocale() === 'en' ? 'en-US' : 'zh-CN'); } catch { return String(ts); }
 }
 
 function safeStringify(obj: any) {
@@ -853,7 +847,7 @@ function rdKey(d: { id?: string }) {
 
 function formatMapping(d: { id?: string }): string {
   const arr = deviceMapping[rdKey(d)] ?? [];
-  if (arr.length === 0) return '未映射';
+  if (arr.length === 0) return t('playConfig.unmapped');
   return arr.map(id => {
     const dev = getDevice(id) as any;
     if (dev) {
@@ -926,6 +920,7 @@ async function savePlayedGame(gamePathOverride = '') {
       version: play.value.version || '1.0.0',
       devices: play.value.devices || [],
       params: play.value.params || [],
+      i18n: (play.value as any).i18n,
       gamePath,
       externalUrl,
       origin: gameOrigin(),
@@ -997,7 +992,7 @@ async function installRemoteGameIfNeeded(): Promise<string> {
       launchGamePath.value = fallbackPath;
       return fallbackPath;
     }
-    throw new Error(apiErrorMessage(data, '游戏缓存安装失败'));
+    throw new Error(apiErrorMessage(data, t('playConfig.cacheFailed')));
   }
   launchCacheInfo.value = data;
   launchGamePath.value = data.localGamePath || fallbackPath;
@@ -1021,14 +1016,14 @@ async function loadAll() {
       fetch('/api/device-capabilities'),
     ]);
     const m = await mRes.json();
-    if (!mRes.ok) throw new Error(apiErrorMessage(m, carrierType.value === 'plugin' ? '获取插件详情失败' : '获取玩法详情失败'));
-    play.value = m as any;
+    if (!mRes.ok) throw new Error(apiErrorMessage(m, carrierType.value === 'plugin' ? t('playConfig.loadPluginFailed') : t('playConfig.loadPlayFailed')));
+    play.value = localizePlay(m as any, currentLocale()) as any;
 
     const devs = await dRes.json();
-    if (!dRes.ok) throw new Error(devs?.message || '获取设备列表失败');
+    if (!dRes.ok) throw new Error(devs?.message || t('playConfig.loadDevicesFailed'));
     devices.value = Array.isArray(devs) ? devs : [];
     const capabilityData = await iRes.json();
-    if (!iRes.ok) throw new Error(capabilityData?.message || '获取设备能力失败');
+    if (!iRes.ok) throw new Error(capabilityData?.message || t('playConfig.loadCapsFailed'));
     typeCapabilityMap.value = (capabilityData?.typeCapabilityMap) || {};
 
     // 参数：优先 localStorage 回填，否则用 manifest 默认值
@@ -1066,7 +1061,7 @@ async function loadAll() {
       ? savedTrigger
       : pickDefaultTriggerDeviceId();
   } catch (e: any) {
-    error.value = e?.message || '数据加载失败';
+    error.value = e?.message || t('playConfig.loadFailed');
   } finally {
     loadingAll.value = false;
     loadingDevices.value = false;
@@ -1081,41 +1076,41 @@ function recomputeBlocking() {
     const key = rdKey(rd);
     if (!key) continue;
     const ids = deviceMapping[key] || [];
-    if (rd.required && ids.length === 0) items.push(`必需设备未映射: ${deviceRoleLabel(rd)}`);
+    if (rd.required && ids.length === 0) items.push(t('playConfig.requiredUnmapped', { role: deviceRoleLabel(rd) }));
     for (const id of ids) {
       const dev = getDevice(id);
-      if (!dev || !dev.connected) items.push(`设备离线或不存在: ${deviceRoleLabel(rd)}`);
+      if (!dev || !dev.connected) items.push(t('playConfig.deviceOffline', { role: deviceRoleLabel(rd) }));
       const capabilities = rdCapabilities(rd);
-      if (capabilities.length && dev && !typeSupportsCapabilities(dev.type, capabilities)) items.push(`能力不匹配(${deviceRoleLabel(rd)}): 需 ${formatCapabilities(capabilities)}`);
+      if (capabilities.length && dev && !typeSupportsCapabilities(dev.type, capabilities)) items.push(t('playConfig.capabilityMismatch', { role: deviceRoleLabel(rd), caps: formatCapabilities(capabilities) }));
     }
   }
   // 参数校验
   for (const p of schemaEntries.value) {
     const val = parameters[p.key];
     if (p.required && (val === undefined || val === null || val === '')) {
-      items.push(`参数必填: ${p.name || p.label || p.key}`);
+      items.push(t('playConfig.paramRequired', { name: p.name || p.label || p.key }));
       continue;
     }
     if (val !== undefined && val !== null) {
       switch (p.type) {
         case 'number': {
           const n = Number(val);
-          if (Number.isNaN(n)) items.push(`参数类型错误(${p.key}): 需 number`);
-          if (p.min !== undefined && n < p.min!) items.push(`参数过小(${p.key}): 最小 ${p.min}`);
-          if (p.max !== undefined && n > p.max!) items.push(`参数过大(${p.key}): 最大 ${p.max}`);
+          if (Number.isNaN(n)) items.push(t('playConfig.paramTypeNumber', { key: p.key }));
+          if (p.min !== undefined && n < p.min!) items.push(t('playConfig.paramTooSmall', { key: p.key, min: p.min }));
+          if (p.max !== undefined && n > p.max!) items.push(t('playConfig.paramTooLarge', { key: p.key, max: p.max }));
           break;
         }
         case 'enum': {
           const ok = Array.isArray(p.enum) ? p.enum!.some(x => x === val) : true;
-          if (!ok) items.push(`参数不在集合(${p.key})`);
+          if (!ok) items.push(t('playConfig.paramNotInEnum', { key: p.key }));
           break;
         }
         case 'boolean': {
-          if (typeof val !== 'boolean') items.push(`参数类型错误(${p.key}): 需 boolean`);
+          if (typeof val !== 'boolean') items.push(t('playConfig.paramTypeBoolean', { key: p.key }));
           break;
         }
         case 'string': {
-          if (typeof val !== 'string') items.push(`参数类型错误(${p.key}): 需 string`);
+          if (typeof val !== 'string') items.push(t('playConfig.paramTypeString', { key: p.key }));
           break;
         }
       }
@@ -1152,13 +1147,13 @@ async function resetToDefault() {
 function carrierConfirmConfig(externalUrl: string, homeUrl: string): { title: string; message: string } {
   if (carrierType.value === 'plugin') {
     return {
-      title: '插件启动确认',
-      message: `即将进入外部网站${homeUrl ? `（${homeUrl}）` : ''}并注入本地检测脚本，插件可能根据页面情况对已连接设备发起控制行为（存在异常或意外触发的风险）。\n\n请确认设备已正确佩戴、参数配置无误，并在可随时中断的环境下使用。是否继续？`,
+      title: t('playConfig.pluginConfirmTitle'),
+      message: t('playConfig.pluginConfirm', { site: homeUrl ? `（${homeUrl}）` : '' }),
     };
   }
   return {
-    title: '外部网页提示',
-    message: `您即将进入外部网页（${externalUrl}），该页面不受硅基之下控制，请注意安全。`,
+    title: t('playConfig.externalConfirmTitle'),
+    message: t('playConfig.externalConfirm', { url: externalUrl }),
   };
 }
 
@@ -1203,23 +1198,23 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
   // meta/设备列表还在加载时禁止启动：此时 play 为空，会以空 deviceMap/params 启动，
   // 游戏 iframe 回退到不存在的路径（在线游戏无同名内置目录 → 404）
   if (loadingAll.value) {
-    startError.value = '玩法信息加载中，请稍候';
+    startError.value = t('playConfig.loadingPlay');
     pendingStartMode.value = null;
     return;
   }
   if (!force && blocking.value.length > 0) {
-    startError.value = '存在阻塞项，请修正后再启动';
+    startError.value = t('playConfig.hasBlocking');
     pendingStartMode.value = null;
     return;
   }
   if (mode === 'button') {
     if (!startTriggerDeviceId.value) {
-      startError.value = '请选择触发设备';
+      startError.value = t('playConfig.pickTriggerFirst');
       pendingStartMode.value = null;
       return;
     }
     if (triggerTestStatus.value !== 'ok') {
-      startError.value = '请先完成按键测试';
+      startError.value = t('playConfig.testFirst');
       pendingStartMode.value = null;
       return;
     }
@@ -1242,7 +1237,7 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
     saveConfig();
     const installedGamePath = await installRemoteGameIfNeeded();
     await savePlayedGame(installedGamePath);
-    const t = title.value;
+    const playTitle = title.value;
 
     if (carrierType.value === 'game') {
       track('game_start', {
@@ -1253,6 +1248,8 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
         id: playId.value,
         deviceMap: JSON.stringify({ ...deviceMapping }),
         params: JSON.stringify({ ...parameters }),
+        locale: currentLocale(),
+        localeTag: localeTag(currentLocale()),
       };
       const gamePath = installedGamePath || (play.value as any)?.gamePath || String(route.query.gamePath || '');
       if (externalUrl) resumeQuery.externalUrl = externalUrl;
@@ -1261,25 +1258,30 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
         resumeQuery.startMode = 'button';
         resumeQuery.startTriggerDeviceId = startTriggerDeviceId.value;
       }
-      setActivePlay({ carrierType: 'game', id: playId.value, title: t, resume: { name: 'game_current', query: resumeQuery } });
+      setActivePlay({ carrierType: 'game', id: playId.value, title: playTitle, resume: { name: 'game_current', query: resumeQuery } });
       router.push({ name: 'game_current', query: resumeQuery });
     } else {
       const res = await fetch(`/api/plugins/${encodeURIComponent(playId.value)}/activate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deviceMap: { ...deviceMapping }, params: { ...parameters } }),
+        body: JSON.stringify({
+          deviceMap: { ...deviceMapping },
+          params: { ...parameters },
+          locale: currentLocale(),
+          localeTag: localeTag(currentLocale()),
+        }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(apiErrorMessage(data, '插件启动失败'));
+      if (!res.ok) throw new Error(apiErrorMessage(data, t('playConfig.pluginStartFailed')));
       track('plugin_start', {
         plugin_id: playId.value,
         device_count: Object.keys(deviceMapping).length,
       });
-      setActivePlay({ carrierType: 'plugin', id: playId.value, title: t, resume: { name: 'plugin_run', params: { id: playId.value } } });
+      setActivePlay({ carrierType: 'plugin', id: playId.value, title: playTitle, resume: { name: 'plugin_run', params: { id: playId.value } } });
       router.push({ name: 'plugin_run', params: { id: playId.value } });
     }
   } catch (e: any) {
-    startError.value = e?.message || '启动失败';
+    startError.value = e?.message || t('playConfig.startFailed');
   } finally {
     startBusy.value = false;
     pendingStartMode.value = null;
@@ -1293,11 +1295,11 @@ function startImmediate() {
 function openButtonStartDialog() {
   startError.value = '';
   if (loadingAll.value) {
-    startError.value = '玩法信息加载中，请稍候';
+    startError.value = t('playConfig.loadingPlay');
     return;
   }
   if (blocking.value.length > 0) {
-    startError.value = '存在阻塞项，请修正后再启动';
+    startError.value = t('playConfig.hasBlocking');
     return;
   }
   if (!startTriggerDeviceId.value) startTriggerDeviceId.value = pickDefaultTriggerDeviceId();

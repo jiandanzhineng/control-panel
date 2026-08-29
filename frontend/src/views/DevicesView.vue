@@ -2,13 +2,13 @@
   <div class="devices-page">
 
     <el-tabs v-model="activeTab" class="devices-tabs">
-      <el-tab-pane label="设备列表" name="devices">
+      <el-tab-pane :label="t('devices.list')" name="devices">
     <el-card class="stats-card" shadow="never">
       <div class="stats-header">
         <div class="stats-info">
-          <el-statistic title="总设备数" :value="devices.length" />
-          <el-statistic title="在线设备" :value="connectedCount" class="online-stat" />
-          <el-statistic title="离线设备" :value="disconnectedCount" class="offline-stat" />
+          <el-statistic :title="t('devices.total')" :value="devices.length" />
+          <el-statistic :title="t('devices.online')" :value="connectedCount" class="online-stat" />
+          <el-statistic :title="t('devices.offline')" :value="disconnectedCount" class="offline-stat" />
         </div>
         <div class="actions">
           <el-button
@@ -17,12 +17,12 @@
             :loading="bleBusy"
             @click="startBleConnect"
           >
-            {{ bleBusy ? '蓝牙连接中' : '蓝牙连接' }}
+            {{ bleBusy ? t('devices.bleConnecting') : t('devices.bleConnect') }}
           </el-button>
           <el-dropdown trigger="click" @command="handleDeviceToolCommand">
             <el-button>
               <el-icon><Tools /></el-icon>
-              设备工具
+              {{ t('devices.tools') }}
               <el-icon class="el-icon--right"><ArrowDown /></el-icon>
             </el-button>
             <template #dropdown>
@@ -32,13 +32,13 @@
                   :icon="SetUp"
                   :disabled="!provisionSupported || provisionBusy || bleBusy"
                 >
-                  设备配网
+                  {{ t('devices.provision') }}
                 </el-dropdown-item>
                 <el-dropdown-item command="serial" :icon="Link" :disabled="serialBusy">
-                  {{ serialBusy ? '串口探测中' : '串口连接' }}
+{{ serialBusy ? t('devices.serialConnecting') : t('devices.serialConnect') }}
                 </el-dropdown-item>
                 <el-dropdown-item command="firmware" :icon="Upload">
-                  固件更新
+                  {{ t('firmware.title') }}
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>
@@ -49,7 +49,7 @@
             :loading="loading"
             @click="refreshDevices"
           >
-            {{ loading ? '刷新中...' : '刷新列表' }}
+{{ loading ? t('devices.refreshing') : t('devices.refreshList') }}
           </el-button>
           <el-button 
             type="danger" 
@@ -57,7 +57,7 @@
             :disabled="loading || devices.length === 0"
             @click="clearAllDevices"
           >
-            清空设备
+            {{ t('devices.clear') }}
           </el-button>
         </div>
       </div>
@@ -73,42 +73,42 @@
 
     <el-card shadow="never">
       <template #header>
-        <span>设备列表</span>
+        <span>{{ t('devices.list') }}</span>
       </template>
       
       <!-- 桌面端：在线设备表格 -->
-      <h4 style="margin: 8px 0 12px">在线设备（{{ connectedCount }}）</h4>
+      <h4 style="margin: 8px 0 12px">{{ t('devices.onlineCount', { n: connectedCount }) }}</h4>
       <el-table 
         :data="onlineDevices" 
         style="width: 100%"
         highlight-current-row
         @current-change="handleCurrentChange"
         v-loading="loading"
-        empty-text="暂无在线设备"
+:empty-text="t('devices.emptyOnline')"
         class="desktop-table"
       >
-        <el-table-column prop="type" label="类型" width="96">
+        <el-table-column prop="type" :label="t('common.type')" width="96">
           <template #default="{ row }">
-            {{ deviceTypeMap[row.type] || row.type }}
+            {{ deviceTypeName(row.type) }}
           </template>
         </el-table-column>
         
-        <el-table-column label="设备" min-width="120">
+        <el-table-column :label="t('common.device')" min-width="120">
           <template #default="{ row }">
             <span v-if="row.nickname">{{ row.nickname }}-{{ String(row.id).slice(-4) }}</span>
             <span v-else>{{ row.name || row.id }}</span>
           </template>
         </el-table-column>
         
-        <el-table-column prop="connected" label="状态" width="80">
+        <el-table-column prop="connected" :label="t('common.status')" width="80">
           <template #default="{ row }">
             <el-tag :type="row.connected ? 'success' : 'danger'" size="small">
-              {{ row.connected ? '在线' : '离线' }}
+              {{ row.connected ? t('common.online') : t('common.offline') }}
             </el-tag>
           </template>
         </el-table-column>
 
-        <el-table-column prop="battery" label="电量" width="80">
+        <el-table-column prop="battery" :label="t('devices.battery')" width="80">
           <template #default="{ row }">
             <el-tag 
               :type="getBatteryTagType(row.data?.battery)" 
@@ -119,13 +119,13 @@
           </template>
         </el-table-column>
         
-        <el-table-column prop="lastReport" label="最后上报" width="128">
+        <el-table-column prop="lastReport" :label="t('devices.lastReport')" width="128">
           <template #default="{ row }">
             {{ formatLastReport(row.lastReport) }}
           </template>
         </el-table-column>
         
-        <el-table-column label="操作" width="240" fixed="right">
+        <el-table-column :label="t('common.actions')" width="240" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
               <el-button
@@ -134,7 +134,7 @@
                 size="small"
                 @click="openMonitorModal(row)"
               >
-                数据监控
+                {{ t('devices.monitor') }}
               </el-button>
               <el-dropdown 
                 v-if="hasOperations(row.type)"
@@ -142,7 +142,7 @@
                 trigger="click"
               >
                 <el-button type="success" size="small">
-                   操作 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                   {{ t('devices.operate') }} <el-icon class="el-icon--right"><ArrowDown /></el-icon>
                  </el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
@@ -151,7 +151,7 @@
                       :key="operation.key"
                       :command="operation"
                     >
-                      {{ operation.name }}
+        {{ opName(operation) }}
                     </el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
@@ -162,7 +162,7 @@
                 :icon="Delete"
                 @click="removeDevice(row.id)"
               >
-                删除
+                {{ t('common.delete') }}
               </el-button>
             </div>
           </template>
@@ -173,34 +173,34 @@
       <el-collapse v-model="offlineCollapseActive" class="desktop-table">
         <el-collapse-item :name="'offline'">
           <template #title>
-            <span>离线设备（{{ disconnectedCount }}）</span>
+            <span>{{ t('devices.offlineCount', { n: disconnectedCount }) }}</span>
           </template>
           <el-table 
             :data="offlineDevices" 
             style="width: 100%"
             highlight-current-row
             @current-change="handleCurrentChange"
-            empty-text="暂无离线设备"
+:empty-text="t('devices.emptyOffline')"
           >
-            <el-table-column prop="type" label="类型" width="96">
+            <el-table-column prop="type" :label="t('common.type')" width="96">
               <template #default="{ row }">
-                {{ deviceTypeMap[row.type] || row.type }}
+                {{ deviceTypeName(row.type) }}
               </template>
             </el-table-column>
-            <el-table-column label="设备" min-width="120">
+            <el-table-column :label="t('common.device')" min-width="120">
               <template #default="{ row }">
                 <span v-if="row.nickname">{{ row.nickname }}-{{ String(row.id).slice(-4) }}</span>
                 <span v-else>{{ row.name || row.id }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="connected" label="状态" width="80">
+            <el-table-column prop="connected" :label="t('common.status')" width="80">
               <template #default="{ row }">
                 <el-tag :type="row.connected ? 'success' : 'danger'" size="small">
-                  {{ row.connected ? '在线' : '离线' }}
+                  {{ row.connected ? t('common.online') : t('common.offline') }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="battery" label="电量" width="80">
+            <el-table-column prop="battery" :label="t('devices.battery')" width="80">
               <template #default="{ row }">
                 <el-tag 
                   :type="getBatteryTagType(row.data?.battery)" 
@@ -210,12 +210,12 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="lastReport" label="最后上报" width="128">
+            <el-table-column prop="lastReport" :label="t('devices.lastReport')" width="128">
               <template #default="{ row }">
                 {{ formatLastReport(row.lastReport) }}
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="240" fixed="right">
+            <el-table-column :label="t('common.actions')" width="240" fixed="right">
               <template #default="{ row }">
                 <div class="table-actions">
                   <el-button 
@@ -224,7 +224,7 @@
                     size="small"
                     @click="openMonitorModal(row)"
                   >
-                    数据监控
+                    {{ t('devices.monitor') }}
                   </el-button>
                   <el-dropdown 
                     v-if="hasOperations(row.type)"
@@ -232,7 +232,7 @@
                     trigger="click"
                   >
                     <el-button type="success" size="small">
-                       操作 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                       {{ t('devices.operate') }} <el-icon class="el-icon--right"><ArrowDown /></el-icon>
                      </el-button>
                     <template #dropdown>
                       <el-dropdown-menu>
@@ -241,7 +241,7 @@
                           :key="operation.key"
                           :command="operation"
                         >
-                          {{ operation.name }}
+            {{ opName(operation) }}
                         </el-dropdown-item>
                       </el-dropdown-menu>
                     </template>
@@ -252,7 +252,7 @@
                     :icon="Delete"
                     @click="removeDevice(row.id)"
                   >
-                    删除
+                    {{ t('common.delete') }}
                   </el-button>
                 </div>
               </template>
@@ -262,7 +262,7 @@
       </el-collapse>
 
       <!-- 移动端：在线设备卡片 -->
-      <h4 class="mobile-device-list" style="margin: 8px 0 12px">在线设备（{{ connectedCount }}）</h4>
+      <h4 class="mobile-device-list" style="margin: 8px 0 12px">{{ t('devices.onlineCount', { n: connectedCount }) }}</h4>
       <div class="mobile-device-list">
         <div 
           v-for="device in onlineDevices" 
@@ -272,10 +272,10 @@
         >
           <div class="device-card-header">
             <div class="device-type">
-              {{ deviceTypeMap[device.type] || device.type }}
+              {{ deviceTypeName(device.type) }}
             </div>
             <el-tag :type="device.connected ? 'success' : 'danger'" size="small">
-              {{ device.connected ? '在线' : '离线' }}
+              {{ device.connected ? t('common.online') : t('common.offline') }}
             </el-tag>
             <div class="connection-tags">
               <el-tag
@@ -285,14 +285,14 @@
                 :effect="connection.type === device.controlConnection ? 'dark' : 'plain'"
                 size="small"
               >
-                {{ getConnectionLabel(connection.type) }}{{ connection.legacyIdentity ? ' 旧版' : '' }}
+                {{ getConnectionLabel(connection.type) }}{{ connection.legacyIdentity ? ' ' + t('devices.legacy') : '' }}
               </el-tag>
             </div>
           </div>
           
           <div class="device-card-content">
             <div class="device-info-row">
-              <span class="info-label">设备:</span>
+              <span class="info-label">{{ t('common.device') }}:</span>
               <span class="info-value">
                 <template v-if="device.nickname">{{ device.nickname }}-{{ String(device.id).slice(-4) }}</template>
                 <template v-else>{{ device.name || device.id }}</template>
@@ -300,7 +300,7 @@
             </div>
             
             <div class="device-info-row">
-              <span class="info-label">电量:</span>
+              <span class="info-label">{{ t('devices.battery') }}:</span>
               <el-tag 
                 :type="getBatteryTagType(device.data?.battery)" 
                 size="small"
@@ -310,7 +310,7 @@
             </div>
             
             <div class="device-info-row">
-              <span class="info-label">最后上报:</span>
+              <span class="info-label">{{ t('devices.lastReport') }}:</span>
               <span class="info-value">{{ formatLastReport(device.lastReport) }}</span>
             </div>
           </div>
@@ -322,7 +322,7 @@
               size="small"
               @click.stop="openMonitorModal(device)"
             >
-              数据监控
+              {{ t('devices.monitor') }}
             </el-button>
             <el-dropdown 
               v-if="hasOperations(device.type)"
@@ -330,7 +330,7 @@
               trigger="click"
             >
               <el-button type="success" size="small" @click.stop>
-                 操作 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                 {{ t('devices.operate') }} <el-icon class="el-icon--right"><ArrowDown /></el-icon>
                </el-button>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -339,7 +339,7 @@
                     :key="operation.key"
                     :command="operation"
                   >
-                    {{ operation.name }}
+      {{ opName(operation) }}
                   </el-dropdown-item>
                 </el-dropdown-menu>
               </template>
@@ -350,7 +350,7 @@
               :icon="Delete"
               @click.stop="removeDevice(device.id)"
             >
-              删除
+              {{ t('common.delete') }}
             </el-button>
           </div>
         </div>
@@ -360,7 +360,7 @@
       <el-collapse v-model="offlineCollapseActive" class="mobile-device-list">
         <el-collapse-item :name="'offline'">
           <template #title>
-            <span>离线设备（{{ disconnectedCount }}）</span>
+            <span>{{ t('devices.offlineCount', { n: disconnectedCount }) }}</span>
           </template>
           <div class="mobile-device-list">
             <div 
@@ -371,22 +371,22 @@
             >
               <div class="device-card-header">
                 <div class="device-type">
-                  {{ deviceTypeMap[device.type] || device.type }}
+                  {{ deviceTypeName(device.type) }}
                 </div>
                 <el-tag :type="device.connected ? 'success' : 'danger'" size="small">
-                  {{ device.connected ? '在线' : '离线' }}
+                  {{ device.connected ? t('common.online') : t('common.offline') }}
                 </el-tag>
               </div>
               <div class="device-card-content">
                 <div class="device-info-row">
-                  <span class="info-label">设备:</span>
+                  <span class="info-label">{{ t('common.device') }}:</span>
                   <span class="info-value">
                     <template v-if="device.nickname">{{ device.nickname }}-{{ String(device.id).slice(-4) }}</template>
                     <template v-else>{{ device.name || device.id }}</template>
                   </span>
                 </div>
                 <div class="device-info-row">
-                  <span class="info-label">电量:</span>
+                  <span class="info-label">{{ t('devices.battery') }}:</span>
                   <el-tag 
                     :type="getBatteryTagType(device.data?.battery)" 
                     size="small"
@@ -395,7 +395,7 @@
                   </el-tag>
                 </div>
                 <div class="device-info-row">
-                  <span class="info-label">最后上报:</span>
+                  <span class="info-label">{{ t('devices.lastReport') }}:</span>
                   <span class="info-value">{{ formatLastReport(device.lastReport) }}</span>
                 </div>
               </div>
@@ -406,7 +406,7 @@
                   size="small"
                   @click.stop="openMonitorModal(device)"
                 >
-                  数据监控
+                  {{ t('devices.monitor') }}
                 </el-button>
                 <el-dropdown 
                   v-if="hasOperations(device.type)"
@@ -414,7 +414,7 @@
                   trigger="click"
                 >
                   <el-button type="success" size="small" @click.stop>
-                     操作 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                     {{ t('devices.operate') }} <el-icon class="el-icon--right"><ArrowDown /></el-icon>
                    </el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
@@ -423,7 +423,7 @@
                         :key="operation.key"
                         :command="operation"
                       >
-                        {{ operation.name }}
+          {{ opName(operation) }}
                       </el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
@@ -434,7 +434,7 @@
                   :icon="Delete"
                   @click.stop="removeDevice(device.id)"
                 >
-                  删除
+                  {{ t('common.delete') }}
                 </el-button>
               </div>
             </div>
@@ -446,7 +446,7 @@
     <el-card v-if="selectedDevice" shadow="never" style="margin-top: 10px">
       <template #header>
         <div class="device-detail-header">
-          <span>设备详情</span>
+          <span>{{ t('devices.detail') }}</span>
           <el-button-group v-if="selectedDevice.data && Object.keys(selectedDevice.data).length > 0">
             <el-button 
               v-if="!isEditing" 
@@ -455,7 +455,7 @@
               :icon="Edit"
               @click="startEdit"
             >
-              编辑
+              {{ t('common.edit') }}
             </el-button>
             <template v-else>
               <el-button 
@@ -464,14 +464,14 @@
                 :icon="Check"
                 @click="saveChanges"
               >
-                保存
+                {{ t('common.save') }}
               </el-button>
               <el-button 
                 size="small"
                 :icon="Close"
                 @click="cancelEdit"
               >
-                取消
+                {{ t('common.cancel') }}
               </el-button>
             </template>
           </el-button-group>
@@ -481,27 +481,27 @@
       <el-row :gutter="20">
         <el-col :xs="24" :sm="12" :md="8">
           <el-descriptions :column="1" border>
-            <el-descriptions-item label="设备昵称">
+            <el-descriptions-item :label="t('devices.nickname')">
               <div style="display: flex; align-items: center; justify-content: space-between;">
-                <span>{{ selectedDevice.nickname || '未设置' }}</span>
-                <el-button link type="primary" :icon="Edit" @click="editNickname">修改</el-button>
+                <span>{{ selectedDevice.nickname || t('devices.unset') }}</span>
+                <el-button link type="primary" :icon="Edit" @click="editNickname">{{ t('devices.change') }}</el-button>
               </div>
             </el-descriptions-item>
-            <el-descriptions-item label="设备名称">{{ selectedDevice.name }}</el-descriptions-item>
-            <el-descriptions-item label="设备ID">{{ selectedDevice.id }}</el-descriptions-item>
-            <el-descriptions-item label="设备类型">{{ deviceTypeMap[selectedDevice.type] || selectedDevice.type }}</el-descriptions-item>
-            <el-descriptions-item label="固件版本">
+            <el-descriptions-item :label="t('devices.name')">{{ selectedDevice.name }}</el-descriptions-item>
+            <el-descriptions-item :label="t('devices.id')">{{ selectedDevice.id }}</el-descriptions-item>
+            <el-descriptions-item :label="t('devices.type')">{{ deviceTypeName(selectedDevice.type) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('devices.firmwareVersion')">
               <div style="display: flex; align-items: center; justify-content: space-between;">
                 <span>{{ currentFirmwareVersion }}</span>
-                <el-button link type="primary" @click="showFirmwareDialog = true">固件升级</el-button>
+                <el-button link type="primary" @click="showFirmwareDialog = true">{{ t('devices.firmwareUpgrade') }}</el-button>
               </div>
             </el-descriptions-item>
-            <el-descriptions-item label="连接状态">
+            <el-descriptions-item :label="t('devices.connection')">
               <el-tag :type="selectedDevice.connected ? 'success' : 'danger'" size="small">
-                {{ selectedDevice.connected ? '在线' : '离线' }}
+                {{ selectedDevice.connected ? t('common.online') : t('common.offline') }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="连接方式">
+            <el-descriptions-item :label="t('devices.connectionMode')">
               <div class="connection-control">
                 <el-radio-group
                   :model-value="selectedDevice.controlConnection"
@@ -513,7 +513,7 @@
                     :key="connection.type"
                     :value="connection.type"
                   >
-                    {{ getConnectionLabel(connection.type) }}{{ connection.legacyIdentity ? ' 旧版' : '' }}
+                    {{ getConnectionLabel(connection.type) }}{{ connection.legacyIdentity ? ' ' + t('devices.legacy') : '' }}
                   </el-radio-button>
                 </el-radio-group>
                 <div
@@ -524,7 +524,7 @@
                   <span>{{ getConnectionLabel(connection.type) }}</span>
                   <span v-if="connection.portPath">{{ connection.portPath }}</span>
                   <span v-if="connection.firmwareVersion">{{ connection.firmwareVersion }}</span>
-                  <el-tag v-if="connection.legacyIdentity" type="warning" size="small">旧版身份</el-tag>
+                  <el-tag v-if="connection.legacyIdentity" type="warning" size="small">{{ t('devices.legacyId') }}</el-tag>
                 </div>
                 <div class="connection-actions">
                   <el-button
@@ -533,7 +533,7 @@
                     type="warning"
                     @click="disconnectSerialDevice(selectedDevice)"
                   >
-                    断开串口
+                    {{ t('devices.disconnectSerial') }}
                   </el-button>
                   <el-button
                     v-if="hasConnection(selectedDevice, 'ble')"
@@ -541,7 +541,7 @@
                     type="warning"
                     @click="disconnectBleDevice(selectedDevice)"
                   >
-                    断开 BLE
+                    {{ t('devices.disconnectBle') }}
                   </el-button>
                   <el-button
                     v-if="hasConnection(selectedDevice, 'brand')"
@@ -549,7 +549,7 @@
                     type="warning"
                     @click="disconnectBrandDevice(selectedDevice, 'brand')"
                   >
-                    断开品牌连接
+                    {{ t('devices.disconnectBrand') }}
                   </el-button>
                   <el-button
                     v-if="hasConnection(selectedDevice, 'brandBle')"
@@ -557,13 +557,13 @@
                     type="warning"
                     @click="disconnectBrandDevice(selectedDevice, 'brandBle')"
                   >
-                    断开品牌蓝牙
+                    {{ t('devices.disconnectBrandBle') }}
                   </el-button>
                 </div>
               </div>
             </el-descriptions-item>
-            <el-descriptions-item label="最后上报">{{ formatLastReport(selectedDevice.lastReport) }}</el-descriptions-item>
-            <el-descriptions-item label="电量">
+            <el-descriptions-item :label="t('devices.lastReport')">{{ formatLastReport(selectedDevice.lastReport) }}</el-descriptions-item>
+            <el-descriptions-item :label="t('devices.battery')">
               <el-tag :type="getBatteryTagType(selectedDevice.data?.battery)" size="small">
                 {{ formatBattery(selectedDevice.data?.battery) }}
               </el-tag>
@@ -572,7 +572,7 @@
         </el-col>
         
         <el-col :xs="24" :sm="12" :md="16" v-if="selectedDevice.data && Object.keys(selectedDevice.data).length > 0">
-          <h4>设备数据</h4>
+          <h4>{{ t('devices.deviceData') }}</h4>
           <el-descriptions border size="small" :column="2" class="device-data-table">
             <el-descriptions-item v-for="(value, key) in selectedDevice.data" :key="key" :label="key">
               <template v-if="!isEditing">
@@ -603,7 +603,7 @@
 
         <!-- 设备操作 -->
         <el-col :xs="24" :sm="12" :md="8" v-if="deviceOperations.length > 0">
-          <h4>设备操作</h4>
+          <h4>{{ t('devices.deviceOps') }}</h4>
           <div class="device-operations">
             <el-button 
               v-for="operation in deviceOperations" 
@@ -613,16 +613,16 @@
               @click="executeOperation(operation)"
               style="margin-bottom: 8px; width: 100%;"
             >
-              {{ operation.name }}
+{{ opName(operation) }}
             </el-button>
           </div>
         </el-col>
 
         <!-- 监控数据 -->
         <el-col :xs="24" :sm="12" :md="8" v-if="monitorData && Object.keys(monitorData).length > 0">
-          <h4>监控数据 
+          <h4>{{ t('devices.monitorData') }} 
             <el-tag :type="monitorConnected ? 'success' : 'danger'" size="small">
-              {{ monitorConnected ? '实时' : '离线' }}
+              {{ monitorConnected ? t('devices.live') : t('common.offline') }}
             </el-tag>
           </h4>
           <el-descriptions :column="1" border size="small">
@@ -640,16 +640,16 @@
       </el-row>
     </el-card>
 
-    <el-empty v-else description="请选择一个设备查看详情" style="margin-top: 20px" />
+    <el-empty v-else :description="t('devices.pickDevice')" style="margin-top: 20px" />
 
     <el-dialog
       v-model="serialDialogVisible"
-      title="选择串口"
+      :title="t('devices.pickSerial')"
       width="min(560px, calc(100vw - 24px))"
       @open="loadSerialPorts"
     >
       <div class="serial-auto-control">
-        <span>串口自动连接</span>
+        <span>{{ t('devices.serialAutoConnect') }}</span>
         <el-switch
           v-model="serialAutoConnect"
           :loading="serialSettingsBusy"
@@ -658,14 +658,14 @@
       </div>
       <div class="serial-port-content" v-loading="serialPortsLoading">
         <el-table v-if="serialPorts.length > 0" class="serial-port-table" :data="serialPorts" size="small">
-          <el-table-column prop="path" label="端口" width="100" />
-          <el-table-column prop="manufacturer" label="设备" min-width="190">
-            <template #default="{ row }">{{ row.manufacturer || row.friendlyName || '未知串口设备' }}</template>
+          <el-table-column prop="path" :label="t('devices.port')" width="100" />
+          <el-table-column prop="manufacturer" :label="t('common.device')" min-width="190">
+            <template #default="{ row }">{{ row.manufacturer || row.friendlyName || t('devices.unknownSerial') }}</template>
           </el-table-column>
-          <el-table-column label="状态" width="90">
+          <el-table-column :label="t('common.status')" width="90">
             <template #default="{ row }">{{ getSerialPortStatus(row.status) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="90">
+          <el-table-column :label="t('common.actions')" width="90">
             <template #default="{ row }">
               <el-button
                 type="primary"
@@ -673,7 +673,7 @@
                 :disabled="row.status === 'connected' || row.status === 'probing'"
                 @click="connectSerialPort(row.path)"
               >
-                连接
+                {{ t('devices.connect') }}
               </el-button>
             </template>
           </el-table-column>
@@ -685,7 +685,7 @@
               <el-tag size="small" effect="plain">{{ getSerialPortStatus(port.status) }}</el-tag>
             </div>
             <div class="serial-port-name">
-              {{ port.manufacturer || port.friendlyName || '未知串口设备' }}
+              {{ port.manufacturer || port.friendlyName || t('devices.unknownSerial') }}
             </div>
             <el-button
               type="primary"
@@ -693,17 +693,17 @@
               :disabled="port.status === 'connected' || port.status === 'probing'"
               @click="connectSerialPort(port.path)"
             >
-              连接
+              {{ t('devices.connect') }}
             </el-button>
           </div>
         </div>
-        <el-empty v-if="!serialPortsLoading && serialPorts.length === 0" description="未发现串口" />
+        <el-empty v-if="!serialPortsLoading && serialPorts.length === 0" :description="t('devices.noSerial')" />
       </div>
     </el-dialog>
 
     <el-dialog
       v-model="bleDialogVisible"
-      title="选择蓝牙设备"
+      :title="t('devices.pickBle')"
       width="420px"
       :before-close="closeBleDialog"
     >
@@ -713,19 +713,19 @@
         size="small"
         @row-click="selectBleCandidate"
       >
-        <el-table-column prop="name" label="设备" min-width="180" />
-        <el-table-column label="操作" width="90">
+        <el-table-column prop="name" :label="t('common.device')" min-width="180" />
+        <el-table-column :label="t('common.actions')" width="90">
           <template #default="{ row }">
-            <el-button type="primary" size="small" @click.stop="selectBleCandidate(row)">连接</el-button>
+            <el-button type="primary" size="small" @click.stop="selectBleCandidate(row)">{{ t('devices.connect') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
-      <el-empty v-else description="正在扫描附近设备" />
+      <el-empty v-else :description="t('devices.scanningNearby')" />
     </el-dialog>
 
     <el-dialog
       v-model="provisionDialogVisible"
-      title="设备配网"
+      :title="t('devices.provision')"
       width="min(520px, calc(100vw - 24px))"
       :close-on-click-modal="false"
       :close-on-press-escape="!provisionBusy"
@@ -739,27 +739,27 @@
         @submit.prevent="startProvision"
       >
         <el-alert
-          title="设备仅支持 2.4G Wi-Fi"
+          :title="t('devices.wifi24')"
           type="info"
           :closable="false"
           show-icon
         />
-        <el-form-item label="Wi-Fi 名称（SSID）">
+        <el-form-item :label="t('devices.ssid')">
           <el-input
             v-model="provisionForm.ssid"
             maxlength="32"
             autocomplete="off"
-            placeholder="请输入 2.4G Wi-Fi 名称"
+            :placeholder="t('devices.ssidPlaceholder')"
           />
         </el-form-item>
-        <el-form-item label="Wi-Fi 密码">
+        <el-form-item :label="t('devices.wifiPassword')">
           <el-input
             v-model="provisionForm.password"
             type="password"
             maxlength="64"
             show-password
             autocomplete="new-password"
-            placeholder="请输入 Wi-Fi 密码"
+            :placeholder="t('devices.wifiPasswordPlaceholder')"
             @keyup.enter="startProvision"
           />
         </el-form-item>
@@ -767,7 +767,7 @@
 
       <div v-else-if="provisionView === 'selecting'" class="provision-content">
         <el-alert
-          :title="provisionStatus.message || '正在扫描附近设备'"
+          :title="provisionStatus.message || t('devices.scanningNearby')"
           type="info"
           :closable="false"
           show-icon
@@ -779,16 +779,16 @@
           class="provision-device-table"
           @row-click="selectProvisionCandidate"
         >
-          <el-table-column prop="name" label="设备" min-width="220" />
-          <el-table-column label="操作" width="90">
+          <el-table-column prop="name" :label="t('common.device')" min-width="220" />
+          <el-table-column :label="t('common.actions')" width="90">
             <template #default="{ row }">
               <el-button type="primary" size="small" @click.stop="selectProvisionCandidate(row)">
-                选择
+                {{ t('devices.select') }}
               </el-button>
             </template>
           </el-table-column>
         </el-table>
-        <el-empty v-else description="正在扫描名称包含 BLUFI 的设备" :image-size="100" />
+        <el-empty v-else :description="t('devices.scanningBlufi')" :image-size="100" />
       </div>
 
       <div v-else-if="provisionView === 'running'" class="provision-result">
@@ -800,47 +800,47 @@
       <el-result
         v-else-if="provisionView === 'success'"
         icon="success"
-        title="配网成功"
+        :title="t('devices.provisionSuccess')"
         :sub-title="provisionSuccessText"
       />
 
       <el-result
         v-else
         icon="error"
-        title="配网失败"
+        :title="t('devices.provisionFail')"
         :sub-title="provisionStatus.message"
       />
 
       <template #footer>
         <template v-if="provisionView === 'form'">
-          <el-button @click="provisionDialogVisible = false">取消</el-button>
+          <el-button @click="provisionDialogVisible = false">{{ t('common.cancel') }}</el-button>
           <el-button type="primary" :disabled="!canStartProvision" @click="startProvision">
-            开始配网
+            {{ t('devices.startProvision') }}
           </el-button>
         </template>
         <template v-else-if="provisionView === 'selecting'">
-          <el-button @click="cancelProvisionSelection">取消配网</el-button>
+          <el-button @click="cancelProvisionSelection">{{ t('devices.cancelProvision') }}</el-button>
         </template>
         <template v-else-if="provisionView === 'success' || provisionView === 'error'">
-          <el-button v-if="provisionView === 'error'" @click="provisionView = 'form'">重新配网</el-button>
-          <el-button type="primary" @click="provisionDialogVisible = false">完成</el-button>
+          <el-button v-if="provisionView === 'error'" @click="provisionView = 'form'">{{ t('devices.reProvision') }}</el-button>
+          <el-button type="primary" @click="provisionDialogVisible = false">{{ t('devices.complete') }}</el-button>
         </template>
       </template>
     </el-dialog>
 
     <div style="margin-top: 30px; text-align: center;">
-      <el-button link type="info" @click="$router.push('/test')" style="opacity: 0.3;">自动化测试</el-button>
+      <el-button link type="info" @click="$router.push('/test')" style="opacity: 0.3;">{{ t('devices.autoTest') }}</el-button>
     </div>
 
     <!-- 固件升级弹窗 -->
     <el-dialog
       v-model="showFirmwareDialog"
-      title="固件升级"
+      :title="t('devices.firmwareUpgrade')"
       width="400px"
     >
       <div class="firmware-panel" v-loading="firmwareLoading">
         <div class="section-title-row" style="margin-bottom: 12px;">
-          <span>OTA 状态</span>
+          <span>{{ t('devices.otaStatus') }}</span>
           <el-tag :type="getOtaStatusTagType(otaStatus?.status)" size="small">
             {{ getOtaStatusLabel(otaStatus?.status) }}
           </el-tag>
@@ -857,21 +857,21 @@
 
         <template v-else>
           <el-descriptions :column="1" border size="small">
-            <el-descriptions-item label="当前版本">
+            <el-descriptions-item :label="t('firmware.currentVersion')">
               {{ currentFirmwareVersion }}
             </el-descriptions-item>
-            <el-descriptions-item label="最新版本">
+            <el-descriptions-item :label="t('firmware.latestVersion')">
               {{ firmwareInfo?.latestVersion || '-' }}
             </el-descriptions-item>
-            <el-descriptions-item label="固件支持">
+            <el-descriptions-item :label="t('devices.firmwareSupport')">
               <el-tag :type="firmwareInfo?.supported ? 'success' : 'info'" size="small">
-                {{ firmwareInfo?.supported ? '支持' : '不支持' }}
+                {{ firmwareInfo?.supported ? t('devices.supported') : t('firmware.unsupported') }}
               </el-tag>
             </el-descriptions-item>
-            <el-descriptions-item label="固件文件">
+            <el-descriptions-item :label="t('devices.firmwareFile')">
               <span class="firmware-filename">{{ firmwareInfo?.firmware?.filename || '-' }}</span>
             </el-descriptions-item>
-            <el-descriptions-item label="文件大小">
+            <el-descriptions-item :label="t('devices.fileSize')">
               {{ formatBytes(firmwareInfo?.firmware?.sizeBytes) }}
             </el-descriptions-item>
             <el-descriptions-item label="SHA256">
@@ -912,11 +912,11 @@
     />
       </el-tab-pane>
 
-      <el-tab-pane label="品牌设备" name="brands">
+      <el-tab-pane :label="t('devices.brands')" name="brands">
         <BrandsPanel />
       </el-tab-pane>
 
-      <el-tab-pane label="远程连接" name="remote">
+      <el-tab-pane :label="t('devices.remote')" name="remote">
         <RemoteProjectionPanel />
       </el-tab-pane>
     </el-tabs>
@@ -925,6 +925,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Link, Loading, SetUp, Tools } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
@@ -994,6 +995,21 @@ interface OtaStatus {
 }
 
 const router = useRouter();
+const { t } = useI18n();
+
+function deviceTypeName(type?: string) {
+  if (!type) return '';
+  const key = `deviceTypes.${type}`;
+  const translated = t(key);
+  return translated === key ? (deviceTypeMap.value[type] || type) : translated;
+}
+
+function opName(operation: { key?: string; name?: string }) {
+  const key = String(operation?.key || '');
+  const i18nKey = `ops.${key}`;
+  const translated = t(i18nKey);
+  return translated === i18nKey ? (operation?.name || key) : translated;
+}
 
 const activeTab = ref<'devices' | 'remote'>('devices');
 const devices = ref<Device[]>([]);
@@ -1260,7 +1276,7 @@ async function updateSerialAutoConnect(value: boolean | string | number) {
     serialAutoConnect.value = data.autoConnect === true;
   } catch (error: any) {
     serialAutoConnect.value = !enabled;
-    ElMessage.error(error?.message || '串口自动连接设置失败');
+    ElMessage.error(error?.message || t('devices.serialSettingFailed'));
   } finally {
     serialSettingsBusy.value = false;
   }
@@ -1288,7 +1304,7 @@ async function loadSerialPorts() {
     const data = await readJsonResponse(res, '串口列表获取失败');
     serialPorts.value = Array.isArray(data) ? data : (data.ports || []);
   } catch (error: any) {
-    ElMessage.error(error?.message || '串口列表获取失败');
+    ElMessage.error(error?.message || t('devices.serialListFailed'));
   } finally {
     serialPortsLoading.value = false;
   }
@@ -1306,9 +1322,9 @@ async function connectSerialPort(path: string) {
     await refreshDevices();
     serialDialogVisible.value = false;
     selectedDeviceId.value = data.device?.id || data.id || selectedDeviceId.value;
-    ElMessage.success(`${path} 已连接`);
+    ElMessage.success(t('devices.serialConnectedPath', { path }));
   } catch (error: any) {
-    ElMessage.error(error?.message || '串口连接失败');
+    ElMessage.error(error?.message || t('devices.serialConnectFailed'));
     await loadSerialPorts();
   } finally {
     serialBusy.value = false;
@@ -1322,9 +1338,9 @@ async function disconnectSerialDevice(device: Device) {
     });
     await readJsonResponse(res, '串口断开失败');
     await refreshDevices();
-    ElMessage.success('串口已断开');
+    ElMessage.success(t('devices.serialDisconnected'));
   } catch (error: any) {
-    ElMessage.error(error?.message || '串口断开失败');
+    ElMessage.error(error?.message || t('devices.serialDisconnectFailed'));
   }
 }
 
@@ -1338,7 +1354,7 @@ async function setControlConnection(device: Device, type: TransportType) {
     await readJsonResponse(res, '控制连接切换失败');
     await refreshDevices();
   } catch (error: any) {
-    ElMessage.error(error?.message || '控制连接切换失败');
+    ElMessage.error(error?.message || t('devices.controlFailed'));
   }
 }
 
@@ -1347,7 +1363,7 @@ function hasConnection(device: Device, type: TransportType) {
 }
 
 function getConnectionLabel(type: TransportType) {
-  return { mqtt: 'MQTT', serial: '串口', ble: 'BLE', remote: '远程', brand: '品牌连接', brandBle: '品牌蓝牙' }[type];
+  return { mqtt: t('devices.mqtt'), serial: t('devices.serial'), ble: t('devices.ble'), remote: t('devices.remoteConn'), brand: t('devices.brand'), brandBle: t('devices.brandBle') }[type];
 }
 
 function getConnectionTagType(type: TransportType): 'success' | 'primary' | 'warning' | 'info' {
@@ -1355,7 +1371,7 @@ function getConnectionTagType(type: TransportType): 'success' | 'primary' | 'war
 }
 
 function getSerialPortStatus(status: SerialPortInfo['status']) {
-  return { idle: '可连接', probing: '探测中', connected: '已连接', backoff: '等待重试' }[status] || status;
+  return { idle: t('devices.serialIdle'), probing: t('devices.serialProbing'), connected: t('devices.serialConnected'), backoff: t('devices.serialBackoff') }[status] || status;
 }
 
 function startAutoRefresh() {
@@ -1415,7 +1431,7 @@ function selectDevice(device: Device) {
 async function startBleConnect() {
   const api = window.bleApi;
   if (!api?.isSupported()) {
-    ElMessage.error('当前电脑或运行环境不支持 BLE');
+    ElMessage.error(t('devices.bleUnsupported'));
     return;
   }
   bleCandidates.value = [];
@@ -1426,10 +1442,10 @@ async function startBleConnect() {
     bleDialogVisible.value = false;
     await refreshDevices();
     selectedDeviceId.value = device.id;
-    ElMessage.success(`${device.name || device.type} 已通过 BLE 连接`);
+    ElMessage.success(t('devices.bleConnected', { name: device.name || device.type }));
   } catch (error: any) {
     if (error?.name !== 'NotFoundError' && !String(error?.message || '').toLowerCase().includes('cancel')) {
-      ElMessage.error(error?.message || 'BLE 连接失败');
+      ElMessage.error(error?.message || t('devices.bleFailed'));
     }
   } finally {
     bleBusy.value = false;
@@ -1438,7 +1454,7 @@ async function startBleConnect() {
 
 function openProvisionDialog() {
   if (!window.provisionApi?.isSupported()) {
-    ElMessage.error('当前电脑或运行环境不支持蓝牙配网');
+    ElMessage.error(t('devices.provisionUnsupported'));
     return;
   }
   provisionCandidates.value = [];
@@ -1473,7 +1489,7 @@ async function startProvision() {
     provisionResult.value = result;
     provisionView.value = 'success';
     refreshDevices().catch(() => {});
-    ElMessage.success('设备配网成功');
+    ElMessage.success(t('devices.provisionOk'));
   } catch (error: any) {
     const cancelled = error?.name === 'NotFoundError'
       || String(error?.message || '').toLowerCase().includes('cancel');
@@ -1525,7 +1541,7 @@ async function selectBleCandidate(candidate: { id: string; name: string }) {
   try {
     await window.bleApi?.selectDevice(candidate.id);
   } catch (error: any) {
-    ElMessage.error(error?.message || '选择蓝牙设备失败');
+    ElMessage.error(error?.message || t('devices.selectBleFailed'));
   }
 }
 
@@ -1538,9 +1554,9 @@ async function disconnectBleDevice(device: Device) {
   try {
     await window.bleApi?.disconnect(device.id);
     await refreshDevices();
-    ElMessage.success('BLE 设备已安全断开');
+    ElMessage.success(t('devices.bleSafeOff'));
   } catch (error: any) {
-    ElMessage.error(error?.message || 'BLE 断开失败');
+    ElMessage.error(error?.message || t('devices.bleOffFailed'));
   }
 }
 
@@ -1550,21 +1566,21 @@ async function disconnectBrandDevice(device: Device, kind: 'brand' | 'brandBle')
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data.error || data.message || '断开失败');
     await refreshDevices();
-    const label = kind === 'brandBle' ? '品牌蓝牙' : '品牌连接';
-    ElMessage.success(`${label}已安全断开`);
+    const label = kind === 'brandBle' ? t('devices.brandBle') : t('devices.brand');
+    ElMessage.success(t('devices.brandSafeOff', { label }));
   } catch (error: any) {
-    ElMessage.error(error?.message || '品牌设备断开失败');
+    ElMessage.error(error?.message || t('devices.brandOffFailed'));
   }
 }
 
 async function clearAllDevices() {
   try {
     await ElMessageBox.confirm(
-      '确定要删除所有设备吗？此操作不可恢复！',
-      '警告',
+      t('devices.clearConfirm'),
+      t('devices.warning'),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: t('common.ok'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning',
       }
     );
@@ -1575,10 +1591,10 @@ async function clearAllDevices() {
     if (!res.ok || data.error) throw new Error(data.message || '清空设备失败');
     devices.value = [];
     selectedDeviceId.value = '';
-    ElMessage.success('设备清空成功');
+    ElMessage.success(t('devices.cleared'));
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error?.message || '清空设备失败');
+      ElMessage.error(error?.message || t('devices.clearFailed'));
     }
   }
 }
@@ -1586,11 +1602,11 @@ async function clearAllDevices() {
 async function removeDevice(id: string) {
   try {
     await ElMessageBox.confirm(
-      '确定要删除这个设备吗？',
-      '确认删除',
+      t('devices.deleteConfirm'),
+      t('devices.deleteTitle'),
       {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
+        confirmButtonText: t('common.ok'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning',
       }
     );
@@ -1602,10 +1618,10 @@ async function removeDevice(id: string) {
     if (!res.ok || data.error) throw new Error(data.message || '删除设备失败');
     devices.value = devices.value.filter(d => d.id !== id);
     if (selectedDeviceId.value === id) selectedDeviceId.value = '';
-    ElMessage.success('设备删除成功');
+    ElMessage.success(t('devices.deleted'));
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error?.message || '删除设备失败');
+      ElMessage.error(error?.message || t('devices.deleteFailed'));
     }
   }
 }
@@ -1626,9 +1642,9 @@ function cancelEdit() {
 async function editNickname() {
   if (!selectedDevice.value) return;
   try {
-    const { value } = await ElMessageBox.prompt('请输入设备昵称，留空则清除昵称', '设置昵称', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
+    const { value } = await ElMessageBox.prompt(t('devices.nickPrompt'), t('devices.nickTitle'), {
+      confirmButtonText: t('common.ok'),
+      cancelButtonText: t('common.cancel'),
       inputValue: selectedDevice.value.nickname || '',
     });
     
@@ -1645,10 +1661,10 @@ async function editNickname() {
     if (index !== -1) {
       devices.value[index] = data;
     }
-    ElMessage.success('昵称设置成功');
+    ElMessage.success(t('devices.nickOk'));
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error(error?.message || '设置失败');
+      ElMessage.error(error?.message || t('devices.nickFailed'));
     }
   }
 }
@@ -1703,9 +1719,9 @@ async function saveChanges() {
       return d;
     });
     cancelEdit();
-    ElMessage.success('设备数据更新成功');
+    ElMessage.success(t('devices.dataUpdated'));
   } catch (e: any) {
-    ElMessage.error(e?.message || '保存失败');
+    ElMessage.error(e?.message || t('devices.saveFailed'));
   }
 }
 
@@ -1736,10 +1752,10 @@ async function executeOperation(operation: any) {
       method: 'POST'
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || '操作执行失败');
-    ElMessage.success(`${operation.name} 执行成功`);
+    if (!res.ok || data.error) throw new Error(data.message || t('devices.opExecFailed'));
+    ElMessage.success(t('devices.opOk', { name: opName(operation) }));
   } catch (error: any) {
-    ElMessage.error(error?.message || `${operation.name} 执行失败`);
+    ElMessage.error(error?.message || t('devices.opFailed', { name: opName(operation) }));
   } finally {
     operationLoading.value[operationKey] = false;
   }
@@ -1830,10 +1846,10 @@ async function updateFirmwareLatest() {
     if (!res.ok || data.error) throw new Error(data.error?.message || data.message || 'OTA 指令下发失败');
 
     if (data.status) otaStatus.value = data.status;
-    ElMessage.success('OTA 指令已下发');
+    ElMessage.success(t('devices.otaSent'));
   } catch (error: any) {
     if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error(error?.message || 'OTA 指令下发失败');
+      ElMessage.error(error?.message || t('devices.otaFailed'));
     }
   } finally {
     firmwareUpdating.value = false;
@@ -1855,16 +1871,9 @@ function formatShortHash(value: any) {
 }
 
 function getOtaStatusLabel(status?: string) {
-  const labels: Record<string, string> = {
-    idle: '空闲',
-    requested: '已下发',
-    start: '开始',
-    downloading: '下载中',
-    success: '成功',
-    failed: '失败',
-    unknown: '未知',
-  };
-  return labels[status || 'idle'] || status || '空闲';
+  const key = `firmware.${status || 'idle'}`;
+  const translated = t(key);
+  return translated === key ? (status || t('firmware.idle')) : translated;
 }
 
 function getOtaStatusTagType(status?: string): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
@@ -1923,13 +1932,13 @@ function getBatteryTagType(battery: any): 'success' | 'warning' | 'danger' | 'in
 }
 
 function formatLastReport(timestamp: string | null) {
-  if (!timestamp) return '从未上报';
+  if (!timestamp) return t('devices.neverReport');
   const date = new Date(timestamp);
   const now = new Date();
   const diff = now.getTime() - date.getTime();
-  if (diff < 60000) return '刚刚';
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
+  if (diff < 60000) return t('common.justNow');
+  if (diff < 3600000) return t('common.minutesAgo', { n: Math.floor(diff / 60000) });
+  if (diff < 86400000) return t('common.hoursAgo', { n: Math.floor(diff / 3600000) });
   return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
 }
 
@@ -2060,10 +2069,10 @@ async function executeDeviceOperation(device: Device, operation: any) {
       method: 'POST'
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || '操作执行失败');
-    ElMessage.success(`${operation.name} 执行成功`);
+    if (!res.ok || data.error) throw new Error(data.message || t('devices.opExecFailed'));
+    ElMessage.success(t('devices.opOk', { name: opName(operation) }));
   } catch (error: any) {
-    ElMessage.error(error?.message || `${operation.name} 执行失败`);
+    ElMessage.error(error?.message || t('devices.opFailed', { name: opName(operation) }));
   }
 }
 </script>

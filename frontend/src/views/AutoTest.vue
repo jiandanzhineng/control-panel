@@ -3,16 +3,16 @@
     <el-card shadow="never" class="provision-card">
       <template #header>
         <div class="header">
-          <span>串口设备接入</span>
+          <span>{{ t('autoTest.serialAccess') }}</span>
           <div class="provision-options">
             <el-switch
               v-model="autoFlash"
-              active-text="连接失败时自动烧录"
+              :active-text="t('autoTest.autoFlash')"
               @change="saveProvisionSettings"
             />
             <el-select
               v-model="flashDeviceType"
-              placeholder="烧录型号"
+              :placeholder="t('autoTest.flashModel')"
               size="small"
               class="type-select"
               :disabled="!autoFlash"
@@ -26,22 +26,22 @@
 
       <el-alert
         v-if="autoFlash && !flashDeviceType"
-        title="已开启自动烧录但未选择型号，握手失败的端口不会被烧录"
+        :title="t('autoTest.autoFlashNoType')"
         type="warning"
         :closable="false"
         show-icon
         class="provision-alert"
       />
 
-      <el-table :data="devicePorts" style="width: 100%" empty-text="暂无串口">
-        <el-table-column prop="path" label="串口" width="110" />
-        <el-table-column prop="friendlyName" label="名称" min-width="180" show-overflow-tooltip />
-        <el-table-column label="阶段" width="120">
+      <el-table :data="devicePorts" style="width: 100%" :empty-text="t('autoTest.emptyPorts')">
+        <el-table-column prop="path" :label="t('autoTest.serial')" width="110" />
+        <el-table-column prop="friendlyName" :label="t('autoTest.name')" min-width="180" show-overflow-tooltip />
+        <el-table-column :label="t('autoTest.stage')" width="120">
           <template #default="{ row }">
             <el-tag :type="stageTagType(row.stage)" size="small">{{ stageLabel(row.stage) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="进展" min-width="240">
+        <el-table-column :label="t('autoTest.progress')" min-width="240">
           <template #default="{ row }">
             <el-progress
               v-if="row.stage === 'flashing' && row.flashProgress !== null"
@@ -52,10 +52,10 @@
             <span v-if="row.error" class="error-code">（{{ row.error.code }}: {{ row.error.message }}）</span>
           </template>
         </el-table-column>
-        <el-table-column label="设备ID" width="150">
+        <el-table-column :label="t('devices.id')" width="150">
           <template #default="{ row }">{{ row.deviceId || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="110" align="center">
+        <el-table-column :label="t('common.actions')" width="110" align="center">
           <template #default="{ row }">
             <el-button
               v-if="row.stage === 'failed'"
@@ -64,7 +64,7 @@
               :loading="retryLoading[row.path]"
               @click="retryPort(row)"
             >
-              重试
+              {{ t('common.retry') }}
             </el-button>
           </template>
         </el-table-column>
@@ -73,7 +73,7 @@
       <div v-if="otherPorts.length" class="other-ports">
         <button class="other-ports-toggle" @click="showOtherPorts = !showOtherPorts">
           <span class="arrow" :class="{ open: showOtherPorts }">▸</span>
-          非设备串口（{{ otherPorts.length }}）
+          {{ t('autoTest.otherPorts', { n: otherPorts.length }) }}
         </button>
         <div v-show="showOtherPorts" class="other-ports-list">
           <div v-for="port in otherPorts" :key="port.path" class="other-port-row">
@@ -87,21 +87,21 @@
     <el-card shadow="never">
       <template #header>
         <div class="header">
-          <span>自动化测试平台</span>
-          <el-tag type="success">测试运行中</el-tag>
+          <span>{{ t('autoTest.platform') }}</span>
+          <el-tag type="success">{{ t('autoTest.running') }}</el-tag>
         </div>
       </template>
 
-      <el-table :data="onlineDevices" style="width: 100%" empty-text="暂无在线设备">
-        <el-table-column prop="type" label="类型" width="150">
+      <el-table :data="onlineDevices" style="width: 100%" :empty-text="t('devices.emptyOnline')">
+        <el-table-column prop="type" :label="t('common.type')" width="150">
           <template #default="{ row }">
-            {{ deviceTypeMap[row.type] || row.type }}
+            {{ deviceTypeName(row.type) }}
           </template>
         </el-table-column>
 
-        <el-table-column prop="id" label="设备ID" width="180" />
+        <el-table-column prop="id" :label="t('devices.id')" width="180" />
 
-        <el-table-column label="监控数据">
+        <el-table-column :label="t('autoTest.monitorData')">
           <template #default="{ row }">
             <div class="monitor-data">
               <template v-if="hasMonitorData(row.type)">
@@ -112,12 +112,12 @@
                   </span>
                 </div>
               </template>
-              <span v-else class="no-data">无监控数据</span>
+              <span v-else class="no-data">{{ t('autoTest.noMonitor') }}</span>
             </div>
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="240" align="center">
+        <el-table-column :label="t('common.actions')" width="240" align="center">
           <template #default="{ row }">
             <div class="action-buttons">
               <el-button
@@ -125,7 +125,7 @@
                 size="small"
                 @click="restartTest(row)"
               >
-                重新开始
+                {{ t('autoTest.restart') }}
               </el-button>
               <el-button
                 type="success"
@@ -133,7 +133,7 @@
                 :loading="blinkLoading[row.id]"
                 @click="blinkDevice(row)"
               >
-                指示灯闪烁
+                {{ t('autoTest.blink') }}
               </el-button>
             </div>
           </template>
@@ -145,7 +145,17 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { ElMessage } from 'element-plus';
+
+const { t } = useI18n();
+
+function deviceTypeName(type?: string) {
+  if (!type) return '';
+  const key = `deviceTypes.${type}`;
+  const translated = t(key);
+  return translated === key ? (deviceTypeMap.value[type] || type) : translated;
+}
 
 interface Device {
   id: string;
@@ -168,13 +178,13 @@ interface ProvisionPort {
 
 const DEVICE_TYPES = ['TD01', 'DIANJI', 'QTZ', 'ZIDONGSUO', 'PJ01', 'QIYA', 'DZC01', 'CUNZHI01'];
 
-const STAGE_LABELS: Record<string, string> = {
-  pending: '等待',
-  probing: '连接中',
-  flashing: '烧录中',
-  connected: '已连接',
-  failed: '失败',
-};
+const STAGE_LABELS = computed<Record<string, string>>(() => ({
+  pending: t('autoTest.pending'),
+  probing: t('autoTest.probing'),
+  flashing: t('autoTest.flashing'),
+  connected: t('autoTest.connected'),
+  failed: t('autoTest.failed'),
+}));
 
 const devices = ref<Device[]>([]);
 const deviceTypeMap = ref<Record<string, string>>({});
@@ -293,7 +303,7 @@ async function retryPort(port: ProvisionPort) {
 }
 
 function stageLabel(stage: string) {
-  return STAGE_LABELS[stage] || stage;
+  return STAGE_LABELS.value[stage] || stage;
 }
 
 function stageTagType(stage: string) {

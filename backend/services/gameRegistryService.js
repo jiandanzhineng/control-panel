@@ -11,6 +11,7 @@ const semver = require('semver');
 const fileStorage = require('../utils/fileStorage');
 const logger = require('../utils/logger');
 const gameService = require('./gameService');
+const { withPlayI18n } = require('../utils/playI18n');
 
 const SOURCE_KEY = 'game-registry-source';
 const CACHE_KEY = 'game-registry-cache';
@@ -127,7 +128,7 @@ async function listForClient({ force = false } = {}) {
   const reg = await loadRegistry({ force });
   const games = (reg.data.games || []).map((g) => {
     const resolved = resolveGamePath(g, reg.source);
-    return {
+    return withPlayI18n({
       id: g.id,
       title: g.title || g.id,
       description: g.description || '',
@@ -144,7 +145,7 @@ async function listForClient({ force = false } = {}) {
       cacheable: !!(g.cacheable && g.packageUrl && g.packageSha256),
       ...normalizeV2Fields(g),
       source: 'remote',
-    };
+    }, g);
   });
   return {
     source: reg.source,
@@ -160,7 +161,7 @@ async function getGameById(id) {
   const entry = (reg.data.games || []).find((g) => g.id === id);
   if (!entry) return null;
   const resolved = resolveGamePath(entry, reg.source);
-  return {
+  return withPlayI18n({
     id: entry.id,
     title: entry.title || entry.id,
     description: entry.description || '',
@@ -178,7 +179,7 @@ async function getGameById(id) {
     ...normalizeV2Fields(entry),
     source: 'remote',
     external: true, // 让 PlayConfigView 走"外部载体"确认框分支
-  };
+  }, entry);
 }
 
 // 本地兜底 vs registry 的版本差

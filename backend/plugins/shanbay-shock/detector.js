@@ -185,6 +185,8 @@
       }),
       params,
       deviceMap,
+      locale: active.locale === 'en' ? 'en' : 'zh',
+      localeTag: active.localeTag || (active.locale === 'en' ? 'en-US' : 'zh-CN'),
       device: (logicalId) => ({
         invoke: (capability, actionName, input) => sendRequest({
           action: 'invoke',

@@ -58,6 +58,9 @@ describe('browser DeviceAPI capability values', () => {
     }) });
     expect(callback).toHaveBeenCalledWith(200, 0, 'qtz-1');
 
+    expect(context.window.DeviceAPI.locale).toBe('zh');
+    expect(context.window.DeviceAPI.localeTag).toBe('zh-CN');
+
     const readPromise = sensor.readValue('tiptoePressure');
     const readRequest = ws.sent.at(-1);
     expect(readRequest).toMatchObject({
@@ -68,4 +71,27 @@ describe('browser DeviceAPI capability values', () => {
     reply(ws, readRequest, [200]);
     await expect(readPromise).resolves.toEqual([200]);
   });
+
+  it('reads locale from URL query',
+    () => {
+      FakeWebSocket.instances = [];
+      const context = {
+        window: {},
+        document: { getElementById: () => null },
+        location: {
+          protocol: 'http:',
+          host: 'localhost:5278',
+          search: '?locale=en&localeTag=en-US',
+        },
+        WebSocket: FakeWebSocket,
+        URLSearchParams,
+        Promise,
+        Map,
+        setTimeout: jest.fn(),
+      };
+      vm.createContext(context);
+      vm.runInContext(fs.readFileSync(bridgePath, 'utf8'), context);
+      expect(context.window.DeviceAPI.locale).toBe('en');
+      expect(context.window.DeviceAPI.localeTag).toBe('en-US');
+    });
 });

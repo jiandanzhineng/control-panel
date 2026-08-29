@@ -8,8 +8,11 @@ declare module '*.vue' {
 
 type UpdateChannel = 'stable' | 'test';
 
+type LocalePreference = 'zh' | 'en' | 'system';
+
 interface WindowSettings {
   closeToTray: boolean | null;
+  locale?: LocalePreference;
 }
 
 interface UpdateSettings {

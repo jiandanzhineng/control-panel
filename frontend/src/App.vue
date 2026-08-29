@@ -1,4 +1,5 @@
 <template>
+  <el-config-provider :locale="elementLocale">
   <div id="app">
     <div class="app-container">
       <!-- 左侧导航栏 -->
@@ -9,7 +10,7 @@
       >
         <div class="sidebar-header">
           <div v-if="!isCollapsed" class="logo">
-            <span>控制面板</span>
+            <span>{{ t('app.name') }}</span>
           </div>
           <el-button 
             :icon="isCollapsed ? Expand : Fold" 
@@ -28,42 +29,42 @@
         >
           <el-menu-item index="/home">
             <el-icon><HomeFilled /></el-icon>
-            <template #title>首页</template>
+            <template #title>{{ t('nav.home') }}</template>
           </el-menu-item>
 
           <el-menu-item index="/devices">
             <el-icon><Monitor /></el-icon>
-            <template #title>设备管理</template>
+            <template #title>{{ t('nav.devices') }}</template>
           </el-menu-item>
 
           <el-menu-item index="/plays">
             <el-icon><VideoPlay /></el-icon>
-            <template #title>本地游戏</template>
+            <template #title>{{ t('nav.plays') }}</template>
           </el-menu-item>
 
           <el-menu-item index="/browser">
             <el-icon><Compass /></el-icon>
-            <template #title>在线游戏</template>
+            <template #title>{{ t('nav.browser') }}</template>
           </el-menu-item>
 
           <el-menu-item index="/network">
             <el-icon><Connection /></el-icon>
-            <template #title>网络设置</template>
+            <template #title>{{ t('nav.network') }}</template>
           </el-menu-item>
 
           <el-menu-item index="/account">
             <el-icon><User /></el-icon>
-            <template #title>账号</template>
+            <template #title>{{ t('nav.account') }}</template>
           </el-menu-item>
 
           <el-menu-item index="/settings">
             <el-icon><Setting /></el-icon>
-            <template #title>设置</template>
+            <template #title>{{ t('nav.settings') }}</template>
           </el-menu-item>
           
           <el-menu-item index="/logs">
             <el-icon><Document /></el-icon>
-            <template #title>日志管理</template>
+            <template #title>{{ t('nav.logs') }}</template>
           </el-menu-item>
         </el-menu>
 
@@ -71,7 +72,7 @@
         <div class="sidebar-footer" :class="{ 'is-collapsed': isCollapsed }">
           <div class="support-entry" @click="router.push('/support')">
             <el-icon><Service /></el-icon>
-            <span v-if="!isCollapsed" class="support-entry__label">客服</span>
+            <span v-if="!isCollapsed" class="support-entry__label">{{ t('nav.support') }}</span>
           </div>
           <ThemeSwitch :compact="isCollapsed" />
         </div>
@@ -91,8 +92,8 @@
               text
             />
             <el-breadcrumb separator="/">
-              <el-breadcrumb-item :to="{ path: '/home' }">首页</el-breadcrumb-item>
-              <el-breadcrumb-item v-if="$route.meta.title && $route.path !== '/home'">{{ $route.meta.title }}</el-breadcrumb-item>
+              <el-breadcrumb-item :to="{ path: '/home' }">{{ t('nav.home') }}</el-breadcrumb-item>
+              <el-breadcrumb-item v-if="route.meta.title && route.path !== '/home'">{{ routeTitle }}</el-breadcrumb-item>
             </el-breadcrumb>
           </div>
         </div>
@@ -111,10 +112,12 @@
       @click="toggleSidebar"
     ></div>
   </div>
+  </el-config-provider>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass, User, Service, Setting } from '@element-plus/icons-vue'
 import { useAuth } from './composables/useAuth'
@@ -122,13 +125,41 @@ import { useTheme } from './composables/useTheme'
 import { clearActivePlay } from './composables/useActivePlay'
 import { router } from './router'
 import ThemeSwitch from './components/ThemeSwitch.vue'
+import { useLocale } from './i18n/useLocale'
 
+const { t } = useI18n()
 const { checkSession } = useAuth()
 const { init: initTheme, dispose: disposeTheme } = useTheme()
+const { elementLocale, initFromDesktop } = useLocale()
 
 const route = useRoute()
 const isCollapsed = ref(false)
 const isMobile = ref(false)
+
+const ROUTE_TITLE_KEYS: Record<string, string> = {
+  '首页': 'nav.home',
+  '设备管理': 'nav.devices',
+  '固件更新': 'firmware.title',
+  '在线升级': 'firmware.ota',
+  '插线烧录': 'firmware.wired',
+  '自动化测试': 'autoTest.platform',
+  '本地游戏': 'nav.plays',
+  '玩法配置': 'playConfig.title',
+  '玩法运行': 'gameRun.title',
+  '插件运行': 'pluginRun.title',
+  '在线游戏': 'nav.browser',
+  '网络设置': 'nav.network',
+  '账号': 'nav.account',
+  '设置': 'nav.settings',
+  '日志管理': 'nav.logs',
+  '客服': 'nav.support',
+}
+
+const routeTitle = computed(() => {
+  const title = String(route.meta.title || '')
+  const key = ROUTE_TITLE_KEYS[title]
+  return key ? t(key) : title
+})
 
 // GameHost 启动导航：Electron 主进程在 window.GameHost.launch 时通过 IPC 通知，
 // 前端跳转到原生配置页（source=remote）。非 Electron 环境下 gameHostNav 不存在。
@@ -157,6 +188,7 @@ onMounted(() => {
   window.addEventListener('resize', checkMobile)
   // 主题：读取持久化选择 + 监听系统深浅色
   initTheme()
+  void initFromDesktop()
   // 启动时校验一次账号登录态（fire-and-forget，不阻塞页面）
   checkSession()
   // 监听 GameHost 启动导航（仅 Electron 壳注入）

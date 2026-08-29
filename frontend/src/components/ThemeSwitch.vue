@@ -1,23 +1,25 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Moon, Sunny, Monitor } from '@element-plus/icons-vue'
 import { useTheme, type ThemeMode } from '../composables/useTheme'
 
 const props = defineProps<{ compact?: boolean }>()
+const { t } = useI18n()
 
 const { mode, setMode } = useTheme()
 
-const OPTIONS: Array<{ value: ThemeMode; label: string; icon: any }> = [
-  { value: 'dark', label: '黑夜', icon: Moon },
-  { value: 'light', label: '白天', icon: Sunny },
-  { value: 'auto', label: '自动', icon: Monitor },
-]
+const OPTIONS = computed(() => [
+  { value: 'dark' as ThemeMode, label: t('theme.dark'), icon: Moon },
+  { value: 'light' as ThemeMode, label: t('theme.light'), icon: Sunny },
+  { value: 'auto' as ThemeMode, label: t('theme.auto'), icon: Monitor },
+])
 
-const activeIndex = computed(() => OPTIONS.findIndex(o => o.value === mode.value))
+const activeIndex = computed(() => OPTIONS.value.findIndex(o => o.value === mode.value))
 </script>
 
 <template>
-  <div class="theme-switch" :class="{ 'is-compact': props.compact }" role="group" aria-label="主题切换">
+  <div class="theme-switch" :class="{ 'is-compact': props.compact }" role="group" :aria-label="t('theme.switch')">
     <span class="theme-switch__thumb" :style="{ '--idx': activeIndex }" />
     <button
       v-for="opt in OPTIONS"

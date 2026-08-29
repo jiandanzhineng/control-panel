@@ -12,9 +12,9 @@
     <!-- iframe(游戏)：无工具栏，仅浮动停止按钮，保持与改造前一致的运行体验 -->
     <template v-if="mode === 'iframe'">
       <slot />
-      <button v-if="showStop" class="stop-fab" :disabled="stopping" @click="$emit('stop')" title="停止">
+      <button v-if="showStop" class="stop-fab" :disabled="stopping" @click="$emit('stop')" :title="t('common.stop')">
         <el-icon><Close /></el-icon>
-        <span>{{ stopping ? '停止中...' : '停止' }}</span>
+        <span>{{ stopping ? t('common.stopping') : t('common.stop') }}</span>
       </button>
     </template>
 
@@ -29,7 +29,7 @@
         <el-input
           v-model="inputText"
           class="address"
-          :placeholder="mode === 'browser' ? '输入网址，如 example.com' : ''"
+          :placeholder="mode === 'browser' ? t('browser.urlPlaceholder') : ''"
           :readonly="mode !== 'browser'"
           :clearable="mode === 'browser'"
           @keyup.enter="submitNavigate"
@@ -40,9 +40,9 @@
           </template>
         </el-input>
 
-        <el-button v-if="mode === 'browser'" :loading="loading" type="primary" @click="submitNavigate">前往</el-button>
+        <el-button v-if="mode === 'browser'" :loading="loading" type="primary" @click="submitNavigate">{{ t('common.go') }}</el-button>
         <slot name="toolbar-actions" />
-        <el-button v-if="showStop" type="danger" :icon="Close" :loading="stopping" @click="$emit('stop')">停止</el-button>
+        <el-button v-if="showStop" type="danger" :icon="Close" :loading="stopping" @click="$emit('stop')">{{ t('common.stop') }}</el-button>
       </div>
 
       <slot name="banner" />
@@ -54,8 +54,10 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { ArrowLeft, ArrowRight, Close, HomeFilled, Lock, Refresh, Warning } from '@element-plus/icons-vue';
 
+const { t } = useI18n();
 const props = withDefaults(
   defineProps<{
     /** 载体模式：iframe=游戏(浮动停止)、webview=插件(工具栏+停止)、browser=浏览器(地址可输入无停止) */

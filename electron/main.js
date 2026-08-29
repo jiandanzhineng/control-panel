@@ -25,6 +25,11 @@ const {
   pickUpdateFeed,
   isNewerVersion,
 } = require('./updateFeed.js');
+const {
+  formatElectronText,
+  normalizeLocalePref,
+  resolveAppLocale,
+} = require('./locale.js');
 
 let server;
 let frontendServer;
@@ -85,21 +90,29 @@ function getWindowSettingsPath() {
 }
 
 function normalizeWindowSettings(settings = {}) {
-  if (settings.closeToTray === true) return { closeToTray: true };
-  if (settings.closeToTray === false) return { closeToTray: false };
-  return { closeToTray: null };
+  let closeToTray = null;
+  if (settings.closeToTray === true) closeToTray = true;
+  else if (settings.closeToTray === false) closeToTray = false;
+  return {
+    closeToTray,
+    locale: normalizeLocalePref(settings.locale),
+  };
+}
+
+function defaultWindowSettings() {
+  return { closeToTray: null, locale: 'system' };
 }
 
 function readWindowSettings() {
   try {
     return normalizeWindowSettings(JSON.parse(fs.readFileSync(getWindowSettingsPath(), 'utf-8')));
   } catch {
-    return { closeToTray: null };
+    return defaultWindowSettings();
   }
 }
 
 function writeWindowSettings(settings) {
-  const normalized = normalizeWindowSettings(settings);
+  const normalized = normalizeWindowSettings({ ...readWindowSettings(), ...settings });
   fs.mkdirSync(path.dirname(getWindowSettingsPath()), { recursive: true });
   fs.writeFileSync(
     getWindowSettingsPath(),
@@ -107,6 +120,10 @@ function writeWindowSettings(settings) {
     'utf-8',
   );
   return normalized;
+}
+
+function currentAppLocale() {
+  return resolveAppLocale(readWindowSettings().locale, app.getLocale());
 }
 
 function getUpdateChannel(settings = readUpdateSettings()) {
@@ -412,12 +429,13 @@ function registerBrowserDeviceIpcHandlers() {
     const existing = grantService.getGrant(origin);
     if (existing) return { ok: true, granted: true, origin, expiresAt: existing.expiresAt };
 
+    const locale = currentAppLocale();
     const result = await dialog.showMessageBox(mainWindow || BrowserWindow.fromWebContents(event.sender) || undefined, {
       type: 'warning',
-      title: '设备控制授权',
-      message: `${origin} 请求访问设备控制能力`,
-      detail: '允许后，该网站今天内可以通过 DeviceAPI 控制当前客户端已接入的全部设备和能力。\n\n请确认你信任该网站。恶意网页可能导致设备误触发或持续输出。',
-      buttons: ['允许今天访问', '拒绝'],
+      title: formatElectronText(locale, 'grantTitle'),
+      message: formatElectronText(locale, 'grantMessage', { origin }),
+      detail: formatElectronText(locale, 'grantDetail'),
+      buttons: [formatElectronText(locale, 'allowToday'), formatElectronText(locale, 'deny')],
       defaultId: 1,
       cancelId: 1,
       noLink: true,
@@ -584,17 +602,33 @@ function destroyAppTray() {
   appTray = null;
 }
 
+function rebuildAppTray() {
+  if (!appTray) return;
+  appTray.setLabels({
+    showWindow: formatElectronText(currentAppLocale(), 'showWindow'),
+    quit: formatElectronText(currentAppLocale(), 'quit'),
+  });
+}
+
 function ensureAppTray() {
-  if (appTray) return;
+  if (appTray) {
+    rebuildAppTray();
+    return;
+  }
   appTray = createAppTray({
     onShow: showMainWindow,
     onQuit: () => app.quit(),
+    labels: {
+      showWindow: formatElectronText(currentAppLocale(), 'showWindow'),
+      quit: formatElectronText(currentAppLocale(), 'quit'),
+    },
   });
 }
 
 function applyWindowSettings(settings = readWindowSettings()) {
   if (settings.closeToTray === true) ensureAppTray();
   else destroyAppTray();
+  rebuildAppTray();
   return settings;
 }
 
@@ -610,12 +644,17 @@ async function askCloseBehavior() {
   closeAskInFlight = true;
   try {
     const parent = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    const locale = currentAppLocale();
     const { response } = await dialog.showMessageBox(parent, {
       type: 'question',
-      title: '关闭窗口',
-      message: '关闭窗口时如何处理？',
-      detail: '最小化到托盘后，设备连接和后台服务会继续运行。之后可在设置中更改。',
-      buttons: ['最小化到托盘', '直接退出', '取消'],
+      title: formatElectronText(locale, 'closeTitle'),
+      message: formatElectronText(locale, 'closeMessage'),
+      detail: formatElectronText(locale, 'closeDetail'),
+      buttons: [
+        formatElectronText(locale, 'minimizeTray'),
+        formatElectronText(locale, 'quitNow'),
+        formatElectronText(locale, 'cancel'),
+      ],
       defaultId: 0,
       cancelId: 2,
       noLink: true,
@@ -786,12 +825,13 @@ async function initAutoUpdate() {
       if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
         showMainWindow();
       }
+      const locale = currentAppLocale();
       dialog
         .showMessageBox(mainWindow || undefined, {
           type: 'question',
-          title: '更新已准备就绪',
-          message: '更新已下载，是否立即重启并安装？',
-          buttons: ['立即安装', '稍后'],
+          title: formatElectronText(locale, 'updateReadyTitle'),
+          message: formatElectronText(locale, 'updateReadyMessage'),
+          buttons: [formatElectronText(locale, 'installNow'), formatElectronText(locale, 'later')],
           defaultId: 0,
         })
         .then(({ response }) => {

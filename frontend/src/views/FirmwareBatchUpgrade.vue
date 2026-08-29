@@ -4,7 +4,7 @@
       <div class="summary-header">
         <div class="summary-actions">
           <el-button :icon="Refresh" :loading="loading" @click="loadBatchFirmware">
-            {{ loading ? '检查中...' : '刷新检查' }}
+            {{ loading ? t('firmware.checking') : t('firmware.refreshCheck') }}
           </el-button>
           <el-button
             type="primary"
@@ -13,7 +13,7 @@
             :disabled="upgradeTargets.length === 0 || loading || blinkLoading"
             @click="startBatchUpgrade"
           >
-            批量升级 {{ upgradeTargets.length ? `(${upgradeTargets.length})` : '' }}
+            {{ t('firmware.batchUpgrade') }} {{ upgradeTargets.length ? `(${upgradeTargets.length})` : '' }}
           </el-button>
           <el-button
             type="success"
@@ -22,26 +22,26 @@
             :disabled="latestRows.length === 0 || loading || batchUpdating"
             @click="blinkLatestDevices"
           >
-            闪烁最新设备 {{ latestRows.length ? `(${latestRows.length})` : '' }}
+            {{ t('firmware.blinkLatest') }} {{ latestRows.length ? `(${latestRows.length})` : '' }}
           </el-button>
         </div>
       </div>
 
       <div class="stat-grid">
         <div class="stat-item">
-          <span class="stat-label">在线设备</span>
+          <span class="stat-label">{{ t('devices.online') }}</span>
           <strong>{{ rows.length }}</strong>
         </div>
         <div class="stat-item stat-warning">
-          <span class="stat-label">需升级</span>
+          <span class="stat-label">{{ t('firmware.needUpgrade') }}</span>
           <strong>{{ upgradeTargets.length }}</strong>
         </div>
         <div class="stat-item stat-success">
-          <span class="stat-label">已最新</span>
+          <span class="stat-label">{{ t('firmware.alreadyLatest') }}</span>
           <strong>{{ latestCount }}</strong>
         </div>
         <div class="stat-item stat-muted">
-          <span class="stat-label">不支持</span>
+          <span class="stat-label">{{ t('firmware.unsupported') }}</span>
           <strong>{{ unsupportedCount }}</strong>
         </div>
       </div>
@@ -59,9 +59,9 @@
     <el-card shadow="never">
       <template #header>
         <div class="table-header">
-          <span>在线设备固件状态</span>
+          <span>{{ t('firmware.onlineStatus') }}</span>
           <el-tag :type="streamConnected ? 'success' : 'info'" size="small">
-            {{ streamConnected ? '状态实时同步' : '状态未连接' }}
+            {{ streamConnected ? t('firmware.streamOn') : t('firmware.streamOff') }}
           </el-tag>
         </div>
       </template>
@@ -70,10 +70,10 @@
         :data="rows"
         v-loading="loading"
         class="desktop-table"
-        empty-text="暂无在线设备"
+        :empty-text="t('devices.emptyOnline')"
         style="width: 100%"
       >
-        <el-table-column label="设备" min-width="180">
+        <el-table-column :label="t('common.device')" min-width="180">
           <template #default="{ row }">
             <div class="device-cell">
               <strong>{{ formatDeviceName(row.device) }}</strong>
@@ -82,25 +82,25 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="类型" width="130">
+        <el-table-column :label="t('common.type')" width="130">
           <template #default="{ row }">
-            {{ deviceTypeMap[row.device.type] || row.device.type }}
+            {{ deviceTypeName(row.device.type) }}
           </template>
         </el-table-column>
 
-        <el-table-column label="当前版本" width="130">
+        <el-table-column :label="t('firmware.currentVersion')" width="130">
           <template #default="{ row }">
-            {{ row.firmware.currentVersion || '未知' }}
+            {{ row.firmware.currentVersion || t('common.unknown') }}
           </template>
         </el-table-column>
 
-        <el-table-column label="最新版本" width="130">
+        <el-table-column :label="t('firmware.latestVersion')" width="130">
           <template #default="{ row }">
             {{ row.firmware.latestVersion || '-' }}
           </template>
         </el-table-column>
 
-        <el-table-column label="版本状态" width="130">
+        <el-table-column :label="t('firmware.versionStatus')" width="130">
           <template #default="{ row }">
             <el-tag :type="getVersionTagType(row)" size="small">
               {{ getVersionLabel(row) }}
@@ -108,7 +108,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="升级状态" min-width="220">
+        <el-table-column :label="t('firmware.upgradeStatus')" min-width="220">
           <template #default="{ row }">
             <div class="status-cell">
               <div class="status-row">
@@ -126,7 +126,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="120" align="center">
+        <el-table-column :label="t('common.actions')" width="120" align="center">
           <template #default="{ row }">
             <el-button
               type="primary"
@@ -134,7 +134,7 @@
               :disabled="!canUpgradeRow(row) || batchUpdating"
               @click="upgradeOne(row)"
             >
-              升级
+              {{ t('firmware.upgrade') }}
             </el-button>
           </template>
         </el-table-column>
@@ -145,7 +145,7 @@
           <div class="card-top">
             <div class="device-cell">
               <strong>{{ formatDeviceName(row.device) }}</strong>
-              <span>{{ deviceTypeMap[row.device.type] || row.device.type }} · {{ row.device.id }}</span>
+              <span>{{ deviceTypeName(row.device.type) }} · {{ row.device.id }}</span>
             </div>
             <el-tag :type="getVersionTagType(row)" size="small">
               {{ getVersionLabel(row) }}
@@ -153,9 +153,9 @@
           </div>
 
           <div class="card-grid">
-            <span>当前版本</span>
-            <strong>{{ row.firmware.currentVersion || '未知' }}</strong>
-            <span>最新版本</span>
+            <span>{{ t('firmware.currentVersion') }}</span>
+            <strong>{{ row.firmware.currentVersion || t('common.unknown') }}</strong>
+            <span>{{ t('firmware.latestVersion') }}</span>
             <strong>{{ row.firmware.latestVersion || '-' }}</strong>
           </div>
 
@@ -179,10 +179,10 @@
             :disabled="!canUpgradeRow(row) || batchUpdating"
             @click="upgradeOne(row)"
           >
-            升级
+            {{ t('firmware.upgrade') }}
           </el-button>
         </div>
-        <el-empty v-if="!loading && rows.length === 0" description="暂无在线设备" />
+        <el-empty v-if="!loading && rows.length === 0" :description="t('devices.emptyOnline')" />
       </div>
     </el-card>
   </div>
@@ -190,9 +190,19 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Refresh, Sunny, Upload } from '@element-plus/icons-vue';
 import { track } from '../analytics';
+
+const { t } = useI18n();
+
+function deviceTypeName(type?: string) {
+  if (!type) return '';
+  const key = `deviceTypes.${type}`;
+  const translated = t(key);
+  return translated === key ? (deviceTypeMap.value[type] || type) : translated;
+}
 
 interface Device {
   id: string;
@@ -367,11 +377,11 @@ async function startBatchUpgrade() {
   try {
     const latestVersions = [...new Set(targets.map((row) => row.firmware.latestVersion).filter(Boolean))].join('、');
     await ElMessageBox.confirm(
-      `确认升级 ${targets.length} 台在线设备到最新固件${latestVersions ? `（${latestVersions}）` : ''}？升级完成后设备可能会自动重启。`,
-      '确认批量升级',
+      t('firmware.confirmBatch', { n: targets.length, versions: latestVersions ? `（${latestVersions}）` : '' }),
+      t('firmware.confirmTitle'),
       {
-        confirmButtonText: '开始升级',
-        cancelButtonText: '取消',
+        confirmButtonText: t('firmware.startUpgrade'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning',
       }
     );
@@ -380,7 +390,7 @@ async function startBatchUpgrade() {
     track('firmware_upgrade', { batch_count: targets.length });
   } catch (error: any) {
     if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error(error?.message || '批量升级失败');
+      ElMessage.error(error?.message || t('firmware.batchFailed'));
     }
   }
 }
@@ -389,7 +399,7 @@ async function upgradeOne(row: BatchRow) {
   try {
     await updateDevices([row.device.id]);
   } catch (error: any) {
-    ElMessage.error(error?.message || '升级指令下发失败');
+    ElMessage.error(error?.message || t('firmware.sendFailed'));
   }
 }
 
@@ -402,11 +412,11 @@ async function updateDevices(deviceIds: string[]) {
       body: JSON.stringify({ deviceIds }),
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || 'OTA 指令下发失败');
+    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || t('firmware.otaFailed'));
 
     applyBatchResults(data.results || []);
-    ElMessage.success(`已下发 ${data.requestedCount || 0} 台设备升级指令`);
-    if (data.failedCount) ElMessage.warning(`${data.failedCount} 台设备下发失败`);
+    ElMessage.success(t('firmware.sentCount', { n: data.requestedCount || 0 }));
+    if (data.failedCount) ElMessage.warning(t('firmware.failCount', { n: data.failedCount }));
   } finally {
     batchUpdating.value = false;
   }
@@ -424,13 +434,13 @@ async function blinkLatestDevices() {
       body: JSON.stringify({}),
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || '指示灯闪烁指令下发失败');
+    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || t('firmware.blinkFailed'));
 
-    ElMessage.success(`已向 ${data.requestedCount || 0} 台最新设备下发闪烁指令`);
-    if (data.failedCount) ElMessage.warning(`${data.failedCount} 台设备下发失败`);
-    if (!data.requestedCount && data.skippedCount) ElMessage.info('没有可闪烁的最新版本设备');
+    ElMessage.success(t('firmware.blinkSent', { n: data.requestedCount || 0 }));
+    if (data.failedCount) ElMessage.warning(t('firmware.failCount', { n: data.failedCount }));
+    if (!data.requestedCount && data.skippedCount) ElMessage.info(t('firmware.blinkNone'));
   } catch (error: any) {
-    ElMessage.error(error?.message || '指示灯闪烁指令下发失败');
+    ElMessage.error(error?.message || t('firmware.blinkFailed'));
   } finally {
     blinkLoading.value = false;
   }
@@ -488,9 +498,9 @@ function isActiveOtaStatus(status: OtaStatus | null | undefined) {
 }
 
 function getVersionLabel(row: BatchRow) {
-  if (!row.firmware.supported) return '不支持';
-  if (!row.firmware.currentVersion && row.firmware.latestVersion) return '需确认';
-  return row.firmware.updateAvailable ? '需升级' : '已最新';
+  if (!row.firmware.supported) return t('firmware.unsupported');
+  if (!row.firmware.currentVersion && row.firmware.latestVersion) return t('firmware.needConfirm');
+  return row.firmware.updateAvailable ? t('firmware.needUpgrade') : t('firmware.alreadyLatest');
 }
 
 function getVersionTagType(row: BatchRow): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
@@ -500,27 +510,20 @@ function getVersionTagType(row: BatchRow): 'success' | 'warning' | 'danger' | 'i
 }
 
 function getRowSummary(row: BatchRow) {
-  if (!row.firmware.supported) return '该设备类型暂无 OTA 应用固件';
-  if (row.firmware.updateAvailable) return `可升级到 ${row.firmware.latestVersion || '最新版本'}`;
-  return '当前设备固件已是最新版本';
+  if (!row.firmware.supported) return t('firmware.noOta');
+  if (row.firmware.updateAvailable) return t('firmware.canUpgradeTo', { version: row.firmware.latestVersion || t('firmware.latestVersionWord') });
+  return t('firmware.alreadyLatestMsg');
 }
 
 function getStatusMessage(row: BatchRow) {
-  if (isTimedOutOtaStatus(row.status)) return '20秒内未收到升级进度，可重新开始升级';
+  if (isTimedOutOtaStatus(row.status)) return t('firmware.timeout');
   return row.status.msg || getRowSummary(row);
 }
 
 function getOtaStatusLabel(status?: string) {
-  const labels: Record<string, string> = {
-    idle: '空闲',
-    requested: '已下发',
-    start: '开始',
-    downloading: '下载中',
-    success: '成功',
-    failed: '失败',
-    unknown: '未知',
-  };
-  return labels[status || 'idle'] || status || '空闲';
+  const key = `firmware.${status || 'idle'}`;
+  const translated = t(key);
+  return translated === key ? (status || t('firmware.idle')) : translated;
 }
 
 function getOtaStatusTagType(status?: string): 'success' | 'warning' | 'danger' | 'info' | 'primary' {
