@@ -128,55 +128,6 @@
       </div>
     </el-card>
 
-    <!-- 开始方式（仅游戏）：立即开始 / 设备按键开始 -->
-    <el-card v-if="carrierType === 'game'" shadow="never" class="start-mode-card">
-      <template #header>
-        <div class="card-header">
-          <el-icon><VideoPlay /></el-icon>
-          <span>开始方式</span>
-        </div>
-      </template>
-      <el-form label-width="120px" class="start-mode-form">
-        <el-form-item label="开始方式">
-          <el-radio-group v-model="startMode">
-            <el-radio-button value="immediate">立即开始</el-radio-button>
-            <el-radio-button value="button">设备按键开始</el-radio-button>
-          </el-radio-group>
-        </el-form-item>
-        <template v-if="startMode === 'button'">
-          <el-form-item label="触发设备">
-            <div class="start-trigger-row">
-              <el-select
-                v-model="startTriggerDeviceId"
-                placeholder="选择带按键的设备"
-                clearable
-                filterable
-                :style="{ width: isMobile ? '100%' : '280px' }"
-              >
-                <el-option
-                  v-for="d in buttonInputDevices"
-                  :key="d.id"
-                  :label="d.label"
-                  :value="d.id"
-                />
-              </el-select>
-              <el-button
-                :disabled="!startTriggerDeviceId || triggerTestStatus === 'waiting'"
-                :loading="triggerTestStatus === 'waiting'"
-                @click="testTriggerDevice"
-              >按一下测试</el-button>
-            </div>
-            <div class="param-hint">
-              <div class="param-desc">仅列出带「按钮输入」能力且在线的设备。按一下测试会等待该设备上报按键。</div>
-              <el-tag v-if="triggerTestStatus === 'ok'" type="success" size="small">已收到按键</el-tag>
-              <el-tag v-else-if="triggerTestStatus === 'fail'" type="danger" size="small">未收到按键</el-tag>
-              <el-tag v-else-if="triggerTestStatus === 'waiting'" type="warning" size="small">等待按键…</el-tag>
-            </div>
-          </el-form-item>
-        </template>
-      </el-form>
-    </el-card>
-
     <!-- 参数配置 -->
     <el-card shadow="never" class="params-config-card">
       <template #header>
@@ -421,11 +372,19 @@
           <el-button
             type="primary"
             :icon="VideoPlay"
-            :loading="startBusy"
-            :disabled="loadingAll || blocking.length > 0"
-            @click="start(false)"
+            :loading="startBusy && pendingStartMode === 'immediate'"
+            :disabled="loadingAll || blocking.length > 0 || startBusy"
+            @click="startImmediate()"
           >
-            {{ startBusy ? '启动中...' : (carrierType === 'plugin' ? '启动插件' : '启动') }}
+            {{ startBusy && pendingStartMode === 'immediate' ? '启动中...' : (carrierType === 'plugin' ? '启动插件' : '启动') }}
+          </el-button>
+          <el-button
+            v-if="carrierType === 'game'"
+            :loading="startBusy && pendingStartMode === 'button'"
+            :disabled="loadingAll || blocking.length > 0 || startBusy"
+            @click="openButtonStartDialog"
+          >
+            设备按键开始
           </el-button>
         </div>
       </div>
@@ -455,6 +414,61 @@
       <template #footer>
         <el-button @click="resolveCarrierConfirm(false)">取消</el-button>
         <el-button type="primary" @click="resolveCarrierConfirm(true)">继续</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="buttonStartDialog.visible"
+      title="选择按键触发源"
+      width="480px"
+      append-to-body
+      @closed="onButtonStartDialogClosed"
+    >
+      <p class="button-start-hint">选一台带按键的在线设备，先按一下确认能收到，再进入待命。</p>
+      <el-form label-width="88px">
+        <el-form-item label="触发设备">
+          <el-select
+            v-model="startTriggerDeviceId"
+            placeholder="选择带按键的设备"
+            filterable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="d in buttonInputDevices"
+              :key="d.id"
+              :label="d.label"
+              :value="d.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="按键测试">
+          <div class="start-trigger-row">
+            <el-button
+              :disabled="!startTriggerDeviceId || triggerTestStatus === 'waiting'"
+              :loading="triggerTestStatus === 'waiting'"
+              @click="testTriggerDevice"
+            >按一下测试</el-button>
+            <el-tag v-if="triggerTestStatus === 'ok'" type="success" size="small">已收到按键</el-tag>
+            <el-tag v-else-if="triggerTestStatus === 'fail'" type="danger" size="small">未收到按键</el-tag>
+            <el-tag v-else-if="triggerTestStatus === 'waiting'" type="warning" size="small">等待按键…</el-tag>
+          </div>
+        </el-form-item>
+      </el-form>
+      <el-alert
+        v-if="buttonInputDevices.length === 0"
+        title="没有在线的按键设备，无法使用设备按键开始"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+      <template #footer>
+        <el-button @click="closeButtonStartDialog">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="startBusy"
+          :disabled="!canConfirmButtonStart"
+          @click="confirmButtonStart"
+        >确认</el-button>
       </template>
     </el-dialog>
   </div>
@@ -553,10 +567,11 @@ const deviceError = ref('');
 
 const deviceMapping = reactive<Record<string, string[]>>({});
 const parameters = reactive<Record<string, any>>({});
-const startMode = ref<'immediate' | 'button'>('immediate');
 const startTriggerDeviceId = ref('');
 const triggerTestStatus = ref<'idle' | 'waiting' | 'ok' | 'fail'>('idle');
 let triggerTestCloser: null | (() => void) = null;
+const pendingStartMode = ref<'immediate' | 'button' | null>(null);
+const buttonStartDialog = reactive({ visible: false });
 
 const isMobile = ref(window.innerWidth <= 768);
 function onResize() { isMobile.value = window.innerWidth <= 768; }
@@ -805,6 +820,10 @@ function testTriggerDevice() {
   });
 }
 
+const canConfirmButtonStart = computed(() => {
+  return !!startTriggerDeviceId.value && triggerTestStatus.value === 'ok' && buttonInputDevices.value.length > 0 && !startBusy.value;
+});
+
 function buildDefaultParameters(meta: any) {
   const defaults: Record<string, any> = {};
   if (Array.isArray(meta?.params)) {
@@ -861,7 +880,6 @@ function storageKey() {
 function loadSavedConfig(): {
   deviceMap?: Record<string, string[]>;
   params?: Record<string, any>;
-  startMode?: 'immediate' | 'button';
   startTriggerDeviceId?: string;
 } | null {
   try {
@@ -877,7 +895,6 @@ function saveConfig() {
     localStorage.setItem(storageKey(), JSON.stringify({
       deviceMap: { ...deviceMapping },
       params: { ...parameters },
-      startMode: startMode.value,
       startTriggerDeviceId: startTriggerDeviceId.value,
     }));
   } catch (_) {}
@@ -1044,7 +1061,6 @@ async function loadAll() {
       }
     }
 
-    startMode.value = saved?.startMode === 'button' ? 'button' : 'immediate';
     const savedTrigger = String(saved?.startTriggerDeviceId || '');
     startTriggerDeviceId.value = buttonInputDevices.value.some((d) => d.id === savedTrigger)
       ? savedTrigger
@@ -1105,27 +1121,10 @@ function recomputeBlocking() {
       }
     }
   }
-  if (carrierType.value === 'game' && startMode.value === 'button') {
-    if (!startTriggerDeviceId.value) items.push('设备按键开始：请选择触发设备');
-    else {
-      const trigger = getDevice(startTriggerDeviceId.value);
-      if (!trigger || !trigger.connected) items.push('设备按键开始：触发设备离线或不存在');
-      else if (!typeSupportsCapabilities(trigger.type, ['buttonInput'])) items.push('设备按键开始：触发设备没有按钮输入能力');
-    }
-  }
   blocking.value = Array.from(new Set(items));
 }
 
-watch([deviceMapping, parameters, requiredDevices, schemaEntries, startMode, startTriggerDeviceId], () => { recomputeBlocking(); }, { deep: true });
-watch(startMode, (mode) => {
-  if (mode === 'button' && !startTriggerDeviceId.value) {
-    startTriggerDeviceId.value = pickDefaultTriggerDeviceId();
-  }
-  if (mode !== 'button') {
-    stopTriggerTest();
-    triggerTestStatus.value = 'idle';
-  }
-});
+watch([deviceMapping, parameters, requiredDevices, schemaEntries], () => { recomputeBlocking(); }, { deep: true });
 watch(startTriggerDeviceId, () => {
   stopTriggerTest();
   triggerTestStatus.value = 'idle';
@@ -1143,7 +1142,6 @@ async function resetToDefault() {
     const candidate = devices.value.find(d => d.connected && typeSupportsCapabilities(d.type, capabilities));
     deviceMapping[key] = candidate ? [candidate.id] : [];
   }
-  startMode.value = 'immediate';
   startTriggerDeviceId.value = pickDefaultTriggerDeviceId();
   stopTriggerTest();
   triggerTestStatus.value = 'idle';
@@ -1199,17 +1197,32 @@ function onCarrierConfirmClosed() {
 const startBusy = ref(false);
 const startError = ref('');
 
-async function start(force: boolean) {
+async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate') {
   startError.value = '';
+  pendingStartMode.value = mode;
   // meta/设备列表还在加载时禁止启动：此时 play 为空，会以空 deviceMap/params 启动，
   // 游戏 iframe 回退到不存在的路径（在线游戏无同名内置目录 → 404）
   if (loadingAll.value) {
     startError.value = '玩法信息加载中，请稍候';
+    pendingStartMode.value = null;
     return;
   }
   if (!force && blocking.value.length > 0) {
     startError.value = '存在阻塞项，请修正后再启动';
+    pendingStartMode.value = null;
     return;
+  }
+  if (mode === 'button') {
+    if (!startTriggerDeviceId.value) {
+      startError.value = '请选择触发设备';
+      pendingStartMode.value = null;
+      return;
+    }
+    if (triggerTestStatus.value !== 'ok') {
+      startError.value = '请先完成按键测试';
+      pendingStartMode.value = null;
+      return;
+    }
   }
 
   const externalUrl = String(route.query.externalUrl || '') || (play.value as any)?.externalUrl || '';
@@ -1218,7 +1231,10 @@ async function start(force: boolean) {
   if (needsConfirm) {
     const cfg = carrierConfirmConfig(externalUrl, (play.value as any)?.homeUrl || '');
     const confirmed = await openCarrierConfirm(cfg);
-    if (!confirmed) return;
+    if (!confirmed) {
+      pendingStartMode.value = null;
+      return;
+    }
   }
 
   startBusy.value = true;
@@ -1241,7 +1257,7 @@ async function start(force: boolean) {
       const gamePath = installedGamePath || (play.value as any)?.gamePath || String(route.query.gamePath || '');
       if (externalUrl) resumeQuery.externalUrl = externalUrl;
       if (gamePath) resumeQuery.gamePath = gamePath;
-      if (startMode.value === 'button' && startTriggerDeviceId.value) {
+      if (mode === 'button' && startTriggerDeviceId.value) {
         resumeQuery.startMode = 'button';
         resumeQuery.startTriggerDeviceId = startTriggerDeviceId.value;
       }
@@ -1266,7 +1282,42 @@ async function start(force: boolean) {
     startError.value = e?.message || '启动失败';
   } finally {
     startBusy.value = false;
+    pendingStartMode.value = null;
   }
+}
+
+function startImmediate() {
+  return start(false, 'immediate');
+}
+
+function openButtonStartDialog() {
+  startError.value = '';
+  if (loadingAll.value) {
+    startError.value = '玩法信息加载中，请稍候';
+    return;
+  }
+  if (blocking.value.length > 0) {
+    startError.value = '存在阻塞项，请修正后再启动';
+    return;
+  }
+  if (!startTriggerDeviceId.value) startTriggerDeviceId.value = pickDefaultTriggerDeviceId();
+  triggerTestStatus.value = 'idle';
+  buttonStartDialog.visible = true;
+}
+
+function closeButtonStartDialog() {
+  buttonStartDialog.visible = false;
+}
+
+function onButtonStartDialogClosed() {
+  stopTriggerTest();
+  triggerTestStatus.value = 'idle';
+}
+
+async function confirmButtonStart() {
+  if (!canConfirmButtonStart.value) return;
+  await start(false, 'button');
+  if (!startError.value) closeButtonStartDialog();
 }
 
 function cancel() { router.push({ name: 'play_library' }); }
@@ -1293,7 +1344,6 @@ onUnmounted(() => {
 
 .config-header-card,
 .device-mapping-card,
-.start-mode-card,
 .params-config-card,
 .summary-card {
   margin-bottom: 16px;
@@ -1513,8 +1563,9 @@ onUnmounted(() => {
   color: var(--el-color-warning);
 }
 
-.carrier-confirm-message {
-  margin: 0;
+.carrier-confirm-message,
+.button-start-hint {
+  margin: 0 0 16px;
   line-height: 1.7;
   color: var(--el-text-color-regular);
   white-space: pre-line;
@@ -1531,7 +1582,6 @@ onUnmounted(() => {
 
   .config-header-card,
   .device-mapping-card,
-  .start-mode-card,
   .params-config-card,
   .summary-card {
     margin-bottom: 12px;
