@@ -364,7 +364,7 @@
             取消返回
           </el-button>
           <el-button
-            :disabled="startBusy"
+            :disabled="startBusy || loadingAll"
             @click="start(true)"
           >
             强行启动
@@ -373,7 +373,7 @@
             type="primary"
             :icon="VideoPlay"
             :loading="startBusy"
-            :disabled="blocking.length > 0"
+            :disabled="loadingAll || blocking.length > 0"
             @click="start(false)"
           >
             {{ startBusy ? '启动中...' : (carrierType === 'plugin' ? '启动插件' : '启动') }}
@@ -1067,6 +1067,12 @@ const startError = ref('');
 
 async function start(force: boolean) {
   startError.value = '';
+  // meta/设备列表还在加载时禁止启动：此时 play 为空，会以空 deviceMap/params 启动，
+  // 游戏 iframe 回退到不存在的路径（在线游戏无同名内置目录 → 404）
+  if (loadingAll.value) {
+    startError.value = '玩法信息加载中，请稍候';
+    return;
+  }
   if (!force && blocking.value.length > 0) {
     startError.value = '存在阻塞项，请修正后再启动';
     return;
