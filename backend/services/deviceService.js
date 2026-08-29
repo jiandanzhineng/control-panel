@@ -258,7 +258,12 @@ function emitDeviceListChange(reason, deviceId = null) {
 }
 
 function onDeviceRawMessage(handler) {
-  if (typeof handler === 'function') rawMessageHandlers.push(handler);
+  if (typeof handler !== 'function') return () => {};
+  rawMessageHandlers.push(handler);
+  return () => {
+    const index = rawMessageHandlers.indexOf(handler);
+    if (index >= 0) rawMessageHandlers.splice(index, 1);
+  };
 }
 function emitRawMessage(deviceId, payload) {
   for (const h of rawMessageHandlers) {
@@ -793,6 +798,7 @@ module.exports = {
   // 数据变更回调
   onDeviceDataChange,
   onDeviceRawMessage,
+  emitRawMessage,
   onDeviceListChange,
   // 新增：MQTT消息处理
   handleDeviceMessage,

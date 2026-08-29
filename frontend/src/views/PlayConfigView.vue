@@ -128,6 +128,55 @@
       </div>
     </el-card>
 
+    <!-- 开始方式（仅游戏）：立即开始 / 设备按键开始 -->
+    <el-card v-if="carrierType === 'game'" shadow="never" class="start-mode-card">
+      <template #header>
+        <div class="card-header">
+          <el-icon><VideoPlay /></el-icon>
+          <span>开始方式</span>
+        </div>
+      </template>
+      <el-form label-width="120px" class="start-mode-form">
+        <el-form-item label="开始方式">
+          <el-radio-group v-model="startMode">
+            <el-radio-button value="immediate">立即开始</el-radio-button>
+            <el-radio-button value="button">设备按键开始</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <template v-if="startMode === 'button'">
+          <el-form-item label="触发设备">
+            <div class="start-trigger-row">
+              <el-select
+                v-model="startTriggerDeviceId"
+                placeholder="选择带按键的设备"
+                clearable
+                filterable
+                :style="{ width: isMobile ? '100%' : '280px' }"
+              >
+                <el-option
+                  v-for="d in buttonInputDevices"
+                  :key="d.id"
+                  :label="d.label"
+                  :value="d.id"
+                />
+              </el-select>
+              <el-button
+                :disabled="!startTriggerDeviceId || triggerTestStatus === 'waiting'"
+                :loading="triggerTestStatus === 'waiting'"
+                @click="testTriggerDevice"
+              >按一下测试</el-button>
+            </div>
+            <div class="param-hint">
+              <div class="param-desc">仅列出带「按钮输入」能力且在线的设备。按一下测试会等待该设备上报按键。</div>
+              <el-tag v-if="triggerTestStatus === 'ok'" type="success" size="small">已收到按键</el-tag>
+              <el-tag v-else-if="triggerTestStatus === 'fail'" type="danger" size="small">未收到按键</el-tag>
+              <el-tag v-else-if="triggerTestStatus === 'waiting'" type="warning" size="small">等待按键…</el-tag>
+            </div>
+          </el-form-item>
+        </template>
+      </el-form>
+    </el-card>
+
     <!-- 参数配置 -->
     <el-card shadow="never" class="params-config-card">
       <template #header>
@@ -416,6 +465,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { track } from '../analytics';
 import { setActivePlay } from '../composables/useActivePlay';
+import { listenDeviceButtonPress } from '../composables/useButtonStart';
 
 import {
   Setting,
@@ -503,6 +553,10 @@ const deviceError = ref('');
 
 const deviceMapping = reactive<Record<string, string[]>>({});
 const parameters = reactive<Record<string, any>>({});
+const startMode = ref<'immediate' | 'button'>('immediate');
+const startTriggerDeviceId = ref('');
+const triggerTestStatus = ref<'idle' | 'waiting' | 'ok' | 'fail'>('idle');
+let triggerTestCloser: null | (() => void) = null;
 
 const isMobile = ref(window.innerWidth <= 768);
 function onResize() { isMobile.value = window.innerWidth <= 768; }
@@ -709,6 +763,48 @@ function apiErrorMessage(data: any, fallback: string) {
 
 function getDevice(id?: string) { return devices.value.find(d => d.id === id) || null; }
 
+function deviceDisplayName(device: DeviceItem): string {
+  const shortId = String(device.id).slice(-4);
+  const nick = (device as any).nickname;
+  return nick ? `${nick}-${shortId}` : (device.name || device.id);
+}
+
+const buttonInputDevices = computed(() => {
+  return devices.value
+    .filter((d) => d.connected && typeSupportsCapabilities(d.type, ['buttonInput']))
+    .map((d) => ({ id: d.id, label: deviceDisplayName(d) }));
+});
+
+function pickDefaultTriggerDeviceId(): string {
+  const mappedLockIds = requiredDevices.value
+    .filter((rd) => rdCapabilities(rd).includes('lock'))
+    .flatMap((rd) => deviceMapping[rdKey(rd)] || []);
+  const mapped = mappedLockIds.find((id) => buttonInputDevices.value.some((d) => d.id === id));
+  if (mapped) return mapped;
+  return buttonInputDevices.value[0]?.id || '';
+}
+
+function stopTriggerTest() {
+  if (triggerTestCloser) {
+    triggerTestCloser();
+    triggerTestCloser = null;
+  }
+}
+
+function testTriggerDevice() {
+  const id = startTriggerDeviceId.value;
+  if (!id) return;
+  stopTriggerTest();
+  triggerTestStatus.value = 'waiting';
+  triggerTestCloser = listenDeviceButtonPress(id, () => {
+    triggerTestStatus.value = 'ok';
+    triggerTestCloser = null;
+  }, {
+    timeoutMs: 15000,
+    onTimeout: () => { triggerTestStatus.value = 'fail'; triggerTestCloser = null; },
+  });
+}
+
 function buildDefaultParameters(meta: any) {
   const defaults: Record<string, any> = {};
   if (Array.isArray(meta?.params)) {
@@ -762,7 +858,12 @@ function storageKey() {
   return ext ? `gameConfig:ext:${ext}` : `gameConfig:${playId.value}`;
 }
 
-function loadSavedConfig(): { deviceMap?: Record<string, string[]>; params?: Record<string, any> } | null {
+function loadSavedConfig(): {
+  deviceMap?: Record<string, string[]>;
+  params?: Record<string, any>;
+  startMode?: 'immediate' | 'button';
+  startTriggerDeviceId?: string;
+} | null {
   try {
     const raw = localStorage.getItem(storageKey());
     if (!raw) return null;
@@ -776,6 +877,8 @@ function saveConfig() {
     localStorage.setItem(storageKey(), JSON.stringify({
       deviceMap: { ...deviceMapping },
       params: { ...parameters },
+      startMode: startMode.value,
+      startTriggerDeviceId: startTriggerDeviceId.value,
     }));
   } catch (_) {}
 }
@@ -940,6 +1043,12 @@ async function loadAll() {
         deviceMapping[key] = candidate ? [candidate.id] : [];
       }
     }
+
+    startMode.value = saved?.startMode === 'button' ? 'button' : 'immediate';
+    const savedTrigger = String(saved?.startTriggerDeviceId || '');
+    startTriggerDeviceId.value = buttonInputDevices.value.some((d) => d.id === savedTrigger)
+      ? savedTrigger
+      : pickDefaultTriggerDeviceId();
   } catch (e: any) {
     error.value = e?.message || '数据加载失败';
   } finally {
@@ -996,10 +1105,31 @@ function recomputeBlocking() {
       }
     }
   }
+  if (carrierType.value === 'game' && startMode.value === 'button') {
+    if (!startTriggerDeviceId.value) items.push('设备按键开始：请选择触发设备');
+    else {
+      const trigger = getDevice(startTriggerDeviceId.value);
+      if (!trigger || !trigger.connected) items.push('设备按键开始：触发设备离线或不存在');
+      else if (!typeSupportsCapabilities(trigger.type, ['buttonInput'])) items.push('设备按键开始：触发设备没有按钮输入能力');
+    }
+  }
   blocking.value = Array.from(new Set(items));
 }
 
-watch([deviceMapping, parameters, requiredDevices, schemaEntries], () => { recomputeBlocking(); }, { deep: true });
+watch([deviceMapping, parameters, requiredDevices, schemaEntries, startMode, startTriggerDeviceId], () => { recomputeBlocking(); }, { deep: true });
+watch(startMode, (mode) => {
+  if (mode === 'button' && !startTriggerDeviceId.value) {
+    startTriggerDeviceId.value = pickDefaultTriggerDeviceId();
+  }
+  if (mode !== 'button') {
+    stopTriggerTest();
+    triggerTestStatus.value = 'idle';
+  }
+});
+watch(startTriggerDeviceId, () => {
+  stopTriggerTest();
+  triggerTestStatus.value = 'idle';
+});
 
 async function resetToDefault() {
   try { localStorage.removeItem(storageKey()); } catch (_) {}
@@ -1013,6 +1143,10 @@ async function resetToDefault() {
     const candidate = devices.value.find(d => d.connected && typeSupportsCapabilities(d.type, capabilities));
     deviceMapping[key] = candidate ? [candidate.id] : [];
   }
+  startMode.value = 'immediate';
+  startTriggerDeviceId.value = pickDefaultTriggerDeviceId();
+  stopTriggerTest();
+  triggerTestStatus.value = 'idle';
   recomputeBlocking();
 }
 
@@ -1107,6 +1241,10 @@ async function start(force: boolean) {
       const gamePath = installedGamePath || (play.value as any)?.gamePath || String(route.query.gamePath || '');
       if (externalUrl) resumeQuery.externalUrl = externalUrl;
       if (gamePath) resumeQuery.gamePath = gamePath;
+      if (startMode.value === 'button' && startTriggerDeviceId.value) {
+        resumeQuery.startMode = 'button';
+        resumeQuery.startTriggerDeviceId = startTriggerDeviceId.value;
+      }
       setActivePlay({ carrierType: 'game', id: playId.value, title: t, resume: { name: 'game_current', query: resumeQuery } });
       router.push({ name: 'game_current', query: resumeQuery });
     } else {
@@ -1138,7 +1276,10 @@ onMounted(() => {
   window.addEventListener('resize', onResize);
   loadAll().then(() => recomputeBlocking());
 });
-onUnmounted(() => { window.removeEventListener('resize', onResize); });
+onUnmounted(() => {
+  window.removeEventListener('resize', onResize);
+  stopTriggerTest();
+});
 </script>
 
 <style scoped>
@@ -1152,6 +1293,7 @@ onUnmounted(() => { window.removeEventListener('resize', onResize); });
 
 .config-header-card,
 .device-mapping-card,
+.start-mode-card,
 .params-config-card,
 .summary-card {
   margin-bottom: 16px;
@@ -1346,6 +1488,13 @@ onUnmounted(() => { window.removeEventListener('resize', onResize); });
   gap: 16px;
 }
 
+.start-trigger-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .action-buttons {
   display: flex;
   gap: 12px;
@@ -1382,6 +1531,7 @@ onUnmounted(() => { window.removeEventListener('resize', onResize); });
 
   .config-header-card,
   .device-mapping-card,
+  .start-mode-card,
   .params-config-card,
   .summary-card {
     margin-bottom: 12px;

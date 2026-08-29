@@ -128,6 +128,13 @@ Windows 平台优先启动 EMQX；其他平台使用 mosquitto。Windows 下 EMQ
     - `history`：连接建立时的当前快照。
     - `update`：设备监控字段变化后的快照。
   - 建立连接时向设备下发 `report_delay_ms=250`；断开时恢复为 `5000`。
+- `GET /api/devices/:id/message-stream`
+  - SSE，推送该设备的原始上行消息。
+  - 设备不存在返回 `DEVICE_NOT_FOUND`。
+  - 事件：
+    - `ready`：连接建立，`{ deviceId }`。
+    - `message`：设备原始消息，`{ deviceId, payload }`。
+  - 用于玩法启动前监听按键（如自动锁 `key_clicked`），不占用 bridge session。
 
 ## 固件 OTA
 

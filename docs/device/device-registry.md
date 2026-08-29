@@ -11,7 +11,7 @@
 | `OSR6` | OSR6 控制器 | `strength` | start/stop + close |
 | `QIYA` | 气压传感器 | `sphincterPressure`、`reporting` | close |
 | `DIANJI` | 电脉冲设备 | `shock` | start/stop + close |
-| `ZIDONGSUO` | 自动锁 | `lock` | lock/unlock + close |
+| `ZIDONGSUO` | 自动锁 | `lock`、`buttonInput` | lock/unlock + close |
 | `QTZ` | 测距及脚踏传感器 | `distance`、`buttonInput`、`tiptoePressure`、`reporting` | close |
 | `DZC01` | 电子秤 | `weight`、`reporting` | close |
 | `CUNZHI01` | 寸止玩法设备 | `sphincterPressure`、`tiptoePressure`、`strength`、`shock`、`reporting` | start/stop + close |
@@ -26,7 +26,7 @@
 | `sphincterPressure` | 括约压力 | — | pressureChange | QIYA, CUNZHI01 |
 | `tiptoePressure` | 踮脚压力 | — | pressureChange | QTZ, CUNZHI01 |
 | `distance` | 距离 | configure(lowBand, highBand, reportDelayMs) | enterLow, enterHigh | QTZ |
-| `buttonInput` | 按钮输入 | — | pressed, pushDown, pushUp | QTZ |
+| `buttonInput` | 按钮输入 | — | pressed, pushDown, pushUp | QTZ, ZIDONGSUO |
 | `weight` | 重量 | — | weightChange | DZC01 |
 | `reporting` | 上报频率 | setReportDelay(ms) | — | QIYA, QTZ, DZC01, CUNZHI01 |
 

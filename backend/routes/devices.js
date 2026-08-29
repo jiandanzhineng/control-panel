@@ -417,8 +417,7 @@ router.get('/:id/monitor-data', (req, res) => {
 });
 
 // 获取设备监控数据（SSE模式）
-router.get('/:id/monitor-stream', (req, res) => {
-  const deviceId = req.params.id;
+router.get('/:id/monitor-stream', (req, res) => {  const deviceId = req.params.id;
 
   try {
     const device = deviceService.getDeviceById(deviceId);
@@ -458,6 +457,38 @@ router.get('/:id/monitor-stream', (req, res) => {
 
   } catch (e) {
     sendError(res, 'DEVICE_MONITOR_STREAM_FAILED', e.message || String(e), 500);
+  }
+});
+
+// 设备原始消息流（SSE）——玩法启动前的按键触发监听用（如自动锁 key_clicked）
+router.get('/:id/message-stream', (req, res) => {
+  const deviceId = req.params.id;
+  try {
+    const device = deviceService.getDeviceById(deviceId);
+    if (!device) {
+      return sendError(res, 'DEVICE_NOT_FOUND', '设备不存在', 404);
+    }
+
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+    });
+
+    res.write(`event: ready\ndata: ${JSON.stringify({ deviceId })}\n\n`);
+
+    const handler = ({ deviceId: id, payload }) => {
+      if (id !== deviceId) return;
+      res.write(`event: message\ndata: ${JSON.stringify({ deviceId: id, payload })}\n\n`);
+    };
+    const unsubscribe = deviceService.onDeviceRawMessage(handler);
+
+    const cleanup = () => { if (typeof unsubscribe === 'function') unsubscribe(); };
+    req.on('close', cleanup);
+    req.on('error', cleanup);
+  } catch (e) {
+    sendError(res, 'DEVICE_MESSAGE_STREAM_FAILED', e.message || String(e), 500);
   }
 });
 

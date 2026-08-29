@@ -37,7 +37,7 @@
 - `OSR6`：OSR6 控制器，能力 `strength`。
 - `QIYA`：气压传感器，能力 `sphincterPressure`、`reporting`。
 - `DIANJI`：电脉冲设备，能力 `shock`。
-- `ZIDONGSUO`：自动锁，能力 `lock`。
+- `ZIDONGSUO`：自动锁，能力 `lock`、`buttonInput`。锁体按键上报 `key_clicked`，对应 `buttonInput.pressed`。
 - `QTZ`：测距及脚踏传感器，能力 `distance`、`buttonInput`、`tiptoePressure`、`reporting`。`tiptoePressure` 由 `button0/button1` 派生：任一值数值化后等于 1 时为 200，否则为 0。
 - `DZC01`：电子秤，能力 `weight`、`reporting`。
 - `CUNZHI01`：寸止玩法设备，能力 `sphincterPressure`、`tiptoePressure`、`strength`、`shock`、`reporting`；踮脚压力仍读取真实 `pressure1`。

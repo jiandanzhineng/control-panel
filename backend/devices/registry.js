@@ -59,7 +59,8 @@ const registeredTypes = [
   new BaseDeviceType({
     type: 'ZIDONGSUO',
     name: '自动锁',
-    capabilities: ['lock'],
+    // buttonInput：锁体按键上报 key_clicked，作为玩法「设备按键开始」的触发源
+    capabilities: ['lock', 'buttonInput'],
     operations: [
       { key: 'lock', name: '加锁', capability: 'lock', action: 'setOpen', input: { open: false } },
       { key: 'unlock', name: '解锁', capability: 'lock', action: 'setOpen', input: { open: true } },

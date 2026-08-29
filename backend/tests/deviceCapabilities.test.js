@@ -14,6 +14,8 @@ function createApp() {
 describe('device capability registry', () => {
   it('maps device types to capability sets', () => {
     expect(registry.hasCapability('TD01', 'strength')).toBe(true);
+    expect(registry.hasCapability('ZIDONGSUO', 'lock')).toBe(true);
+    expect(registry.hasCapability('ZIDONGSUO', 'buttonInput')).toBe(true);
     expect(registry.hasCapabilities('CUNZHI01', ['strength', 'sphincterPressure', 'shock'])).toBe(true);
     expect(registry.hasCapabilities('QIYA', ['sphincterPressure', 'reporting'])).toBe(true);
     expect(registry.getTypesByCapability('strength')).toEqual(expect.arrayContaining(['TD01', 'PJ01', 'CUNZHI01']));
@@ -78,6 +80,7 @@ describe('device capability routes', () => {
     expect(res.status).toBe(200);
     expect(res.body.capabilities).toEqual(expect.arrayContaining(['strength', 'sphincterPressure', 'shock']));
     expect(res.body.typeCapabilityMap.CUNZHI01).toEqual(expect.arrayContaining(['strength', 'sphincterPressure', 'tiptoePressure', 'shock']));
+    expect(res.body.typeCapabilityMap.ZIDONGSUO).toEqual(expect.arrayContaining(['lock', 'buttonInput']));
     expect(res.body.typeCapabilityMap.other).toBeUndefined();
   });
 

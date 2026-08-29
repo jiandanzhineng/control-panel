@@ -496,7 +496,7 @@ export const distance = {
 | sphincterPressure | — | pressureChange | QIYA, CUNZHI01 |
 | tiptoePressure | — | pressureChange | CUNZHI01 |
 | distance | configure(lowBand, highBand, reportDelayMs) | enterLow, enterHigh | QTZ |
-| buttonInput | — | pressed, pushDown, pushUp | QTZ |
+| buttonInput | — | pressed, pushDown, pushUp | QTZ, ZIDONGSUO |
 | weight | — | weightChange | DZC01 |
 | reporting | setReportDelay(ms) | — | QIYA, QTZ, DZC01, CUNZHI01 |
 
