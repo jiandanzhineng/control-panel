@@ -69,7 +69,8 @@ describe('品牌蓝牙自动连接设置', () => {
     mockDevices.push({
       id: 'ycy:old-id', name: 'YCY-FJB-03-DJ', type: 'YCY_CUP', connected: false,
     });
-    const meta = { id: 'ycy:new-id', name: 'YCY-FJB-03-DJ' };
+    // 无浏览器身份可比对时，按名字认回那条离线记录（保住昵称与玩法映射）。
+    const meta = { id: 'anon-new', name: 'YCY-FJB-03-DJ' };
     brandService.stabilizeBrandBleId(meta);
     expect(meta.id).toBe('ycy:old-id');
   });
@@ -120,13 +121,79 @@ describe('品牌蓝牙自动连接设置', () => {
     });
   });
 
-  test('同名多条时优先沿用已连接记录', () => {
+  test('browserDeviceId 相同则认回同一台（跨重连保住昵称）', () => {
+    mockDevices.push(
+      { id: 'ycy:chromium-aaa', name: 'YCY-FJB-03-DJ', type: 'YCY_CUP', connected: false },
+    );
+    const meta = { id: 'ycy:new-id', name: 'YCY-FJB-03-DJ', browserDeviceId: 'chromium-aaa' };
+    brandService.stabilizeBrandBleId(meta);
+    expect(meta.id).toBe('ycy:chromium-aaa');
+  });
+
+  test('无浏览器身份时按名字认回一条离线记录', () => {
     mockDevices.push(
       { id: 'ycy:ghost', name: 'YCY-FJB-03-DJ', type: 'YCY_CUP', connected: false },
       { id: 'ycy:live', name: 'YCY-FJB-03-DJ', type: 'YCY_CUP', connected: true },
     );
-    const meta = { id: 'ycy:new-id', name: 'YCY-FJB-03-DJ' };
+    // id 不带品牌前缀 → 无从解析浏览器身份，才允许名字兜底；且必须挑离线那条。
+    const meta = { id: 'anon-1', name: 'YCY-FJB-03-DJ' };
     brandService.stabilizeBrandBleId(meta);
-    expect(meta.id).toBe('ycy:live');
+    expect(meta.id).toBe('ycy:ghost');
+  });
+
+  test('浏览器身份不匹配时独立注册，不抢在线同名设备', () => {
+    mockDevices.push(
+      { id: 'ycy:first', name: 'YCY-FJB-03-DJ', type: 'YCY_CUP', connected: true },
+    );
+    const meta = { id: 'ycy:second', name: 'YCY-FJB-03-DJ' };
+    brandService.stabilizeBrandBleId(meta);
+    expect(meta.id).toBe('ycy:second');
+  });
+});
+
+describe('品牌连接断线重连', () => {
+  beforeEach(() => {
+    mockMem.clear();
+    mockDevices.splice(0, mockDevices.length);
+    brandService.stopAutoConnect();
+  });
+  afterEach(() => { brandService.stopAutoConnect(); });
+
+  // 回归：setState 若不透传 reconnectAttempts，计数永远停在 1，
+  // MAX_RECONNECT 永不触达 —— 退化为每 10s 无限重试且永远停留「重连中」。
+  test('重试三次后放弃，退避递增且不再重连', async () => {
+    const realTimeout = global.setTimeout;
+    const delays = [];
+    let depth = 0;
+    global.setTimeout = (fn, ms) => {
+      delays.push(ms);
+      if (depth++ > 12) return { unref() {} };
+      realTimeout(fn, 0);
+      return { unref() {} };
+    };
+    let first = true;
+    class WS {
+      constructor() {
+        this.readyState = 1;
+        if (first) {
+          first = false;
+          realTimeout(() => { this.onopen?.(); realTimeout(() => this.onclose?.(), 0); }, 0);
+        } else {
+          realTimeout(() => this.onerror?.(new Error('refused')), 0);
+        }
+      }
+      on() {} once() {} send() {} close() {} ping() {}
+    }
+    try {
+      await brandService.connect('dglab', { host: '10.255.255.1', WebSocketClass: WS });
+      await new Promise((r) => realTimeout(r, 300));
+      expect(delays).toEqual([5000, 10000, 15000]);
+      const dev = brandService.list()[0];
+      expect(dev.status).toBe('error');
+      expect(dev.reconnecting).toBe(false);
+    } finally {
+      global.setTimeout = realTimeout;
+      try { await brandService.disconnect('dglab-10.255.255.1'); } catch (_) { /* 已清理 */ }
+    }
   });
 });

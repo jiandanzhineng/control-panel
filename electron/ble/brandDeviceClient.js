@@ -11,6 +11,7 @@
 const {
   V2_UUIDS,
   V2_CHAR_BY_NAME,
+  DGLAB_V2_NAMES,
 } = require('../../backend/brands/protocols/dglabV2');
 
 function bytesFromDataView(value) {
@@ -225,4 +226,5 @@ module.exports = {
   BrandBleClient,
   V2_UUIDS,
   V2_CHAR_BY_NAME,
+  DGLAB_V2_NAMES,
 };

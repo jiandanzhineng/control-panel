@@ -44,6 +44,10 @@ function setState(deviceId, status, detail = {}) {
     lastChange: Date.now(),
     reconnecting: detail.reconnecting !== undefined ? detail.reconnecting : (prev.reconnecting || false),
     userClosed: detail.userClosed !== undefined ? detail.userClosed : (prev.userClosed || false),
+    // 必须透传：重连计数丢失会让 MAX_RECONNECT 永不触达，退化为无限重试。
+    reconnectAttempts: detail.reconnectAttempts !== undefined
+      ? detail.reconnectAttempts
+      : (prev.reconnectAttempts || 0),
   });
 }
 
@@ -208,7 +212,7 @@ async function connect(brand, opts = {}) {
   }
 
   // 标记用户主动发起连接（用于区分主动断开与异常掉线，决定是否重连）
-  setState(finalDeviceId, STATUS.CONNECTING, { userClosed: false, reconnecting: false, error: null });
+  setState(finalDeviceId, STATUS.CONNECTING, { userClosed: false, reconnecting: false, error: null, reconnectAttempts: 0 });
   await safeConnect(connection, brand, opts, finalDeviceId, type, finalName, kind);
   return { device: deviceService.getDeviceById(finalDeviceId), connection: connection.toMetadata(), brand, type };
 }
@@ -276,7 +280,12 @@ function scheduleReconnect(deviceId, kind, error) {
     setState(deviceId, STATUS.ERROR, { error: error || '连接断开且重连失败', reconnecting: false });
     return;
   }
-  setState(deviceId, STATUS.ERROR, { error: error || '连接断开，重连中', reconnecting: true });
+  // 计数在排程时即写入（而非定时器触发时），确保下一轮 getState 读到的是本次序号。
+  setState(deviceId, STATUS.ERROR, {
+    error: error || '连接断开，重连中',
+    reconnecting: true,
+    reconnectAttempts: attempts + 1,
+  });
   const delay = RECONNECT_DELAY * (attempts + 1);
   setTimeout(async () => {
     const cur = getState(deviceId);
@@ -285,8 +294,6 @@ function scheduleReconnect(deviceId, kind, error) {
     if (!connection) return;
     try {
       const meta = connection.toMetadata();
-      const st2 = connState.get(deviceId) || {};
-      connState.set(deviceId, { ...st2, reconnectAttempts: (st2.reconnectAttempts || 0) + 1 });
       // 复用适配器自身重连；若不支持则重建连接对象。
       if (typeof connection.reconnect === 'function') {
         await connection.reconnect();
@@ -301,7 +308,8 @@ function scheduleReconnect(deviceId, kind, error) {
           });
         }
       }
-      setState(deviceId, STATUS.CONNECTED, { reconnecting: false });
+      // 重连成功：计数归零，下次掉线重新获得完整的重试预算。
+      setState(deviceId, STATUS.CONNECTED, { reconnecting: false, reconnectAttempts: 0 });
     } catch (e) {
       scheduleReconnect(deviceId, kind, e?.message || String(e));
     }
@@ -558,11 +566,31 @@ function bleNamesMatch(a, b) {
   return !!x && x === y;
 }
 
+/**
+ * 网页蓝牙缺少 MAC 时，尽量把同一台设备认回既有 deviceId（保住昵称与玩法映射）。
+ *
+ * 判据只有一条可靠依据：browserDeviceId。相同即同一台，不同即不同台。
+ * 广播名不能作为身份 —— 同型号设备名字完全一致，按名字认领会让第二台顶掉第一台：
+ * 列表只剩一台，被顶掉的那台仍在输出却收不到停止帧。宁可多出一条重复记录
+ * （昵称丢失，可重命名），也不能让一台设备失去停止通路。
+ *
+ * 因此仅当新设备**没有任何浏览器身份**时，才退回按名字认领一条离线记录。
+ */
 function stabilizeBrandBleId(metadata) {
   if (!metadata?.name) return metadata;
   if (isMacDeviceId(metadata.id)) return metadata;
-  const all = listSavedBleDevices().filter((d) => bleNamesMatch(d.name, metadata.name));
-  const hit = all.find((d) => d.connected) || all[0];
+  const saved = listSavedBleDevices();
+  const browserId = metadata.browserDeviceId || browserIdFromDeviceId(metadata.id);
+  if (browserId) {
+    // 有浏览器身份：只接受精确匹配，匹配不到就当作新设备独立注册。
+    const exact = saved.find((d) => d.browserDeviceId === browserId);
+    if (exact) metadata.id = exact.deviceId;
+    return metadata;
+  }
+  // 无任何身份信息时才按名字兜底，且只认没被占用的离线记录。
+  const hit = saved.find((d) => bleNamesMatch(d.name, metadata.name)
+    && !d.connected
+    && !connections.has(d.deviceId));
   if (hit) metadata.id = hit.deviceId;
   return metadata;
 }

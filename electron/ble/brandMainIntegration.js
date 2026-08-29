@@ -13,6 +13,11 @@ const { DGLAB_V2_NAMES } = require('../../backend/brands/protocols/dglabV2');
 function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandService, logger = console }) {
   const selections = new Map();
   const deviceOwners = new Map();
+  // 渲染进程 id → brandService 实际注册的 deviceId。
+  // attachWebBle 会把 metadata.id 改写为既有 deviceId（跨重连认回同一台设备），
+  // 而渲染进程始终只认自己创建的 client.id，所有事件都以它上报。少了这层映射，
+  // 断开事件就查不到已注册的设备，停止帧发不出去，设备会保持上一次输出。
+  const registeredIds = new Map();
   const commandRequests = new Map();
   const disconnectRequests = new Map();
   let commandRequestSequence = 0;
@@ -25,6 +30,11 @@ function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandServ
 
   function isOwner(sender, deviceId) {
     return deviceOwners.get(deviceId) === sender.id;
+  }
+
+  /** 把渲染进程上报的 id 解析为 brandService 注册用的 deviceId。 */
+  function registeredId(rendererId) {
+    return registeredIds.get(rendererId) || rendererId;
   }
 
   const YCY_NAMES = ['YCY', 'YYC', 'YOKO', 'YOKONEX', 'YISK', 'DJ-V2', 'FJB', 'ENEMA', 'GLJ', 'DJ'];
@@ -129,29 +139,37 @@ function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandServ
         throw new TypeError('Invalid brand BLE device metadata');
       }
       const sender = event.sender;
-      deviceOwners.set(metadata.id, sender.id);
-      const send = (message) => sendCommand(sender, metadata.id, message);
+      // 渲染进程只认自己创建的 client.id，故 send 与 owner 都绑这个原始 id。
+      const rendererId = metadata.id;
+      deviceOwners.set(rendererId, sender.id);
+      const send = (message) => sendCommand(sender, rendererId, message);
       const brandService = getBrandService();
-      return brandService.attachWebBle(metadata, send);
+      const result = brandService.attachWebBle(metadata, send);
+      // attachWebBle 可能已把 metadata.id 改写为既有 deviceId：记下映射，
+      // 让后续以 rendererId 上报的属性/断开事件能落到正确的注册身份上。
+      if (metadata.id !== rendererId) registeredIds.set(rendererId, metadata.id);
+      return result;
     });
 
     ipcMain.on('brandBle:property', (event, payload) => {
       if (!payload?.id || !payload?.key || !isOwner(event.sender, payload.id)) return;
-      getDeviceService().handleTransportProperty(payload.id, payload.key, payload.value, 'brandBle');
+      getDeviceService().handleTransportProperty(registeredId(payload.id), payload.key, payload.value, 'brandBle');
     });
 
     ipcMain.on('brandBle:message', (event, payload) => {
       if (!payload?.id || !payload?.message || !isOwner(event.sender, payload.id)) return;
-      getDeviceService().handleTransportMessage(payload.id, payload.message, 'brandBle');
+      getDeviceService().handleTransportMessage(registeredId(payload.id), payload.message, 'brandBle');
     });
 
     ipcMain.on('brandBle:disconnected', (event, payload) => {
       if (!payload?.id || !isOwner(event.sender, payload.id)) return;
       deviceOwners.delete(payload.id);
+      const deviceId = registeredId(payload.id);
+      registeredIds.delete(payload.id);
       const brandService = getBrandService();
       // 让 brandService 先发停止帧；其异步清理完成后再移除 transport。
-      try { brandService.detachWebBle(payload.id); } catch (_) {}
-      getDeviceService().disconnectTransportDevice(payload.id, 'brandBle');
+      try { brandService.detachWebBle(deviceId); } catch (_) {}
+      getDeviceService().disconnectTransportDevice(deviceId, 'brandBle');
     });
 
     ipcMain.on('brandBle:command-error', (event, payload) => {
@@ -250,9 +268,11 @@ function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandServ
           });
         }
       }
-      for (const [deviceId, ownerId] of [...deviceOwners.entries()]) {
+      for (const [rendererId, ownerId] of [...deviceOwners.entries()]) {
         if (ownerId !== contents.id) continue;
-        deviceOwners.delete(deviceId);
+        deviceOwners.delete(rendererId);
+        const deviceId = registeredId(rendererId);
+        registeredIds.delete(rendererId);
         const brandService = getBrandService();
         try { brandService.detachWebBle(deviceId); } catch (_) {}
         getDeviceService().disconnectTransportDevice(deviceId, 'brandBle');

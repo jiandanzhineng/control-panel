@@ -2,7 +2,7 @@ const { ipcRenderer } = require('electron');
 const { BleDeviceClient } = require('./ble/deviceClient');
 const { BLE_UUIDS } = require('./ble/protocol');
 const { BlufiProvisionClient } = require('./blufi/provisionClient');
-const { BrandBleClient, V2_UUIDS } = require('./ble/brandDeviceClient');
+const { BrandBleClient, V2_UUIDS, DGLAB_V2_NAMES } = require('./ble/brandDeviceClient');
 const { YcyBleClient } = require('./ble/ycyDeviceClient');
 const { SosexyBleClient } = require('./ble/sosexyDeviceClient');
 
@@ -194,9 +194,14 @@ const BRAND_OPTIONAL_SERVICES = [
   '0000ee01-0000-1000-8000-00805f9b34fb',
 ];
 
+// 郊狼判据复用后端权威名单（含 YSKJ 固件前缀），另加 preload 侧实测的 47L。
+// 缺 YSKJ 会让 YSKJ* 广播的郊狼设备落到 YcyBleClient，用役次元 0x35 帧写郊狼 GATT：
+// 设备连上却不响应或行为异常。
+const DGLAB_NAME_KEYS = [...DGLAB_V2_NAMES, '47L'];
+
 async function attachBrandBluetoothDevice(device) {
   const n = String(device.name || '').toUpperCase();
-  const dglab = ['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k));
+  const dglab = DGLAB_NAME_KEYS.some((k) => n.includes(String(k).toUpperCase()));
   const client = n.includes('SOSEXY')
     ? new SosexyBleClient(device, { onEvent: emitBrandBleClientEvent })
     : dglab

@@ -222,6 +222,50 @@ describe('Electron brandBle (DG-LAB V2) main integration', () => {
     expect(brandService.detachWebBle).toHaveBeenCalledWith('ble:v2-device');
   });
 
+  // 回归：attachWebBle 认回既有设备身份时会改写 metadata.id，但渲染进程始终以
+  // 自己的 client.id 上报事件。缺少映射会让断开查不到设备 → 停止帧发不出去，
+  // 设备保持上一次输出。
+  it('身份被改写后，断开与属性仍能落到注册用的 deviceId', async () => {
+    const ipcMain = createIpcMain();
+    const deviceService = {
+      connectTransportDevice: jest.fn(),
+      handleTransportProperty: jest.fn(),
+      handleTransportMessage: jest.fn(),
+      disconnectTransportDevice: jest.fn(),
+    };
+    const brandService = {
+      // 模拟 stabilizeBrandBleId：把浏览器临时 id 认回既有 deviceId
+      attachWebBle: jest.fn((metadata) => { metadata.id = 'ycy:saved-cup'; return true; }),
+      detachWebBle: jest.fn(),
+    };
+    const webContents = createWebContents(17);
+    const integration = createBrandBleMainIntegration({
+      ipcMain,
+      getDeviceService: () => deviceService,
+      getBrandService: () => brandService,
+      logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    });
+    integration.registerHandlers();
+    integration.attachWindow({ webContents });
+
+    await ipcMain.invoke('brandBle:connected', { sender: webContents }, {
+      id: 'ble:chromium-tmp', name: 'YCY-FJB-03', type: 'YCY_CUP', connectionType: 'brandBle', data: {},
+    });
+
+    // 渲染进程用它自己的 id 上报电量
+    ipcMain.emit('brandBle:property', { sender: webContents }, {
+      id: 'ble:chromium-tmp', key: 'battery', value: 80,
+    });
+    expect(deviceService.handleTransportProperty)
+      .toHaveBeenCalledWith('ycy:saved-cup', 'battery', 80, 'brandBle');
+
+    // 断开同样用渲染进程 id 上报，必须解析回注册身份
+    ipcMain.emit('brandBle:disconnected', { sender: webContents }, { id: 'ble:chromium-tmp' });
+    expect(brandService.detachWebBle).toHaveBeenCalledWith('ycy:saved-cup');
+    expect(deviceService.disconnectTransportDevice)
+      .toHaveBeenCalledWith('ycy:saved-cup', 'brandBle');
+  });
+
   it('拒绝非 brandBle 连接类型的元数据', () => {
     const ipcMain = createIpcMain();
     const integration = createBrandBleMainIntegration({

@@ -150,3 +150,26 @@ describe('Electron BLE preload API', () => {
     expect(requestDevice).toHaveBeenCalled();
   });
 });
+
+// 回归：preload 判「是不是郊狼」的名单曾漏 YSKJ，导致 YSKJ* 广播的郊狼设备
+// 被 YcyBleClient 接管，用役次元 0x35 帧写郊狼 GATT（连上却不响应）。
+// 名单改为复用后端权威定义，此处守住该契约。
+describe('品牌分派名单', () => {
+  const { DGLAB_V2_NAMES } = require('../../electron/ble/brandDeviceClient');
+  const { DGLAB_V2_NAMES: backendNames } = require('../brands/protocols/dglabV2');
+
+  it('preload 侧名单与后端权威定义同源', () => {
+    expect(DGLAB_V2_NAMES).toEqual(backendNames);
+  });
+
+  it('YSKJ 归郊狼，役次元各型号不受影响', () => {
+    const keys = [...DGLAB_V2_NAMES, '47L'];
+    const isDglab = (name) => keys.some((k) => String(name).toUpperCase().includes(String(k).toUpperCase()));
+    expect(isDglab('YSKJ-1234')).toBe(true);
+    expect(isDglab('D-LAB ESTIM01')).toBe(true);
+    expect(isDglab('47L-xx')).toBe(true);
+    expect(isDglab('YCY-FJB-03')).toBe(false);
+    expect(isDglab('YISK-003V3')).toBe(false);
+    expect(isDglab('YYC-DJ-V2')).toBe(false);
+  });
+});
