@@ -13,6 +13,7 @@ function cloneI18n(value) {
       howTo: typeof pack.howTo === 'string' ? pack.howTo : undefined,
       devices: asObject(pack.devices),
       params: asObject(pack.params),
+      enumLabels: asObject(pack.enumLabels),
     };
   }
   return Object.keys(out).length ? out : undefined;

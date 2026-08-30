@@ -11,6 +11,7 @@ describe('electron locale', () => {
 
   it('formats tray and dialog copy', () => {
     expect(formatElectronText('en', 'showWindow')).toBe('Show main window');
+    expect(formatElectronText('en', 'titleHint')).toBe('F11 fullscreen, Esc exit fullscreen');
     expect(formatElectronText('zh', 'grantMessage', { origin: 'https://game.undersilicon.cn' }))
       .toContain('https://game.undersilicon.cn');
   });

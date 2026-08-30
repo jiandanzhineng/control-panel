@@ -311,7 +311,7 @@ function extractError(data: any, fallback: string) {
 async function apiGet(url: string) {
   const res = await fetch(url);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || data?.error) throw new Error(extractError(data, `请求失败（${res.status}）`));
+  if (!res.ok || data?.error) throw new Error(extractError(data, t('common.requestFailed', { status: res.status })));
   return data;
 }
 
@@ -322,7 +322,7 @@ async function apiPost(url: string, body: Record<string, any>) {
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || data?.error) throw new Error(extractError(data, `请求失败（${res.status}）`));
+  if (!res.ok || data?.error) throw new Error(extractError(data, t('common.requestFailed', { status: res.status })));
   return data;
 }
 
@@ -365,7 +365,7 @@ async function loadPorts() {
       handlePortChange(selectedPort.value);
     }
   } catch (error: any) {
-    pageError.value = error?.message || '串口列表获取失败';
+    pageError.value = error?.message || t('devices.serialListFailed');
     ports.value = [];
     checkDriverStatus();
   } finally {
@@ -428,7 +428,7 @@ async function identifyDevice() {
   } catch (error: any) {
     identifyDone.value = true;
     identified.value = false;
-    ElMessage.error(error?.message || '设备识别失败');
+    ElMessage.error(error?.message || t('wired.identifyFailed'));
   } finally {
     identifying.value = false;
   }
@@ -461,7 +461,7 @@ async function loadFirmwareInfo() {
       } : null,
     };
   } catch (error: any) {
-    firmwareError.value = error?.message || '固件信息获取失败';
+    firmwareError.value = error?.message || t('wired.firmwareInfoFailed');
     firmwareInfo.value = null;
   } finally {
     firmwareLoading.value = false;
@@ -473,11 +473,11 @@ async function confirmAndFlash() {
 
   try {
     await ElMessageBox.confirm(
-      '烧录会清除设备上的 WiFi 配网和绑定信息，完成后需要重新配网。确认开始烧录？',
-      '确认烧录固件',
+      t('wired.confirmFlash'),
+      t('wired.confirmFlashTitle'),
       {
-        confirmButtonText: '开始烧录',
-        cancelButtonText: '取消',
+        confirmButtonText: t('wired.startFlash'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning',
       }
     );
@@ -493,13 +493,13 @@ async function confirmAndFlash() {
       deviceType: deviceType.value,
     });
     const flashId = data?.flashId ?? data?.flash_id ?? data?.id;
-    if (!flashId) throw new Error('后端未返回烧录任务 ID');
+    if (!flashId) throw new Error(t('wired.noFlashId'));
     track('wired_flash_start', { device_type: deviceType.value });
     pollFlashStatus(String(flashId), 0);
   } catch (error: any) {
     flashing.value = false;
     flashStatus.value = 'failed';
-    flashError.value = error?.message || '烧录启动失败';
+    flashError.value = error?.message || t('wired.flashStartFailed');
   }
 }
 
@@ -522,7 +522,7 @@ async function pollFlashStatus(flashId: string, consecutiveErrors: number) {
     if (flashStatus.value === 'success' || flashStatus.value === 'failed') {
       flashing.value = false;
       if (flashStatus.value === 'failed' && !flashError.value) {
-        flashError.value = flashMsg.value || '烧录失败';
+        flashError.value = flashMsg.value || t('wired.flashFailed');
       }
       return;
     }
@@ -535,13 +535,13 @@ async function pollFlashStatus(flashId: string, consecutiveErrors: number) {
     }
     flashing.value = false;
     flashStatus.value = 'failed';
-    flashError.value = error?.message || '烧录状态查询失败';
+    flashError.value = error?.message || t('wired.flashStatusFailed');
   }
 }
 
 function formatPortLabel(port: SerialPort) {
   const base = port.name ? `${port.name}（${port.path}）` : port.path;
-  return port.busy ? `${base} - 被占用` : base;
+  return port.busy ? `${base} - ${t('common.occupied')}` : base;
 }
 
 function formatSize(sizeBytes?: number) {

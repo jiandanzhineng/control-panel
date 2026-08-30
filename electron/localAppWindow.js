@@ -1,8 +1,11 @@
-const TITLE_HINT = '按F11全屏 ESC退出全屏';
+const { formatElectronText } = require('./locale');
 
-function withTitleHint(title) {
-  const base = String(title || '小雅').replace(/\s*按F11全屏 ESC退出全屏\s*$/, '').trim() || '小雅';
-  return `${base}  ${TITLE_HINT}`;
+function withTitleHint(title, locale = 'zh') {
+  const hint = formatElectronText(locale, 'titleHint');
+  const fallback = locale === 'en' ? 'Xiaoya' : '小雅';
+  const escaped = hint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const base = String(title || fallback).replace(new RegExp(`\\s*${escaped}\\s*$`), '').trim() || fallback;
+  return `${base}  ${hint}`;
 }
 
 function handleLocalAppHotkey(win, input) {
@@ -72,7 +75,8 @@ function createLocalAppWindowController({
   function openWindow(input = {}) {
     const url = String(input.url || '');
     const id = String(input.id || '');
-    const title = String(input.title || '小雅');
+    const locale = input.locale === 'en' ? 'en' : 'zh';
+    const title = String(input.title || (locale === 'en' ? 'Xiaoya' : '小雅'));
     if (!isLocalAppUrl(url) || !id) {
       return { ok: false, error: 'invalid local app window' };
     }
@@ -80,14 +84,14 @@ function createLocalAppWindowController({
     win = new BrowserWindow({
       width: 1280,
       height: 800,
-      title: withTitleHint(title),
+      title: withTitleHint(title, locale),
       autoHideMenuBar: true,
       webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
     });
-    current = { id, url, title };
+    current = { id, url, title, locale };
     win.on('page-title-updated', (event, next) => {
       event.preventDefault();
-      if (win && !win.isDestroyed()) win.setTitle(withTitleHint(next));
+      if (win && !win.isDestroyed()) win.setTitle(withTitleHint(next, locale));
     });
     win.webContents.on('before-input-event', (event, input) => {
       if (handleLocalAppHotkey(win, input)) event.preventDefault();
@@ -130,7 +134,9 @@ function createLocalAppWindowController({
 }
 
 module.exports = {
-  TITLE_HINT,
+  get TITLE_HINT() {
+    return formatElectronText('zh', 'titleHint');
+  },
   withTitleHint,
   handleLocalAppHotkey,
   isLocalAppUrl,

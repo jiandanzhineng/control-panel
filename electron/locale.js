@@ -17,6 +17,7 @@ const TEXTS = {
     updateReadyMessage: '更新已下载，是否立即重启并安装？',
     installNow: '立即安装',
     later: '稍后',
+    titleHint: '按F11全屏 ESC退出全屏',
   },
   en: {
     showWindow: 'Show main window',
@@ -36,6 +37,7 @@ const TEXTS = {
     updateReadyMessage: 'The update has been downloaded. Restart and install now?',
     installNow: 'Install now',
     later: 'Later',
+    titleHint: 'F11 fullscreen, Esc exit fullscreen',
   },
 };
 

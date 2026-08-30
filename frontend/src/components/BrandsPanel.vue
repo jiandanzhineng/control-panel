@@ -320,9 +320,9 @@ const dglabWebbleDevices = ref<DglabWebbleDevice[]>([])
 const scanningWebble = ref(false)
 const dglabWebbleUnlisten = new Map<string, () => void>()
 const dglabWebbleHint = computed(() => {
-  if (!webbleSupported.value) return { type: 'warning' as const, text: '浏览器不支持' }
+  if (!webbleSupported.value) return { type: 'warning' as const, text: t('brands.unsupportedBrowser') }
   const n = dglabWebbleDevices.value.length
-  return { type: (n ? 'success' : 'info') as const, text: n ? `已连接 ${n} 台` : '待连接' }
+  return { type: (n ? 'success' : 'info') as const, text: n ? t('brands.connectedCount', { n }) : t('brands.waitingConnect') }
 })
 const dglabWebbleCandidates = ref<Array<{ id: string; name: string }>>([])
 let dglabScanUnsub: (() => void) | null = null
@@ -330,10 +330,10 @@ function dglabWebbleCancelScan() {
   brandBle.cancelSelection().catch(() => {})
 }
 async function dglabWebblePick(c: { id: string; name: string }) {
-  try { await brandBle.selectDevice(c.id) } catch (e: any) { ElMessage.error(e?.message || '选择失败') }
+  try { await brandBle.selectDevice(c.id) } catch (e: any) { ElMessage.error(e?.message || t('brands.selectFailed')) }
 }
 async function dglabWebbleConnect() {
-  if (!webbleSupported.value) { ElMessage.warning('当前浏览器不支持网页蓝牙直连'); return }
+  if (!webbleSupported.value) { ElMessage.warning(t('brands.webbleUnsupported')); return }
   scanningWebble.value = true
   dglabWebbleCandidates.value = []
   dglabScanUnsub = brandBle.onScanResults((list) => { dglabWebbleCandidates.value = list })
@@ -349,10 +349,10 @@ async function dglabWebbleConnect() {
     })
     dglabWebbleUnlisten.set(id, un)
     await refreshConnected()
-    ElMessage.success('已连接 ' + brandLabel('dglab', meta.name))
+    ElMessage.success(t('brands.connectedNamed', { name: brandLabel('dglab', meta.name) }))
   } catch (e: any) {
     const msg = String(e?.message || '')
-    if (!/cancel|Cancelled|User cancelled|NavigatorUserAgent/i.test(msg)) ElMessage.error(msg || '连接失败')
+    if (!/cancel|Cancelled|User cancelled|NavigatorUserAgent/i.test(msg)) ElMessage.error(msg || t('brands.connectFailed'))
   } finally {
     dglabScanUnsub?.(); dglabScanUnsub = null
     dglabWebbleCandidates.value = []
@@ -368,7 +368,7 @@ const addDialog = ref(false)
 const addBrand = ref<'dglab' | 'ycy'>('dglab')
 const addMethod = ref<'local' | 'remote'>('remote')
 const addShowLocal = computed(() => isMac.value) // 本机直连（原生桥）仅 macOS 可用
-const addRemoteLabel = computed(() => (addBrand.value === 'dglab' ? '手机连接' : '远程桥接'))
+const addRemoteLabel = computed(() => (addBrand.value === 'dglab' ? t('brands.dglabPhone') : t('brands.ycyRemote')))
 const addNativeList = computed(() =>
   addBrand.value === 'dglab' ? dglabNativeDevices.value : ycyNativeDevices.value
 )
@@ -464,13 +464,13 @@ async function refreshConnected() {
 }
 
 async function discoverDglab() {
-  if (!dglabHost.value) { ElMessage.warning('请先填写手机上显示的地址'); return }
+  if (!dglabHost.value) { ElMessage.warning(t('brands.fillPhoneAddr')); return }
   scanningDglab.value = true
   try {
     const res = await brandsApi.discover('dglab', { host: dglabHost.value, port: dglabPort.value })
     dglabCandidates.value = res.devices
   } catch (e: any) {
-    ElMessage.error(e?.message || '探测失败')
+    ElMessage.error(e?.message || t('brands.probeFailed'))
   } finally {
     scanningDglab.value = false
   }
@@ -486,10 +486,10 @@ async function connectDglab(c: DiscoverCandidate) {
       host: c.host,
       port: c.port,
     })
-    ElMessage.success('郊狼设备已连接')
+    ElMessage.success(t('brands.dglabConnected'))
     await refreshConnected()
   } catch (e: any) {
-    ElMessage.error(e?.message || '连接失败')
+    ElMessage.error(e?.message || t('brands.connectFailed'))
   } finally {
     busy.value = false
   }
@@ -498,15 +498,15 @@ async function connectDglab(c: DiscoverCandidate) {
 // ===== 郊狼 本机直连（原生桥 dglab_bridge :3002，仅 macOS 回退用） =====
 const dglabNativeSummary = computed(() => {
   // 桥未连接：是进程没跑（浏览器开发 / 客户端未拉起），不是蓝牙关了
-  if (!dglabBridgeUp.value) return { type: 'warning' as const, text: '本机桥未连接（请用客户端打开，或切到“网页蓝牙”）' }
+  if (!dglabBridgeUp.value) return { type: 'warning' as const, text: t('brands.nativeDown') }
   const total = dglabNativeDevices.value.length
   const connected = dglabNativeDevices.value.filter((d) => d.ready).length
-  if (total === 0) return { type: 'info' as const, text: dglabNativeBtOn.value ? '搜索中' : '蓝牙未开启' }
-  return { type: (connected === total ? 'success' : 'warning') as const, text: `已连接 ${connected}/${total}` }
+  if (total === 0) return { type: 'info' as const, text: dglabNativeBtOn.value ? t('brands.searching') : t('brands.btOff') }
+  return { type: (connected === total ? 'success' : 'warning') as const, text: t('brands.connectedRatio', { connected, total }) }
 })
 const dglabNativeBtHint = computed(() => {
-  if (!dglabBridgeUp.value) return '本机桥（原生桥进程）未运行：请通过客户端打开本程序，或在本页切到“网页蓝牙”模式。'
-  return dglabNativeBtOn.value ? '正在搜索附近的郊狼设备…' : '蓝牙未开启，请确认本机蓝牙已打开。'
+  if (!dglabBridgeUp.value) return t('brands.nativeNotRunning')
+  return dglabNativeBtOn.value ? t('brands.searchingDglab') : t('brands.btOffHint')
 })
 function dglabNativeMarkPending(id: string) {
   if (!dglabNativePending.value.includes(id)) dglabNativePending.value.push(id)
@@ -558,10 +558,10 @@ async function dglabNativeConnect(d: DglabBridgeDevice) {
       brand: 'dglab', mode: 'native', address: d.id, name: d.name,
       port: 3002,
     })
-    ElMessage.success('已发起连接')
+    ElMessage.success(t('brands.connectStarted'))
     await dglabNativeRefresh()
   } catch (e: any) {
-    ElMessage.error(e?.message || '连接失败')
+    ElMessage.error(e?.message || t('brands.connectFailed'))
   } finally {
     busy.value = false
   }
@@ -572,10 +572,10 @@ async function dglabNativeDisconnect(d: DglabBridgeDevice) {
     try { await brandsApi.disconnect(brandsApi.macDeviceId(d.id)) } catch (_) {}
     if (!dglabNativeManual.value.includes(d.id)) dglabNativeManual.value.push(d.id)
     dglabNativeEver.value = dglabNativeEver.value.filter((x) => x !== d.id)
-    ElMessage.success('已断开')
+    ElMessage.success(t('brands.disconnectedOk'))
     await dglabNativeRefresh()
   } catch (e: any) {
-    ElMessage.error(e?.message || '断开失败')
+    ElMessage.error(e?.message || t('brands.disconnectFailed'))
   } finally {
     busy.value = false
   }
@@ -590,10 +590,10 @@ async function dglabNativeConnectAll() {
         dglabBridge.connect(d.id).catch(() => {})
       }
     }
-    ElMessage.info('已对全部发现的设备发起连接')
+    ElMessage.info(t('brands.connectAllStarted'))
     await dglabNativeRefresh()
   } catch (e: any) {
-    ElMessage.error(e?.message || '连接失败')
+    ElMessage.error(e?.message || t('brands.connectFailed'))
   } finally {
     busy.value = false
   }
@@ -603,10 +603,10 @@ async function dglabNativeRescan() {
   try {
     dglabNativeManual.value = []
     await dglabBridge.rescan()
-    ElMessage.info('已重新扫描')
+    ElMessage.info(t('brands.rescanned'))
     await dglabNativeRefresh()
   } catch (e: any) {
-    ElMessage.error(e?.message || '扫描失败')
+    ElMessage.error(e?.message || t('brands.scanFailed'))
   } finally {
     busy.value = false
   }
@@ -625,7 +625,7 @@ function stopDglabNativeTimer() {
 }
 
 async function connectYcyBridge() {
-  if (!ycyBridgeCode.value) { ElMessage.warning('请填写连接码'); return }
+  if (!ycyBridgeCode.value) { ElMessage.warning(t('brands.fillCode')); return }
   busy.value = true
   try {
     await brandsApi.connect({
@@ -636,10 +636,10 @@ async function connectYcyBridge() {
       host: ycyBridgeHost.value || '127.0.0.1',
       port: ycyBridgePort.value,
     })
-    ElMessage.success('役次元（远程桥接）已连接')
+    ElMessage.success(t('brands.ycyRemoteConnected'))
     await refreshConnected()
   } catch (e: any) {
-    ElMessage.error(e?.message || '连接失败')
+    ElMessage.error(e?.message || t('brands.connectFailed'))
   } finally {
     busy.value = false
   }
@@ -661,15 +661,15 @@ const ycyNativeTimer = ref<number | null>(null)
 const YCY_RE = /YCY|YYC|YSKJ|YOKO|YOKONEX|YISK|DJ-V2|YICIYUAN|DJ|FJB|灌肠|ENEMA|GLJ/i
 
 const ycyNativeSummary = computed(() => {
-  if (!ycyBridgeUp.value) return { type: 'warning' as const, text: '本机桥未连接（请用客户端打开，或切到“网页蓝牙”）' }
+  if (!ycyBridgeUp.value) return { type: 'warning' as const, text: t('brands.nativeDown') }
   const total = ycyNativeDevices.value.length
   const connected = ycyNativeDevices.value.filter((d) => d.ready).length
-  if (total === 0) return { type: 'info' as const, text: ycyNativeBtOn.value ? '搜索中' : '蓝牙未开启' }
-  return { type: (connected === total ? 'success' : 'warning') as const, text: `已连接 ${connected}/${total}` }
+  if (total === 0) return { type: 'info' as const, text: ycyNativeBtOn.value ? t('brands.searching') : t('brands.btOff') }
+  return { type: (connected === total ? 'success' : 'warning') as const, text: t('brands.connectedRatio', { connected, total }) }
 })
 const ycyNativeBtHint = computed(() => {
-  if (!ycyBridgeUp.value) return '本机桥（原生桥进程）未运行：请通过客户端打开本程序，或在本页切到“网页蓝牙”模式。'
-  return ycyNativeBtOn.value ? '正在搜索附近的役次元设备…' : '蓝牙未开启，请确认本机蓝牙已打开。'
+  if (!ycyBridgeUp.value) return t('brands.nativeNotRunning')
+  return ycyNativeBtOn.value ? t('brands.searchingYcy') : t('brands.btOffHint')
 })
 function ycyNativeMarkPending(id: string) {
   if (!ycyNativePending.value.includes(id)) ycyNativePending.value.push(id)
@@ -718,10 +718,10 @@ async function ycyNativeConnect(d: YcyBridgeDevice) {
       port: 3001,
       type: ycyPanelType({ name: d.name }),
     })
-    ElMessage.success('已发起连接')
+    ElMessage.success(t('brands.connectStarted'))
     await ycyNativeRefresh()
   } catch (e: any) {
-    ElMessage.error(e?.message || '连接失败')
+    ElMessage.error(e?.message || t('brands.connectFailed'))
   } finally {
     busy.value = false
   }
@@ -732,10 +732,10 @@ async function ycyNativeDisconnect(d: YcyBridgeDevice) {
     try { await brandsApi.disconnect(brandsApi.macDeviceId(d.id)) } catch (_) {}
     if (!ycyNativeManual.value.includes(d.id)) ycyNativeManual.value.push(d.id)
     ycyNativeEver.value = ycyNativeEver.value.filter((x) => x !== d.id)
-    ElMessage.success('已断开')
+    ElMessage.success(t('brands.disconnectedOk'))
     await ycyNativeRefresh()
   } catch (e: any) {
-    ElMessage.error(e?.message || '断开失败')
+    ElMessage.error(e?.message || t('brands.disconnectFailed'))
   } finally {
     busy.value = false
   }
@@ -750,10 +750,10 @@ async function ycyNativeConnectAll() {
         ycyBridge.connect(d.id).catch(() => {})
       }
     }
-    ElMessage.info('已对全部发现的设备发起连接')
+    ElMessage.info(t('brands.connectAllStarted'))
     await ycyNativeRefresh()
   } catch (e: any) {
-    ElMessage.error(e?.message || '连接失败')
+    ElMessage.error(e?.message || t('brands.connectFailed'))
   } finally {
     busy.value = false
   }
@@ -763,10 +763,10 @@ async function ycyNativeRescan() {
   try {
     ycyNativeManual.value = []
     await ycyBridge.rescan()
-    ElMessage.info('已重新扫描')
+    ElMessage.info(t('brands.rescanned'))
     await ycyNativeRefresh()
   } catch (e: any) {
-    ElMessage.error(e?.message || '扫描失败')
+    ElMessage.error(e?.message || t('brands.scanFailed'))
   } finally {
     busy.value = false
   }
@@ -821,9 +821,9 @@ async function startBleConnect() {
       deviceId: c.deviceId,
       brand: c.brand,
     }))
-    if (!list.length) ElMessage.info('附近没有可识别设备')
+    if (!list.length) ElMessage.info(t('brands.noNearby'))
   } catch (e: any) {
-    ElMessage.error(e?.message || '扫描失败')
+    ElMessage.error(e?.message || t('brands.scanFailed'))
   } finally {
     scanningYcyWebble.value = false
   }
@@ -849,17 +849,17 @@ async function ycyWebblePick(c: { id: string; name: string; address?: string; de
     })
     ycyWebbleCandidates.value = []
     await refreshConnected()
-    ElMessage.success('已连接 ' + brandLabel(brand, c.name))
-  } catch (e: any) { ElMessage.error(e?.message || '连接失败') }
+    ElMessage.success(t('brands.connectedNamed', { name: brandLabel(brand, c.name) }))
+  } catch (e: any) { ElMessage.error(e?.message || t('brands.connectFailed')) }
 }
 const ycyWebbleUnlisten = new Map<string, () => void>()
 const ycyWebbleHint = computed(() => {
-  if (!webbleSupported.value) return { type: 'warning' as const, text: '浏览器不支持' }
+  if (!webbleSupported.value) return { type: 'warning' as const, text: t('brands.unsupportedBrowser') }
   const n = ycyWebbleDevices.value.length
-  return { type: (n ? 'success' : 'info') as const, text: n ? `已连接 ${n} 台` : '待连接' }
+  return { type: (n ? 'success' : 'info') as const, text: n ? t('brands.connectedCount', { n }) : t('brands.waitingConnect') }
 })
 async function ycyWebbleConnect() {
-  if (!webbleSupported.value) { ElMessage.warning('当前浏览器不支持网页蓝牙直连'); return }
+  if (!webbleSupported.value) { ElMessage.warning(t('brands.webbleUnsupported')); return }
   scanningYcyWebble.value = true
   ycyWebbleCandidates.value = []
   ycyScanUnsub = brandBle.onScanResults((list) => { ycyWebbleCandidates.value = list })
@@ -867,7 +867,7 @@ async function ycyWebbleConnect() {
     if (window.ycyBleApi?.isSupported()) {
       const meta = await window.ycyBleApi.connect()
       await refreshConnected()
-      ElMessage.success('已连接 ' + brandLabel('ycy', meta.name))
+      ElMessage.success(t('brands.connectedNamed', { name: brandLabel('ycy', meta.name) }))
       return
     }
     const meta = await ycyBle.scanAndConnect()
@@ -880,10 +880,10 @@ async function ycyWebbleConnect() {
       if (dev) dev.battery = b
     })
     ycyWebbleUnlisten.set(id, un)
-    ElMessage.success('已连接 ' + brandLabel('ycy', meta.name))
+    ElMessage.success(t('brands.connectedNamed', { name: brandLabel('ycy', meta.name) }))
   } catch (e: any) {
     const msg = String(e?.message || '')
-    if (!/cancel|Cancelled|User cancelled|NavigatorUserAgent/i.test(msg)) ElMessage.error(msg || '连接失败')
+    if (!/cancel|Cancelled|User cancelled|NavigatorUserAgent/i.test(msg)) ElMessage.error(msg || t('brands.connectFailed'))
   } finally {
     ycyScanUnsub?.(); ycyScanUnsub = null
     ycyWebbleCandidates.value = []
@@ -894,22 +894,22 @@ async function dglabApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`dglabApply:${dev.deviceId}`, async () => {
     await devicesApi.invokeCapability(dev.deviceId, 'shock', 'start', { voltage: s.intensity })
-    ElMessage.success('已下发')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+    ElMessage.success(t('brands.sent'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
 }
 
 async function dglabStop(dev: BrandDevice) {
   await withLoading(`dglabStop:${dev.deviceId}`, async () => {
     await devicesApi.invokeCapability(dev.deviceId, 'shock', 'stop', {})
-  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.stopFailed')) })
 }
 
 async function ycyTrigger(dev: BrandDevice) {
   const s = ctl(dev)
-  if (!s.commandId) { ElMessage.warning('请填写玩法编号'); return }
+  if (!s.commandId) { ElMessage.warning(t('brands.fillPlayId')); return }
   await withLoading(`ycyTrigger:${dev.deviceId}`, async () => {
     await devicesApi.executeDeviceOperation(dev.deviceId, 'trigger', { commandId: s.commandId })
-  }).catch((e: any) => { ElMessage.error(e?.message || '触发失败') })
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.triggerFailed')) })
 }
 
 async function ycyStop(dev: BrandDevice) {
@@ -919,45 +919,45 @@ async function ycyStop(dev: BrandDevice) {
     else if (type === 'YCY_TOY') await devicesApi.invokeCapability(dev.deviceId, 'strength', 'stop', {})
     else if (dev.mode === 'bridge') await devicesApi.executeDeviceOperation(dev.deviceId, 'stop', {})
     else await devicesApi.invokeCapability(dev.deviceId, 'estim', 'stop', {})
-    ElMessage.success('已停止')
-  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
+    ElMessage.success(t('brands.stopped'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.stopFailed')) })
 }
 
 async function sosexyStrengthApply(dev: BrandDevice) {
   await withLoading(`sosexyStrength:${dev.deviceId}`, async () => {
     await devicesApi.invokeCapability(dev.deviceId, 'strength', 'set', { value: ctl(dev).sosexyStrength })
-    ElMessage.success('已下发')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+    ElMessage.success(t('brands.sent'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
 }
 async function sosexyVibrationApply(dev: BrandDevice) {
   await withLoading(`sosexyVibration:${dev.deviceId}`, async () => {
     await devicesApi.invokeCapability(dev.deviceId, 'vibration', 'set', { value: ctl(dev).sosexyVibration })
-    ElMessage.success('已下发')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+    ElMessage.success(t('brands.sent'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
 }
 async function sosexySuctionApply(dev: BrandDevice) {
   await withLoading(`sosexySuction:${dev.deviceId}`, async () => {
     await devicesApi.invokeCapability(dev.deviceId, 'suction', 'set', { value: ctl(dev).sosexySuction })
-    ElMessage.success('已下发')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+    ElMessage.success(t('brands.sent'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
 }
 async function sosexyShockApply(dev: BrandDevice) {
   await withLoading(`sosexyShock:${dev.deviceId}`, async () => {
     await devicesApi.invokeCapability(dev.deviceId, 'shock', 'start', { voltage: ctl(dev).sosexyShock })
-    ElMessage.success('已下发')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+    ElMessage.success(t('brands.sent'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
 }
 async function sosexyStop(dev: BrandDevice) {
   await withLoading(`sosexyStop:${dev.deviceId}`, async () => {
     await devicesApi.executeDeviceOperation(dev.deviceId, 'stop', {})
-    ElMessage.success('已停止')
-  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
+    ElMessage.success(t('brands.stopped'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.stopFailed')) })
 }
 async function sosexyQuery(dev: BrandDevice) {
   await withLoading(`sosexyQuery:${dev.deviceId}`, async () => {
     await devicesApi.executeDeviceOperation(dev.deviceId, 'queryStatus', {})
-    ElMessage.success('已请求状态')
-  }).catch((e: any) => { ElMessage.error(e?.message || '查询失败') })
+    ElMessage.success(t('brands.statusRequested'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.queryFailed')) })
 }
 
 async function ycyEmsApply(dev: BrandDevice) {
@@ -965,8 +965,8 @@ async function ycyEmsApply(dev: BrandDevice) {
   await withLoading(`ycyEms:${dev.deviceId}`, async () => {
     await devicesApi.invokeCapability(dev.deviceId, 'estim', 'set', { channel: 'A', intensity: s.aStrength, wave: s.wave })
     await devicesApi.invokeCapability(dev.deviceId, 'estim', 'set', { channel: 'B', intensity: s.bStrength, wave: s.wave })
-    ElMessage.success('已下发')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+    ElMessage.success(t('brands.sent'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
 }
 
 async function ycyFjbApply(dev: BrandDevice) {
@@ -979,41 +979,41 @@ async function ycyFjbApply(dev: BrandDevice) {
         axis: { value: s.axis },
       },
     })
-    ElMessage.success('已下发')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+    ElMessage.success(t('brands.sent'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
 }
 async function ycyFjbStop(dev: BrandDevice) {
   await withLoading(`ycyStop:${dev.deviceId}`, async () => {
     await devicesApi.invokeCapability(dev.deviceId, 'motors', 'stop', {})
-  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.stopFailed')) })
 }
 
 async function ycyPumpApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`ycyPump:${dev.deviceId}`, async () => {
     await devicesApi.invokeCapability(dev.deviceId, 'pump', 'start', { scene: s.scene || 'guan' })
-    ElMessage.success('已下发')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+    ElMessage.success(t('brands.sent'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
 }
 async function ycyPumpStop(dev: BrandDevice) {
   await withLoading(`ycyPumpS:${dev.deviceId}`, async () => {
     await devicesApi.invokeCapability(dev.deviceId, 'pump', 'stop', {})
-  }).catch((e: any) => { ElMessage.error(e?.message || '停止失败') })
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.stopFailed')) })
 }
 async function ycyToyApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`ycyToy:${dev.deviceId}`, async () => {
     await devicesApi.invokeCapability(dev.deviceId, 'strength', 'set', { value: s.speed })
-    ElMessage.success('已下发')
-  }).catch((e: any) => { ElMessage.error(e?.message || '下发失败') })
+    ElMessage.success(t('brands.sent'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
 }
 
 async function disconnectDevice(dev: BrandDevice) {
   try {
     await brandsApi.disconnect(dev.deviceId)
-    ElMessage.success('已断开')
+    ElMessage.success(t('brands.disconnectedOk'))
     await refreshConnected()
-  } catch (e: any) { ElMessage.error(e?.message || '断开失败') }
+  } catch (e: any) { ElMessage.error(e?.message || t('brands.disconnectFailed')) }
 }
 
 async function probeBridgeAndPickDefault() {

@@ -10,7 +10,7 @@
   "title": "女仆偷懒惩罚",
   "description": "保持踮脚站立；按下按钮会电击；长时间未受罚时 TD01 逐步增强刺激。可配合自动锁。",
   "howTo": "1. 映射电击设备（必需）\n2. 可选：QTZ/踮脚传感器、TD01、自动锁\n3. 设置时长与电击强度\n4. 开始后保持踮脚，偷懒会被惩罚",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "devices": [
     {
       "id": "qtz",
@@ -193,7 +193,34 @@
       "device": "tiptoeSensor",
       "required": false
     }
-  ]
+  ],
+  "i18n": {
+    "en": {
+      "title": "Maid slacking punishment",
+      "description": "Stay on tiptoe. A button press shocks. If unpunished for too long, TD01 ramps up. Optional auto lock.",
+      "howTo": "1. Map a shock device (required)\n2. Optional: QTZ/tiptoe sensor, TD01, lock\n3. Set duration and shock intensity\n4. Stay on tiptoe; slacking is punished",
+      "devices": {
+        "qtz": "QTZ distance / button",
+        "tiptoeSensor": "Tiptoe pressure sensor",
+        "shock": "Shock device",
+        "motor": "TD01 stimulator",
+        "lock": "Auto lock"
+      },
+      "params": {
+        "duration": "Duration",
+        "shockIntensity": "Shock intensity",
+        "progressiveIntensity": "Progressive intensity",
+        "maxIntensityIncrease": "Max shock increase",
+        "allowUnsafeIntensity": "Allow over 30V",
+        "td01DelaySeconds": "TD01 start delay",
+        "td01IntensityIncrease": "TD01 +every 5s",
+        "td01ShockProbability": "TD01 start shock chance",
+        "manualStart": "Manual start",
+        "tiptoePressureThreshold": "Tiptoe pressure threshold",
+        "tiptoeDebounceMs": "Pressure debounce"
+      }
+    }
+  }
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>

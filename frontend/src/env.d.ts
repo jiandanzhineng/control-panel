@@ -101,7 +101,7 @@ interface Window {
     stopCurrent: () => Promise<{ ok: boolean; error?: string }>;
   };
   localAppWindowApi?: {
-    open: (payload: { url: string; id: string; title?: string }) => Promise<{ ok: boolean; error?: string }>;
+    open: (payload: { url: string; id: string; title?: string; locale?: 'zh' | 'en' }) => Promise<{ ok: boolean; error?: string }>;
     close: () => Promise<{ ok: boolean }>;
     focus: () => Promise<{ ok: boolean }>;
     onClosed: (cb: (data?: { id?: string }) => void) => () => void;

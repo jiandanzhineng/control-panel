@@ -15,6 +15,7 @@ describe('play i18n passthrough', () => {
           howTo: 'How to play',
           devices: { shock: 'Shock' },
           params: { voltage: 'Voltage' },
+          enumLabels: { mode: { drink: 'Drink' } },
         },
         xx: 'nope',
       },
@@ -24,8 +25,15 @@ describe('play i18n passthrough', () => {
       title: 'English title',
       devices: { shock: 'Shock' },
       params: { voltage: 'Voltage' },
+      enumLabels: { mode: { drink: 'Drink' } },
     });
     expect(play.i18n.xx).toBeUndefined();
     expect(cloneI18n({})).toBeUndefined();
+  });
+
+  it('keeps builtin game i18n.en packs', () => {
+    const gameService = require('../services/gameService');
+    const game = gameService.getGameById('device-control');
+    expect(game.i18n.en.title).toBe('Device console');
   });
 });

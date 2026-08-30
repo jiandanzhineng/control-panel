@@ -1074,10 +1074,10 @@ const canStartProvision = computed(() => {
 });
 const provisionSuccessText = computed(() => {
   const result = provisionResult.value;
-  if (!result) return '设备已连接到 Wi-Fi';
+  if (!result) return t('devices.wifiConnected');
   return result.stationIp
-    ? `${result.deviceName} 已连接到 Wi-Fi，IP：${result.stationIp}`
-    : `${result.deviceName} 已连接到 Wi-Fi`;
+    ? t('devices.wifiConnectedIp', { name: result.deviceName, ip: result.stationIp })
+    : t('devices.wifiConnectedNamed', { name: result.deviceName });
 });
 // 已上报 device_connect 的在线设备 id 集合，用于检测离线→在线边沿
 let connectedDeviceIds = new Set<string>();
@@ -1107,7 +1107,7 @@ const currentFirmwareVersion = computed(() => {
   return selectedDevice.value?.data?.ver
     || control?.firmwareVersion
     || firmwareInfo.value?.currentVersion
-    || '未知';
+    || t('common.unknown');
 });
 
 const otaProgressPercentage = computed(() => {
@@ -1134,26 +1134,26 @@ const canUpdateFirmware = computed(() => {
 });
 
 const firmwareActionText = computed(() => {
-  if (!selectedDevice.value?.connected) return '设备离线';
-  if (selectedDevice.value?.controlConnection === 'ble') return 'BLE 连接不可升级';
-  if (firmwareLoading.value) return '检查中';
-  if (!firmwareInfo.value?.supported) return '暂无固件';
-  if (!firmwareInfo.value?.updateAvailable) return '已是最新';
-  if (isFirmwareBusy.value) return '升级中';
-  if (isTimedOutOtaStatus(otaStatus.value)) return '重新开始升级';
-  return '更新到最新版本';
+  if (!selectedDevice.value?.connected) return t('devices.firmwareOffline');
+  if (selectedDevice.value?.controlConnection === 'ble') return t('devices.firmwareBleBlocked');
+  if (firmwareLoading.value) return t('devices.firmwareChecking');
+  if (!firmwareInfo.value?.supported) return t('devices.firmwareNone');
+  if (!firmwareInfo.value?.updateAvailable) return t('devices.firmwareLatest');
+  if (isFirmwareBusy.value) return t('devices.firmwareUpgrading');
+  if (isTimedOutOtaStatus(otaStatus.value)) return t('devices.firmwareRestart');
+  return t('devices.firmwareUpdateLatest');
 });
 
 const firmwareSummaryText = computed(() => {
-  if (isTimedOutOtaStatus(otaStatus.value)) return '20秒内未收到升级进度，可重新开始升级';
-  if (!firmwareInfo.value) return '正在检查固件版本';
-  if (!firmwareInfo.value.supported) return '该设备类型没有可用 OTA 应用固件';
-  if (firmwareInfo.value.updateAvailable) return `可更新到 ${firmwareInfo.value.latestVersion}`;
-  return '当前设备固件已是最新版本';
+  if (isTimedOutOtaStatus(otaStatus.value)) return t('firmware.timeout');
+  if (!firmwareInfo.value) return t('devices.firmwareCheckingVersion');
+  if (!firmwareInfo.value.supported) return t('firmware.noOta');
+  if (firmwareInfo.value.updateAvailable) return t('firmware.canUpgradeTo', { version: firmwareInfo.value.latestVersion });
+  return t('firmware.alreadyLatestMsg');
 });
 
 const firmwareStatusMessage = computed(() => {
-  if (isTimedOutOtaStatus(otaStatus.value)) return '20秒内未收到升级进度，可重新开始升级';
+  if (isTimedOutOtaStatus(otaStatus.value)) return t('firmware.timeout');
   return otaStatus.value?.msg || firmwareSummaryText.value;
 });
 
@@ -1200,7 +1200,7 @@ async function init() {
       loadSerialSettings(),
     ]);
   } catch (e: any) {
-    loadError.value = e?.message || '数据加载失败';
+    loadError.value = e?.message || t('devices.loadFailed');
   } finally {
     loading.value = false;
   }
@@ -1259,7 +1259,7 @@ async function readJsonResponse(res: Response, fallback: string) {
 
 async function loadSerialSettings() {
   const res = await fetch('/api/serial/settings');
-  const data = await readJsonResponse(res, '串口自动连接设置获取失败');
+  const data = await readJsonResponse(res, t('devices.serialSettingLoadFailed'));
   serialAutoConnect.value = data.autoConnect === true;
 }
 
@@ -1272,7 +1272,7 @@ async function updateSerialAutoConnect(value: boolean | string | number) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ autoConnect: enabled }),
     });
-    const data = await readJsonResponse(res, '串口自动连接设置失败');
+    const data = await readJsonResponse(res, t('devices.serialSettingFailed'));
     serialAutoConnect.value = data.autoConnect === true;
   } catch (error: any) {
     serialAutoConnect.value = !enabled;
@@ -1301,7 +1301,7 @@ async function loadSerialPorts() {
   serialPortsLoading.value = true;
   try {
     const res = await fetch('/api/serial/ports');
-    const data = await readJsonResponse(res, '串口列表获取失败');
+    const data = await readJsonResponse(res, t('devices.serialListFailed'));
     serialPorts.value = Array.isArray(data) ? data : (data.ports || []);
   } catch (error: any) {
     ElMessage.error(error?.message || t('devices.serialListFailed'));
@@ -1318,7 +1318,7 @@ async function connectSerialPort(path: string) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path }),
     });
-    const data = await readJsonResponse(res, '串口连接失败');
+    const data = await readJsonResponse(res, t('devices.serialConnectFailed'));
     await refreshDevices();
     serialDialogVisible.value = false;
     selectedDeviceId.value = data.device?.id || data.id || selectedDeviceId.value;
@@ -1336,7 +1336,7 @@ async function disconnectSerialDevice(device: Device) {
     const res = await fetch(`/api/serial/connections/${encodeURIComponent(device.id)}`, {
       method: 'DELETE',
     });
-    await readJsonResponse(res, '串口断开失败');
+    await readJsonResponse(res, t('devices.serialDisconnectFailed'));
     await refreshDevices();
     ElMessage.success(t('devices.serialDisconnected'));
   } catch (error: any) {
@@ -1351,7 +1351,7 @@ async function setControlConnection(device: Device, type: TransportType) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type }),
     });
-    await readJsonResponse(res, '控制连接切换失败');
+    await readJsonResponse(res, t('devices.controlFailed'));
     await refreshDevices();
   } catch (error: any) {
     ElMessage.error(error?.message || t('devices.controlFailed'));
@@ -1500,7 +1500,7 @@ async function startProvision() {
       provisionView.value = 'error';
       provisionStatus.value = {
         stage: 'error',
-        message: error?.message || '设备配网失败',
+        message: error?.message || t('devices.provisionFailed'),
         detail: '',
       };
     }
@@ -1513,7 +1513,7 @@ async function selectProvisionCandidate(candidate: { id: string; name: string })
   try {
     provisionStatus.value = {
       stage: 'connecting',
-      message: `正在连接 ${candidate.name}`,
+      message: t('devices.connectingName', { name: candidate.name }),
       detail: '',
     };
     provisionView.value = 'running';
@@ -1522,7 +1522,7 @@ async function selectProvisionCandidate(candidate: { id: string; name: string })
     provisionView.value = 'error';
     provisionStatus.value = {
       stage: 'error',
-      message: error?.message || '选择蓝牙设备失败',
+      message: error?.message || t('devices.selectBleFailed'),
       detail: '',
     };
   }
@@ -1564,7 +1564,7 @@ async function disconnectBrandDevice(device: Device, kind: 'brand' | 'brandBle')
   try {
     const res = await fetch(`/api/brands/${encodeURIComponent(device.id)}/disconnect`, { method: 'POST' });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error || data.message || '断开失败');
+    if (!res.ok || data.error) throw new Error(data.error || data.message || t('devices.disconnectFailed'));
     await refreshDevices();
     const label = kind === 'brandBle' ? t('devices.brandBle') : t('devices.brand');
     ElMessage.success(t('devices.brandSafeOff', { label }));
@@ -1588,7 +1588,7 @@ async function clearAllDevices() {
     await window.bleApi?.disconnectAll();
     const res = await fetch('/api/devices/all', { method: 'DELETE' });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || '清空设备失败');
+    if (!res.ok || data.error) throw new Error(data.message || t('devices.clearFailed'));
     devices.value = [];
     selectedDeviceId.value = '';
     ElMessage.success(t('devices.cleared'));
@@ -1615,7 +1615,7 @@ async function removeDevice(id: string) {
     if (device && hasConnection(device, 'ble')) await window.bleApi?.disconnect(id);
     const res = await fetch(`/api/devices/${encodeURIComponent(id)}`, { method: 'DELETE' });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || '删除设备失败');
+    if (!res.ok || data.error) throw new Error(data.message || t('devices.deleteFailed'));
     devices.value = devices.value.filter(d => d.id !== id);
     if (selectedDeviceId.value === id) selectedDeviceId.value = '';
     ElMessage.success(t('devices.deleted'));
@@ -1654,7 +1654,7 @@ async function editNickname() {
       body: JSON.stringify({ nickname: value })
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || '设置失败');
+    if (!res.ok || data.error) throw new Error(data.message || t('devices.nickSetFailed'));
     
     // 更新本地数据
     const index = devices.value.findIndex(d => d.id === selectedDevice.value!.id);
@@ -1692,11 +1692,11 @@ async function saveChanges() {
     if (isSafeModeDisabled(updateData.safe)) {
       try {
         await ElMessageBox.confirm(
-          '关闭安全模式需要您自己承担全部风险，是否确认？',
-          '确认关闭安全模式',
+          t('devices.safeModeConfirm'),
+          t('devices.safeModeTitle'),
           {
-            confirmButtonText: '确认',
-            cancelButtonText: '取消',
+            confirmButtonText: t('common.confirm'),
+            cancelButtonText: t('common.cancel'),
             type: 'warning',
           }
         );
@@ -1706,7 +1706,7 @@ async function saveChanges() {
       }
     }
     const ok = await publishMessage(selectedDevice.value.id, updateData);
-    if (!ok) throw new Error('消息下发失败');
+    if (!ok) throw new Error(t('devices.publishFailed'));
     // 更新本地数据与状态
     devices.value = devices.value.map(d => {
       if (d.id === selectedDevice!.value!.id) {
@@ -1767,13 +1767,13 @@ async function loadFirmwareInfo(deviceId: string) {
   try {
     const res = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/firmware/latest`);
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || '固件信息获取失败');
+    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || t('devices.firmwareInfoFailed'));
     if (selectedDeviceId.value === deviceId) {
       firmwareInfo.value = data;
     }
   } catch (error: any) {
     if (selectedDeviceId.value === deviceId) {
-      firmwareError.value = error?.message || '固件信息获取失败';
+      firmwareError.value = error?.message || t('devices.firmwareInfoFailed');
     }
   } finally {
     if (selectedDeviceId.value === deviceId) {
@@ -1804,7 +1804,7 @@ function setupOtaStatusConnection(deviceId: string) {
       if (otaStatus.value?.status && !['success', 'failed'].includes(otaStatus.value.status)) {
         otaStatus.value = {
           ...otaStatus.value,
-          msg: 'OTA 状态连接已断开，正在等待浏览器重连',
+          msg: t('devices.otaStreamLost'),
         };
       }
     };
@@ -1827,11 +1827,14 @@ async function updateFirmwareLatest() {
 
   try {
     await ElMessageBox.confirm(
-      `确认将 ${selectedDevice.value.name || selectedDevice.value.id} 更新到 ${firmwareInfo.value.latestVersion}？升级完成后设备会自动重启。`,
-      '确认固件升级',
+      t('devices.confirmUpgrade', {
+        name: selectedDevice.value.name || selectedDevice.value.id,
+        version: firmwareInfo.value.latestVersion,
+      }),
+      t('devices.confirmUpgradeTitle'),
       {
-        confirmButtonText: '开始升级',
-        cancelButtonText: '取消',
+        confirmButtonText: t('firmware.startUpgrade'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning',
       }
     );
@@ -1843,7 +1846,7 @@ async function updateFirmwareLatest() {
       body: JSON.stringify({})
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || 'OTA 指令下发失败');
+    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || t('devices.otaFailed'));
 
     if (data.status) otaStatus.value = data.status;
     ElMessage.success(t('devices.otaSent'));
@@ -1913,7 +1916,7 @@ function getInputType(value: any): 'number' | 'checkbox' | 'text' {
 }
 
 function formatBattery(battery: any) {
-  if (battery === undefined || battery === null) return '未知';
+  if (battery === undefined || battery === null) return t('common.unknown');
   if (typeof battery === 'number') return `${Math.round(battery)}%`;
   const num = Number(battery);
   if (!isNaN(num)) return `${Math.round(num)}%`;

@@ -553,7 +553,7 @@ interface DeviceItem { id: string; name?: string; nickname?: string; type?: stri
 
 const route = useRoute();
 const router = useRouter();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 // carrierType 来自路由参数：game | plugin
 const carrierType = computed<'game' | 'plugin'>(() => {
@@ -1329,6 +1329,7 @@ onMounted(() => {
   window.addEventListener('resize', onResize);
   loadAll().then(() => recomputeBlocking());
 });
+watch(locale, () => { void loadAll().then(() => recomputeBlocking()); });
 onUnmounted(() => {
   window.removeEventListener('resize', onResize);
   stopTriggerTest();

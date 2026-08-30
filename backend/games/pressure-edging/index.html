@@ -10,7 +10,7 @@
   "title": "气压寸止玩法",
   "description": "根据气压传感器读数智能调节 TD01 强度：压力升高时减弱刺激，超阈值电击惩罚，帮助维持在边缘状态。",
   "howTo": "1. 映射气压传感器与 TD01（必需）\n2. 可选：电击、自动锁\n3. 先设好临界气压与最大强度\n4. 过程中可用按钮微调目标强度",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "devices": [
     {
       "id": "sensor",
@@ -182,7 +182,33 @@
       "description": "开启阶段与警告语音",
       "group": "core"
     }
-  ]
+  ],
+  "i18n": {
+    "en": {
+      "title": "Pressure edging",
+      "description": "Adjusts TD01 from air-pressure readings: higher pressure lowers stimulation, over-threshold shock helps stay at the edge.",
+      "howTo": "1. Map air-pressure sensor and TD01 (required)\n2. Optional: shock, lock\n3. Set critical pressure and max intensity first\n4. Use buttons to fine-tune target intensity",
+      "devices": {
+        "sensor": "Air-pressure sensor",
+        "motor": "TD01 stimulator",
+        "punish": "Shock punisher",
+        "lock": "Auto lock"
+      },
+      "params": {
+        "duration": "Duration",
+        "criticalPressure": "Critical pressure",
+        "maxMotorIntensity": "TD01 max intensity",
+        "lowPressureDelay": "Low-pressure delay",
+        "rampRate": "Intensity ramp cap",
+        "sensitivity": "Pressure sensitivity",
+        "randomPercent": "Intensity jitter",
+        "gradualIncrease": "Post-delay ramp",
+        "shockVoltage": "Shock intensity",
+        "shockDuration": "Shock duration",
+        "voiceEnabled": "Voice prompts"
+      }
+    }
+  }
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>

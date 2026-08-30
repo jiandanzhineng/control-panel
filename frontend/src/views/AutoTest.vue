@@ -219,7 +219,7 @@ onMounted(async () => {
     connectSSE();
 
   } catch (error: any) {
-    ElMessage.error(error.message || '初始化失败');
+    ElMessage.error(error.message || t('autoTest.initFailed'));
   }
 });
 
@@ -278,10 +278,10 @@ async function saveProvisionSettings() {
       body: JSON.stringify({ autoFlash: autoFlash.value, deviceType: flashDeviceType.value }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data?.error?.message || '设置保存失败');
+    if (!res.ok) throw new Error(data?.error?.message || t('autoTest.saveFailed'));
     applyProvisionState(data);
   } catch (error: any) {
-    ElMessage.error(error?.message || '设置保存失败');
+    ElMessage.error(error?.message || t('autoTest.saveFailed'));
     await loadProvisionState();
   }
 }
@@ -293,10 +293,10 @@ async function retryPort(port: ProvisionPort) {
       method: 'POST',
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data?.error?.message || '重试失败');
+    if (!res.ok) throw new Error(data?.error?.message || t('autoTest.retryFailed'));
     applyProvisionState(data);
   } catch (error: any) {
-    ElMessage.error(error?.message || '重试失败');
+    ElMessage.error(error?.message || t('autoTest.retryFailed'));
   } finally {
     retryLoading.value[port.path] = false;
   }
@@ -345,9 +345,9 @@ function updateDeviceData(deviceId: string, data: any) {
 async function restartTest(device: Device) {
   try {
     await fetch(`/api/test/device/${device.id}/start`, { method: 'POST' });
-    ElMessage.success('已发送开始命令');
+    ElMessage.success(t('autoTest.startSent'));
   } catch (e) {
-    ElMessage.error('发送失败');
+    ElMessage.error(t('autoTest.sendFailed'));
   }
 }
 
@@ -363,10 +363,10 @@ async function blinkDevice(device: Device) {
       }),
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || '下发失败');
-    ElMessage.success('已下发闪烁指令');
+    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || t('autoTest.commandFailed'));
+    ElMessage.success(t('autoTest.blinkSent'));
   } catch (error: any) {
-    ElMessage.error(error?.message || '下发失败');
+    ElMessage.error(error?.message || t('autoTest.commandFailed'));
   } finally {
     blinkLoading.value[device.id] = false;
   }

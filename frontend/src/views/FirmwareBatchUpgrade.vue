@@ -291,7 +291,7 @@ onUnmounted(() => {
 
 async function loadDeviceTypes() {
   const res = await fetch('/api/device-types');
-  if (!res.ok) throw new Error('设备类型获取失败');
+  if (!res.ok) throw new Error(t('firmware.typesFailed'));
   deviceTypeMap.value = await res.json();
 }
 
@@ -301,11 +301,11 @@ async function loadBatchFirmware() {
   try {
     const res = await fetch('/api/devices/firmware/batch?scope=online');
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || '批量固件检查失败');
+    if (!res.ok || data.error) throw new Error(data.error?.message || data.message || t('firmware.batchCheckFailed'));
     rows.value = Array.isArray(data.devices) ? data.devices : [];
     setupStatusStream();
   } catch (error: any) {
-    loadError.value = error?.message || '批量固件检查失败';
+    loadError.value = error?.message || t('firmware.batchCheckFailed');
     rows.value = [];
     closeStatusStream();
   } finally {
@@ -375,7 +375,7 @@ async function startBatchUpgrade() {
   if (targets.length === 0) return;
 
   try {
-    const latestVersions = [...new Set(targets.map((row) => row.firmware.latestVersion).filter(Boolean))].join('、');
+    const latestVersions = [...new Set(targets.map((row) => row.firmware.latestVersion).filter(Boolean))].join(t('common.sep'));
     await ElMessageBox.confirm(
       t('firmware.confirmBatch', { n: targets.length, versions: latestVersions ? `（${latestVersions}）` : '' }),
       t('firmware.confirmTitle'),

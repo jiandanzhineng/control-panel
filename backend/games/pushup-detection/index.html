@@ -10,7 +10,7 @@
   "title": "俯卧撑检测训练",
   "description": "用 QTZ 距离阈值识别俯卧撑上下动作。支持无动作惩罚、连击奖励（跳蛋/捶背）与自动锁。",
   "howTo": "1. 映射 QTZ（必需）\n2. 可选：自动锁、电击、跳蛋、捶背\n3. 按身高调整下降/上升阈值\n4. 在时限内完成目标次数",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "devices": [
     {
       "id": "qtz",
@@ -246,7 +246,38 @@
       "description": "开启计数与惩罚语音",
       "group": "core"
     }
-  ]
+  ],
+  "i18n": {
+    "en": {
+      "title": "Push-up trainer",
+      "description": "Uses QTZ distance thresholds to detect push-up up/down. Idle punish, combo rewards (vibe / back-pat), and auto lock.",
+      "howTo": "1. Map QTZ (required)\n2. Optional: lock, shock, vibe, back-pat\n3. Adjust down/up thresholds for height\n4. Hit the target count within the time limit",
+      "devices": {
+        "qtz": "QTZ distance sensor",
+        "lock": "Auto lock",
+        "shock": "Shock device",
+        "vibrator": "Vibrator",
+        "pj01": "Back-pat motor"
+      },
+      "params": {
+        "duration": "Duration",
+        "targetCount": "Target count",
+        "downThreshold": "Down threshold",
+        "upThreshold": "Up threshold",
+        "idleTimeLimit": "Idle punish timeout",
+        "shockIntensity": "Shock intensity",
+        "shockDuration": "Shock duration",
+        "randomIntensityRange": "Intensity jitter",
+        "randomDurationRange": "Duration jitter",
+        "rewardTriggerCount": "Reward combo",
+        "rewardTriggerProbability": "Reward chance",
+        "vibratorIntensity": "Vibe intensity",
+        "vibratorDuration": "Vibe duration",
+        "pj01Duration": "Back-pat duration",
+        "enableVoice": "Voice prompts"
+      }
+    }
+  }
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>

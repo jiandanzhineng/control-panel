@@ -10,7 +10,7 @@
   "title": "气压寸止3阶段升级版",
   "description": "平静→中期→边缘三阶段状态机：按压力与时间窗调节 TD01，超阈值电击。比基础版多「中间兴奋压」与结束前起飞期。",
   "howTo": "1. 映射气压传感器与 TD01（必需）\n2. 可选：电击、自动锁\n3. 设置中间压与临界压（中间压应低于临界压）\n4. 可用界面按钮微调阈值",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "devices": [
     {
       "id": "sensor",
@@ -206,7 +206,35 @@
       "description": "开启语音播报",
       "group": "core"
     }
-  ]
+  ],
+  "i18n": {
+    "en": {
+      "title": "Pressure edging 3-stage",
+      "description": "Calm → mid → edge state machine. TD01 follows pressure and time windows, with over-threshold shock. Adds mid excitement pressure and a takeoff period before the end.",
+      "howTo": "1. Map air-pressure sensor and TD01 (required)\n2. Optional: shock, lock\n3. Set mid and critical pressure (mid must be lower)\n4. Fine-tune thresholds with on-screen buttons",
+      "devices": {
+        "sensor": "Air-pressure sensor",
+        "motor": "TD01 stimulator",
+        "punish": "Shock punisher",
+        "lock": "Auto lock"
+      },
+      "params": {
+        "duration": "Duration",
+        "endCalmLock": "Takeoff before end",
+        "criticalPressure": "Critical pressure",
+        "midPressure": "Mid excitement pressure",
+        "maxMotorIntensity": "TD01 max intensity",
+        "lowPressureDelay": "Low-pressure delay",
+        "rampRate": "Intensity ramp cap",
+        "sensitivity": "Pressure sensitivity",
+        "randomPercent": "Intensity jitter",
+        "gradualIncrease": "Post-delay ramp",
+        "shockVoltage": "Shock intensity",
+        "shockDuration": "Shock duration",
+        "voiceEnabled": "Voice prompts"
+      }
+    }
+  }
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>

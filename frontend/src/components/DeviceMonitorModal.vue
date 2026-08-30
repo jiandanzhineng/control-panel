@@ -105,7 +105,7 @@ async function loadMonitorData() {
   try {
     const configResponse = await fetch(`/api/device-types/${props.deviceInfo.type}/config`)
     if (!configResponse.ok) {
-      throw new Error('获取设备类型配置失败')
+      throw new Error(t('monitor.typeFailed'))
     }
     
     const configData = await configResponse.json()
@@ -187,7 +187,7 @@ function setupSSEConnection() {
     
     eventSource.value.onerror = () => {
       connected.value = false
-      ElMessage.warning('实时数据连接断开')
+      ElMessage.warning(t('monitor.sseLost'))
     }
     
   } catch (error) {

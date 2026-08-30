@@ -10,7 +10,7 @@
   "title": "提肛训练玩法",
   "description": "放松与提肛交替进行。在提肛阶段需在限定时间内让气压上升达到变化度，否则电击；成功则计数 +1。",
   "howTo": "1. 映射气压传感器（必需）\n2. 可选：电击、自动锁\n3. 设置目标次数与气压变化度\n4. 按阶段提示放松/提肛",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "devices": [
     {
       "id": "sensor",
@@ -116,7 +116,27 @@
       "step": 0.5,
       "device": "punish"
     }
-  ]
+  ],
+  "i18n": {
+    "en": {
+      "title": "Pelvic training",
+      "description": "Alternate rest and squeeze. During squeeze, pressure must rise by the delta in time, or you are shocked. Success counts +1.",
+      "howTo": "1. Map an air-pressure sensor (required)\n2. Optional: shock, lock\n3. Set target count and pressure delta\n4. Follow rest / squeeze prompts",
+      "devices": {
+        "sensor": "Air-pressure sensor",
+        "punish": "Shock punisher",
+        "lock": "Auto lock"
+      },
+      "params": {
+        "duration": "Duration",
+        "targetCount": "Squeeze target",
+        "pressureDelta": "Pressure delta",
+        "cycleTime": "Cycle time",
+        "shockVoltage": "Shock intensity",
+        "shockDuration": "Shock duration"
+      }
+    }
+  }
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>

@@ -67,7 +67,7 @@ describe('electron/localAppWindow', () => {
     ctrl.openWindow({ url: 'http://127.0.0.1:8020/', id: 'digital-human' });
     win.on.mock.calls.find(([name]) => name === 'closed')[1]();
     expect(onClosed).toHaveBeenCalledWith({
-      id: 'digital-human', url: 'http://127.0.0.1:8020/', title: '小雅',
+      id: 'digital-human', url: 'http://127.0.0.1:8020/', title: '小雅', locale: 'zh',
     });
     onClosed.mockClear();
     ctrl.openWindow({ url: 'http://127.0.0.1:8020/', id: 'digital-human' });
@@ -77,6 +77,7 @@ describe('electron/localAppWindow', () => {
 
   it('appends fullscreen hint and toggles F11 / ESC', () => {
     expect(withTitleHint('数字人')).toBe('数字人  按F11全屏 ESC退出全屏');
+    expect(withTitleHint('Xiaoya', 'en')).toBe('Xiaoya  F11 fullscreen, Esc exit fullscreen');
     const win = { isDestroyed: () => false, isFullScreen: jest.fn(() => false), setFullScreen: jest.fn() };
     expect(handleLocalAppHotkey(win, { type: 'keyDown', key: 'F11' })).toBe(true);
     expect(win.setFullScreen).toHaveBeenCalledWith(true);

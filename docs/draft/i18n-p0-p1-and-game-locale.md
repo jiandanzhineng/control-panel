@@ -8,3 +8,4 @@
 2. 游戏 i18n 必须兼容移动端：同一套 locale code（zh/en/…）和同一份游戏包；宿主注入 `DeviceAPI.locale`，游戏自带翻译。
 3. 运行中的游戏不热切语言，重进再生效。
 4. play-registry 官网 i18n 放到 P2，不同期做面板。
+5. 内置游戏先补 `manifest.i18n.en`（标题/说明/设备/参数）；页内玩法 UI 可仍中文。

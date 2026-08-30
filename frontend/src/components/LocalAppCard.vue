@@ -35,6 +35,7 @@ import { computed, onBeforeUnmount, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ElMessageBox } from 'element-plus';
 import { setActivePlay } from '../composables/useActivePlay';
+import { currentLocale } from '../i18n';
 import { useAuth } from '../composables/useAuth';
 
 const { t } = useI18n();
@@ -174,7 +175,7 @@ async function startOnly() {
       resume: { name: 'plays' }, resumeWindow: true,
     });
     if (window.localAppWindowApi) {
-      const opened = await window.localAppWindowApi.open({ url, id: props.app.id, title });
+      const opened = await window.localAppWindowApi.open({ url, id: props.app.id, title, locale: currentLocale() });
       if (!opened?.ok) throw new Error(opened?.error || t('localApp.openFailed'));
     } else {
       window.open(url, 'local-app-xiaoya');

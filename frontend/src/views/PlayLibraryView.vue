@@ -176,7 +176,7 @@ const filteredItems = computed(() => {
     : allItems.value.slice();
   // 游戏按最后游玩倒序在前，插件按标题字母序在后
   const gamePart = list.filter((it) => it.carrierType === 'game').sort((a, b) => Number(b.lastPlayed || 0) - Number(a.lastPlayed || 0));
-  const pluginPart = list.filter((it) => it.carrierType === 'plugin').sort((a, b) => (titleOf(a) || '').localeCompare(titleOf(b) || '', 'zh-CN'));
+  const pluginPart = list.filter((it) => it.carrierType === 'plugin').sort((a, b) => (titleOf(a) || '').localeCompare(titleOf(b) || '', t('plays.sortLocale')));
   return [...gamePart, ...pluginPart];
 });
 
