@@ -36,4 +36,11 @@ describe('play i18n passthrough', () => {
     const game = gameService.getGameById('device-control');
     expect(game.i18n.en.title).toBe('Device console');
   });
+
+  it('keeps paramDescriptions and paramUnits', () => {
+    const gameService = require('../services/gameService');
+    const game = gameService.getGameById('drink-pee-unlock');
+    expect(game.i18n.en.paramDescriptions.mode).toMatch(/Drink/);
+    expect(game.i18n.en.paramUnits.durationSec).toBe('s');
+  });
 });

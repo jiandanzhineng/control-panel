@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>女仆偷懒惩罚</title>
+<title data-en="Maid slacking punishment">女仆偷懒惩罚</title>
 <script type="application/json" id="game-manifest">
 {
   "id": "maid-punishment",
   "title": "女仆偷懒惩罚",
   "description": "保持踮脚站立；按下按钮会电击；长时间未受罚时 TD01 逐步增强刺激。可配合自动锁。",
   "howTo": "1. 映射电击设备（必需）\n2. 可选：QTZ/踮脚传感器、TD01、自动锁\n3. 设置时长与电击强度\n4. 开始后保持踮脚，偷懒会被惩罚",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "devices": [
     {
       "id": "qtz",
@@ -218,12 +218,32 @@
         "manualStart": "Manual start",
         "tiptoePressureThreshold": "Tiptoe pressure threshold",
         "tiptoeDebounceMs": "Pressure debounce"
+      },
+      "paramDescriptions": {
+        "duration": "How long a round lasts before auto-end.",
+        "shockIntensity": "Shock voltage on button press.",
+        "progressiveIntensity": "When on, shock intensity slowly rises over time.",
+        "maxIntensityIncrease": "Max extra voltage vs the base in progressive mode.",
+        "allowUnsafeIntensity": "Off caps intensity at 30V. Turn on with care.",
+        "td01DelaySeconds": "How long without shock before TD01 ramps up.",
+        "td01IntensityIncrease": "TD01 intensity added every 5 seconds after start.",
+        "td01ShockProbability": "Chance of an extra shock when TD01 starts ramping.",
+        "manualStart": "When on, wait for the lock button before the timer starts.",
+        "tiptoePressureThreshold": "Pressure above this means standing flat (not on tiptoe).",
+        "tiptoeDebounceMs": "Debounce for tiptoe state changes."
+      },
+      "paramUnits": {
+        "duration": "min",
+        "shockDuration": "s",
+        "td01DelaySeconds": "s",
+        "tiptoeDebounceMs": "ms"
       }
     }
   }
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>
+<script src="/bridge-api/game-i18n.js"></script>
 <style>
   :root { color-scheme: light dark; }
   body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, "Microsoft YaHei", sans-serif; margin: 0; padding: 16px; }
@@ -242,31 +262,31 @@
 </head>
 <body>
   <header>
-    <h2>女仆偷懒惩罚</h2>
-    <span class="pill">运行中：<span data-bind="running">false</span></span>
-    <span class="pill">开始时间：<span data-bind="startTime">-</span></span>
-    <span class="pill">加锁状态：<span data-bind="isLocked">false</span> <span data-bind="lockedText"></span></span>
+    <h2 data-en="Maid slacking punishment">女仆偷懒惩罚</h2>
+    <span class="pill"><span data-en="Running:">运行中：</span><span data-bind="running">false</span></span>
+    <span class="pill"><span data-en="Started:">开始时间：</span><span data-bind="startTime">-</span></span>
+    <span class="pill"><span data-en="Lock:">加锁状态：</span><span data-bind="isLocked">false</span> <span data-bind="lockedText"></span></span>
   </header>
   <main>
     <section class="card">
-      <h3>进度</h3>
-      <p>剩余秒数：<strong data-bind="remainingSec">-</strong></p>
+      <h3 data-en="Progress">进度</h3>
+      <p><span data-en="Seconds left:">剩余秒数：</span><strong data-bind="remainingSec">-</strong></p>
       <p class="warn" data-bind="statusText">-</p>
       <div class="actions">
-        <button class="primary" data-action="pause"><span data-bind="btnText">暂停</span></button>
-        <button data-action="forceStart">强制开始</button>
-        <button data-action="unlock">解锁</button>
+        <button class="primary" data-action="pause"><span data-bind="btnText" data-en="Pause">暂停</span></button>
+        <button data-action="forceStart" data-en="Force start">强制开始</button>
+        <button data-action="unlock" data-en="Unlock">解锁</button>
       </div>
     </section>
     <section class="card">
-      <h3>传感器与惩罚</h3>
-      <p>按钮1：<strong data-bind="button0Pressed">false</strong>；按钮2：<strong data-bind="button1Pressed">false</strong></p>
-      <p data-show="hasPressure">踮脚压力：<strong data-bind="pressure1">-</strong>；压力违规：<strong data-bind="pressureViolated">false</strong></p>
-      <p>电击中：<strong data-bind="isShocking">false</strong>；累计电击：<strong data-bind="shockCount">0</strong></p>
-      <p>TD01激活：<strong data-bind="td01Active">false</strong>；强度：<strong data-bind="td01Intensity">0</strong></p>
+      <h3 data-en="Sensors and punish">传感器与惩罚</h3>
+      <p><span data-en="Button 1:">按钮1：</span><strong data-bind="button0Pressed">false</strong>；<span data-en="Button 2:">按钮2：</span><strong data-bind="button1Pressed">false</strong></p>
+      <p data-show="hasPressure"><span data-en="Tiptoe pressure:">踮脚压力：</span><strong data-bind="pressure1">-</strong>；<span data-en="Pressure violation:">压力违规：</span><strong data-bind="pressureViolated">false</strong></p>
+      <p><span data-en="Shocking:">电击中：</span><strong data-bind="isShocking">false</strong>；<span data-en="Shocks:">累计电击：</span><strong data-bind="shockCount">0</strong></p>
+      <p><span data-en="TD01 active:">TD01激活：</span><strong data-bind="td01Active">false</strong>；<span data-en="Intensity:">强度：</span><strong data-bind="td01Intensity">0</strong></p>
     </section>
     <section class="card">
-      <h3>日志（最近10条）</h3>
+      <h3 data-en="Logs (last 10)">日志（最近10条）</h3>
       <ul id="logs"></ul>
     </section>
   </main>

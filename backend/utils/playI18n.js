@@ -7,6 +7,8 @@ function cloneI18n(value) {
   const out = {};
   for (const [locale, pack] of Object.entries(src)) {
     if (!pack || typeof pack !== 'object' || Array.isArray(pack)) continue;
+    const paramDesc = asObject(pack.paramDescriptions);
+    const paramUnits = asObject(pack.paramUnits);
     out[locale] = {
       title: typeof pack.title === 'string' ? pack.title : undefined,
       description: typeof pack.description === 'string' ? pack.description : undefined,
@@ -14,6 +16,8 @@ function cloneI18n(value) {
       devices: asObject(pack.devices),
       params: asObject(pack.params),
       enumLabels: asObject(pack.enumLabels),
+      paramDescriptions: Object.keys(paramDesc).length ? paramDesc : undefined,
+      paramUnits: Object.keys(paramUnits).length ? paramUnits : undefined,
     };
   }
   return Object.keys(out).length ? out : undefined;

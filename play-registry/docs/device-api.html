@@ -10,26 +10,30 @@
 <body>
 <nav class="nav">
   <div class="nav-inner">
-    <a class="brand" href="../index.html"><span class="brand-mark">⚡</span><span>硅基之下游戏库</span></a>
-    <div class="nav-links">
-      <a href="../games.html">游戏</a>
-      <a href="agent-guide.html">开发文档</a>
-      <a href="../control.html">设备控制</a>
-      <a href="device-api.html" class="active">DeviceAPI</a>
-      <a href="contribute.html" class="nav-cta">投稿</a>
+    <a class="brand" href="../index.html"><span class="brand-mark">⚡</span><span data-i18n="brand">硅基之下游戏库</span></a>
+        <div class="nav-links">
+      <a href="../games.html" data-i18n="navGames">游戏</a>
+      <a href="agent-guide.html" data-i18n="navDocs">开发文档</a>
+      <a href="../control.html" data-i18n="navControl">设备控制</a>
+      <a href="device-api.html" data-i18n="navDeviceApi" class="active">DeviceAPI</a>
+      <a href="contribute.html" class="nav-cta" data-i18n="navContribute">投稿</a>
+      <div class="lang-switch">
+        <button type="button" data-set-locale="zh">中</button>
+        <button type="button" data-set-locale="en">EN</button>
+      </div>
     </div>
-  </div>
-</nav>
+    </div>
+  </nav>
 
 <div class="container">
 <div class="docs-layout">
 <aside class="docs-sidebar">
-  <h4>开发文档</h4>
-  <a href="getting-started.html">快速开始</a>
-  <a href="agent-guide.html">Agent 开发指南</a>
-  <a href="device-api.html" class="active">DeviceAPI 参考</a>
-  <a href="devices.html">设备与能力</a>
-  <a href="contribute.html">投稿与奖励</a>
+  <h4 data-i18n="docsNav">开发文档</h4>
+  <a href="getting-started.html" data-i18n="docsStart">快速开始</a>
+  <a href="agent-guide.html" data-i18n="docsAgent">Agent 开发指南</a>
+  <a href="device-api.html" class="active" data-i18n="docsApi">DeviceAPI 参考</a>
+  <a href="devices.html" data-i18n="docsDevices">设备与能力</a>
+  <a href="contribute.html" data-i18n="docsContribute">投稿与奖励</a>
 </aside>
 
 <main class="docs-body">
@@ -154,9 +158,10 @@ DeviceAPI.device('qtz').onMessage((msg) =&gt; console.log('raw:', msg));</code><
   <p>页面定时器在后台标签/息屏时可能被节流，因此<strong>设备安全不能依赖页面逻辑</strong>。关键安全（停止电击、强度归零）由宿主 <code>close</code> 兜底强制保证：游戏主动结束、连接断开超 180s、下一个玩法启动时，宿主对该会话所有映射设备强制调用 <code>close</code>，页面崩溃也能保证设备停止。</p>
 </div>
 
-<p>→ 完整能力清单见 <a href="devices.html">设备与能力</a>。</p>
+<p>→ 完整能力清单见 <a href="devices.html" data-i18n="docsDevices">设备与能力</a>。</p>
 </main>
 </div>
 </div>
+<script src="../assets/js/i18n.js"></script>
 </body>
 </html>

@@ -45,7 +45,7 @@
     wrongCount: 0,
     lastSignalAt: 0,
     lastShockAt: 0,
-    status: '等待扇贝答题',
+    status: '',
     floating: null,
     processed: [],
     shockStopTimer: null,
@@ -70,6 +70,14 @@
   const active = safeReadActiveConfig();
   if (!active || !matchesAny(location.href, active.matchUrls || [])) return;
 
+  function isEn() {
+    return active.locale === 'en';
+  }
+  function t(zh, en) {
+    return isEn() ? (en || zh) : zh;
+  }
+
+  state.status = t('等待扇贝答题', 'Waiting for Shanbay');
   state.enabled = true;
   const DeviceAPI = buildDeviceAPI(active.bridgeUrl || 'ws://127.0.0.1:5277/bridge', active.deviceMap || {}, active.params || {});
   try {
@@ -83,7 +91,7 @@
 
   DeviceAPI.ready.then(() => {
     state.ready = true;
-    state.status = '已连接设备';
+    state.status = t('已连接设备', 'Device connected');
     updateFloatingUI();
   }).catch(() => {});
 
@@ -149,7 +157,7 @@
       ws.on('close', () => {
         ready = false;
         state.ready = false;
-        state.status = '设备连接断开，正在重连';
+        state.status = t('设备连接断开，正在重连', 'Disconnected, reconnecting');
         updateFloatingUI();
         setTimeout(connect, 2000);
       });
@@ -335,7 +343,7 @@
     if (signal === 'forgotten') {
       const punish = !!(active.params || DEFAULT_PARAMS).punishForgotten;
       if (!punish) {
-        state.status = '没想起来（未惩罚）';
+        state.status = t('没想起来（未惩罚）', 'Forgotten (no punish)');
         updateFloatingUI();
         return;
       }
@@ -352,13 +360,13 @@
 
     if (signal === 'right') {
       state.rightCount += 1;
-      state.status = '答对';
+      state.status = t('答对', 'Correct');
       updateFloatingUI();
       return;
     }
 
     state.wrongCount += 1;
-    state.status = '答错';
+    state.status = t('答错', 'Wrong');
     updateFloatingUI();
     triggerShock(source, detail);
   }
@@ -366,7 +374,7 @@
   function triggerShock(source, detail) {
     const params = active.params || DEFAULT_PARAMS;
     if (!DeviceAPI.device('shock').isMapped()) {
-      state.status = '未映射电击设备';
+      state.status = t('未映射电击设备', 'Shock device unmapped');
       updateFloatingUI();
       return;
     }
@@ -386,12 +394,12 @@
       state.shockStopTimer = null;
       state.shocking = false;
       DeviceAPI.device('shock').invoke('shock', 'stop', {}).catch(() => {});
-      state.status = '答错';
+      state.status = t('答错', 'Wrong');
       updateFloatingUI();
     }, durationSeconds * 1000);
 
     state.shocking = true;
-    state.status = `电击中 ${durationSeconds}s`;
+    state.status = t('电击中 {n}s', 'Shocking {n}s').replace('{n}', durationSeconds);
     flashLightning();
     updateFloatingUI();
   }
@@ -495,7 +503,11 @@
       state.floating.classList.remove('us-shocking');
     }
     if (state.floatingInfo) {
-      state.floatingInfo.textContent = `${state.shockCount}次 · ✓${state.rightCount} ✗${state.wrongCount} · ${state.status}`;
+      state.floatingInfo.textContent = t('{n}次 · ✓{r} ✗{w} · {s}', '{n}x · ✓{r} ✗{w} · {s}')
+        .replace('{n}', state.shockCount)
+        .replace('{r}', state.rightCount)
+        .replace('{w}', state.wrongCount)
+        .replace('{s}', state.status);
     }
   }
 

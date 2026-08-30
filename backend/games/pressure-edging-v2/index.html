@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>气压寸止3阶段升级版</title>
+<title data-en="Pressure edging 3-stage">气压寸止3阶段升级版</title>
 <script type="application/json" id="game-manifest">
 {
   "id": "pressure-edging-v2",
   "title": "气压寸止3阶段升级版",
   "description": "平静→中期→边缘三阶段状态机：按压力与时间窗调节 TD01，超阈值电击。比基础版多「中间兴奋压」与结束前起飞期。",
   "howTo": "1. 映射气压传感器与 TD01（必需）\n2. 可选：电击、自动锁\n3. 设置中间压与临界压（中间压应低于临界压）\n4. 可用界面按钮微调阈值",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "devices": [
     {
       "id": "sensor",
@@ -232,12 +232,36 @@
         "shockVoltage": "Shock intensity",
         "shockDuration": "Shock duration",
         "voiceEnabled": "Voice prompts"
+      },
+      "paramDescriptions": {
+        "duration": "Round duration.",
+        "endCalmLock": "Length of the high-intensity takeoff stage before the end.",
+        "criticalPressure": "Edge cap. Going over it punishes and drops intensity.",
+        "midPressure": "Pressure that enters the mid/excited stage. Must be below critical.",
+        "maxMotorIntensity": "Stimulation cap (0\u2013255).",
+        "lowPressureDelay": "How long low pressure lasts before intensity ramps.",
+        "rampRate": "Max intensity increase per second.",
+        "sensitivity": "How strongly pressure affects intensity (this version defaults to 15).",
+        "randomPercent": "Random percent jitter on target intensity.",
+        "gradualIncrease": "Intensity rise per second after the low-pressure delay.",
+        "shockVoltage": "Shock voltage when over the critical pressure.",
+        "shockDuration": "Duration of one shock.",
+        "voiceEnabled": "Play voice lines."
+      },
+      "paramUnits": {
+        "duration": "min",
+        "shockDuration": "s",
+        "lowPressureDelay": "s",
+        "endCalmLock": "s",
+        "rampRate": "/s",
+        "gradualIncrease": "/s"
       }
     }
   }
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>
+<script src="/bridge-api/game-i18n.js"></script>
 <style>
   :root{--bg:#f8fafc;--card:#fff;--text:#1e293b;--sub:#64748b;--border:#e2e8f0;--primary:#3b82f6;--danger:#ef4444;--warn:#f59e0b;--ok:#22c55e;}
   body{margin:0;padding:16px;font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;}
@@ -273,7 +297,7 @@
 <div class="container">
   <header>
     <div>
-      <h1 data-bind="title">气压寸止</h1>
+      <h1 data-bind="title" data-en="Pressure edging">气压寸止</h1>
       <div style="font-size:0.8rem;color:var(--sub)">Started: <span data-bind="startTime">-</span></div>
     </div>
     <div class="badge" data-bind="statusText">Ready</div>
@@ -281,12 +305,12 @@
   <div class="card">
     <div class="grid-2">
       <div class="metric">
-        <span class="label">当前压力 (Avg: <span data-bind="averagePressure">0</span>)</span>
+        <span class="label"><span data-en="Current pressure (Avg:">当前压力 (Avg:</span> <span data-bind="averagePressure">0</span>)</span>
         <span class="value" data-bind="currentPressure">0</span>
         <div class="progress"><div id="pBar" class="bar p" style="width:0%"></div></div>
       </div>
       <div class="metric">
-        <span class="label">当前强度 (Tgt: <span data-bind="targetIntensity">0</span>)</span>
+        <span class="label"><span data-en="Current intensity (Tgt:">当前强度 (Tgt:</span> <span data-bind="targetIntensity">0</span>)</span>
         <span class="value" data-bind="currentIntensity">0</span>
         <div class="progress"><div id="iBar" class="bar i" style="width:0%"></div></div>
       </div>
@@ -294,27 +318,27 @@
   </div>
   <div class="card">
     <div class="actions">
-      <button class="primary" data-action="pause"><span data-bind="btnText">暂停</span></button>
-      <button data-action="addIntensity">+10 强度</button>
-      <button class="danger" data-action="shockOnce">⚡ 电击</button>
+      <button class="primary" data-action="pause"><span data-bind="btnText" data-en="Pause">暂停</span></button>
+      <button data-action="addIntensity" data-en="+10 intensity">+10 强度</button>
+      <button class="danger" data-action="shockOnce" data-en="⚡ Shock">⚡ 电击</button>
     </div>
   </div>
   <div class="card">
     <div class="stat-row">
-      <span>中间压力: <b data-bind="midPressure">0</b></span>
-      <span>临界压力: <b data-bind="criticalPressure">0</b></span>
+      <span><span data-en="Mid pressure:">中间压力:</span> <b data-bind="midPressure">0</b></span>
+      <span><span data-en="Critical:">临界压力:</span> <b data-bind="criticalPressure">0</b></span>
     </div>
     <canvas id="chart"></canvas>
     <div class="adjust">
-      <div><span>中间</span><button class="btn-sm" data-adjust="mid" data-val="-0.1">-</button><button class="btn-sm" data-adjust="mid" data-val="0.1">+</button></div>
-      <div><span>临界</span><button class="btn-sm" data-adjust="crit" data-val="-0.1">-</button><button class="btn-sm" data-adjust="crit" data-val="0.1">+</button></div>
+      <div><span data-en="Mid">中间</span><button class="btn-sm" data-adjust="mid" data-val="-0.1">-</button><button class="btn-sm" data-adjust="mid" data-val="0.1">+</button></div>
+      <div><span data-en="Crit">临界</span><button class="btn-sm" data-adjust="crit" data-val="-0.1">-</button><button class="btn-sm" data-adjust="crit" data-val="0.1">+</button></div>
     </div>
   </div>
   <div class="card">
     <div class="stat-row">
-      <span>寸止: <b data-bind="edgingCount">0</b></span>
-      <span>电击: <b data-bind="shockCount">0</b></span>
-      <span>时长: <b data-bind="totalStimulationTime">0</b>s</span>
+      <span><span data-en="Edging:">寸止:</span> <b data-bind="edgingCount">0</b></span>
+      <span><span data-en="Shocks:">电击:</span> <b data-bind="shockCount">0</b></span>
+      <span><span data-en="Time:">时长:</span> <b data-bind="totalStimulationTime">0</b>s</span>
     </div>
     <ul id="logs"></ul>
   </div>

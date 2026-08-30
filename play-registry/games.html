@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>玩法列表 · UnderSilicon 控制面板</title>
+<title data-i18n-title="gamesTitle">玩法列表 · UnderSilicon 控制面板</title>
 <meta name="description" content="UnderSilicon 控制面板远程玩法的完整列表。从 registry.json 实时拉取，支持搜索与能力筛选。" />
 <link rel="stylesheet" href="assets/css/site.css" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
@@ -13,36 +13,40 @@
   <div class="nav-inner">
     <a class="brand" href="index.html">
       <span class="brand-mark">⚡</span>
-      <span>硅基之下游戏库</span>
+      <span data-i18n="brand">硅基之下游戏库</span>
     </a>
-    <div class="nav-links">
-      <a href="games.html" class="active">游戏</a>
-      <a href="control.html">设备控制</a>
-      <a href="docs/agent-guide.html">开发文档</a>
-      <a href="docs/device-api.html">DeviceAPI</a>
-      <a href="docs/contribute.html" class="nav-cta">投稿</a>
+        <div class="nav-links">
+      <a href="games.html" data-i18n="navGames" class="active">游戏</a>
+      <a href="control.html" data-i18n="navControl">设备控制</a>
+      <a href="docs/agent-guide.html" data-i18n="navDocs">开发文档</a>
+      <a href="docs/device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
+      <a href="docs/contribute.html" class="nav-cta" data-i18n="navContribute">投稿</a>
+      <div class="lang-switch">
+        <button type="button" data-set-locale="zh">中</button>
+        <button type="button" data-set-locale="en">EN</button>
+      </div>
     </div>
-  </div>
-</nav>
+    </div>
+  </nav>
 
 <section class="section" id="games">
   <div class="container">
     <div class="section-head">
       <span class="tag">Library</span>
-      <h2>玩法列表</h2>
-      <p>从 <code>registry.json</code> 实时拉取。点击「启动玩法」需先安装控制面板并完成设备映射。</p>
+      <h2 data-i18n="gamesH2">玩法列表</h2>
+      <p><span data-i18n="gamesLead">从 registry.json 实时拉取。点击「启动玩法」需先安装控制面板并完成设备映射。</span></p>
     </div>
 
     <div class="stat-row" id="stats" style="margin-bottom:28px;">
-      <div class="stat"><div class="stat-num" id="stat-games">—</div><div class="stat-label">在线玩法</div></div>
-      <div class="stat"><div class="stat-num" id="stat-devices">—</div><div class="stat-label">支持设备类型</div></div>
-      <div class="stat"><div class="stat-num" id="stat-caps">—</div><div class="stat-label">设备能力</div></div>
+      <div class="stat"><div class="stat-num" id="stat-games">—</div><div class="stat-label" data-i18n="gamesStat">在线玩法</div></div>
+      <div class="stat"><div class="stat-num" id="stat-devices">—</div><div class="stat-label" data-i18n="statDevices">支持设备类型</div></div>
+      <div class="stat"><div class="stat-num" id="stat-caps">—</div><div class="stat-label" data-i18n="statCaps">设备能力</div></div>
     </div>
 
     <div class="toolbar">
       <div class="search">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-        <input id="search" type="text" placeholder="搜索玩法标题、描述、id…" />
+        <input id="search" type="text" placeholder="搜索玩法标题、描述、id…" data-i18n-placeholder="searchGames" />
       </div>
       <div class="filter-chips" id="filters"></div>
     </div>
@@ -58,14 +62,14 @@
 <footer class="footer">
   <div class="container">
     <div class="footer-links">
-      <a href="games.html">游戏</a>
-      <a href="control.html">设备控制</a>
-      <a href="docs/getting-started.html">开发文档</a>
-      <a href="docs/device-api.html">DeviceAPI</a>
-      <a href="docs/devices.html">设备清单</a>
-      <a href="docs/contribute.html">投稿</a>
+      <a href="games.html" data-i18n="navGames">游戏</a>
+      <a href="control.html" data-i18n="navControl">设备控制</a>
+      <a href="docs/getting-started.html" data-i18n="navDocs">开发文档</a>
+      <a href="docs/device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
+      <a href="docs/devices.html" data-i18n="footerDevices">设备清单</a>
+      <a href="docs/contribute.html" data-i18n="navContribute">投稿</a>
     </div>
-    <div>UnderSilicon 控制面板 · 远程玩法仓库 · 内容随仓库 <code>main</code> 分支自动发布</div>
+    <div><span data-i18n="footerNoteGames">UnderSilicon 控制面板 · 远程玩法仓库 · 内容随仓库 main 分支自动发布</span></div>
   </div>
 </footer>
 
@@ -75,18 +79,19 @@
 <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-game-title">
   <div class="modal-panel">
     <div class="modal-head">
-      <h3 id="modal-game-title">玩法</h3>
-      <button class="modal-close" aria-label="关闭">✕</button>
+      <h3 id="modal-game-title" data-i18n="modalPlay">玩法</h3>
+      <button class="modal-close" aria-label="关闭" data-i18n-aria="close">✕</button>
     </div>
     <div class="modal-status" id="modal-status"></div>
     <div class="modal-body" id="modal-body"></div>
     <div class="modal-foot">
-      <button class="btn btn-ghost" id="modal-cancel">取消</button>
-      <button class="btn btn-primary" id="modal-start" disabled>启动玩法 →</button>
+      <button class="btn btn-ghost" id="modal-cancel" data-i18n="cancel">取消</button>
+      <button class="btn btn-primary" id="modal-start" disabled data-i18n="startPlay">启动玩法 →</button>
     </div>
   </div>
 </div>
 
+<script src="assets/js/i18n.js"></script>
 <script src="assets/js/play-launcher.js"></script>
 <script src="assets/js/game-list.js"></script>
 </body>

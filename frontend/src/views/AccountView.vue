@@ -96,7 +96,10 @@ async function run(action: () => Promise<void>, successTip: string): Promise<voi
     await action();
     if (successTip) ElMessage.success(successTip);
   } catch (e: any) {
-    ElMessage.error(e?.message || t('account.failed'));
+    const msg = e?.code === 'NETWORK_ERROR' || e?.message === 'NETWORK_ERROR'
+      ? t('account.networkError')
+      : (e?.message || t('account.failed'));
+    ElMessage.error(msg);
   } finally {
     acting.value = false;
   }

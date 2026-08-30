@@ -10,26 +10,30 @@
 <body>
 <nav class="nav">
   <div class="nav-inner">
-    <a class="brand" href="../index.html"><span class="brand-mark">⚡</span><span>硅基之下游戏库</span></a>
-    <div class="nav-links">
-      <a href="../games.html">游戏</a>
-      <a href="agent-guide.html">开发文档</a>
-      <a href="../control.html">设备控制</a>
-      <a href="device-api.html">DeviceAPI</a>
-      <a href="contribute.html" class="nav-cta">投稿</a>
+    <a class="brand" href="../index.html"><span class="brand-mark">⚡</span><span data-i18n="brand">硅基之下游戏库</span></a>
+        <div class="nav-links">
+      <a href="../games.html" data-i18n="navGames">游戏</a>
+      <a href="agent-guide.html" data-i18n="navDocs">开发文档</a>
+      <a href="../control.html" data-i18n="navControl">设备控制</a>
+      <a href="device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
+      <a href="contribute.html" class="nav-cta" data-i18n="navContribute">投稿</a>
+      <div class="lang-switch">
+        <button type="button" data-set-locale="zh">中</button>
+        <button type="button" data-set-locale="en">EN</button>
+      </div>
     </div>
-  </div>
-</nav>
+    </div>
+  </nav>
 
 <div class="container">
 <div class="docs-layout">
 <aside class="docs-sidebar">
-  <h4>开发文档</h4>
-  <a href="getting-started.html">快速开始</a>
-  <a href="agent-guide.html">Agent 开发指南</a>
-  <a href="device-api.html">DeviceAPI 参考</a>
-  <a href="devices.html" class="active">设备与能力</a>
-  <a href="contribute.html">投稿与奖励</a>
+  <h4 data-i18n="docsNav">开发文档</h4>
+  <a href="getting-started.html" data-i18n="docsStart">快速开始</a>
+  <a href="agent-guide.html" data-i18n="docsAgent">Agent 开发指南</a>
+  <a href="device-api.html" data-i18n="docsApi">DeviceAPI 参考</a>
+  <a href="devices.html" class="active" data-i18n="docsDevices">设备与能力</a>
+  <a href="contribute.html" data-i18n="docsContribute">投稿与奖励</a>
 </aside>
 
 <main class="docs-body">
@@ -123,9 +127,10 @@ DeviceAPI.device('lock').invoke('lock', 'setOpen', { open: false }); // 关锁</
   <p>所有设备类型都声明 <code>close</code> 操作定义安全停机指令（电机归零、停止电击、传感器恢复空闲频率）。会话结束时宿主<strong>强制</strong>调用，独立于玩法逻辑——这是设备安全的最后一道防线。</p>
 </div>
 
-<p>→ 怎么用这些设备写玩法见 <a href="getting-started.html">快速开始</a>，API 细节见 <a href="device-api.html">DeviceAPI 参考</a>。</p>
+<p>→ 怎么用这些设备写玩法见 <a href="getting-started.html" data-i18n="docsStart">快速开始</a>，API 细节见 <a href="device-api.html" data-i18n="docsApi">DeviceAPI 参考</a>。</p>
 </main>
 </div>
 </div>
+<script src="../assets/js/i18n.js"></script>
 </body>
 </html>

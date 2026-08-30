@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>气压寸止玩法</title>
+<title data-en="Pressure edging">气压寸止玩法</title>
 <script type="application/json" id="game-manifest">
 {
   "id": "pressure-edging",
   "title": "气压寸止玩法",
   "description": "根据气压传感器读数智能调节 TD01 强度：压力升高时减弱刺激，超阈值电击惩罚，帮助维持在边缘状态。",
   "howTo": "1. 映射气压传感器与 TD01（必需）\n2. 可选：电击、自动锁\n3. 先设好临界气压与最大强度\n4. 过程中可用按钮微调目标强度",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "devices": [
     {
       "id": "sensor",
@@ -206,12 +206,33 @@
         "shockVoltage": "Shock intensity",
         "shockDuration": "Shock duration",
         "voiceEnabled": "Voice prompts"
+      },
+      "paramDescriptions": {
+        "duration": "Round duration.",
+        "criticalPressure": "Over this is too excited: shock and drop intensity.",
+        "maxMotorIntensity": "Stimulation cap. Male TD may disconnect over 50.",
+        "lowPressureDelay": "How long low pressure lasts before intensity ramps up.",
+        "rampRate": "Max intensity increase per second.",
+        "sensitivity": "How strongly pressure changes affect intensity.",
+        "randomPercent": "Random jitter on target intensity.",
+        "gradualIncrease": "Intensity rise per second after the low-pressure delay.",
+        "shockVoltage": "Shock voltage when over the critical pressure.",
+        "shockDuration": "Duration of one shock.",
+        "voiceEnabled": "Play stage and warning voice lines."
+      },
+      "paramUnits": {
+        "duration": "min",
+        "shockDuration": "s",
+        "lowPressureDelay": "s",
+        "rampRate": "/s",
+        "gradualIncrease": "/s"
       }
     }
   }
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>
+<script src="/bridge-api/game-i18n.js"></script>
 <style>
   :root { --bg:#f5f7fa; --bg2:#ffffff; --card:#ffffff; --text:#1f2937; --muted:#64748b; --border:#e5e7eb; --primary:#3b82f6; --accent:#22d3ee; --ok:#16a34a; --warn:#d97706; --danger:#dc2626; }
   * { box-sizing: border-box; }
@@ -246,43 +267,43 @@
 </head>
 <body>
   <header>
-    <h2 class="title">气压寸止玩法</h2>
-    <span class="pill"><span class="muted">开始</span> <span data-bind="startTime">-</span></span>
-    <span class="pill ok"><span class="muted">状态</span> <span data-bind="running">false</span></span>
+    <h2 class="title" data-en="Pressure edging">气压寸止玩法</h2>
+    <span class="pill"><span class="muted" data-en="Start">开始</span> <span data-bind="startTime">-</span></span>
+    <span class="pill ok"><span class="muted" data-en="Status">状态</span> <span data-bind="running">false</span></span>
   </header>
   <main>
     <section class="card">
-      <h3 class="section-title">压力与强度</h3>
+      <h3 class="section-title" data-en="Pressure and intensity">压力与强度</h3>
       <div class="stats">
         <div class="stat">
-          <div class="label">当前压力(kPa)</div>
+          <div class="label"><span data-en="Current pressure (kPa)">当前压力(kPa)</span></div>
           <div class="value"><strong data-bind="currentPressure">0</strong></div>
           <div class="progress"><div id="pBar" class="bar"></div></div>
-          <div class="label">平均压力(近60点)：<strong data-bind="averagePressure">0</strong></div>
+          <div class="label"><span data-en="Average (last 60):">平均压力(近60点)：</span><strong data-bind="averagePressure">0</strong></div>
         </div>
         <div class="stat">
-          <div class="label">当前强度</div>
+          <div class="label"><span data-en="Current intensity">当前强度</span></div>
           <div class="value"><strong data-bind="currentIntensity">0</strong></div>
           <div class="progress"><div id="iBar" class="bar"></div></div>
-          <div class="label">目标强度：<strong data-bind="targetIntensity">0</strong></div>
+          <div class="label"><span data-en="Target intensity:">目标强度：</span><strong data-bind="targetIntensity">0</strong></div>
           <div class="progress"><div id="tBar" class="bar secondary"></div></div>
         </div>
       </div>
-      <p class="warn hidden" data-show="paused">已暂停</p>
+      <p class="warn hidden" data-show="paused" data-en="Paused">已暂停</p>
       <div class="actions">
-        <button class="primary" data-action="pause"><span data-bind="btnText">暂停</span></button>
-        <button data-action="addIntensity">目标强度 +10</button>
-        <button class="danger" data-action="shockOnce">手动电击</button>
+        <button class="primary" data-action="pause"><span data-bind="btnText" data-en="Pause">暂停</span></button>
+        <button data-action="addIntensity" data-en="Target +10">目标强度 +10</button>
+        <button class="danger" data-action="shockOnce" data-en="Manual shock">手动电击</button>
       </div>
     </section>
     <section class="card">
-      <h3 class="section-title">状态</h3>
-      <div class="row"><span class="muted">状态文本</span> <span data-bind="statusText">-</span></div>
-      <div class="row"><span class="muted">寸止次数</span> <strong data-bind="edgingCount">0</strong></div>
-      <div class="row"><span class="muted">累计刺激时长</span> <strong data-bind="totalStimulationTime">0</strong> 秒</div>
+      <h3 class="section-title" data-en="Status">状态</h3>
+      <div class="row"><span class="muted" data-en="Status">状态文本</span> <span data-bind="statusText">-</span></div>
+      <div class="row"><span class="muted" data-en="Edging count">寸止次数</span> <strong data-bind="edgingCount">0</strong></div>
+      <div class="row"><span class="muted" data-en="Total stim time">累计刺激时长</span> <strong data-bind="totalStimulationTime">0</strong> <span data-en="sec">秒</span></div>
     </section>
     <section class="card">
-      <h3 class="section-title">日志（最近 10 条）</h3>
+      <h3 class="section-title" data-en="Logs (last 10)">日志（最近 10 条）</h3>
       <ul id="logs"></ul>
     </section>
   </main>

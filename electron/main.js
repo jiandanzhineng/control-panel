@@ -494,8 +494,9 @@ function getBackendBaseUrl() {
 function parseAuthorizedGameHostRequest(event, req) {
   const origin = getWebviewOrigin(event.sender);
   const { enabled: developerModeEnabled } = externalGameAccessService.getStatus();
-  gameHost.assertAllowedOrigin(origin, { developerModeEnabled });
-  const { gameId } = gameHost.parseGameHostRequest(req);
+  const locale = currentAppLocale();
+  gameHost.assertAllowedOrigin(origin, { developerModeEnabled, locale });
+  const { gameId } = gameHost.parseGameHostRequest(req, locale);
   return { origin, gameId };
 }
 
@@ -510,7 +511,7 @@ function registerGameHostIpcHandlers() {
     let body = null;
     try { body = await response.json(); } catch (_) {}
     if (!response.ok) {
-      const error = new Error(body?.message || `缓存安装失败(${response.status})`);
+      const error = new Error(body?.message || formatElectronText(currentAppLocale(), 'gameHostCacheFailed', { status: response.status }));
       error.code = body?.code || 'GAME_HOST_CACHE_FAILED';
       error.origin = origin;
       throw error;

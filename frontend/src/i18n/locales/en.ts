@@ -207,6 +207,7 @@ const en = {
     deleteOk: 'Delete',
     deleted: 'Account deleted',
     failed: 'Action failed',
+    networkError: 'Cannot reach the local service',
   },
   support: {
     label: 'Need help · contact us',
@@ -298,6 +299,8 @@ const en = {
     syncFailed: 'Sync failed',
     startFailed: 'Start failed',
     openFailed: 'Failed to open window',
+    digitalHumanTitle: 'Digital human',
+    digitalHumanDesc: 'Local digital-human play. Install or update, then start.',
   },
   playConfig: {
     title: 'Pre-start setup',

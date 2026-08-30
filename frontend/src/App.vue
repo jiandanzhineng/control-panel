@@ -93,7 +93,7 @@
             />
             <el-breadcrumb separator="/">
               <el-breadcrumb-item :to="{ path: '/home' }">{{ t('nav.home') }}</el-breadcrumb-item>
-              <el-breadcrumb-item v-if="route.meta.title && route.path !== '/home'">{{ routeTitle }}</el-breadcrumb-item>
+              <el-breadcrumb-item v-if="routeTitle && route.path !== '/home'">{{ routeTitle }}</el-breadcrumb-item>
             </el-breadcrumb>
           </div>
         </div>
@@ -136,29 +136,9 @@ const route = useRoute()
 const isCollapsed = ref(false)
 const isMobile = ref(false)
 
-const ROUTE_TITLE_KEYS: Record<string, string> = {
-  '首页': 'nav.home',
-  '设备管理': 'nav.devices',
-  '固件更新': 'firmware.title',
-  '在线升级': 'firmware.ota',
-  '插线烧录': 'firmware.wired',
-  '自动化测试': 'autoTest.platform',
-  '本地游戏': 'nav.plays',
-  '玩法配置': 'playConfig.title',
-  '玩法运行': 'gameRun.title',
-  '插件运行': 'pluginRun.title',
-  '在线游戏': 'nav.browser',
-  '网络设置': 'nav.network',
-  '账号': 'nav.account',
-  '设置': 'nav.settings',
-  '日志管理': 'nav.logs',
-  '客服': 'nav.support',
-}
-
 const routeTitle = computed(() => {
-  const title = String(route.meta.title || '')
-  const key = ROUTE_TITLE_KEYS[title]
-  return key ? t(key) : title
+  const key = String(route.meta.titleKey || '')
+  return key ? t(key) : ''
 })
 
 // GameHost 启动导航：Electron 主进程在 window.GameHost.launch 时通过 IPC 通知，

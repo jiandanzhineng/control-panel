@@ -5,6 +5,7 @@ const { BlufiProvisionClient } = require('./blufi/provisionClient');
 const { BrandBleClient, V2_UUIDS, DGLAB_V2_NAMES } = require('./ble/brandDeviceClient');
 const { YcyBleClient } = require('./ble/ycyDeviceClient');
 const { SosexyBleClient } = require('./ble/sosexyDeviceClient');
+const { resolveAppLocale } = require('./locale');
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3000';
 const bleClients = new Map();
@@ -345,6 +346,10 @@ window.provisionApi = {
     const client = new BlufiProvisionClient({
       bluetooth: navigator.bluetooth,
       onStatus,
+      locale: resolveAppLocale(
+        window.localStorage && window.localStorage.getItem('app-locale'),
+        navigator.language,
+      ),
     });
     return client.provision(credentials);
   },

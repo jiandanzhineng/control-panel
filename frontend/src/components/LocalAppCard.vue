@@ -3,10 +3,10 @@
     <div class="play-main">
       <div class="play-content">
         <div class="title-row">
-          <h2>{{ app.title || app.id }}</h2>
+          <h2>{{ appTitle }}</h2>
           <el-tag size="small" type="warning">{{ t('plays.localApp') }}</el-tag>
         </div>
-        <p class="desc">{{ app.description || '' }}</p>
+        <p class="desc">{{ appDescription }}</p>
         <div class="meta">
           <el-tag size="small" type="info">{{ versionLabel }}</el-tag>
           <el-tag v-if="app.installed && !app.needsUpdate" size="small" type="success">{{ t('plays.installed') }}</el-tag>
@@ -51,6 +51,15 @@ const progress = ref({
 const processInfo = ref({ phase: 'idle', detail: '', elapsedMs: 0, running: false });
 let pollTimer: number | null = null;
 let launching = false;
+
+const appTitle = computed(() => {
+  if (props.app.id === 'digital-human') return t('localApp.digitalHumanTitle');
+  return props.app.title || props.app.id;
+});
+const appDescription = computed(() => {
+  if (props.app.id === 'digital-human') return t('localApp.digitalHumanDesc');
+  return props.app.description || '';
+});
 
 const versionLabel = computed(() => {
   const latest = props.app.version || '-';

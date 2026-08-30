@@ -19,18 +19,18 @@ import SettingsView from '../views/SettingsView.vue';
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/home' },
-  { path: '/home', name: 'home', component: HomeView, meta: { title: '首页' } },
-  { path: '/devices', name: 'devices', component: DevicesView, meta: { title: '设备管理' } },
+  { path: '/home', name: 'home', component: HomeView, meta: { titleKey: 'nav.home' } },
+  { path: '/devices', name: 'devices', component: DevicesView, meta: { titleKey: 'nav.devices' } },
   // 品牌设备已并入设备管理页的「品牌设备」标签
   { path: '/brands', redirect: '/devices' },
   {
     path: '/devices/firmware',
     component: FirmwareUpdate,
-    meta: { title: '固件更新' },
+    meta: { titleKey: 'firmware.title' },
     children: [
       { path: '', redirect: '/devices/firmware/ota' },
-      { path: 'ota', name: 'firmware_ota', component: FirmwareBatchUpgrade, meta: { title: '在线升级' } },
-      { path: 'wired', name: 'firmware_wired', component: WiredFlashUpdate, meta: { title: '插线烧录' } },
+      { path: 'ota', name: 'firmware_ota', component: FirmwareBatchUpgrade, meta: { titleKey: 'firmware.ota' } },
+      { path: 'wired', name: 'firmware_wired', component: WiredFlashUpdate, meta: { titleKey: 'firmware.wired' } },
     ],
   },
   // 旧路径重定向（合并前的独立页面地址）
@@ -38,21 +38,21 @@ const routes: RouteRecordRaw[] = [
   { path: '/devices/wired-flash', redirect: '/devices/firmware/wired' },
   // 远程投影已并入设备管理页的「远程连接」标签
   { path: '/remote-projection', redirect: '/devices' },
-  { path: '/test', name: 'test', component: AutoTest, meta: { title: '自动化测试' } },
+  { path: '/test', name: 'test', component: AutoTest, meta: { titleKey: 'autoTest.platform' } },
 
   // 本地游戏（游戏 + 插件统一入口）
-  { path: '/plays', name: 'play_library', component: PlayLibraryView, meta: { title: '本地游戏' } },
-  { path: '/plays/:type/:id/config', name: 'play_config', component: PlayConfigView, meta: { title: '玩法配置' } },
+  { path: '/plays', name: 'play_library', component: PlayLibraryView, meta: { titleKey: 'nav.plays' } },
+  { path: '/plays/:type/:id/config', name: 'play_config', component: PlayConfigView, meta: { titleKey: 'playConfig.title' } },
   // 运行态（全屏覆盖层，靠「启动」进入、「停止」退出，不进侧边栏）
-  { path: '/plays/game/current', name: 'game_current', component: GameCurrentView, meta: { title: '玩法运行' } },
-  { path: '/plays/plugin/:id/run', name: 'plugin_run', component: PluginRunView, meta: { title: '插件运行' } },
+  { path: '/plays/game/current', name: 'game_current', component: GameCurrentView, meta: { titleKey: 'gameRun.title' } },
+  { path: '/plays/plugin/:id/run', name: 'plugin_run', component: PluginRunView, meta: { titleKey: 'pluginRun.title' } },
 
-  { path: '/browser', name: 'browser', component: BrowserView, meta: { title: '在线游戏' } },
-  { path: '/network', name: 'network', component: ServicesView, meta: { title: '网络设置' } },
-  { path: '/account', name: 'account', component: AccountView, meta: { title: '账号' } },
-  { path: '/settings', name: 'settings', component: SettingsView, meta: { title: '设置' } },
-  { path: '/logs', name: 'logs', component: LogManagement, meta: { title: '日志管理' } },
-  { path: '/support', name: 'support', component: CustomerServiceView, meta: { title: '客服' } },
+  { path: '/browser', name: 'browser', component: BrowserView, meta: { titleKey: 'nav.browser' } },
+  { path: '/network', name: 'network', component: ServicesView, meta: { titleKey: 'nav.network' } },
+  { path: '/account', name: 'account', component: AccountView, meta: { titleKey: 'nav.account' } },
+  { path: '/settings', name: 'settings', component: SettingsView, meta: { titleKey: 'nav.settings' } },
+  { path: '/logs', name: 'logs', component: LogManagement, meta: { titleKey: 'nav.logs' } },
+  { path: '/support', name: 'support', component: CustomerServiceView, meta: { titleKey: 'nav.support' } },
 
   // 旧路径重定向（沿用 /gamelist→/games 的做法，保留外链/书签可用）
   { path: '/games', redirect: '/plays' },

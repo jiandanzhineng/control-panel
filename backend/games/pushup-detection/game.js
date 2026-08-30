@@ -1,6 +1,8 @@
 // 俯卧撑检测训练 — 页面自驱动（DeviceAPI），逻辑/UI 对齐老版 pushupDetectionEmbedded.js
 (function () {
   'use strict';
+  function L() { return (typeof GameI18n !== 'undefined' && GameI18n.t) ? GameI18n.t : function (zh) { return zh; }; }
+  function t(zh, en) { return L()(zh, en); }
   const QTZ = 'qtz';        // 老版 distance_sensor
   const LOCK = 'lock';      // 老版 auto_lock
   const SHOCK = 'shock';    // 老版 shock_device
@@ -22,18 +24,18 @@
   };
   const view = {
     running: false, startTime: 0, remainText: '-', completedCount: 0, targetCount: 30,
-    completionRate: 0, phase: '-', currentDistance: 0, idleSec: 0, btnText: '暂停',
+    completionRate: 0, phase: '-', currentDistance: 0, idleSec: 0, btnText: t('暂停', 'Pause'),
     isLocked: false, shocking: false, vibratorOn: false, pj01On: false,
     punishmentCount: 0, rewardCount: 0, statusText: '-',
-    isLockedText: '未锁', shockingText: '空闲', vibratorOnText: '待机', pj01OnText: '关闭',
+    isLockedText: t('未锁', 'Unlocked'), shockingText: t('空闲', 'Idle'), vibratorOnText: t('待机', 'Standby'), pj01OnText: t('关闭', 'Off'),
   };
 
   const $ = (s) => Array.from(document.querySelectorAll(s));
   function render() {
-    view.isLockedText = rt.isLocked ? '已锁' : '未锁';
-    view.shockingText = rt.shocking ? '进行中' : '空闲';
-    view.vibratorOnText = rt.vibratorOn ? '工作中' : '待机';
-    view.pj01OnText = rt.pj01On ? '工作中' : '关闭';
+    view.isLockedText = rt.isLocked ? t('已锁', 'Locked') : t('未锁', 'Unlocked');
+    view.shockingText = rt.shocking ? t('进行中', 'Active') : t('空闲', 'Idle');
+    view.vibratorOnText = rt.vibratorOn ? t('工作中', 'On') : t('待机', 'Standby');
+    view.pj01OnText = rt.pj01On ? t('工作中', 'On') : t('关闭', 'Off');
     $('[data-bind]').forEach((el) => {
       const k = el.getAttribute('data-bind');
       let v = (k in view) ? view[k] : el.textContent;
@@ -66,7 +68,7 @@
     try {
       if (!('speechSynthesis' in window)) return;
       const u = new SpeechSynthesisUtterance(String(text));
-      u.lang = 'zh-CN';
+      u.lang = (typeof GameI18n !== 'undefined' && GameI18n.isEn && GameI18n.isEn()) ? 'en-US' : 'zh-CN';
       u.rate = 1.1;
       speechSynthesis.speak(u);
     } catch (_) {}
@@ -89,7 +91,7 @@
     view.phase = rt.phase;
     addLog('info', `完成 ${rt.completedCount}/${cfg.targetCount}`);
     speak(String(rt.completedCount));
-    if (rt.completedCount >= cfg.targetCount) { end(); addLog('success', '目标完成，训练结束'); speak('目标完成，训练结束'); return; }
+    if (rt.completedCount >= cfg.targetCount) { end(); addLog('success', '目标完成，训练结束'); speak(t('目标完成，训练结束', 'Target reached. Training over')); return; }
     if (rt.consecutiveCount >= cfg.rewardTriggerCount) {
       if (Math.random() * 100 < cfg.rewardTriggerProbability) triggerReward();
     }
@@ -99,7 +101,7 @@
     rt.vibratorOn = true; rt.rewardCount += 1;
     view.vibratorOn = true; view.rewardCount = rt.rewardCount;
     addLog('warn', `奖励干扰 开始 强度=${cfg.vibratorIntensity} 时长=${cfg.vibratorDuration}s`);
-    speak('奖励');
+    speak(t('奖励', 'Reward'));
     setStrength(VIBE, cfg.vibratorIntensity);
     rt.vibratorTimer = setTimeout(stopVibrator, Math.max(1, cfg.vibratorDuration) * 1000);
   }
@@ -121,7 +123,7 @@
     rt.shocking = true; rt.lastActionTs = Date.now();
     view.shocking = true;
     addLog('error', `惩罚 电压=${intensity.toFixed(1)}V 时长=${duration.toFixed(1)}s`);
-    speak('惩罚');
+    speak(t('惩罚', 'Punish'));
     startShock(Math.round(intensity));
     rt.shockTimer = setTimeout(stopShockSeq, Math.round(duration * 1000));
     startPJ01();
@@ -168,8 +170,8 @@
       if (now - rt.lastIdleWarnTs > 5000) {
         rt.lastIdleWarnTs = now;
         addLog('warn', `还有 ${Math.max(0, cfg.idleTimeLimit - idleSec)} 秒将触发惩罚`);
-        view.statusText = '警告：快动起来！';
-        speak('快动起来');
+        view.statusText = t('警告：快动起来！', 'Warning: move!');
+        speak(t('快动起来', 'Move'));
       }
     }
     render();
@@ -181,7 +183,7 @@
     rt.lastActionTs = Date.now(); rt.lastIdleWarnTs = 0;
     rt.shocking = false; rt.vibratorOn = false; rt.pj01On = false;
     rt.punishmentCount = 0; rt.rewardCount = 0;
-    view.running = true; view.startTime = rt.startTime; view.statusText = '准备就绪';
+    view.running = true; view.startTime = rt.startTime; view.statusText = t('准备就绪', 'Ready');
     view.targetCount = cfg.targetCount;
     addLog('info', '俯卧撑检测启动');
     if (DeviceAPI.device(QTZ).isMapped()) {
@@ -224,7 +226,7 @@
     setStrength('pj01', 0);
     if (DeviceAPI.device(QTZ).isMapped()) DeviceAPI.device(QTZ).invoke('distance', 'configure', { reportDelayMs: 10000 });
     setLock(true);
-    view.running = false; view.statusText = '训练结束';
+    view.running = false; view.statusText = t('训练结束', 'Training over');
     addLog('info', `完成 ${rt.completedCount}/${cfg.targetCount}，惩罚 ${rt.punishmentCount}，奖励 ${rt.rewardCount}`);
     render();
   }
@@ -235,8 +237,8 @@
       el.addEventListener('click', () => {
         if (name === 'pause') {
           rt.paused = !rt.paused;
-          view.statusText = rt.paused ? '已暂停' : '运行中';
-          view.btnText = rt.paused ? '继续' : '暂停';
+          view.statusText = rt.paused ? t('已暂停', 'Paused') : t('运行中', 'Running');
+          view.btnText = rt.paused ? t('继续', 'Resume') : t('暂停', 'Pause');
           addLog('info', rt.paused ? '已暂停' : '已继续');
           render();
         }
@@ -246,6 +248,7 @@
   let loopTimer = null;
   async function boot() {
     bindActions();
+    if (typeof GameI18n !== 'undefined' && GameI18n.apply) GameI18n.apply();
     render();
     try { await DeviceAPI.ready; } catch (_) {}
     const p = DeviceAPI.params || {};

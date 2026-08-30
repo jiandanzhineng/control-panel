@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>喝水/憋尿解锁玩法</title>
+<title data-en="Drink / hold-pee unlock">喝水/憋尿解锁玩法</title>
 <script type="application/json" id="game-manifest">
 {
   "id": "drink-pee-unlock",
   "title": "喝水/憋尿解锁玩法",
   "description": "站上称重设备，保持提肛与踮脚，同时按模式持续变重（喝水）或变轻（憋尿）。达成目标重量变化或超时后自动解锁。踮脚可用 QTZ 双脚踏或 CUNZHI01 压力检测。",
   "howTo": "1. 映射称重设备（必需）\n2. 可选：气压传感器、踮脚检测、电击、振动、自动锁\n3. 选择喝水/憋尿模式与目标重量\n4. 开始后按提示保持动作，达标或超时解锁",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "devices": [
     {
       "id": "scale",
@@ -308,12 +308,39 @@
           "drink": "Drink (get heavier)",
           "pee": "Hold pee (get lighter)"
         }
+      },
+      "paramDescriptions": {
+        "mode": "Drink: gain weight to the target. Hold pee: lose weight to the target.",
+        "durationSec": "Auto-end and unlock after timeout. 1800s = 30 minutes.",
+        "targetWeight": "Grams of change from start weight needed to succeed.",
+        "changeThreshold": "Changes below this are treated as noise.",
+        "stableWindowSec": "History window used to smooth weight trend.",
+        "pressureThreshold": "Below this is treated as not squeezing (needs air-pressure sensor).",
+        "tiptoePressureThreshold": "CUNZHI01: pressure above this means heel down.",
+        "tiptoeDebounceMs": "Filter for pressure jitter. Too small causes false triggers.",
+        "punishCooldownSec": "Minimum interval between shocks.",
+        "shockIntensity": "Punish shock voltage. Keep at or below 30V.",
+        "shockDuration": "Duration of one shock.",
+        "vibeStartProb": "Chance per second to start vibration. 0.05 ≈ 5%.",
+        "vibeIntensity": "Vibrator output intensity.",
+        "vibeDuration": "Duration of one vibration.",
+        "voiceEnabled": "Play stage and hint voice lines."
+      },
+      "paramUnits": {
+        "durationSec": "s",
+        "shockDuration": "s",
+        "tiptoeDebounceMs": "ms",
+        "vibeDuration": "s",
+        "punishCooldownSec": "s",
+        "stableWindowSec": "s",
+        "vibeStartProb": "/s"
       }
     }
   }
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>
+<script src="/bridge-api/game-i18n.js"></script>
 <style>
   :root {
     --bg: #050505; --panel-bg: rgba(20, 20, 25, 0.9); --panel-border: #333;
@@ -362,66 +389,66 @@
     <header class="hud-header">
       <h1 class="hud-title" data-bind="title">喝水/憋尿解锁玩法</h1>
       <div class="hud-status-bar">
-        <div class="status-tag">状态: <b data-bind="statusText">初始化</b></div>
-        <div class="status-tag">剩余: <b data-bind="remainingSec">-</b>s</div>
+        <div class="status-tag"><span data-en="Status:">状态:</span> <b data-bind="statusText">初始化</b></div>
+        <div class="status-tag"><span data-en="Left:">剩余:</span> <b data-bind="remainingSec">-</b>s</div>
       </div>
     </header>
     <main class="dashboard-grid">
       <div class="panel panel-hero">
-        <span class="panel-label">任务进度 (初始: <span data-bind="initialWeight">-</span>g)</span>
+        <span class="panel-label"><span data-en="Progress (start:">任务进度 (初始:</span> <span data-bind="initialWeight">-</span>g)</span>
         <div class="progress-display">
           <div class="progress-fill" id="progressBar" style="width: 0%"></div>
           <div class="progress-text"><span data-bind="progress">0</span> / <span data-bind="targetWeight">500</span> g</div>
         </div>
         <div class="hero-stats">
-          <div class="hero-stat-item">电击触发次数: <b data-bind="shockCount" class="text-danger">0</b></div>
-          <div class="hero-stat-item">电击设备: <b data-bind="punishDevice">未映射</b></div>
-          <div class="hero-stat-item">电击状态: <b data-bind="shockStatus" id="shockStatusVal">不可用</b></div>
-          <div class="hero-stat-item">电击参数: <b><span data-bind="shockIntensity">0</span>V / <span data-bind="shockDuration">0</span>s</b></div>
-          <div class="hero-stat-item">冷却时间: <b data-bind="cooldownRemainingSec">0</b>s</div>
-          <div class="hero-stat-item" style="color:var(--warn);">惩罚原因: <b data-bind="lastPunishReason"></b></div>
+          <div class="hero-stat-item"><span data-en="Shocks:">电击触发次数:</span> <b data-bind="shockCount" class="text-danger">0</b></div>
+          <div class="hero-stat-item"><span data-en="Shock device:">电击设备:</span> <b data-bind="punishDevice">未映射</b></div>
+          <div class="hero-stat-item"><span data-en="Shock status:">电击状态:</span> <b data-bind="shockStatus" id="shockStatusVal">不可用</b></div>
+          <div class="hero-stat-item"><span data-en="Shock params:">电击参数:</span> <b><span data-bind="shockIntensity">0</span>V / <span data-bind="shockDuration">0</span>s</b></div>
+          <div class="hero-stat-item"><span data-en="Cooldown:">冷却时间:</span> <b data-bind="cooldownRemainingSec">0</b>s</div>
+          <div class="hero-stat-item" style="color:var(--warn);"><span data-en="Punish reason:">惩罚原因:</span> <b data-bind="lastPunishReason"></b></div>
         </div>
       </div>
       <div class="panel panel-metric">
-        <span class="panel-label">当前重量</span>
+        <span class="panel-label" data-en="Current weight">当前重量</span>
         <div class="metric-value"><span data-bind="weight">-</span></div>
-        <div class="metric-unit">克 (g)</div>
+        <div class="metric-unit" data-en="grams (g)">克 (g)</div>
       </div>
       <div class="panel panel-metric">
-        <span class="panel-label">气压值</span>
+        <span class="panel-label" data-en="Air pressure">气压值</span>
         <div class="metric-value"><span data-bind="pressure">-</span></div>
         <div class="metric-unit">kPa</div>
       </div>
       <div class="panel panel-metric">
-        <span class="panel-label">踮脚状态</span>
+        <span class="panel-label" data-en="Tiptoe">踮脚状态</span>
         <div class="tiptoe-indicator" id="tiptoeVal"><span data-bind="tiptoeOk">检查</span></div>
-        <div class="metric-unit" style="margin-top:6px;">QTZ按钮: <b data-bind="tiptoeQtz">-</b> | 压力: <b data-bind="tiptoePressureText">-</b></div>
+        <div class="metric-unit" style="margin-top:6px;"><span data-en="QTZ button:">QTZ按钮:</span> <b data-bind="tiptoeQtz">-</b> | <span data-en="Pressure:">压力:</span> <b data-bind="tiptoePressureText">-</b></div>
       </div>
       <div class="panel panel-metric">
-        <span class="panel-label">惩罚倒计时</span>
+        <span class="panel-label" data-en="Punish countdown">惩罚倒计时</span>
         <div class="metric-value" style="color:var(--warn);"><span data-bind="punishCountdown">-</span></div>
-        <div class="metric-unit">秒 (s)</div>
+        <div class="metric-unit" data-en="seconds (s)">秒 (s)</div>
       </div>
       <div class="panel" style="grid-column: span 12;">
         <details>
-          <summary style="cursor:pointer; color:var(--primary);">系统指标 &gt;&gt;</summary>
+          <summary style="cursor:pointer; color:var(--primary);"><span data-en="System metrics >>">系统指标 &gt;&gt;</span></summary>
           <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:10px; margin-top:10px; font-family:var(--font-mono); font-size:12px;">
-            <div>模式: <b data-bind="modeCN">-</b></div>
-            <div>最小重: <b data-bind="weightMin">-</b></div>
-            <div>最大重: <b data-bind="weightMax">-</b></div>
-            <div>最小压: <b data-bind="pressureMin">-</b></div>
-            <div>最大压: <b data-bind="pressureMax">-</b></div>
-            <div>采样数: <b data-bind="weightCount">0</b></div>
-            <div>历史窗口: <b data-bind="stableWindowSec">0</b>s</div>
-            <div>惩罚冷却: <b data-bind="punishCooldownSec">0</b>s</div>
-            <div>踮脚压力: <b data-bind="tiptoePressureText">-</b></div>
-            <div>踮脚压力阈值: <b data-bind="tiptoePressureThreshold">-</b></div>
-            <div>踮脚压力Max: <b data-bind="tiptoePressureMax">-</b></div>
+            <div><span data-en="Mode:">模式:</span> <b data-bind="modeCN">-</b></div>
+            <div><span data-en="Min weight:">最小重:</span> <b data-bind="weightMin">-</b></div>
+            <div><span data-en="Max weight:">最大重:</span> <b data-bind="weightMax">-</b></div>
+            <div><span data-en="Min pressure:">最小压:</span> <b data-bind="pressureMin">-</b></div>
+            <div><span data-en="Max pressure:">最大压:</span> <b data-bind="pressureMax">-</b></div>
+            <div><span data-en="Samples:">采样数:</span> <b data-bind="weightCount">0</b></div>
+            <div><span data-en="History window:">历史窗口:</span> <b data-bind="stableWindowSec">0</b>s</div>
+            <div><span data-en="Punish cooldown:">惩罚冷却:</span> <b data-bind="punishCooldownSec">0</b>s</div>
+            <div><span data-en="Tiptoe pressure:">踮脚压力:</span> <b data-bind="tiptoePressureText">-</b></div>
+            <div><span data-en="Tiptoe threshold:">踮脚压力阈值:</span> <b data-bind="tiptoePressureThreshold">-</b></div>
+            <div><span data-en="Tiptoe max:">踮脚压力Max:</span> <b data-bind="tiptoePressureMax">-</b></div>
           </div>
         </details>
       </div>
       <div class="panel panel-terminal">
-        <span class="panel-label">系统日志</span>
+        <span class="panel-label" data-en="System log">系统日志</span>
         <ul class="terminal-logs" id="logs"></ul>
       </div>
     </main>

@@ -22,6 +22,19 @@
   var busy = false; // 同一时刻只处理一个 GameHost 请求（cache/launch）
 
   // ---------- 工具 ----------
+  function t(key, vars) {
+    try {
+      if (typeof window !== 'undefined' && window.SiteI18n && window.SiteI18n.t) return window.SiteI18n.t(key, vars);
+    } catch (_) {}
+    var text = key;
+    if (vars) {
+      text = String(text).replace(/\{(\w+)\}/g, function (_, k) {
+        return vars[k] == null ? '' : String(vars[k]);
+      });
+    }
+    return text;
+  }
+
   function el(id) { return document.getElementById(id); }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -120,7 +133,7 @@
     var gameUrl = new URL(game._path || ('games/' + game.id + '/index.html'), location.href).href;
     return fetch(gameUrl).then(function (r) { return r.text(); }).then(function (html) {
       var m = html.match(/<script[^>]*\bid=["']?game-manifest["']?[^>]*>([\s\S]*?)<\/script>/i);
-      if (!m) throw new Error('游戏页无 game-manifest');
+      if (!m) throw new Error(t('noManifest'));
       var obj = JSON.parse(m[1]);
       return { devices: obj.devices || [], params: obj.params || [] };
     });
@@ -166,10 +179,10 @@
 
     // 状态条
     var status = el('modal-status');
-    status.innerHTML = '<span class="dot pulse"></span> 正在探测本机控制面板…';
+    status.innerHTML = '<span class="dot pulse"></span> ' + t('probing');
     status.className = 'modal-status searching';
 
-    el('modal-body').innerHTML = '<div class="loader">连接中…</div>';
+    el('modal-body').innerHTML = '<div class="loader">' + t('connecting') + '</div>';
     el('modal-start').disabled = true;
     el('modal').classList.add('show');
 
@@ -188,26 +201,26 @@
     var api = deviceApi();
     if (!api || !api.requestAccess) { showMissingApi(); return; }
     var status = el('modal-status');
-    status.innerHTML = '<span class="dot warn"></span> 面板已运行，本网站尚未授权';
+    status.innerHTML = '<span class="dot warn"></span> ' + t('panelRunningUnauthorized');
     status.className = 'modal-status warn';
     el('modal-body').innerHTML =
       '<div class="empty-block">'
-      + '<p style="font-size:16px;margin-bottom:10px;">需要授权后才能控制本机设备</p>'
-      + '<p style="color:var(--text-soft);font-size:14px;margin-bottom:16px;">点击下方按钮，并在控制面板弹窗中允许今天访问。</p>'
-      + '<button class="btn btn-primary" id="request-grant">申请授权</button>'
+      + '<p style="font-size:16px;margin-bottom:10px;">' + t('needGrant') + '</p>'
+      + '<p style="color:var(--text-soft);font-size:14px;margin-bottom:16px;">' + t('grantHint') + '</p>'
+      + '<button class="btn btn-primary" id="request-grant">' + t('requestGrant') + '</button>'
       + '</div>';
     var btn = el('request-grant');
     if (btn) btn.onclick = function () {
       btn.disabled = true;
-      btn.textContent = '等待面板授权…';
+      btn.textContent = t('waitingGrant');
       api.requestAccess().then(function () {
         backendBase = null;
         backendForbidden = false;
         openModal(currentGame); // 重新探测，此时后端已放行
       }).catch(function (err) {
         btn.disabled = false;
-        btn.textContent = '申请授权';
-        status.innerHTML = '<span class="dot err"></span> 授权失败: ' + esc(err && err.message ? err.message : err);
+        btn.textContent = t('requestGrant');
+        status.innerHTML = '<span class="dot err"></span> ' + t('grantFail', { msg: esc(err && err.message ? err.message : err) });
         status.className = 'modal-status error';
       });
     };
@@ -215,14 +228,13 @@
 
   function showMissingApi() {
     var status = el('modal-status');
-    status.innerHTML = '<span class="dot err"></span> 当前环境不支持授权';
+    status.innerHTML = '<span class="dot err"></span> ' + t('envNoGrant');
     status.className = 'modal-status error';
     el('modal-body').innerHTML =
       '<div class="empty-block">'
-      + '<p style="font-size:16px;margin-bottom:10px;">面板已运行，但本页无法申请授权</p>'
-      + '<p style="color:var(--text-soft);font-size:14px;margin-bottom:16px;">请在控制面板的内置浏览器中打开本站；'
-      + '或在面板「网络配置 → 开发者：外部本地游戏放行」中开启开发者模式后重试。</p>'
-      + '<button class="btn btn-ghost" id="retry-detect">重新探测</button>'
+      + '<p style="font-size:16px;margin-bottom:10px;">' + t('cannotGrant') + '</p>'
+      + '<p style="color:var(--text-soft);font-size:14px;margin-bottom:16px;">' + t('cannotGrantHint') + '</p>'
+      + '<button class="btn btn-ghost" id="retry-detect">' + t('retryDetect') + '</button>'
       + '</div>';
     var retry = el('retry-detect');
     if (retry) retry.onclick = function () { backendBase = null; backendForbidden = false; openModal(currentGame); };
@@ -230,12 +242,12 @@
 
   function showNoBackend() {
     var status = el('modal-status');
-    status.innerHTML = '<span class="dot err"></span> 未找到本机控制面板';
+    status.innerHTML = '<span class="dot err"></span> ' + t('noPanel');
     status.className = 'modal-status error';
     el('modal-body').innerHTML =
       '<div class="empty-block">'
-      + '<p style="font-size:16px;margin-bottom:10px;">未在 127.0.0.1 探测到控制面板后端</p>'
-      + '<p style="color:var(--text-soft);font-size:14px;margin-bottom:16px;">请先启动控制面板（Electron 桌面端或后端服务），让本机 5278 端口可用后重试。</p>'
+      + '<p style="font-size:16px;margin-bottom:10px;">' + t('noPanelHint') + '</p>'
+      + '<p style="color:var(--text-soft);font-size:14px;margin-bottom:16px;">' + t('noPanelHint2') + '</p>'
       + '<button class="btn btn-ghost" id="retry-detect">重新探测</button>'
       + '</div>';
     var retry = el('retry-detect');
@@ -244,7 +256,7 @@
 
   function loadBackendData(base) {
     var status = el('modal-status');
-    status.innerHTML = '<span class="dot ok"></span> 已连接 ' + base + ' · 加载设备中…';
+    status.innerHTML = '<span class="dot ok"></span> ' + t('connectedLoading', { base: base });
     status.className = 'modal-status ok';
 
     Promise.all([fetchJson(base, '/api/devices'), fetchJson(base, '/api/device-capabilities')])
@@ -255,9 +267,9 @@
       })
       .catch(function (err) {
         var s = el('modal-status');
-        s.innerHTML = '<span class="dot err"></span> 加载设备失败: ' + esc(err.message || err);
+        s.innerHTML = '<span class="dot err"></span> ' + t('loadDevicesFail', { msg: esc(err.message || err) });
         s.className = 'modal-status error';
-        el('modal-body').innerHTML = '<div class="empty-block"><p>无法从控制面板读取设备列表。</p></div>';
+        el('modal-body').innerHTML = '<div class="empty-block"><p>' + t('cannotReadDevices') + '</p></div>';
       });
   }
 
@@ -265,10 +277,10 @@
     var online = onlineDevices();
     var status = el('modal-status');
     if (!online.length) {
-      status.innerHTML = '<span class="dot warn"></span> ' + base + ' · 当前无在线设备';
+      status.innerHTML = '<span class="dot warn"></span> ' + t('noOnline', { base: base });
       status.className = 'modal-status warn';
     } else {
-      status.innerHTML = '<span class="dot ok"></span> ' + base + ' · ' + online.length + ' 个在线设备';
+      status.innerHTML = '<span class="dot ok"></span> ' + t('onlineCount', { base: base, n: online.length });
       status.className = 'modal-status ok';
     }
 
@@ -280,16 +292,16 @@
 
       // 设备映射区
       if (devs.length) {
-        html += '<div class="form-section"><h4>设备映射</h4>';
+        html += '<div class="form-section"><h4>' + t('deviceMap') + '</h4>';
         devs.forEach(function (d) {
-          var req = d.required ? '<span class="req">必需</span>' : '<span class="opt">可选</span>';
+          var req = d.required ? '<span class="req">' + t('required') + '</span>' : '<span class="opt">' + t('optional') + '</span>';
           var caps = (d.capabilities || []).join(', ');
           var candidates = online.filter(function (p) { return canMap(d, p); });
           setDefaultMapping(d, candidates);
           html += '<div class="map-row" data-logical="' + esc(d.id) + '">'
             + '<div class="map-meta">'
             + '<span class="map-lid">' + esc(d.id) + '</span> ' + req
-            + '<span class="map-caps">能力: ' + esc(caps || '（无）') + '</span>'
+            + '<span class="map-caps">' + t('caps', { caps: esc(caps || t('none')) }) + '</span>'
             + '</div>'
             + '<div class="map-options" role="group" aria-label="' + esc(d.id) + ' 设备映射">'
             + candidates.map(function (p) {
@@ -301,18 +313,18 @@
                 + '</label>';
             }).join('')
             + '</div>'
-            + (candidates.length === 0 ? '<span class="map-none">无匹配设备</span>' : '')
+            + (candidates.length === 0 ? '<span class="map-none">' + t('noMatchDevice') + '</span>' : '')
             + '</div>';
         });
         html += '</div>';
       } else {
-        html += '<div class="form-section"><p>此玩法不需要设备映射。</p></div>';
+        html += '<div class="form-section"><p>' + t('noMapNeeded') + '</p></div>';
       }
 
       // 参数区
       var ps = manifest.params || [];
       if (ps.length) {
-        html += '<div class="form-section"><h4>参数</h4>';
+        html += '<div class="form-section"><h4>' + t('params') + '</h4>';
         ps.forEach(function (p) {
           var def = (p.default !== undefined ? p.default : '');
           var label = esc(p.label || p.key);
@@ -334,7 +346,7 @@
         html += '</div>';
       }
 
-      html += '<div class="form-section"><p class="hint">提示：可选设备不映射也能运行；必需设备必须选择。运行中可在控制栏「重选设备」。</p></div>';
+      html += '<div class="form-section"><p class="hint">' + t('mapHint') + '</p></div>';
 
       el('modal-body').innerHTML = html;
 
@@ -377,10 +389,10 @@
     var btn = el('modal-start');
     if (missing.length) {
       btn.disabled = true;
-      btn.textContent = '需映射: ' + missing.map(function (d) { return d.id; }).join(', ');
+      btn.textContent = t('needMap', { ids: missing.map(function (d) { return d.id; }).join(', ') });
     } else {
       btn.disabled = false;
-      btn.textContent = '启动玩法 →';
+      btn.textContent = t('startPlay');
     }
   }
 
@@ -391,7 +403,7 @@
     }
     var status = el('modal-status');
     if (status) {
-      status.innerHTML = '<span class="dot pulse"></span> 正在缓存游戏本体…';
+      status.innerHTML = '<span class="dot pulse"></span> ' + t('caching');
       status.className = 'modal-status searching';
     }
     return apiJson(backendBase, '/api/game-cache/install/' + encodeURIComponent(game.id), {
@@ -400,13 +412,13 @@
       body: '{}',
     }).then(function (installed) {
       if (status) {
-        status.innerHTML = '<span class="dot ok"></span> 已使用本地缓存启动';
+        status.innerHTML = '<span class="dot ok"></span> ' + t('cachedLaunch');
         status.className = 'modal-status ok';
       }
       return installed;
     }).catch(function (err) {
       if (status) {
-        status.innerHTML = '<span class="dot warn"></span> 缓存失败，改用在线加载: ' + esc(err.message || err);
+        status.innerHTML = '<span class="dot warn"></span> ' + t('cacheFallback', { msg: esc(err.message || err) });
         status.className = 'modal-status warn';
       }
       return null;
@@ -448,7 +460,7 @@
     var u = new URL(gameUrl);
     var proxyPathOnly = '/games/proxy/' + u.protocol.replace(':', '') + '/' + u.host + u.pathname;
     el('modal-start').disabled = true;
-    el('modal-start').textContent = '启动中…';
+    el('modal-start').textContent = t('starting');
     installGamePackage(currentGame).then(function (cacheInfo) {
       var selectedPath = (cacheInfo && cacheInfo.localGamePath) ? cacheInfo.localGamePath : proxyPathOnly;
       var launchBase = backendBase + selectedPath;
@@ -506,16 +518,16 @@
   function launchViaHost(game, triggerButton) {
     if (busy) return; // 同一时刻只处理一个请求，重复点击忽略
     var host = gameHost();
-    if (!host || typeof host.launch !== 'function') { toast('当前环境不支持启动'); return; }
-    toast('正在启动「' + (game.title || game.id) + '」…');
+    if (!host || typeof host.launch !== 'function') { toast(t('envNoLaunch')); return; }
+    toast(t('launchingNamed', { title: game.title || game.id }));
     runHostRequest(
       triggerButton,
       function () { return host.launch({ v: 1, gameId: game.id }); },
       function () {
-        toast('已受理，正在打开配置页…');
+        toast(t('launchAccepted'));
       },
       function (err) {
-        toast('启动失败：' + (err && err.message ? err.message : err));
+        toast(t('launchFail', { msg: err && err.message ? err.message : err }));
       },
     );
   }
@@ -524,18 +536,18 @@
     if (busy) return; // 同一时刻只处理一个请求，重复点击忽略
     var host = gameHost();
     if (!host || typeof host.cache !== 'function') {
-      toast('请在客户端/App 内使用缓存功能');
+      toast(t('cacheInApp'));
       return;
     }
-    toast('正在缓存「' + (game.title || game.id) + '」…');
+    toast(t('cachingNamed', { title: game.title || game.id }));
     runHostRequest(
       triggerButton,
       function () { return host.cache({ v: 1, gameId: game.id }); },
       function () {
-        toast('已缓存「' + (game.title || game.id) + '」');
+        toast(t('cachedNamed', { title: game.title || game.id }));
       },
       function (err) {
-        toast('缓存失败：' + (err && err.message ? err.message : err));
+        toast(t('cacheFail', { msg: err && err.message ? err.message : err }));
       },
     );
   }

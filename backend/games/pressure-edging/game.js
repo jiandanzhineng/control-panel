@@ -2,6 +2,8 @@
 // 业务逻辑对齐老版 pressureEdgingEmbedded.js，UI 完全一致，仅后台接入改为 DeviceAPI。
 (function () {
   'use strict';
+  function L() { return (typeof GameI18n !== 'undefined' && GameI18n.t) ? GameI18n.t : function (zh) { return zh; }; }
+  function t(zh, en) { return L()(zh, en); }
 
   // 设备逻辑 ID（对齐 manifest）
   const SENSOR = 'sensor';   // 气压传感器 (QIYA)  -> 老版 QIYA_DEVICE
@@ -55,8 +57,8 @@
     running: false,
     paused: false,
     startTime: 0,
-    statusText: '准备就绪',
-    btnText: '暂停',
+    statusText: t('准备就绪', 'Ready'),
+    btnText: t('暂停', 'Pause'),
     currentPressure: 0,
     averagePressure: 0,
     currentIntensity: 0,
@@ -338,7 +340,7 @@
         rt.baseIntensity = 0;
         rt.intensityIncreaseStartTime = 0;
         addLog('info', `压力低于临界值，开始延迟 ${cfg.lowPressureDelay}s`);
-        view.statusText = `延迟期中(${cfg.lowPressureDelay}s)…`;
+        view.statusText = t('延迟期中({n}s)…', 'Delay ({n}s)…').replace('{n}', cfg.lowPressureDelay);
         if (recoveredFromOverPressure) {
           playVoice('edging_delay', 'state', function () { return rt.running && rt.isInDelayPeriod && rt.currentPressure < cfg.criticalPressure; });
         }
@@ -350,7 +352,7 @@
             rt.baseIntensity = baseTarget;
             rt.intensityIncreaseStartTime = now;
             addLog('info', `延迟结束，基础强度: ${baseTarget.toFixed(1)}，开始逐步提升`);
-            view.statusText = '强度逐步提升中…';
+            view.statusText = t('强度逐步提升中…', 'Ramping intensity…');
             playVoice('edging_calm', 'state', function () { return rt.running && rt.isInDelayPeriod && rt.intensityIncreaseStartTime !== 0; });
           }
           const incElapsed = (now - rt.intensityIncreaseStartTime) / 1000;
@@ -397,7 +399,7 @@
     view.edgingCount = 0;
     view.running = true;
     view.startTime = now;
-    view.statusText = '准备就绪';
+    view.statusText = t('准备就绪', 'Ready');
 
     // 初始化设备
     try {
@@ -441,8 +443,8 @@
     rt.paused = false;
     if (rt.shockTimer) { clearTimeout(rt.shockTimer); rt.shockTimer = null; }
     view.running = false;
-    view.statusText = '已结束';
-    view.btnText = '暂停';
+    view.statusText = t('已结束', 'Ended');
+    view.btnText = t('暂停', 'Pause');
     addLog('info', `气压寸止玩法结束（寸止 ${rt.edgingCount} 次）`);
     playVoice('edging_end', 'critical', function () { return !rt.running; });
     render();
@@ -459,8 +461,8 @@
         if (name === 'pause') {
           rt.paused = !rt.paused;
           view.paused = rt.paused;
-          view.statusText = rt.paused ? '已暂停' : '运行中';
-          view.btnText = rt.paused ? '继续' : '暂停';
+          view.statusText = rt.paused ? t('已暂停', 'Paused') : t('运行中', 'Running');
+          view.btnText = rt.paused ? t('继续', 'Resume') : t('暂停', 'Pause');
           if (rt.paused) setStrength(0);
           addLog('info', rt.paused ? '已暂停' : '已继续');
           render();
@@ -480,6 +482,7 @@
   let loopTimer = null;
   async function boot() {
     bindActions();
+    if (typeof GameI18n !== 'undefined' && GameI18n.apply) GameI18n.apply();
     render();
     try {
       await DeviceAPI.ready;

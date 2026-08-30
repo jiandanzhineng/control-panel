@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>俯卧撑检测训练</title>
+<title data-en="Push-up trainer">俯卧撑检测训练</title>
 <script type="application/json" id="game-manifest">
 {
   "id": "pushup-detection",
   "title": "俯卧撑检测训练",
   "description": "用 QTZ 距离阈值识别俯卧撑上下动作。支持无动作惩罚、连击奖励（跳蛋/捶背）与自动锁。",
   "howTo": "1. 映射 QTZ（必需）\n2. 可选：自动锁、电击、跳蛋、捶背\n3. 按身高调整下降/上升阈值\n4. 在时限内完成目标次数",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "devices": [
     {
       "id": "qtz",
@@ -275,12 +275,40 @@
         "vibratorDuration": "Vibe duration",
         "pj01Duration": "Back-pat duration",
         "enableVoice": "Voice prompts"
+      },
+      "paramDescriptions": {
+        "duration": "Total training duration.",
+        "targetCount": "Push-ups required.",
+        "downThreshold": "Distance below this counts as the down position.",
+        "upThreshold": "Distance above this counts as the up position. Must be greater than down.",
+        "idleTimeLimit": "Idle seconds before a punish fires.",
+        "shockIntensity": "Punish shock voltage.",
+        "shockDuration": "Duration of one shock.",
+        "randomIntensityRange": "Random offset around the base shock intensity.",
+        "randomDurationRange": "Random offset around the shock duration.",
+        "rewardTriggerCount": "Combo count that can trigger a reward.",
+        "rewardTriggerProbability": "Chance to actually grant a reward after the combo.",
+        "vibratorIntensity": "Vibrator intensity for rewards.",
+        "vibratorDuration": "Reward vibration duration.",
+        "pj01Duration": "Back-pat duration for rewards.",
+        "enableVoice": "Play count and punish voice lines."
+      },
+      "paramUnits": {
+        "duration": "min",
+        "shockDuration": "s",
+        "idleTimeLimit": "s",
+        "vibratorDuration": "s",
+        "pj01Duration": "s",
+        "targetCount": "count",
+        "rewardTriggerCount": "reps",
+        "randomDurationRange": "±s"
       }
     }
   }
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>
+<script src="/bridge-api/game-i18n.js"></script>
 <style>
   :root { color-scheme: light dark; --primary:#6366f1; --secondary:#10b981; --ok:#16a34a; --warn:#f59e0b; --err:#ef4444; --muted:#64748b; --bg1:#eef2ff; --bg2:#fff7ed; --cardBg:#ffffff; }
   html, body { height: 100%; }
@@ -319,62 +347,62 @@
 <body>
   <header>
     <div class="title">
-      <h2 style="margin:0;">俯卧撑检测训练</h2>
-      <span class="pill">运行：<span data-bind="running">false</span></span>
-      <span class="pill">开始：<span data-bind="startTime">-</span></span>
-      <span class="pill">剩余：<span data-bind="remainText">-</span></span>
+      <h2 style="margin:0;" data-en="Push-up trainer">俯卧撑检测训练</h2>
+      <span class="pill"><span data-en="Running:">运行：</span><span data-bind="running">false</span></span>
+      <span class="pill"><span data-en="Started:">开始：</span><span data-bind="startTime">-</span></span>
+      <span class="pill"><span data-en="Left:">剩余：</span><span data-bind="remainText">-</span></span>
     </div>
     <div style="min-width:180px;">
       <div class="progress"><div id="countBar" class="bar"></div></div>
-      <div style="font-size:12px; color:var(--muted);">完成率 <span data-bind="completionRate">0</span>%</div>
+      <div style="font-size:12px; color:var(--muted);"><span data-en="Completion">完成率</span> <span data-bind="completionRate">0</span>%</div>
     </div>
   </header>
   <main>
     <section class="card">
-      <h3 class="section-title">进度</h3>
+      <h3 class="section-title" data-en="Progress">进度</h3>
       <div class="stat">
-        <div>次数</div>
+        <div data-en="Count">次数</div>
         <div><strong data-bind="completedCount">0</strong> / <span data-bind="targetCount">0</span></div>
-        <div class="badge" style="margin-left:auto;">阶段：<span data-bind="phase">-</span></div>
+        <div class="badge" style="margin-left:auto;"><span data-en="Phase:">阶段：</span><span data-bind="phase">-</span></div>
       </div>
       <div class="progress" style="margin-top:8px;"><div id="countInlineBar" class="bar"></div></div>
-      <div class="stat"><div>当前距离</div><div><span data-bind="currentDistance">0</span> cm</div></div>
-      <div class="stat warn"><div>无动作</div><div><span data-bind="idleSec">0</span> 秒</div></div>
+      <div class="stat"><div data-en="Distance">当前距离</div><div><span data-bind="currentDistance">0</span> cm</div></div>
+      <div class="stat warn"><div data-en="Idle">无动作</div><div><span data-bind="idleSec">0</span> <span data-en="s">秒</span></div></div>
       <div class="actions" style="margin-top:8px;">
-        <button class="primary" data-action="pause"><span data-bind="btnText">暂停</span></button>
+        <button class="primary" data-action="pause"><span data-bind="btnText" data-en="Pause">暂停</span></button>
       </div>
     </section>
     <section class="card">
-      <h3 class="section-title">设备状态</h3>
+      <h3 class="section-title" data-en="Devices">设备状态</h3>
       <div class="device-grid">
         <div class="device-card" data-class="isLocked:warn">
-          <div class="device-title">自动锁</div>
+          <div class="device-title" data-en="Auto lock">自动锁</div>
           <div class="device-value"><span data-bind="isLockedText">锁定</span></div>
         </div>
         <div class="device-card" data-class="shocking:warn">
-          <div class="device-title">电击</div>
+          <div class="device-title" data-en="Shock">电击</div>
           <div class="device-value"><span data-bind="shockingText">空闲</span></div>
         </div>
         <div class="device-card" data-class="vibratorOn:warn">
-          <div class="device-title">跳蛋</div>
+          <div class="device-title" data-en="Vibrator">跳蛋</div>
           <div class="device-value"><span data-bind="vibratorOnText">待机</span></div>
         </div>
         <div class="device-card" data-class="pj01On:warn">
-          <div class="device-title">捶背</div>
+          <div class="device-title" data-en="Back-pat">捶背</div>
           <div class="device-value"><span data-bind="pj01OnText">关闭</span></div>
         </div>
       </div>
       <div class="chips" style="margin-top:10px;">
-        <span class="chip">惩罚 <span class="num" data-bind="punishmentCount">0</span></span>
-        <span class="chip alt">奖励 <span class="num" data-bind="rewardCount">0</span></span>
+        <span class="chip"><span data-en="Punish">惩罚</span> <span class="num" data-bind="punishmentCount">0</span></span>
+        <span class="chip alt"><span data-en="Reward">奖励</span> <span class="num" data-bind="rewardCount">0</span></span>
       </div>
     </section>
     <section class="card">
-      <h3 class="section-title">日志（最近 10 条）</h3>
+      <h3 class="section-title" data-en="Logs (last 10)">日志（最近 10 条）</h3>
       <ul id="logs"></ul>
     </section>
     <section class="card">
-      <h3 class="section-title">提示</h3>
+      <h3 class="section-title" data-en="Hint">提示</h3>
       <p style="margin:0;"><span data-bind="statusText">-</span></p>
     </section>
   </main>

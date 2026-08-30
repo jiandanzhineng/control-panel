@@ -7,6 +7,8 @@ type PlayI18nPack = {
   devices?: Record<string, string>
   params?: Record<string, string>
   enumLabels?: Record<string, Record<string, string>>
+  paramDescriptions?: Record<string, string>
+  paramUnits?: Record<string, string>
 }
 
 export type PlayLike = {
@@ -36,11 +38,15 @@ export function localizePlay<T extends PlayLike>(play: T, locale: AppLocale): T 
         const key = String(param.key || '')
         const label = key && pack.params?.[key]
         const enumLabels = key && pack.enumLabels?.[key]
-        if (!label && !enumLabels) return param
+        const description = key && pack.paramDescriptions?.[key]
+        const unit = key && pack.paramUnits?.[key]
+        if (!label && !enumLabels && !description && !unit) return param
         return {
           ...param,
           ...(label ? { label } : {}),
           ...(enumLabels ? { enumLabels } : {}),
+          ...(description ? { description } : {}),
+          ...(unit ? { unit } : {}),
         }
       })
     : play.params

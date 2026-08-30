@@ -6,6 +6,8 @@
   var lastSignature = null;
   var toastTimer = null;
 
+  function L() { return (typeof GameI18n !== 'undefined' && GameI18n.t) ? GameI18n.t : function (zh) { return zh; }; }
+  function t(zh, en) { return L()(zh, en); }
   function byId(id) { return document.getElementById(id); }
   function escapeHtml(value) {
     return String(value == null ? '' : value).replace(/[&<>"']/g, function (char) {
@@ -16,7 +18,7 @@
     return device.controlConnection || device.connectionType || 'unknown';
   }
   function connectionLabel(type) {
-    return { mqtt: 'MQTT', serial: '串口', ble: 'BLE', remote: '远程' }[type] || type;
+    return { mqtt: 'MQTT', serial: t('串口', 'Serial'), ble: 'BLE', remote: t('远程', 'Remote') }[type] || type;
   }
   function capabilities(device) {
     return Array.isArray(device.capabilities) ? device.capabilities : [];
@@ -37,20 +39,20 @@
     var caps = capabilities(device);
     var rows = [];
     if (caps.indexOf('strength') >= 0) {
-      rows.push('<div class="control-row"><span>强度</span><input type="range" min="0" max="255" value="0" data-strength="' + escapeHtml(device.id) + '"><button class="btn primary" data-apply-strength="' + escapeHtml(device.id) + '">应用</button></div>');
+      rows.push('<div class="control-row"><span>' + t('强度', 'Intensity') + '</span><input type="range" min="0" max="255" value="0" data-strength="' + escapeHtml(device.id) + '"><button class="btn primary" data-apply-strength="' + escapeHtml(device.id) + '">' + t('应用', 'Apply') + '</button></div>');
     }
     if (caps.indexOf('shock') >= 0) {
-      rows.push('<div class="control-row"><span>电击电压</span><input type="number" min="0" max="100" value="15" data-voltage="' + escapeHtml(device.id) + '"><span class="button-row"><button class="btn danger" data-shock-start="' + escapeHtml(device.id) + '">开始</button><button class="btn" data-shock-stop="' + escapeHtml(device.id) + '">停止</button></span></div>');
+      rows.push('<div class="control-row"><span>' + t('电击电压', 'Shock voltage') + '</span><input type="number" min="0" max="100" value="15" data-voltage="' + escapeHtml(device.id) + '"><span class="button-row"><button class="btn danger" data-shock-start="' + escapeHtml(device.id) + '">' + t('开始', 'Start') + '</button><button class="btn" data-shock-stop="' + escapeHtml(device.id) + '">' + t('停止', 'Stop') + '</button></span></div>');
     }
     if (caps.indexOf('lock') >= 0) {
-      rows.push('<div class="control-row"><span>设备锁</span><span></span><span class="button-row"><button class="btn" data-lock="' + escapeHtml(device.id) + '">加锁</button><button class="btn primary" data-unlock="' + escapeHtml(device.id) + '">解锁</button></span></div>');
+      rows.push('<div class="control-row"><span>' + t('设备锁', 'Device lock') + '</span><span></span><span class="button-row"><button class="btn" data-lock="' + escapeHtml(device.id) + '">' + t('加锁', 'Lock') + '</button><button class="btn primary" data-unlock="' + escapeHtml(device.id) + '">' + t('解锁', 'Unlock') + '</button></span></div>');
     }
     if (caps.indexOf('reporting') >= 0) {
-      rows.push('<div class="control-row"><span>上报间隔</span><input type="number" min="50" max="60000" step="50" value="500" data-report="' + escapeHtml(device.id) + '"><button class="btn primary" data-apply-report="' + escapeHtml(device.id) + '">应用</button></div>');
+      rows.push('<div class="control-row"><span>' + t('上报间隔', 'Report interval') + '</span><input type="number" min="50" max="60000" step="50" value="500" data-report="' + escapeHtml(device.id) + '"><button class="btn primary" data-apply-report="' + escapeHtml(device.id) + '">' + t('应用', 'Apply') + '</button></div>');
     }
     if (caps.indexOf('distance') >= 0) {
-      rows.push('<div class="control-row"><span>近距离阈值 (mm)</span><input type="number" min="0" max="999999" value="20" data-distance-low="' + escapeHtml(device.id) + '"><span></span></div>');
-      rows.push('<div class="control-row"><span>远距离阈值 (mm)</span><input type="number" min="0" max="999999" value="80" data-distance-high="' + escapeHtml(device.id) + '"><button class="btn primary" data-apply-distance="' + escapeHtml(device.id) + '">应用</button></div>');
+      rows.push('<div class="control-row"><span>' + t('近距离阈值 (mm)', 'Near threshold (mm)') + '</span><input type="number" min="0" max="999999" value="20" data-distance-low="' + escapeHtml(device.id) + '"><span></span></div>');
+      rows.push('<div class="control-row"><span>' + t('远距离阈值 (mm)', 'Far threshold (mm)') + '</span><input type="number" min="0" max="999999" value="80" data-distance-high="' + escapeHtml(device.id) + '"><button class="btn primary" data-apply-distance="' + escapeHtml(device.id) + '">' + t('应用', 'Apply') + '</button></div>');
     }
     var ops = operations(device);
     if (ops.length) {
@@ -58,13 +60,13 @@
         return '<button class="btn" data-operation="' + escapeHtml(device.id) + '" data-operation-key="' + escapeHtml(op.key) + '">' + escapeHtml(op.name || op.key) + '</button>';
       }).join('') + '</div>');
     }
-    return rows.length ? '<div class="section"><div class="section-title">控制</div>' + rows.join('') + '</div>' : '';
+    return rows.length ? '<div class="section"><div class="section-title">' + t('控制', 'Control') + '</div>' + rows.join('') + '</div>' : '';
   }
 
   function dataHtml(device) {
     var entries = Object.entries(device.data || {});
     if (!entries.length) return '';
-    return '<div class="section"><div class="section-title">实时数据</div><div class="data-grid">' + entries.map(function (entry) {
+    return '<div class="section"><div class="section-title">' + t('实时数据', 'Live data') + '</div><div class="data-grid">' + entries.map(function (entry) {
       var value = typeof entry[1] === 'object' ? JSON.stringify(entry[1]) : entry[1];
       return '<div class="datum"><div class="datum-key">' + escapeHtml(entry[0]) + '</div><div class="datum-value" data-device="' + escapeHtml(device.id) + '" data-key="' + escapeHtml(entry[0]) + '">' + escapeHtml(value) + '</div></div>';
     }).join('') + '</div></div>';
@@ -82,7 +84,7 @@
     var online = devices.filter(function (device) { return device.connected; });
     byId('devices').innerHTML = online.map(cardHtml).join('');
     byId('empty').hidden = online.length > 0;
-    byId('status').textContent = online.length + ' 台在线 · ' + online.filter(function (device) { return connectionType(device) === 'remote'; }).length + ' 台远程';
+    byId('status').textContent = t('{n} 台在线', '{n} online').replace('{n}', online.length) + ' · ' + t('{n} 台远程', '{n} remote').replace('{n}', online.filter(function (device) { return connectionType(device) === 'remote'; }).length);
     bindControls();
   }
 
@@ -99,7 +101,7 @@
   function invoke(deviceId, capability, action, params, button) {
     if (button) button.disabled = true;
     return DeviceAPI.device(deviceId).invoke(capability, action, params || {}).then(function () {
-      showToast('指令已发送', false);
+      showToast(t('指令已发送', 'Command sent'), false);
     }).catch(function (error) {
       showToast(error && error.message || String(error), true);
     }).finally(function () {
@@ -172,7 +174,7 @@
         updateLive();
       }
     }).catch(function (error) {
-      byId('status').textContent = '设备通道不可用';
+      byId('status').textContent = t('设备通道不可用', 'Device channel unavailable');
       showToast(error && error.message || String(error), true);
     });
   }
@@ -194,6 +196,7 @@
       Promise.all(devices.filter(function (device) { return device.connected; }).map(stopDevice))
         .finally(function () { button.disabled = false; });
     };
+    if (typeof GameI18n !== 'undefined' && GameI18n.apply) GameI18n.apply();
     await refresh();
     pollTimer = setInterval(refresh, 1000);
   }

@@ -75,13 +75,13 @@ describe('electron/gameHost pure logic', () => {
 
     it('rejects ids with illegal characters', () => {
       for (const bad of ['a/b', '../etc', 'a b', 'a;b', 'a?b', 'a#b', 'ab$']) {
-        expect(() => gameHost.validateGameId(bad)).toThrow(/非法字符/);
+        expect(() => gameHost.validateGameId(bad)).toThrow(/非法字符|invalid characters/);
       }
     });
 
     it('rejects ids longer than the limit', () => {
       const tooLong = 'a'.repeat(gameHost.MAX_GAME_ID_LENGTH + 1);
-      expect(() => gameHost.validateGameId(tooLong)).toThrow(/长度/);
+      expect(() => gameHost.validateGameId(tooLong)).toThrow(/长度|exceed/);
       const maxOk = 'a'.repeat(gameHost.MAX_GAME_ID_LENGTH);
       expect(gameHost.validateGameId(maxOk)).toBe(maxOk);
     });

@@ -2,7 +2,7 @@
   "id": "shanbay-shock",
   "title": "扇贝单词电击",
   "description": "在扇贝网页版背单词时，检测到答错或不会后触发电击惩罚。",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "homeUrl": "https://web.shanbay.com/wordsweb/",
   "matchUrls": [
     "*://web.shanbay.com/wordsweb*",

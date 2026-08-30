@@ -11,6 +11,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const ROOT = path.resolve(__dirname, '..');
+const I18N_SRC = fs.readFileSync(path.join(ROOT, 'assets/js/i18n.js'), 'utf8');
 const LAUNCHER_SRC = fs.readFileSync(path.join(ROOT, 'assets/js/play-launcher.js'), 'utf8');
 const LIST_SRC = fs.readFileSync(path.join(ROOT, 'assets/js/game-list.js'), 'utf8');
 
@@ -66,6 +67,9 @@ function makeContext(options) {
     getElementById(id) { return elements[id] || null; },
     addEventListener() {},
     querySelectorAll() { return []; },
+    readyState: 'complete',
+    documentElement: { lang: 'zh-CN' },
+    dispatchEvent() {},
   };
   const sandbox = {
     window: win,
@@ -80,6 +84,9 @@ function makeContext(options) {
     URLSearchParams,
     AbortController: class { constructor() { this.signal = {}; } abort() {} },
     sessionStorage: { setItem() {}, getItem() { return null; } },
+    localStorage: { getItem() { return 'zh'; }, setItem() {} },
+    navigator: { language: 'zh-CN' },
+    CustomEvent: class CustomEvent { constructor(type, init) { this.type = type; this.detail = init && init.detail; } },
     Promise,
     JSON,
   };
@@ -91,8 +98,9 @@ function makeContext(options) {
   return sandbox;
 }
 
-function loadLauncher(ctx) { vm.runInContext(LAUNCHER_SRC, ctx); }
-function loadList(ctx) { vm.runInContext(LIST_SRC, ctx); }
+function loadI18n(ctx) { vm.runInContext(I18N_SRC, ctx); }
+function loadLauncher(ctx) { loadI18n(ctx); vm.runInContext(LAUNCHER_SRC, ctx); }
+function loadList(ctx) { loadI18n(ctx); vm.runInContext(LIST_SRC, ctx); }
 
 // ---------- 测试 ----------
 

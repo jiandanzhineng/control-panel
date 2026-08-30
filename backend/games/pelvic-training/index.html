@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>提肛训练玩法</title>
+<title data-en="Pelvic training">提肛训练玩法</title>
 <script type="application/json" id="game-manifest">
 {
   "id": "pelvic-training",
   "title": "提肛训练玩法",
   "description": "放松与提肛交替进行。在提肛阶段需在限定时间内让气压上升达到变化度，否则电击；成功则计数 +1。",
   "howTo": "1. 映射气压传感器（必需）\n2. 可选：电击、自动锁\n3. 设置目标次数与气压变化度\n4. 按阶段提示放松/提肛",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "devices": [
     {
       "id": "sensor",
@@ -134,12 +134,27 @@
         "cycleTime": "Cycle time",
         "shockVoltage": "Shock intensity",
         "shockDuration": "Shock duration"
+      },
+      "paramDescriptions": {
+        "duration": "Total training duration.",
+        "targetCount": "Successful squeezes needed to finish.",
+        "pressureDelta": "How much pressure must rise vs rest min to count as success.",
+        "cycleTime": "Total time of one rest + squeeze cycle.",
+        "shockVoltage": "Shock voltage on a failed squeeze.",
+        "shockDuration": "Duration of one shock."
+      },
+      "paramUnits": {
+        "duration": "min",
+        "shockDuration": "s",
+        "cycleTime": "s",
+        "targetCount": "reps"
       }
     }
   }
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>
+<script src="/bridge-api/game-i18n.js"></script>
 <style>
   :root { --bg:#f6f7fb; --card:#ffffff; --text:#0f172a; --muted:#64748b; --border:#e5e7eb; --primary:#3b82f6; --accent:#22d3ee; --ok:#16a34a; --warn:#d97706; --danger:#dc2626; --deep:#0ea5e9; }
   * { box-sizing:border-box; }
@@ -175,45 +190,45 @@
 </head>
 <body>
   <header>
-    <h2 class="title">提肛训练玩法</h2>
-    <span class="pill"><span class="muted">开始</span> <span data-bind="startTime">-</span></span>
-    <span class="pill"><span class="muted">状态</span> <span data-bind="running">false</span></span>
+    <h2 class="title" data-en="Pelvic training">提肛训练玩法</h2>
+    <span class="pill"><span class="muted" data-en="Start">开始</span> <span data-bind="startTime">-</span></span>
+    <span class="pill"><span class="muted" data-en="Status">状态</span> <span data-bind="running">false</span></span>
   </header>
   <main>
     <section class="card hero">
       <div class="stage" id="stageText">当前阶段：-</div>
-      <div class="remain">本阶段剩余：<span id="remainText">0</span> 秒</div>
+      <div class="remain"><span data-en="Stage remaining:">本阶段剩余：</span><span id="remainText">0</span> <span data-en="s">秒</span></div>
     </section>
     <section class="card">
-      <h3 class="section-title">总体进度</h3>
-      <div class="label">按次数计算的当前进度百分比</div>
+      <h3 class="section-title" data-en="Overall progress">总体进度</h3>
+      <div class="label"><span data-en="Progress by count">按次数计算的当前进度百分比</span></div>
       <div class="progress"><div id="countBar" class="bar"></div></div>
-      <div class="label" style="margin-top:8px;">按时间计算的当前进度百分比</div>
+      <div class="label" style="margin-top:8px;"><span data-en="Progress by time">按时间计算的当前进度百分比</span></div>
       <div class="progress"><div id="timeBar" class="bar"></div></div>
       <div class="stats" style="margin-top:8px;">
         <div class="stat">
-          <div class="label">当前压力(kPa)</div>
+          <div class="label"><span data-en="Current pressure (kPa)">当前压力(kPa)</span></div>
           <div class="value"><strong data-bind="currentPressure">0</strong></div>
-          <div class="label">放松期最低：<strong data-bind="relaxMinPressure">0</strong></div>
+          <div class="label"><span data-en="Rest min:">放松期最低：</span><strong data-bind="relaxMinPressure">0</strong></div>
         </div>
         <div class="stat">
-          <div class="label">提肛目标(kPa)</div>
-          <div class="value"><strong data-bind="clenchTargetPressure">0</strong><span class="achieved" data-show="clenchSuccess">已达成</span><span class="failed" data-show="clenchFailed">挑战失败 · 开始电击</span></div>
+          <div class="label"><span data-en="Squeeze target (kPa)">提肛目标(kPa)</span></div>
+          <div class="value"><strong data-bind="clenchTargetPressure">0</strong><span class="achieved" data-show="clenchSuccess" data-en="Reached">已达成</span><span class="failed" data-show="clenchFailed" data-en="Failed · shocking">挑战失败 · 开始电击</span></div>
         </div>
       </div>
       <div class="actions">
-        <button class="primary" data-action="pause"><span data-bind="btnText">暂停</span></button>
-        <button class="danger" data-action="shockOnce">手动电击</button>
+        <button class="primary" data-action="pause"><span data-bind="btnText" data-en="Pause">暂停</span></button>
+        <button class="danger" data-action="shockOnce" data-en="Manual shock">手动电击</button>
       </div>
     </section>
     <section class="card">
-      <h3 class="section-title">统计</h3>
-      <div class="label">成功次数：<strong data-bind="successCount">0</strong></div>
-      <div class="label">电击次数：<strong data-bind="shockCount">0</strong></div>
-      <div class="label">状态文本：<span data-bind="statusText">-</span></div>
+      <h3 class="section-title" data-en="Stats">统计</h3>
+      <div class="label"><span data-en="Successes:">成功次数：</span><strong data-bind="successCount">0</strong></div>
+      <div class="label"><span data-en="Shocks:">电击次数：</span><strong data-bind="shockCount">0</strong></div>
+      <div class="label"><span data-en="Status:">状态文本：</span><span data-bind="statusText">-</span></div>
     </section>
     <section class="card">
-      <h3 class="section-title">日志（最近 10 条）</h3>
+      <h3 class="section-title" data-en="Logs (last 10)">日志（最近 10 条）</h3>
       <ul id="logs"></ul>
     </section>
   </main>

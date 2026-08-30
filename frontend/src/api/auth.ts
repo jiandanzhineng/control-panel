@@ -56,7 +56,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
   } catch {
-    throw new ApiError(0, 'NETWORK_ERROR', '无法连接本地服务');
+    throw new ApiError(0, 'NETWORK_ERROR', 'NETWORK_ERROR');
   }
 
   if (resp.status === 204) return undefined as T;

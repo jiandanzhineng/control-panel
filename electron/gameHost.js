@@ -12,18 +12,26 @@ const OFFICIAL_GAME_ORIGIN = 'https://game.undersilicon.cn';
 const GAME_ID_PATTERN = /^[a-zA-Z0-9._-]+$/;
 const MAX_GAME_ID_LENGTH = 128;
 
+const { formatElectronText } = require('./locale');
+
 function gameHostError(code, message) {
   const error = new Error(message);
   error.code = code;
   return error;
 }
 
+function hostLocale(options) {
+  return options && options.locale === 'en' ? 'en' : 'zh';
+}
+
 // 官方站点始终允许；开发者模式开启时额外允许任意端口的本地回环来源。
-function assertAllowedOrigin(origin, { developerModeEnabled = false } = {}) {
+function assertAllowedOrigin(origin, options = {}) {
+  const { developerModeEnabled = false } = options;
+  const locale = hostLocale(options);
   const allowed = origin === OFFICIAL_GAME_ORIGIN
     || (developerModeEnabled && isLocalLoopbackOrigin(origin));
   if (!allowed) {
-    const error = gameHostError('GAME_HOST_FORBIDDEN_ORIGIN', '仅官方游戏站点可调用 GameHost');
+    const error = gameHostError('GAME_HOST_FORBIDDEN_ORIGIN', formatElectronText(locale, 'gameHostForbidden'));
     error.origin = origin;
     throw error;
   }
@@ -31,28 +39,29 @@ function assertAllowedOrigin(origin, { developerModeEnabled = false } = {}) {
 }
 
 // 校验 gameId：非空字符串、仅允许 [a-zA-Z0-9._-]、长度上限。
-function validateGameId(gameId) {
+function validateGameId(gameId, locale = 'zh') {
   if (typeof gameId !== 'string' || gameId.length === 0) {
-    throw gameHostError('GAME_HOST_INVALID_GAME_ID', 'gameId 必须为非空字符串');
+    throw gameHostError('GAME_HOST_INVALID_GAME_ID', formatElectronText(locale, 'gameHostInvalidId'));
   }
   if (gameId.length > MAX_GAME_ID_LENGTH) {
-    throw gameHostError('GAME_HOST_INVALID_GAME_ID', `gameId 长度不能超过 ${MAX_GAME_ID_LENGTH}`);
+    throw gameHostError('GAME_HOST_INVALID_GAME_ID', formatElectronText(locale, 'gameHostIdTooLong', { n: MAX_GAME_ID_LENGTH }));
   }
   if (!GAME_ID_PATTERN.test(gameId)) {
-    throw gameHostError('GAME_HOST_INVALID_GAME_ID', 'gameId 含非法字符');
+    throw gameHostError('GAME_HOST_INVALID_GAME_ID', formatElectronText(locale, 'gameHostIdChars'));
   }
   return gameId;
 }
 
 // 解析并校验来自网页的请求：只接受 v(===1) 与 gameId，其它字段一律忽略。
-function parseGameHostRequest(req) {
+function parseGameHostRequest(req, localeOrOptions) {
+  const locale = hostLocale(typeof localeOrOptions === 'string' ? { locale: localeOrOptions } : (localeOrOptions || {}));
   if (!req || typeof req !== 'object') {
-    throw gameHostError('GAME_HOST_INVALID_REQUEST', '请求参数无效');
+    throw gameHostError('GAME_HOST_INVALID_REQUEST', formatElectronText(locale, 'gameHostInvalidRequest'));
   }
   if (req.v !== 1) {
-    throw gameHostError('GAME_HOST_UNSUPPORTED_VERSION', '不支持的协议版本');
+    throw gameHostError('GAME_HOST_UNSUPPORTED_VERSION', formatElectronText(locale, 'gameHostUnsupportedVersion'));
   }
-  const gameId = validateGameId(req.gameId);
+  const gameId = validateGameId(req.gameId, locale);
   return { gameId };
 }
 

@@ -10,26 +10,30 @@
 <body>
 <nav class="nav">
   <div class="nav-inner">
-    <a class="brand" href="../index.html"><span class="brand-mark">⚡</span><span>硅基之下游戏库</span></a>
-    <div class="nav-links">
-      <a href="../games.html">游戏</a>
-      <a href="agent-guide.html">开发文档</a>
-      <a href="../control.html">设备控制</a>
-      <a href="device-api.html">DeviceAPI</a>
-      <a href="contribute.html" class="active">投稿</a>
+    <a class="brand" href="../index.html"><span class="brand-mark">⚡</span><span data-i18n="brand">硅基之下游戏库</span></a>
+        <div class="nav-links">
+      <a href="../games.html" data-i18n="navGames">游戏</a>
+      <a href="agent-guide.html" data-i18n="navDocs">开发文档</a>
+      <a href="../control.html" data-i18n="navControl">设备控制</a>
+      <a href="device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
+      <a href="contribute.html" class="active" data-i18n="navContribute">投稿</a>
+      <div class="lang-switch">
+        <button type="button" data-set-locale="zh">中</button>
+        <button type="button" data-set-locale="en">EN</button>
+      </div>
     </div>
-  </div>
-</nav>
+    </div>
+  </nav>
 
 <div class="container">
 <div class="docs-layout">
 <aside class="docs-sidebar">
-  <h4>开发文档</h4>
-  <a href="getting-started.html">快速开始</a>
-  <a href="agent-guide.html">Agent 开发指南</a>
-  <a href="device-api.html">DeviceAPI 参考</a>
-  <a href="devices.html">设备与能力</a>
-  <a href="contribute.html" class="active">投稿与奖励</a>
+  <h4 data-i18n="docsNav">开发文档</h4>
+  <a href="getting-started.html" data-i18n="docsStart">快速开始</a>
+  <a href="agent-guide.html" data-i18n="docsAgent">Agent 开发指南</a>
+  <a href="device-api.html" data-i18n="docsApi">DeviceAPI 参考</a>
+  <a href="devices.html" data-i18n="docsDevices">设备与能力</a>
+  <a href="contribute.html" class="active" data-i18n="docsContribute">投稿与奖励</a>
 </aside>
 
 <main class="docs-body">
@@ -48,7 +52,7 @@
     <div class="step-num">1</div>
     <div class="step-body">
       <h4>clone 仓库</h4>
-      <p>先 clone 本仓库，进入 <code>play-registry/</code>，阅读 <a href="getting-started.html">快速开始</a> 和现有 <code>games/</code> 目录。</p>
+      <p>先 clone 本仓库，进入 <code>play-registry/</code>，阅读 <a href="getting-started.html" data-i18n="docsStart">快速开始</a> 和现有 <code>games/</code> 目录。</p>
     </div>
   </div>
   <div class="step">
@@ -123,9 +127,10 @@
 <h3>Token 怎么用？</h3>
 <p>Token 套餐和硬件权益以客服说明为准，具体内容、发放方式和使用规则请向客服查询。</p>
 
-<p>→ 还没写过玩法？先看 <a href="getting-started.html">快速开始</a>。</p>
+<p>→ 还没写过玩法？先看 <a href="getting-started.html" data-i18n="docsStart">快速开始</a>。</p>
 </main>
 </div>
 </div>
+<script src="../assets/js/i18n.js"></script>
 </body>
 </html>

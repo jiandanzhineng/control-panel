@@ -207,6 +207,7 @@ const zh = {
     deleteOk: '确定注销',
     deleted: '账号已注销',
     failed: '操作失败',
+    networkError: '无法连接本地服务',
   },
   support: {
     label: '遇到问题 · 随时联系',
@@ -298,6 +299,8 @@ const zh = {
     syncFailed: '同步失败',
     startFailed: '启动失败',
     openFailed: '打开窗口失败',
+    digitalHumanTitle: '数字人',
+    digitalHumanDesc: '本机数字人玩法。点一下安装或更新后启动。',
   },
   playConfig: {
     title: '启动前配置',

@@ -8,6 +8,12 @@
   var toastEl = document.getElementById('toast');
   var allGames = [];
   var activeFilter = 'all';
+  function t(key, vars) {
+    try { if (typeof window !== 'undefined' && window.SiteI18n && window.SiteI18n.t) return window.SiteI18n.t(key, vars); } catch (_) {}
+    var text = key;
+    if (vars) text = String(text).replace(/\{(\w+)\}/g, function (_, k) { return vars[k] == null ? '' : String(vars[k]); });
+    return text;
+  }
 
   function toast(msg) {
     if (!toastEl) return;
@@ -60,7 +66,7 @@
       capabilityChips(g).forEach(function (c) { set[c] = (set[c] || 0) + 1; });
     });
     var keys = Object.keys(set).sort();
-    var html = '<span class="chip ' + (activeFilter === 'all' ? 'active' : '') + '" data-filter="all">全部</span>';
+    var html = '<span class="chip ' + (activeFilter === 'all' ? 'active' : '') + '" data-filter="all">' + t('filterAll') + '</span>';
     keys.forEach(function (k) {
       html += '<span class="chip" data-filter="' + esc(k) + '">' + esc(k) + ' <span style="opacity:.6">' + set[k] + '</span></span>';
     });
@@ -88,7 +94,7 @@
     var reqDevices = (g.devices || []).filter(function (d) { return d.required; }).map(function (d) { return d.id; });
     var badges = caps.map(function (c) { return '<span class="badge">' + esc(c) + '</span>'; }).join('');
     if (reqDevices.length) {
-      badges += '<span class="badge required">必需: ' + esc(reqDevices.join(', ')) + '</span>';
+      badges += '<span class="badge required">' + t('required') + ': ' + esc(reqDevices.join(', ')) + '</span>';
     }
     return '<article class="game-card">'
       + '<div class="game-card-head">'
@@ -99,13 +105,13 @@
         + '</div>'
         + '<span class="badge ver">v' + esc(g.version || '0.0.0') + '</span>'
       + '</div>'
-      + '<p class="game-desc">' + esc(g.description || '（无描述）') + '</p>'
+      + '<p class="game-desc">' + esc(g.description || t('noDesc')) + '</p>'
       + '<div class="game-meta">' + badges + '</div>'
       + '<div class="game-card-foot">'
         + '<span class="game-size">' + (g.sha256 ? ('sha ' + g.sha256.slice(0, 8)) : '') + (g.size ? ' · ' + fmtSize(g.size) : '') + '</span>'
         + '<span class="game-actions">'
-          + '<button class="play-link ghost" type="button" data-cache="' + esc(g.id) + '">缓存</button>'
-          + '<button class="play-link" type="button" data-launch="' + esc(g.id) + '">启动 →</button>'
+          + '<button class="play-link ghost" type="button" data-cache="' + esc(g.id) + '">' + t('cache') + '</button>'
+          + '<button class="play-link" type="button" data-launch="' + esc(g.id) + '">' + t('launch') + '</button>'
         + '</span>'
       + '</div>'
     + '</article>';
@@ -119,7 +125,7 @@
       return true;
     });
     if (!list.length) {
-      grid.innerHTML = '<div class="empty-state"><p style="font-size:16px;margin-bottom:6px;">没找到匹配的玩法</p><p>试试别的关键词或清空筛选</p></div>';
+      grid.innerHTML = '<div class="empty-state"><p style="font-size:16px;margin-bottom:6px;">' + t('noMatch') + '</p><p>' + t('tryOther') + '</p></div>';
       return;
     }
     grid.innerHTML = list.map(cardHtml).join('');
@@ -159,13 +165,14 @@
     .then(applyRegistry)
     .catch(function (err) {
       grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">'
-        + '<p style="font-size:16px;margin-bottom:6px;color:var(--warn);">⚠ 无法加载 registry.json</p>'
+        + '<p style="font-size:16px;margin-bottom:6px;color:var(--warn);">' + t('registryFail') + '</p>'
         + '<p>' + esc(err.message || err) + '</p>'
-        + '<p>站点可能尚未部署，或当前在离线环境。本地开发请先运行 <code>npm run build</code> 生成 registry.json。</p>'
+        + '<p>' + t('registryHint') + '</p>'
         + '</div>';
     });
 
   search.addEventListener('input', render);
+  document.addEventListener('site-locale-change', function () { buildFilters(allGames); render(); });
 
   // 点击"启动" → 打开设备选择 modal（或委托宿主）；点击"缓存" → 委托宿主缓存
   grid.addEventListener('click', function (e) {

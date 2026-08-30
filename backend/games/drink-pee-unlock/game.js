@@ -1,6 +1,8 @@
 // 喝水/憋尿解锁玩法 — 页面自驱动（DeviceAPI），逻辑/UI 对齐老版 drinkPeeUnlockEmbedded.js
 (function () {
   'use strict';
+  function L() { return (typeof GameI18n !== 'undefined' && GameI18n.t) ? GameI18n.t : function (zh) { return zh; }; }
+  function t(zh, en) { return L()(zh, en); }
   const SCALE = 'scale';   // 老版 SCALE_DEVICE
   const SENSOR = 'sensor'; // 老版 QIYA_DEVICE
   const QTZ = 'qtz';       // 老版 QTZ_DEVICE
@@ -30,13 +32,13 @@
     vibeActive: false, vibeTimer: null, lastProgressLogTs: 0,
   };
   const view = {
-    title: '喝水/憋尿解锁玩法', statusText: '初始化', remainingSec: '-', initialWeight: '-',
+    title: t('喝水/憋尿解锁玩法', 'Drink / hold-pee unlock'), statusText: t('初始化', 'Init'), remainingSec: '-', initialWeight: '-',
     progress: 0, targetWeight: 500, shockCount: 0, cooldownRemainingSec: 0, lastPunishReason: '',
     weight: '-', pressure: '-', tiptoeOk: false, punishCountdown: '-', mode: 'drink',
     tiptoeQtz: '-', tiptoePressureText: '-', tiptoePressureThreshold: 0, tiptoePressureMax: '-',
     weightMin: '-', weightMax: '-', pressureMin: '-', pressureMax: '-', weightCount: 0,
-    stableWindowSec: 0, punishCooldownSec: 0, punishDevice: '未映射',
-    shockStatus: '不可用', shockIntensity: 0, shockDuration: 0,
+    stableWindowSec: 0, punishCooldownSec: 0, punishDevice: t('未映射', 'Unmapped'),
+    shockStatus: t('不可用', 'Unavailable'), shockIntensity: 0, shockDuration: 0,
   };
 
   const $ = (s) => Array.from(document.querySelectorAll(s));
@@ -45,8 +47,8 @@
   function render() {
     $('[data-bind]').forEach((el) => {
       const k = el.getAttribute('data-bind');
-      if (k === 'tiptoeOk') { el.textContent = view.tiptoeOk ? '正常' : '异常'; return; }
-      if (k === 'modeCN') { el.textContent = view.mode === 'pee' ? '排泄' : '喝水'; return; }
+      if (k === 'tiptoeOk') { el.textContent = view.tiptoeOk ? t('正常', 'OK') : t('异常', 'Fail'); return; }
+      if (k === 'modeCN') { el.textContent = view.mode === 'pee' ? t('排泄', 'Hold pee') : t('喝水', 'Drink'); return; }
       let v = (k in view) ? view[k] : el.textContent;
       el.textContent = (v === undefined || v === null) ? '' : String(v);
     });
@@ -354,8 +356,8 @@
     view.progress = round1(rt.progress);
     view.targetWeight = Number(cfg.targetWeight) || 0;
     view.shockCount = rt.shockCount;
-    view.punishDevice = rt.punishMapped ? '已映射' : '未映射';
-    view.shockStatus = !rt.punishMapped ? '不可用' : (rt.shockActive ? '电击中' : '待机');
+    view.punishDevice = rt.punishMapped ? t('已映射', 'Mapped') : t('未映射', 'Unmapped');
+    view.shockStatus = !rt.punishMapped ? t('不可用', 'Unavailable') : (rt.shockActive ? t('电击中', 'Shocking') : t('待机', 'Standby'));
     view.shockIntensity = Number(cfg.shockIntensity) || 0;
     view.shockDuration = Number(cfg.shockDuration) || 0;
     view.cooldownRemainingSec = rt.state === 'Cooldown' ? Math.max(0, Math.ceil((rt.cooldownUntil - now) / 1000)) : 0;
@@ -363,8 +365,8 @@
     view.weight = rt.weight === null ? '-' : round1(rt.weight);
     view.pressure = rt.qiyaMapped ? round1(rt.pressure) : '-';
     view.tiptoeOk = tiptoeOk();
-    view.tiptoeQtz = !rt.qtzMapped ? '未接' : (tiptoeQtzOk() ? '正常' : '落地');
-    view.tiptoePressureText = !rt.cunzhiMapped ? '未接' : round1(rt.tiptoePressure);
+    view.tiptoeQtz = !rt.qtzMapped ? t('未接', 'N/A') : (tiptoeQtzOk() ? t('正常', 'OK') : t('落地', 'Down'));
+    view.tiptoePressureText = !rt.cunzhiMapped ? t('未接', 'N/A') : round1(rt.tiptoePressure);
     view.tiptoePressureThreshold = Number(cfg.tiptoePressureThreshold) || 0;
     view.tiptoePressureMax = rt.tiptoePressureMax === null ? '-' : round1(rt.tiptoePressureMax);
     view.mode = cfg.mode;
@@ -380,11 +382,11 @@
   }
   function stateText() {
     switch (rt.state) {
-      case 'Running': return '运行中';
-      case 'Cooldown': return '冷却中';
-      case 'Punish': return '惩罚：' + rt.lastPunishReason;
-      case 'Unlocked': return '已解锁：' + rt.lastPunishReason;
-      default: return rt.running ? '运行中' : '已结束';
+      case 'Running': return t('运行中', 'Running');
+      case 'Cooldown': return t('冷却中', 'Cooldown');
+      case 'Punish': return t('惩罚：', 'Punish: ') + rt.lastPunishReason;
+      case 'Unlocked': return t('已解锁：', 'Unlocked: ') + rt.lastPunishReason;
+      default: return rt.running ? t('运行中', 'Running') : t('已结束', 'Ended');
     }
   }
 
@@ -604,6 +606,8 @@
 
   let loopTimer = null;
   async function boot() {
+    if (typeof GameI18n !== 'undefined' && GameI18n.apply) GameI18n.apply();
+    view.title = t('喝水/憋尿解锁玩法', 'Drink / hold-pee unlock');
     render();
     try { await DeviceAPI.ready; } catch (_) {}
     const p = DeviceAPI.params || {};

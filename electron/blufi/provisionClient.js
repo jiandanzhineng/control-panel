@@ -16,6 +16,8 @@ const {
   decodeFrame,
 } = require('./protocol');
 
+const { formatElectronText } = require('../locale');
+
 function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -34,12 +36,16 @@ async function writeCharacteristic(characteristic, value) {
   }
 }
 
-function validateCredentials(ssid, password) {
+function t(locale, key, vars) {
+  return formatElectronText(locale === 'en' ? 'en' : 'zh', key, vars);
+}
+
+function validateCredentials(ssid, password, locale = 'zh') {
   const ssidBytes = textToBytes(ssid);
   const passwordBytes = textToBytes(password);
-  if (ssidBytes.length === 0) throw new Error('请输入 Wi-Fi 名称');
-  if (ssidBytes.length > 32) throw new Error('Wi-Fi 名称不能超过 32 字节');
-  if (passwordBytes.length > 64) throw new Error('Wi-Fi 密码不能超过 64 字节');
+  if (ssidBytes.length === 0) throw new Error(t(locale, 'wifiNameRequired'));
+  if (ssidBytes.length > 32) throw new Error(t(locale, 'wifiNameTooLong'));
+  if (passwordBytes.length > 64) throw new Error(t(locale, 'wifiPasswordTooLong'));
   return { ssidBytes, passwordBytes };
 }
 
@@ -51,6 +57,7 @@ class BlufiProvisionClient {
     responseTimeoutMs = 6000,
     writeDelayMs = 60,
     retryDelayMs = 800,
+    locale = 'zh',
   } = {}) {
     this.bluetooth = bluetooth;
     this.onStatus = onStatus;
@@ -58,6 +65,7 @@ class BlufiProvisionClient {
     this.responseTimeoutMs = responseTimeoutMs;
     this.writeDelayMs = writeDelayMs;
     this.retryDelayMs = retryDelayMs;
+    this.locale = locale === 'en' ? 'en' : 'zh';
   }
 
   status(stage, message, detail = '') {
@@ -66,19 +74,19 @@ class BlufiProvisionClient {
 
   async provision({ ssid, password }) {
     if (!this.bluetooth?.requestDevice) {
-      const error = new Error('当前电脑或运行环境不支持蓝牙配网');
+      const error = new Error(t(this.locale, 'provisionUnsupported'));
       error.code = 'BLUFI_NOT_SUPPORTED';
       throw error;
     }
-    const { ssidBytes, passwordBytes } = validateCredentials(ssid, password);
+    const { ssidBytes, passwordBytes } = validateCredentials(ssid, password, this.locale);
 
-    this.status('selecting', '请选择要配网的设备');
+    this.status('selecting', t(this.locale, 'selectProvisionDevice'));
     const device = await this.bluetooth.requestDevice({
       filters: [{ namePrefix: 'BLUFI' }],
       optionalServices: [BLUFI_UUIDS.service],
     });
-    const deviceName = device.name || 'BLUFI 设备';
-    this.status('connecting', `正在连接 ${deviceName}`);
+    const deviceName = device.name || t(this.locale, 'blufiDevice');
+    this.status('connecting', t(this.locale, 'connectingName', { name: deviceName }));
 
     const server = await device.gatt.connect();
     let notifyCharacteristic = null;
@@ -120,7 +128,7 @@ class BlufiProvisionClient {
           resolve,
           timer: setTimeout(() => {
             waiter = null;
-            reject(new Error('等待设备响应超时'));
+            reject(new Error(t(this.locale, 'waitDeviceTimeout')));
           }, this.responseTimeoutMs),
         };
       });
@@ -137,14 +145,14 @@ class BlufiProvisionClient {
       const sendControl = (subtype, payload) => sendFrame(FRAME_TYPE_CONTROL, subtype, payload);
       const sendData = (subtype, payload) => sendFrame(FRAME_TYPE_DATA, subtype, payload);
 
-      this.status('writing', '正在写入 Wi-Fi 配置');
+      this.status('writing', t(this.locale, 'writingWifi'));
       await sendControl(CONTROL_SET_SEC_MODE, Uint8Array.of(0x00));
       await sendControl(CONTROL_SET_OP_MODE, Uint8Array.of(0x01));
       await sendData(DATA_STA_SSID, ssidBytes);
       await sendData(DATA_STA_PASSWORD, passwordBytes);
       await sendControl(CONTROL_CONNECT_WIFI);
 
-      this.status('joining', '配置已写入，正在等待设备连接 Wi-Fi');
+      this.status('joining', t(this.locale, 'waitingWifi'));
       const deadline = Date.now() + this.pollTimeoutMs;
       let lastState = null;
       while (Date.now() < deadline) {
@@ -159,17 +167,18 @@ class BlufiProvisionClient {
           lastState = decoded;
           if (decoded.staState === WIFI_SUCCESS) {
             const stationIp = decoded.extras?.stationIp || '';
-            this.status('success', '设备已成功连接 Wi-Fi', stationIp);
+            this.status('success', t(this.locale, 'wifiConnected'), stationIp);
             return { ok: true, deviceName, stationIp };
           }
           if (decoded.staState === WIFI_FAIL) {
             const reason = decoded.extras?.reason;
-            throw new Error(`设备连接 Wi-Fi 失败${reason == null ? '' : `（原因代码 ${reason}）`}，请检查名称和密码`);
+            const reasonText = reason == null ? '' : t(this.locale, 'wifiReasonCode', { code: reason });
+            throw new Error(t(this.locale, 'wifiConnectFailed', { reason: reasonText }));
           }
         }
         if (this.retryDelayMs > 0) await sleep(this.retryDelayMs);
       }
-      throw new Error(`等待设备连接 Wi-Fi 超时（最后状态：${lastState?.staStateName || '未知'}）`);
+      throw new Error(t(this.locale, 'wifiWaitTimeout', { state: lastState?.staStateName || t(this.locale, 'unknown') }));
     } finally {
       if (notifyCharacteristic && notificationListener) {
         notifyCharacteristic.removeEventListener('characteristicvaluechanged', notificationListener);

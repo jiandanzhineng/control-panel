@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>运行玩法 · 玩法库</title>
+<title data-i18n-title="playTitle">运行玩法 · 玩法库</title>
 <link rel="stylesheet" href="assets/css/site.css" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
 <style>
@@ -47,32 +47,33 @@
 <div class="play-shell">
   <div class="play-bar">
     <div class="play-bar-left">
-      <a class="play-bar-back" href="index.html">← 返回</a>
-      <span class="play-title" id="play-title">玩法</span>
-      <span class="play-conn" id="play-conn"><span class="dot"></span> <span id="play-conn-text">加载中</span></span>
+      <a class="play-bar-back" href="index.html"><span data-i18n="back">← 返回</span></a>
+      <span class="play-title" id="play-title" data-i18n="playDefault">玩法</span>
+      <span class="play-conn" id="play-conn"><span class="dot"></span> <span id="play-conn-text" data-i18n="loading">加载中</span></span>
     </div>
     <div class="play-bar-actions">
-      <button class="btn btn-ghost" id="btn-reselect">重选设备</button>
-      <button class="btn btn-ghost" id="btn-stop">停止</button>
+      <button class="btn btn-ghost" id="btn-reselect" data-i18n="reselect">重选设备</button>
+      <button class="btn btn-ghost" id="btn-stop" data-i18n="stop">停止</button>
     </div>
   </div>
   <div class="play-frame-wrap">
     <div class="play-loading" id="play-loading">
       <div class="spinner"></div>
-      <div>正在加载玩法…</div>
+      <div data-i18n="loadingPlay">正在加载玩法…</div>
     </div>
     <div class="play-error" id="play-error">
       <div>
-        <h3>⚠ 无法加载玩法</h3>
+        <h3 data-i18n="cannotLoad">⚠ 无法加载玩法</h3>
         <p id="play-error-msg"></p>
-        <p style="font-size:13px;color:var(--text-dim);">需本机控制面板在线，且玩法经面板 gameProxy 加载。</p>
-        <a class="btn btn-primary" href="index.html" style="margin-top:16px;">返回玩法库</a>
+        <p style="font-size:13px;color:var(--text-dim);"><span data-i18n="needPanel">需本机控制面板在线，且玩法经面板 gameProxy 加载。</span></p>
+        <a class="btn btn-primary" href="index.html" style="margin-top:16px;"><span data-i18n="backLibrary">返回玩法库</span></a>
       </div>
     </div>
     <iframe id="play-iframe" allow="autoplay; fullscreen; gamepad; publickey-credentials-get" allowfullscreen></iframe>
   </div>
 </div>
 
+<script src="assets/js/i18n.js"></script>
 <script>
 (function () {
   'use strict';
@@ -82,12 +83,13 @@
   sessionStorage.removeItem('play-launch');
 
   var launchUrl = launch && launch.launch;
-  var title = (launch && launch.title) || '玩法';
+  function t(zh, en) { try { if (window.SiteI18n && SiteI18n.isEn && SiteI18n.isEn()) return en; } catch (_) {} return zh; }
+  var title = (launch && launch.title) || t('玩法', 'Play');
   var backend = (launch && launch.backend) || '';
   var gameId = (launch && launch.id) || '';
 
   document.getElementById('play-title').textContent = title;
-  document.title = title + ' · 玩法库';
+  document.title = title + (t(' · 玩法库', ' · library'));
 
   var iframe = document.getElementById('play-iframe');
   var loading = document.getElementById('play-loading');
@@ -97,7 +99,7 @@
   var connText = document.getElementById('play-conn-text');
 
   if (!launchUrl) {
-    showError('缺少 launch 参数');
+    showError(t('缺少 launch 参数', 'Missing launch parameter'));
     return;
   }
 
@@ -114,7 +116,7 @@
     updateConnStatus();
   });
   iframe.addEventListener('error', function () {
-    showError('iframe 加载失败');
+    showError(t('iframe 加载失败', 'iframe failed to load'));
   });
 
   iframe.src = launchUrl;
@@ -128,15 +130,15 @@
         var online = (list || []).filter(function (d) { return d.connected; }).length;
         if (online > 0) {
           conn.classList.remove('disconnected');
-          connText.textContent = online + ' 设备在线';
+          connText.textContent = t('{n} 设备在线', '{n} devices online').replace('{n}', online);
         } else {
           conn.classList.add('disconnected');
-          connText.textContent = '无在线设备';
+          connText.textContent = t('无在线设备', 'No online devices');
         }
       })
       .catch(function () {
         conn.classList.add('disconnected');
-        connText.textContent = '面板离线';
+        connText.textContent = t('面板离线', 'Panel offline');
       });
   }
 
