@@ -492,9 +492,11 @@ class WiredFlashService {
     let lastError = null;
     for (let attempt = 1; attempt <= CONNECT_MAX_ATTEMPTS; attempt += 1) {
       let transport = null;
+      let device = null;
       try {
-        await this.serialReset.enterDownloadMode(portPath);
-        const device = this.createDevice(portPath);
+        device = this.createDevice(portPath);
+        await device.open({ baudRate: 115200 });
+        await this.serialReset.enterDownloadModeOnDevice(device);
         transport = new esptool.Transport(device, false);
         const esploader = new esptool.ESPLoader({
           transport,
@@ -502,6 +504,8 @@ class WiredFlashService {
           romBaudrate: 115200,
           terminal: silentTerminal,
         });
+        // 串口已打开并完成自动复位。esptool 用 no_reset 立刻同步，
+        // 不再关口重开，也不再把 DTR/RTS 拉回运行态。
         await esploader.main('no_reset');
         return { transport, esploader };
       } catch (error) {
@@ -509,6 +513,8 @@ class WiredFlashService {
         logService.warn('WiredFlash', `连接下载模式第 ${attempt} 次失败: ${error?.message || error}`);
         if (transport) {
           try { await transport.disconnect(); } catch (_) {}
+        } else if (device) {
+          try { await device.close(); } catch (_) {}
         }
         if (attempt < CONNECT_MAX_ATTEMPTS) await this.sleep(CONNECT_RETRY_DELAY_MS);
       }

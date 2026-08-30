@@ -1,6 +1,6 @@
 // Node 端的 WebSerial 形态适配层,供 esptool-js 的 Transport 使用。
-// 代码提取自 .tmp/spike-flash-connect5.cjs(已在真机验证,COM17 / CH343)。
 // 注意不要用 Readable.toWeb 包装 serialport,实测有坑。
+// 打开串口时不改 DTR/RTS：拉回运行态会把芯片踢出下载模式。
 let SerialPortClass = null;
 
 function getSerialPortClass() {
@@ -90,8 +90,6 @@ class NodeSerialDevice {
     });
     await new Promise((resolve, reject) => this.port.open((e) => (e ? reject(e) : resolve())));
     this.baudRate = baudRate;
-    // 打开后立即把线拉到运行态(DTR=EN 高,RTS=BOOT 高)
-    await new Promise((resolve, reject) => this.port.set({ dtr: true, rts: true }, (e) => (e ? reject(e) : resolve())));
     this._readable = new SerialReadable(this.port);
     this._writable = new SerialWritable(this.port);
   }

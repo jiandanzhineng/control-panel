@@ -112,7 +112,16 @@ function makeSerialConnectionService() {
 function makeSerialReset() {
   return {
     enterDownloadMode: jest.fn(async () => {}),
+    enterDownloadModeOnDevice: jest.fn(async () => {}),
     hardResetToApp: jest.fn(async () => {}),
+  };
+}
+
+function makeFlashDevice() {
+  return {
+    open: jest.fn(async () => {}),
+    close: jest.fn(async () => {}),
+    setSignals: jest.fn(async () => {}),
   };
 }
 
@@ -126,7 +135,11 @@ function makeEsptool() {
     disconnect: jest.fn(async () => {}),
   };
   class MockTransport {
-    constructor(device) { this.device = device; }
+    constructor(device) {
+      this.device = device;
+      this.connect = jest.fn(async () => {});
+      state.lastTransport = this;
+    }
 
     async disconnect() { return state.disconnect(); }
   }
@@ -159,6 +172,7 @@ function makeService(overrides = {}) {
   const esptool = makeEsptool();
   const serialConnectionService = makeSerialConnectionService();
   const downloadFetcher = makeDownloadFetcher();
+  const flashDevice = makeFlashDevice();
   const cacheDir = overrides.cacheDir;
   const flashIds = [];
   const service = new WiredFlashService({
@@ -169,6 +183,7 @@ function makeService(overrides = {}) {
     downloadFetcher,
     cacheDir,
     sleep,
+    createDevice: overrides.createDevice || (() => flashDevice),
     createFlashId: () => {
       const id = `flash-${flashIds.length + 1}`;
       flashIds.push(id);
@@ -176,7 +191,7 @@ function makeService(overrides = {}) {
     },
     ...overrides,
   });
-  return { service, serialReset, esptool, serialConnectionService, downloadFetcher, flashIds };
+  return { service, serialReset, esptool, serialConnectionService, downloadFetcher, flashDevice, flashIds };
 }
 
 let cacheDir;
@@ -463,8 +478,10 @@ describe('startFlash 状态机', () => {
     ]);
     expect(statuses).not.toContain('failed');
 
-    expect(serialReset.enterDownloadMode).toHaveBeenCalledTimes(1);
-    expect(serialReset.enterDownloadMode).toHaveBeenCalledWith('COM17');
+    expect(serialReset.enterDownloadMode).not.toHaveBeenCalled();
+    expect(helpers.flashDevice.open).toHaveBeenCalledWith({ baudRate: 115200 });
+    expect(serialReset.enterDownloadModeOnDevice).toHaveBeenCalledTimes(1);
+    expect(serialReset.enterDownloadModeOnDevice).toHaveBeenCalledWith(helpers.flashDevice);
     expect(serialReset.hardResetToApp).toHaveBeenCalledWith('COM17');
     expect(esptool.state.main).toHaveBeenCalledWith('no_reset');
 
@@ -517,7 +534,7 @@ describe('startFlash 状态机', () => {
   });
 
   test('main 同步失败重试 3 次后报 FLASH_CONNECT_FAILED', async () => {
-    const { service, serialReset, esptool } = makeService({ cacheDir });
+    const { service, serialReset, esptool, flashDevice } = makeService({ cacheDir });
     esptool.state.main.mockRejectedValue(new Error('sync failed'));
 
     const { flashId } = await service.startFlash({ path: 'COM17', deviceType: 'QTZ' });
@@ -525,7 +542,9 @@ describe('startFlash 状态机', () => {
 
     expect(finalStatus.status).toBe('failed');
     expect(finalStatus.error.code).toBe('FLASH_CONNECT_FAILED');
-    expect(serialReset.enterDownloadMode).toHaveBeenCalledTimes(3);
+    expect(serialReset.enterDownloadMode).not.toHaveBeenCalled();
+    expect(flashDevice.open).toHaveBeenCalledTimes(3);
+    expect(serialReset.enterDownloadModeOnDevice).toHaveBeenCalledTimes(3);
     expect(esptool.state.main).toHaveBeenCalledTimes(3);
   });
 

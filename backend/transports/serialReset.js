@@ -1,11 +1,11 @@
-// 串口复位时序(提取自 .tmp/spike-flash-connect5.cjs,真机 6/6 验证可靠)。
+// 串口复位时序。烧录对齐 Flash Tool：同一打开的串口句柄上做自动复位，立刻同步，不关口重开。
 //
-// 本机 CH343 板卡实测 DTR/RTS 映射(反直觉,勿按 ESP 常规理解):
+// 本机 CH343 板卡实测 DTR/RTS 映射:
 //   DTR=false → EN 拉低(芯片复位);DTR=true  → EN 释放
 //   RTS=false → BOOT(GPIO9) 拉低;      RTS=true  → BOOT 拉高
 //
-// 不要用 esptool-js 自带的 ClassicReset/HardReset,也不要用 esploader.main()
-// 的默认复位——统一由这里先手动进下载模式,再 esploader.main('no_reset') 同步。
+// 进下载模式后必须保持 BOOT 拉低。不能再把 DTR/RTS 拉回运行态，
+// 也不能关串口重开(关口会抖控制线，芯片会退出下载模式)。
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let SerialPortClass = null;
@@ -35,24 +35,44 @@ function setLines(port, flags) {
   return new Promise((resolve, reject) => port.set(flags, (e) => (e ? reject(e) : resolve())));
 }
 
-// 进下载模式:{dtr:false,rts:true} 保持 300ms → {dtr:true,rts:false} 保持 300ms
-// 用专用临时句柄操作,完成后关闭并等 300ms 再让调用方重开端口。
-async function enterDownloadMode(path) {
-  await withPort(path, 115200, async (port) => {
-    await setLines(port, { dtr: false, rts: true });   // EN 低 + BOOT 高(实测可靠时序)
-    await sleep(300);
-    await setLines(port, { dtr: true, rts: false });   // EN 释放 + BOOT 低 → 下载模式
-    await sleep(300);
-  });
+async function setDeviceLines(device, flags) {
+  if (typeof device.setSignals === 'function') {
+    const signals = {};
+    if (typeof flags.dtr === 'boolean') signals.dataTerminalReady = flags.dtr;
+    if (typeof flags.rts === 'boolean') signals.requestToSend = flags.rts;
+    if (Object.keys(signals).length === 0) return;
+    await device.setSignals(signals);
+    return;
+  }
+  if (!device.port) {
+    throw new Error('串口设备未打开，无法设置 DTR/RTS');
+  }
+  await setLines(device.port, flags);
+}
+
+async function pulseDownloadMode(setFn) {
+  await setFn({ dtr: false, rts: true });
+  await sleep(300);
+  await setFn({ dtr: true, rts: false });
   await sleep(300);
 }
 
-// 复位回 app:{dtr:false,rts:false} 150ms → {dtr:true,rts:true}
+// 已打开的同一句柄上做自动复位，复位后保持 BOOT 拉低。
+async function enterDownloadModeOnDevice(device) {
+  await pulseDownloadMode((flags) => setDeviceLines(device, flags));
+}
+
+async function enterDownloadMode(path) {
+  await withPort(path, 115200, async (port) => {
+    await pulseDownloadMode((flags) => setLines(port, flags));
+  });
+}
+
 async function hardResetToApp(path) {
   await withPort(path, 115200, async (port) => {
-    await setLines(port, { dtr: false, rts: false });  // EN 低
+    await setLines(port, { dtr: false, rts: false });
     await sleep(150);
-    await setLines(port, { dtr: true, rts: true });    // EN 释放 + BOOT 高 → app
+    await setLines(port, { dtr: true, rts: true });
     await sleep(100);
   });
 }
@@ -61,6 +81,7 @@ module.exports = {
   withPort,
   setLines,
   enterDownloadMode,
+  enterDownloadModeOnDevice,
   hardResetToApp,
   setSerialPortClass,
 };
