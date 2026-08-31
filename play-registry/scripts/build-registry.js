@@ -69,6 +69,10 @@ function sanitizePackagePart(value) {
 // 整个游戏目录的内容指纹：对所有文件 (相对路径:文件sha256) 排序后整体 sha256。
 // files[] 是 schema v2 的逐文件清单，sha256 顶层字段保留给 v1 兼容和变更检测展示。
 function fingerprintGame(gameDir) {
+  // 码点序（非 localeCompare）：跨环境确定性排序，且与 test/extract.test.js
+  // 断言的默认 .sort() 顺序一致。游戏目录一旦出现大写文件名（如 TESTING.md），
+  // localeCompare 会把 game.js 排在 TESTING.md 前，与默认字典序不一致导致 CI 拒发。
+  const byPath = (a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   const files = walkDir(gameDir)
     .map((filePath) => {
       const rel = path.relative(gameDir, filePath).replace(/\\/g, '/');
@@ -79,7 +83,7 @@ function fingerprintGame(gameDir) {
         size: stat.size,
       };
     })
-    .sort((a, b) => a.path.localeCompare(b.path));
+    .sort(byPath);
   const parts = files.map((file) => `${file.path}:${file.sha256}`);
   return {
     sha256: sha256(Buffer.from(parts.join('\n'), 'utf8')),
@@ -394,7 +398,8 @@ async function build(options = {}) {
   }
 
   if (!games.length) throw new Error('未发现可发布游戏');
-  games.sort((a, b) => a.id.localeCompare(b.id));
+  // 同 fingerprintGame：用码点序保证跨环境确定性（游戏 id 目前全小写，防御性统一）
+  games.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
   const previousRegistry = await loadPreviousRegistry(options);
   validateVersionDrift(games, previousRegistry);
