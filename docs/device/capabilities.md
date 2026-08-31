@@ -41,6 +41,7 @@
 - `QTZ`：测距及脚踏传感器，能力 `distance`、`buttonInput`、`tiptoePressure`、`reporting`。`tiptoePressure` 由 `button0/button1` 派生：任一值数值化后等于 1 时为 200，否则为 0。
 - `DZC01`：电子秤，能力 `weight`、`reporting`。
 - `CUNZHI01`：寸止玩法设备，能力 `sphincterPressure`、`tiptoePressure`、`strength`、`shock`、`reporting`；踮脚压力仍读取真实 `pressure1`。
+- `GXP_XA9935`：gxp艾萝机娘二代，能力 `strength`（往复电机 0–255→0–100%）。
 
 未知设备类型会返回一个基础设备类型，显示名为类型本身，不包含能力、操作或监控字段。
 

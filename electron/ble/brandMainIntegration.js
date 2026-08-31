@@ -43,6 +43,8 @@ function createBrandBleMainIntegration({ ipcMain, getDeviceService, getBrandServ
     return DGLAB_V2_NAMES.some((k) => n.includes(k.toUpperCase()))
       || n.includes('47L')
       || n.includes('SOSEXY')
+      || n.includes('XA9935')
+      || n.includes('GXP')
       || YCY_NAMES.some((k) => n.includes(k.toUpperCase()));
   }
 

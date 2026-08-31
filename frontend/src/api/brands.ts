@@ -2,7 +2,7 @@
 
 export interface BrandDevice {
   deviceId: string;
-  brand: 'dglab' | 'ycy' | 'sosexy';
+  brand: 'dglab' | 'ycy' | 'sosexy' | 'gxp';
   brandLabel?: string;
   mode?: string;
   kind?: string;

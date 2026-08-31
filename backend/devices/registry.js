@@ -342,6 +342,36 @@ const registeredTypes = [
     ],
     close: (ctx) => ctx.sendMessage({ brand: 'sosexy', cmd: 'stopAll' }),
   }),
+
+  // GXP 艾萝机娘二代：strength 映射往复电机 0–255→0–100。震动强度字段未确认。
+  new BaseDeviceType({
+    type: 'GXP_XA9935',
+    name: 'gxp艾萝机娘二代',
+    capabilities: {
+      strength: {
+        actions: {
+          set: (ctx, params) => ctx.sendMessage({ brand: 'gxp', cmd: 'setStrength', value: params.value }),
+          stop: (ctx) => ctx.sendMessage({ brand: 'gxp', cmd: 'stopAll' }),
+        },
+      },
+    },
+    operations: [
+      { key: 'start', name: '启动强度', capability: 'strength', action: 'set', input: { value: 128 } },
+      { key: 'stop', name: '全部停止', invoke: (ctx) => ctx.sendMessage({ brand: 'gxp', cmd: 'stopAll' }) },
+      {
+        key: 'setMode', name: '电机+震动模式',
+        invoke: (ctx, params) => ctx.sendMessage({
+          brand: 'gxp', cmd: 'setMotorAndMode',
+          value: params.value, percent: params.percent, mode: params.mode,
+        }),
+      },
+      {
+        key: 'stopVibration', name: '停止震动',
+        invoke: (ctx) => ctx.sendMessage({ brand: 'gxp', cmd: 'stopVibration' }),
+      },
+    ],
+    close: (ctx) => ctx.sendMessage({ brand: 'gxp', cmd: 'stopAll' }),
+  }),
 ];
 
 const registry = new Map(registeredTypes.map((dt) => [dt.type, dt]));

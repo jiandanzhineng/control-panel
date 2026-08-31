@@ -15,12 +15,13 @@
 | `QTZ` | 测距及脚踏传感器 | `distance`、`buttonInput`、`tiptoePressure`、`reporting` | close |
 | `DZC01` | 电子秤 | `weight`、`reporting` | close |
 | `CUNZHI01` | 寸止玩法设备 | `sphincterPressure`、`tiptoePressure`、`strength`、`shock`、`reporting` | start/stop + close |
+| `GXP_XA9935` | gxp艾萝机娘二代 | `strength` | start/stop + close |
 
 ## 能力总表
 
 | 能力 key | 名称 | actions | events | 拥有设备 |
 |---|---|---|---|---|
-| `strength` | 强度控制 | set(value:0-255) | — | PJ01, TD01, OSR6, CUNZHI01 |
+| `strength` | 强度控制 | set(value:0-255) | — | PJ01, TD01, OSR6, CUNZHI01, GXP_XA9935 |
 | `shock` | 电击控制 | start(voltage), stop() | — | DIANJI, CUNZHI01 |
 | `lock` | 锁控制 | setOpen(open:bool) | — | ZIDONGSUO |
 | `sphincterPressure` | 括约压力 | — | pressureChange | QIYA, CUNZHI01 |

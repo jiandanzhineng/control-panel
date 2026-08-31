@@ -9,6 +9,7 @@ const { YCYConnection } = require('./ycyConnection');
 const { DGLabV2WebBleConnection } = require('./webBleConnection');
 const { YcyWebBleConnection } = require('./ycyWebBleConnection');
 const { SosexyWebBleConnection } = require('./sosexyWebBleConnection');
+const { GxpWebBleConnection } = require('./gxpWebBleConnection');
 const { NativeBridgeConnection } = require('./nativeBridgeConnection');
 const dglabV2 = require('./protocols/dglabV2');
 const discovery = require('./discovery');
@@ -17,7 +18,7 @@ const { brandLabel, typeLabel } = require('./brandLabels');
 const logger = require('../utils/logger');
 const fileStorage = require('../utils/fileStorage');
 
-const SUPPORTED = ['dglab', 'ycy', 'sosexy'];
+const SUPPORTED = ['dglab', 'ycy', 'sosexy', 'gxp'];
 const connections = new Map(); // deviceId -> connection adapter
 // 连接状态机（基础连接状态管理，轻量）：
 //   connecting | connected | disconnected | error
@@ -68,6 +69,9 @@ function resolveDeviceType(brand, { model, mode, type } = {}) {
   if (brand === 'sosexy' || type === 'SOSEXY_PID0004' || /SOSEXY/i.test(String(model || ''))) {
     return 'SOSEXY_PID0004';
   }
+  if (brand === 'gxp' || type === 'GXP_XA9935' || /XA9935|GXP/i.test(String(model || ''))) {
+    return 'GXP_XA9935';
+  }
   if (brand === 'ycy') {
     // 前端显式选择优先（杯 / 灌肠机 / 电击器 / 玩具 等）
     if (type) return type;
@@ -99,6 +103,7 @@ async function discover(brand, opts = {}) {
         const n = String(d.name || '').toUpperCase();
         if (brand === 'dglab') return ['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k));
         if (brand === 'sosexy') return n.includes('SOSEXY');
+        if (brand === 'gxp') return n.includes('XA9935') || n.includes('GXP');
         return ['YCY', 'YYC', 'YOKO', 'YISK', 'DJ-V2', 'FJB', 'ENEMA', 'GLJ', 'DJ'].some((k) => n.includes(k));
       });
     return found.map((d) => {
@@ -202,8 +207,9 @@ async function connect(brand, opts = {}) {
     finalName = name || `蓝牙体感设备 ${host}`;
     type = 'DGLAB';
     connection = new DGLabConnection({ deviceId: finalDeviceId, host, port, WebSocketClass });
-  } else if (brand === 'ycy' || brand === 'sosexy') {
+  } else if (brand === 'ycy' || brand === 'sosexy' || brand === 'gxp') {
     if (brand === 'sosexy') throw new Error('SOSEXY 仅支持本机桥或 BLE 直连');
+    if (brand === 'gxp') throw new Error('GXP 仅支持本机桥或 BLE 直连');
     const mode = opts.mode === 'ble' ? 'ble' : 'bridge';
     finalDeviceId = deviceId || (mode === 'ble' ? `ycy-${opts.address || opts.deviceId}` : `ycy-bridge-${opts.host || '127.0.0.1'}`);
     finalName = name || (mode === 'ble' ? `遥控蓝牙设备 ${opts.name || finalDeviceId}` : `遥控蓝牙设备(桥接) ${opts.host || '127.0.0.1'}`);
@@ -222,7 +228,7 @@ async function safeConnect(connection, brand, opts, finalDeviceId, type, finalNa
   const attemptConnect = async () => {
     if (brand === 'dglab') {
       await connection.connect();
-    } else if (brand === 'ycy' || brand === 'sosexy') {
+    } else if (brand === 'ycy' || brand === 'sosexy' || brand === 'gxp') {
       await connection.connect({ connectCode: opts.connectCode, uid: opts.uid, token: opts.token, host: opts.host, port: opts.port, serviceUuid: opts.serviceUuid, writeUuid: opts.writeUuid });
     }
   };
@@ -385,16 +391,20 @@ function attachWebBle(metadata, send) {
   const isSosexy = metadata.brand === 'sosexy'
     || String(metadata.type || '') === 'SOSEXY_PID0004'
     || /SOSEXY/i.test(metadata.name || '');
+  const isGxp = metadata.brand === 'gxp'
+    || String(metadata.type || '') === 'GXP_XA9935'
+    || /XA9935|GXP/i.test(metadata.name || '');
   const ycyType = explicitYcyType
     ? explicitYcyType
-    : (isSosexy ? 'SOSEXY_PID0004' : resolveDeviceType('ycy', { mode: 'ble', model: metadata.name }));
-  const isYcy = !isSosexy && (metadata.brand === 'ycy' || String(metadata.type || '').startsWith('YCY')
+    : (isSosexy ? 'SOSEXY_PID0004' : (isGxp ? 'GXP_XA9935' : resolveDeviceType('ycy', { mode: 'ble', model: metadata.name })));
+  const isYcy = !isSosexy && !isGxp && (metadata.brand === 'ycy' || String(metadata.type || '').startsWith('YCY')
     || /FJB|YCY|YYC|YOKO|TDD/i.test(metadata.name || ''));
-  const isBrandSosexy = isSosexy;
   let connection = connections.get(metadata.id);
   if (!connection) {
-    connection = isBrandSosexy
+    connection = isSosexy
       ? new SosexyWebBleConnection({ deviceId: metadata.id, send, type: 'SOSEXY_PID0004' })
+      : isGxp
+      ? new GxpWebBleConnection({ deviceId: metadata.id, send, type: 'GXP_XA9935' })
       : isYcy
       ? new YcyWebBleConnection({ deviceId: metadata.id, send, type: ycyType })
       : new DGLabV2WebBleConnection({ deviceId: metadata.id, send });
@@ -402,12 +412,12 @@ function attachWebBle(metadata, send) {
   } else if (typeof send === 'function') {
     connection._transportSend = send;
   }
-  const type = isBrandSosexy ? 'SOSEXY_PID0004' : (isYcy ? ycyType : 'DGLAB');
-  const brand = isBrandSosexy ? 'sosexy' : (isYcy ? 'ycy' : 'dglab');
+  const type = isSosexy ? 'SOSEXY_PID0004' : (isGxp ? 'GXP_XA9935' : (isYcy ? ycyType : 'DGLAB'));
+  const brand = isSosexy ? 'sosexy' : (isGxp ? 'gxp' : (isYcy ? 'ycy' : 'dglab'));
   deviceService.connectTransportDevice(
     {
       id: metadata.id,
-      name: metadata.name || `${isBrandSosexy ? '啵啵贝' : (isYcy ? '役次元' : '蓝牙体感设备')} ${String(metadata.id).slice(-4)}`,
+      name: metadata.name || `${isSosexy ? '啵啵贝' : (isGxp ? 'gxp艾萝机娘二代' : (isYcy ? '役次元' : '蓝牙体感设备'))} ${String(metadata.id).slice(-4)}`,
       type,
       connectionType: 'brandBle',
       transportMetadata: connection.toMetadata(),
@@ -536,6 +546,7 @@ function browserIdFromDeviceId(id) {
   if (s.startsWith('ycy:')) return s.slice(4);
   if (s.startsWith('dglab-v2-')) return s.slice(9);
   if (s.startsWith('sosexy:')) return s.slice(7);
+  if (s.startsWith('gxp:')) return s.slice(4);
   return '';
 }
 
@@ -557,7 +568,8 @@ function isBrandBleRecord(d) {
   if (browserIdFromDeviceId(d.id)) return true;
   return isMacDeviceId(d.id) && (d.type === 'DGLAB'
     || String(d.type || '').startsWith('YCY_')
-    || d.type === 'SOSEXY_PID0004');
+    || d.type === 'SOSEXY_PID0004'
+    || d.type === 'GXP_XA9935');
 }
 
 function bleNamesMatch(a, b) {

@@ -40,6 +40,7 @@ impl Brand {
         match self {
             Brand::Ycy => &[
                 "YCY", "YYC", "YSKJ", "YOKO", "YOKONEX", "YISK", "DJ-V2", "YICIYUAN", "DJ", "SOSEXY",
+                "XA9935", "GXP",
             ],
             Brand::Dglab => &["D-LAB", "DG-LAB", "47L", "COYOTE", "YSKJ", "ESTIM"],
         }
@@ -53,6 +54,7 @@ impl Brand {
             "0000ff40-0000-1000-8000-00805f9b34fb",
             "98a9cd00-ca0a-4cf8-9f85-e93949467558",
             "0000ee01-0000-1000-8000-00805f9b34fb",
+            "0000ff00-0000-1000-8000-00805f9b34fb",
             "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
         ]
     }
@@ -175,6 +177,11 @@ fn char_props(flags: CharPropFlags) -> Vec<String> {
         v.push("indicate".into());
     }
     v
+}
+
+fn uuid_short_prefix(uuid: &str, short: &str) -> bool {
+    let s = uuid.to_lowercase().replace('-', "");
+    s.starts_with(&format!("0000{}", short.to_lowercase()))
 }
 
 fn find_char_by_uuid(services: &BTreeSet<Service>, uuid: &str) -> Option<Characteristic> {
@@ -443,22 +450,31 @@ async fn finalize(state: Shared, p: &Peripheral, key: &str, services: BTreeSet<S
                 if ch.properties.contains(CharPropFlags::WRITE)
                     || ch.properties.contains(CharPropFlags::WRITE_WITHOUT_RESPONSE)
                 {
+                    let is_ff03 = uuid_short_prefix(&ch.uuid.to_string(), "ff03");
+                    let keep_ff03 = write_char
+                        .as_ref()
+                        .map(|c| uuid_short_prefix(&c.uuid.to_string(), "ff03"))
+                        .unwrap_or(false);
                     let is_candidate = state
                         .brand
                         .candidate_services()
                         .iter()
                         .any(|c| c.to_lowercase() == svc_str);
-                    if is_candidate {
+                    if is_ff03 {
+                        write_char = Some(ch.clone());
+                    } else if !keep_ff03 && is_candidate {
                         write_char = Some(ch.clone());
                     } else if write_char.is_none() {
                         write_char = Some(ch.clone());
                     }
                 }
-                if (ch.properties.contains(CharPropFlags::NOTIFY)
-                    || ch.properties.contains(CharPropFlags::INDICATE))
-                    && notify_char.is_none()
+                if ch.properties.contains(CharPropFlags::NOTIFY)
+                    || ch.properties.contains(CharPropFlags::INDICATE)
                 {
-                    notify_char = Some(ch.clone());
+                    let is_ff02 = uuid_short_prefix(&ch.uuid.to_string(), "ff02");
+                    if is_ff02 || notify_char.is_none() {
+                        notify_char = Some(ch.clone());
+                    }
                 }
             } else {
                 // 郊狼：电量特征优先 notify/indicate，否则可读特征

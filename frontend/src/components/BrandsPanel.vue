@@ -92,6 +92,25 @@
                 </div>
               </div>
             </div>
+            <div v-else-if="ycyPanelType(dev) === 'GXP_XA9935'" class="control-stack">
+              <div class="control-row">
+                <div class="control-field"><label>{{ t('brands.motor', { n: ctl(dev).gxpStrength }) }}</label><el-slider v-model="ctl(dev).gxpStrength" :min="0" :max="255" /></div>
+                <div class="control-actions"><el-button type="primary" size="small" :loading="opLoading[`gxpStrength:${dev.deviceId}`]" @click="gxpStrengthApply(dev)">{{ t('brands.apply') }}</el-button></div>
+              </div>
+              <div class="control-row">
+                <div class="control-field">
+                  <label>{{ t('brands.vibeMode') }}</label>
+                  <el-select v-model="ctl(dev).gxpMode" size="small" style="width: 120px">
+                    <el-option v-for="m in 12" :key="m" :label="String(m)" :value="m" />
+                  </el-select>
+                </div>
+                <div class="control-actions">
+                  <el-button size="small" :loading="opLoading[`gxpMode:${dev.deviceId}`]" @click="gxpModeApply(dev)">{{ t('brands.apply') }}</el-button>
+                  <el-button size="small" :loading="opLoading[`gxpStopVibe:${dev.deviceId}`]" @click="gxpStopVibration(dev)">{{ t('brands.stopVibration') }}</el-button>
+                  <el-button size="small" :loading="opLoading[`gxpStop:${dev.deviceId}`]" @click="gxpStop(dev)">{{ t('brands.stopAll') }}</el-button>
+                </div>
+              </div>
+            </div>
             <div v-else-if="ycyPanelType(dev) === 'YCY_CUP'" class="control-grid">
               <div class="control-field"><label>{{ t('brands.rotate', { n: ctl(dev).stroke }) }}</label><el-slider v-model="ctl(dev).stroke" :min="0" :max="255" /></div>
               <div class="control-field"><label>{{ t('brands.vibe', { n: ctl(dev).vibe }) }}</label><el-slider v-model="ctl(dev).vibe" :min="0" :max="255" /></div>
@@ -224,6 +243,7 @@ const BRAND_LABEL = computed<Record<string, string>>(() => ({
   dglab: t('brands.brandDglab'),
   ycy: t('brands.brandYcy'),
   sosexy: t('brands.brandSosexy'),
+  gxp: t('brands.brandGxp'),
 }))
 const TYPE_LABEL = computed<Record<string, string>>(() => ({
   DGLAB: t('brands.typeDglab'),
@@ -233,6 +253,7 @@ const TYPE_LABEL = computed<Record<string, string>>(() => ({
   YCY_CUP: t('brands.typeCup'),
   YCY_ENEMA: t('brands.typeEnema'),
   SOSEXY_PID0004: t('brands.typeBobobei'),
+  GXP_XA9935: t('brands.typeAiluo'),
 }))
 
 // 设备名映射为友好中文名（仅显示层，不改连接/电量逻辑）
@@ -245,6 +266,7 @@ function brandLabel(brand: string, rawName?: string | null): string {
     return name || t('brands.dglab')
   }
   if (brand === 'sosexy') return t('brands.bobobei')
+  if (brand === 'gxp') return t('brands.ailuo')
   if (brand === 'ycy') {
     if (/FJB/i.test(name)) return t('brands.cup')
     if (/(YISK|灌肠|ENEMA|GLJ|GLS)/i.test(name)) return t('brands.enema')
@@ -430,6 +452,7 @@ function ycyPanelType(dev: { type?: string; name?: string }) {
   if (dev.type && TYPE_LABEL.value[dev.type]) return dev.type
   const n = String(dev.name || '')
   if (/SOSEXY|啵啵贝/i.test(n)) return 'SOSEXY_PID0004'
+  if (/XA9935|GXP|艾萝/i.test(n)) return 'GXP_XA9935'
   if (/灌肠|enema|glj|yisk/i.test(n)) return 'YCY_ENEMA'
   if (/杯|cup|fjb/i.test(n)) return 'YCY_CUP'
   if (/toy|玩具|tdd/i.test(n)) return 'YCY_TOY'
@@ -443,6 +466,7 @@ function ctl(dev: BrandDevice) {
       commandId: '', aStrength: 102, bStrength: 102, wave: 1,
       speed: 153, mode: 1, stroke: 96, vibe: 0, axis: 0, scene: 'guan',
       sosexyStrength: 0, sosexyVibration: 0, sosexySuction: 0, sosexyShock: 0,
+      gxpStrength: 0, gxpMode: 1,
       v2AStrength: 0, v2BStrength: 0, v2Ax: 5, v2Ay: 200, v2Bx: 5, v2By: 200,
     }
   }
@@ -794,10 +818,11 @@ const scanningYcyWebble = ref(false)
 function ycyWebbleCancelScan() {
   brandBle.cancelSelection().catch(() => {})
 }
-function classifyBleBrand(name?: string): 'dglab' | 'ycy' | 'sosexy' {
+function classifyBleBrand(name?: string): 'dglab' | 'ycy' | 'sosexy' | 'gxp' {
   const n = String(name || '').toUpperCase()
   if (['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k))) return 'dglab'
   if (n.includes('SOSEXY') || name?.includes('啵啵贝') || name?.includes('繁野')) return 'sosexy'
+  if (n.includes('XA9935') || n.includes('GXP') || name?.includes('艾萝')) return 'gxp'
   return 'ycy'
 }
 function cancelBleScan() {
@@ -808,12 +833,13 @@ async function startBleConnect() {
   scanningYcyWebble.value = true
   ycyWebbleCandidates.value = []
   try {
-    const [y, d, s] = await Promise.all([
+    const [y, d, s, g] = await Promise.all([
       brandsApi.discover('ycy', { mode: 'native' }),
       brandsApi.discover('dglab', { mode: 'native' }),
       brandsApi.discover('sosexy', { mode: 'native' }),
+      brandsApi.discover('gxp', { mode: 'native' }),
     ])
-    const list = [...(y.devices || []), ...(d.devices || []), ...(s.devices || [])]
+    const list = [...(y.devices || []), ...(d.devices || []), ...(s.devices || []), ...(g.devices || [])]
     ycyWebbleCandidates.value = list.map((c) => ({
       id: c.address || c.deviceId || '',
       name: c.name || c.suggestedName || '',
@@ -919,6 +945,33 @@ async function ycyStop(dev: BrandDevice) {
     else if (type === 'YCY_TOY') await devicesApi.invokeCapability(dev.deviceId, 'strength', 'stop', {})
     else if (dev.mode === 'bridge') await devicesApi.executeDeviceOperation(dev.deviceId, 'stop', {})
     else await devicesApi.invokeCapability(dev.deviceId, 'estim', 'stop', {})
+    ElMessage.success(t('brands.stopped'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.stopFailed')) })
+}
+
+async function gxpStrengthApply(dev: BrandDevice) {
+  await withLoading(`gxpStrength:${dev.deviceId}`, async () => {
+    await devicesApi.invokeCapability(dev.deviceId, 'strength', 'set', { value: ctl(dev).gxpStrength })
+    ElMessage.success(t('brands.sent'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
+}
+async function gxpModeApply(dev: BrandDevice) {
+  await withLoading(`gxpMode:${dev.deviceId}`, async () => {
+    await devicesApi.executeDeviceOperation(dev.deviceId, 'setMode', {
+      value: ctl(dev).gxpStrength, mode: ctl(dev).gxpMode,
+    })
+    ElMessage.success(t('brands.sent'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
+}
+async function gxpStopVibration(dev: BrandDevice) {
+  await withLoading(`gxpStopVibe:${dev.deviceId}`, async () => {
+    await devicesApi.executeDeviceOperation(dev.deviceId, 'stopVibration', {})
+    ElMessage.success(t('brands.stopped'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.stopFailed')) })
+}
+async function gxpStop(dev: BrandDevice) {
+  await withLoading(`gxpStop:${dev.deviceId}`, async () => {
+    await devicesApi.executeDeviceOperation(dev.deviceId, 'stop', {})
     ElMessage.success(t('brands.stopped'))
   }).catch((e: any) => { ElMessage.error(e?.message || t('brands.stopFailed')) })
 }

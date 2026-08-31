@@ -9,7 +9,7 @@
 - play-registry 用户页（首页/列表/控制/运行壳）中英跟随浏览器语言，右上角可手动切换，记在 `localStorage.site-locale`。开发文档正文可仍中文，导航与页脚随站点语言。
 - Electron 窗口/托盘选择：`%APPDATA%\Electron\window-settings.json`（开发态）或 `%APPDATA%\undersilicon\window-settings.json`（安装包）。`closeToTray` 为 `null` 表示还没选过。语言偏好同文件字段 `locale`（`zh` / `en` / `system`）。
 - 小雅启动后由 Electron 开独立窗口（`electron/localAppWindow.js`），主窗口不跳 iframe。窗口标题尾部中文「按F11全屏 ESC退出全屏」、英文 `F11 fullscreen, Esc exit fullscreen`。未登录启动会确认。
-- 语音渠道在面板「设置 → 语音服务」。没改过默认官方。key 在 `BACKEND_DATA_DIR/voice-settings.json`。本机游戏打 `POST /v1/chat/completions`；状态 `GET /api/voice/status`。
+- 语音渠道在面板「设置 → 语音服务」。没改过默认官方。key 在 `BACKEND_DATA_DIR/voice-settings.json`。本机游戏打 `POST /v1/chat/completions`；状态 `GET /api/voice/status`。客户端「瑰夏大人」语音助手调研见 `docs/research/pc-voice-assistant-2026-08-31.md`。唤醒词引擎拟用 `sherpa-onnx-node`（Windows x64，无需预装 C++/Python），KWS 模型 `sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20`。
 - 国内账号/诊断库在 `47.116.46.164`（control_panel_mobile `.env` 的 SERVER_IP），SSH `root` + `~/.ssh/ci.pem`。容器 `undersilicon-cn-api-1` / `undersilicon-cn-postgres-1`，库 `undersilicon_api`。后台 `https://undersilicon-admin.pages.dev/telemetry` 打 `https://api.undersilicon.cn`，就是这台。查包：`docker exec undersilicon-cn-postgres-1 psql -U undersilicon -d undersilicon_api`，表 `diagnostic_log_bundles`。`GET /admin/telemetry/log-bundles` 带 `Cache-Control: max-age=86400`，浏览器会缓存列表一天。
 - 诊断日志上传：日志管理页「上传诊断日志」→ `POST /api/logs/upload-diagnostics` → 国内 `POST https://api.undersilicon.cn/telemetry/log-bundles`，`reason=user_report`。匿名 id 在 `BACKEND_DATA_DIR/diagnostic-anonymous-id.json`。页面「完整日志包」只拉最近 40 条。数字人 stdout 模块名 `DigitalHuman`，文件 `current/tmp_launch.log`。
 - 品牌设备相关测试：`cd backend; npm test -- --runInBand tests/brandDevices.test.js tests/webBle.test.js tests/dglabV2.test.js`
@@ -19,3 +19,4 @@
 - 品牌网页蓝牙自动连接设置：`GET/PUT /api/brands/settings`，名单 `GET /api/brands/saved-ble`，默认 autoConnect / autoConnectAll 均为 true。役次元 Chromium 设备 ID 会随 BLE 随机地址变，自动连按广播名静默扫描，沿用已保存设备 id。
 - 役次元杯真机：广播名 `YCY-FJB-03`，地址 `FF:26:02:28:4C:CD`。GATT `FF40/FF41写/FF42通知`。控制帧 6 字节 `35 12 旋转 震动 第三轴 校验`（旋转 0–40）。品牌页连上后有旋转/震动/第三轴滑条。产品路径是「蓝牙连接」（本机桥），不是网页蓝牙。
 - 繁野啵啵贝：广播名 `SOSEXY`，内部类型 `SOSEXY_PID0004`，品牌码 `sosexy`。GATT `EE01/EE02通知/EE03写`；`strength` 为 0–255 同时映射震动与吸吮，独立 `vibration`/`suction` 直接 0–100，`shock` 映射微电流。协议实现见 `backend/brands/protocols/sosexy.js`。页面展示品牌「繁野」、产品「啵啵贝」，不归入役次元。
+- GXP 艾萝机娘二代：广播名 `Xa9935`（部分匹配），内部类型 `GXP_XA9935`，品牌码 `gxp`。GATT 控制写 `FF03`、通知 `FF02`（不解析）。`strength` 0–255→电机 0–100%；震动模式 1–12 仅品牌页试控；震动强度字段未确认不发。协议见 `docs/device/brand/gxp-xa9935-ble-control.md`。

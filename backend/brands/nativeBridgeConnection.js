@@ -4,11 +4,12 @@
 const dglabV2 = require('./protocols/dglabV2');
 const { YcyWebBleConnection } = require('./ycyWebBleConnection');
 const { SosexyWebBleConnection } = require('./sosexyWebBleConnection');
+const { GxpWebBleConnection } = require('./gxpWebBleConnection');
 const { DGLabV2WebBleConnection } = require('./webBleConnection');
 
 class NativeBridgeConnection {
   constructor({ brand, deviceId, address, port, type, fetchImpl } = {}) {
-    this.brand = type === 'SOSEXY_PID0004' ? 'sosexy' : brand;
+    this.brand = type === 'SOSEXY_PID0004' ? 'sosexy' : (type === 'GXP_XA9935' ? 'gxp' : brand);
     this.deviceId = deviceId;
     this.address = address;
     this.port = Number(port);
@@ -17,6 +18,8 @@ class NativeBridgeConnection {
     this._fetch = fetchImpl || globalThis.fetch.bind(globalThis);
     this._inner = type === 'SOSEXY_PID0004'
       ? new SosexyWebBleConnection({ deviceId, type, mode: 'native', send: (msg) => this._sendYcy(msg) })
+      : type === 'GXP_XA9935' || brand === 'gxp'
+      ? new GxpWebBleConnection({ deviceId, type: 'GXP_XA9935', mode: 'native', send: (msg) => this._sendYcy(msg) })
       : brand === 'ycy'
       ? new YcyWebBleConnection({ deviceId, type, send: (msg) => this._sendYcy(msg) })
       : new DGLabV2WebBleConnection({ deviceId, send: (ops) => this._sendDglab(ops) });
@@ -53,14 +56,20 @@ class NativeBridgeConnection {
 
   _sendYcy(msg) {
     if (msg?.method === 'disconnect') return this.disconnect();
+    const write = msg.write;
     if (msg?.op === 'writeMany' && Array.isArray(msg.values)) {
       return this._postSend({
         addr: this.address,
         frames: msg.values.map((value) => Buffer.from(value || []).toString('hex')),
+        ...(write ? { write } : {}),
       });
     }
     const frame = Buffer.from(msg.value || []);
-    return this._postSend({ addr: this.address, frame: frame.toString('hex') });
+    return this._postSend({
+      addr: this.address,
+      frame: frame.toString('hex'),
+      ...(write ? { write } : {}),
+    });
   }
 
   _sendDglab(ops) {
