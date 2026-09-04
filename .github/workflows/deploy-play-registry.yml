@@ -1,28 +1,27 @@
-name: deploy-play-registry
+name: deploy-play-site
 
-# 部署「游戏网站」(play-registry 子目录) 到 GitHub Pages + 阿里云 OSS。
-# 游戏内容独立成网站、单独部署；面板运行时拉取 registry.json，游戏经 gameProxy 同源加载。
-# 默认游戏来自 backend/games，网站额外游戏来自 play-registry/games，构建时合并发布。
+# 仅更新 OSS 上的静态页面壳。游戏文件、ZIP 和 registry.json 只能由
+# game-platform 服务发布，避免 GitHub Actions 与平台发生双写。
 on:
   push:
     branches: [main, develop]
     paths:
       - 'play-registry/**'
-      - 'backend/games/**'
+      - '!play-registry/games/**'
+      - '!play-registry/packages/**'
+      - '!play-registry/registry.json'
       - '.github/workflows/deploy-play-registry.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: deploy-play-registry
+  group: deploy-play-site
   cancel-in-progress: false
 
 jobs:
-  build-oss-deploy:
+  deploy-static-site:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,34 +30,26 @@ jobs:
         with:
           node-version: '20'
 
-      - name: 生成 registry.json + 跑正则锁定测试
+      - name: 验证静态站脚本
         working-directory: play-registry
         run: |
           npm ci
-          node scripts/build-registry.js
           npm test
 
-      # 原子顺序：games/packages 资源先就位，registry.json 最后（它是"指针"）。
-      # site/ 是临时发布产物：先宽复制 play-registry 网站壳，剔除开发文件，
-      # 再把 backend/games 默认游戏合并进 site/games。
-      - name: 组装站点产物
+      - name: 组装静态站壳
         run: |
           rm -rf site
           mkdir -p site
           cp -a play-registry/. site/
-          rm -rf site/scripts site/test site/node_modules
-          rm -f site/package.json site/package-lock.json site/README.md site/.gitignore site/.gitattributes site/*.log
-          mkdir -p site/games
-          [ ! -d backend/games ] || cp -a backend/games/. site/games/
-          rm -f site/games/.gitkeep
+          rm -rf site/scripts site/test site/node_modules site/games site/packages
+          rm -f site/package.json site/package-lock.json site/README.md site/.gitignore site/.gitattributes site/registry.json site/*.log
 
-      - name: 部署到阿里云 OSS
+      - name: 部署静态站壳到阿里云 OSS
         env:
           OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
           OSS_BUCKET: ezs-games
-          # 默认部署到 bucket 根目录；如需前缀，可在 Repository Variables 配 PLAY_REGISTRY_OSS_PREFIX。
           OSS_PREFIX: ${{ vars.PLAY_REGISTRY_OSS_PREFIX }}
         run: |
           python -m pip install --upgrade pip
@@ -79,63 +70,23 @@ jobs:
           endpoint = os.environ["OSS_ENDPOINT"].strip()
           bucket_name = os.environ.get("OSS_BUCKET", "ezs-games").strip() or "ezs-games"
           prefix = os.environ.get("OSS_PREFIX", "").strip("/")
-
-          auth = oss2.Auth(
-              os.environ["OSS_ACCESS_KEY_ID"].strip(),
-              os.environ["OSS_ACCESS_KEY_SECRET"].strip(),
-          )
+          auth = oss2.Auth(os.environ["OSS_ACCESS_KEY_ID"].strip(), os.environ["OSS_ACCESS_KEY_SECRET"].strip())
           bucket = oss2.Bucket(auth, endpoint, bucket_name)
 
           mimetypes.add_type("application/javascript; charset=utf-8", ".js")
           mimetypes.add_type("text/css; charset=utf-8", ".css")
           mimetypes.add_type("text/html; charset=utf-8", ".html")
-          mimetypes.add_type("application/json; charset=utf-8", ".json")
-
           files = sorted(path for path in site.rglob("*") if path.is_file())
           if not files:
-              raise SystemExit("No files found in site/")
+              raise SystemExit("No static files found")
 
-          def object_key(path):
+          for path in files:
               rel = path.relative_to(site).as_posix()
-              return f"{prefix}/{rel}" if prefix else rel
-
-          def headers_for(rel):
+              key = f"{prefix}/{rel}" if prefix else rel
               content_type, _ = mimetypes.guess_type(rel)
-              if rel.endswith((".html", ".json")):
-                  cache_control = "no-cache, max-age=60"
-              elif rel.startswith("packages/"):
-                  cache_control = "public, max-age=31536000, immutable"
-              else:
-                  cache_control = "public, max-age=300"
-              headers = {"Cache-Control": cache_control}
+              headers = {"Cache-Control": "no-cache, max-age=60" if rel.endswith(".html") else "public, max-age=300"}
               if content_type:
                   headers["Content-Type"] = content_type
-              return headers
-
-          def upload(path):
-              rel = path.relative_to(site).as_posix()
-              key = object_key(path)
               print(f"Uploading {path} to oss://{bucket_name}/{key}")
-              bucket.put_object_from_file(key, str(path), headers=headers_for(rel))
-
-          registry = site / "registry.json"
-          for path in files:
-              if path != registry:
-                  upload(path)
-          if registry.exists():
-              # registry.json 是面板读取的指针，最后上传，避免先暴露未就位的 games 资源。
-              upload(registry)
+              bucket.put_object_from_file(key, str(path), headers=headers)
           PY
-
-      - name: 上传 Pages 产物
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-  deploy-pages:
-    needs: build-oss-deploy
-    runs-on: ubuntu-latest
-    steps:
-      - name: 部署到 GitHub Pages
-        id: deploy
-        uses: actions/deploy-pages@v4

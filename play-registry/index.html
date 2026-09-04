@@ -20,7 +20,7 @@
       <a href="control.html" data-i18n="navControl">设备控制</a>
       <a href="docs/agent-guide.html" data-i18n="navDocs">开发文档</a>
       <a href="docs/device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
-      <a href="docs/contribute.html" class="nav-cta" data-i18n="navContribute">投稿</a>
+      <a href="submit.html" class="nav-cta" data-i18n="navContribute">投稿</a>
       <div class="lang-switch">
         <button type="button" data-set-locale="zh">中</button>
         <button type="button" data-set-locale="en">EN</button>
@@ -56,13 +56,13 @@
       <pre id="home-prompt">你是「硅基之下」游戏库的玩法开发者。请先阅读开发规范：
 https://game.undersilicon.cn/docs/agent-guide.html
 
-然后 clone 仓库 git@github.com:jiandanzhineng/control-panel.git，
-参考 backend/games/ 里最接近的现有游戏，按下面的想法做一个新游戏：
+按开发规范做一个自包含游戏，游戏根目录必须包含 index.html、game-manifest 和所需资源：
 
 【玩法描述】<写清用什么设备、玩家做什么、什么条件触发反馈、如何结束>
 
-要求：新目录放 play-registry/games/<your-id>/，设备交互只走 window.DeviceAPI，
-完成后在 play-registry/ 下跑 npm run build && npm test，最后说明改了哪些文件。</pre>
+要求：id 使用英文 kebab-case，设备交互只走 window.DeviceAPI；
+完成后自测，并将游戏根目录打成 ZIP，或准备公开 GitHub/GitLab 仓库地址。
+打开 https://game.undersilicon.cn/submit.html 提交审核。</pre>
       <p style="color:var(--text-soft);font-size:14px;margin-top:14px;"><span data-i18n="promptHint">改完这段描述发给 AI，它会照着规范帮你写出可上架的游戏。完整说明见 Agent 开发指南。</span> <a href="docs/agent-guide.html" data-i18n="agentGuide" data-i18n="agentGuide">Agent 开发指南</a></p>
     </div>
   </div>
@@ -75,14 +75,14 @@ https://game.undersilicon.cn/docs/agent-guide.html
         <div>
           <span class="hero-eyebrow"><span class="dot"></span> <span data-i18n="contributeEyebrow">玩家投稿计划</span></span>
           <h2 style="font-size:30px;font-weight:800;letter-spacing:0;margin-bottom:12px;"><span data-i18n="contributeH2">把你的脑洞做成游戏，投稿送硬件 + Token 套餐</span></h2>
-          <p style="color:var(--text-soft);font-size:16px;"><span data-i18n="contributeLead">不用从零学写代码——clone 仓库后，用上面的 Prompt 让 AI 参考现有游戏改出你的玩法。通过审核上架后，玩家在控制面板里直接看到、直接玩。</span></p>
+          <p style="color:var(--text-soft);font-size:16px;"><span data-i18n="contributeLead">不用 GitHub 账号也能投稿。完成游戏后上传 ZIP，或填写公开 Git 地址；人工审核通过后，玩家会在控制面板里直接看到、直接玩。</span></p>
           <div class="tier-list">
-            <div class="tier"><span class="tier-icon">01</span><div class="tier-info"><div class="tier-name" data-i18n="tier1Name">AI 辅助开发</div><div class="tier-desc" data-i18n="tier1Desc">复制首页 Prompt，让 Claude Code / Codex 对照现有游戏实现</div></div></div>
-            <div class="tier"><span class="tier-icon">02</span><div class="tier-info"><div class="tier-name" data-i18n="tier2Name">提交 PR 上架</div><div class="tier-desc" data-i18n="tier2Desc">把新游戏目录发 PR 到 main，合并后自动发布</div></div></div>
+            <div class="tier"><span class="tier-icon">01</span><div class="tier-info"><div class="tier-name" data-i18n="tier1Name">AI 辅助开发</div><div class="tier-desc" data-i18n="tier1Desc">复制首页 Prompt，让 Claude Code / Codex 按开发规范实现</div></div></div>
+            <div class="tier"><span class="tier-icon">02</span><div class="tier-info"><div class="tier-name" data-i18n="tier2Name">上传投稿</div><div class="tier-desc" data-i18n="tier2Desc">上传 ZIP 或填写公开 Git 地址，进入人工审核</div></div></div>
             <div class="tier"><span class="tier-icon">03</span><div class="tier-info"><div class="tier-name" data-i18n="tier3Name">投稿奖励</div><div class="tier-desc" data-i18n="tier3Desc">通过审核上架后送硬件 + Token 套餐，具体咨询客服</div></div></div>
           </div>
           <div style="margin-top:24px;display:flex;gap:12px;flex-wrap:wrap;">
-            <a class="btn btn-primary" href="docs/contribute.html"><span data-i18n="viewContribute">查看投稿指南 →</span></a>
+            <a class="btn btn-primary" href="submit.html"><span data-i18n="viewContribute">提交游戏 →</span></a>
             <a class="btn btn-ghost" href="docs/agent-guide.html">Agent 开发指南</a>
           </div>
         </div>
@@ -104,9 +104,9 @@ https://game.undersilicon.cn/docs/agent-guide.html
       <a href="docs/agent-guide.html" data-i18n="navDocs">开发文档</a>
       <a href="docs/device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
       <a href="docs/devices.html" data-i18n="footerDevices">设备清单</a>
-      <a href="docs/contribute.html" data-i18n="navContribute">投稿</a>
+      <a href="submit.html" data-i18n="navContribute">投稿</a>
     </div>
-    <div><span data-i18n="footerNote">硅基之下游戏库 · UnderSilicon 控制面板 · 内容随仓库 main 分支自动发布</span></div>
+    <div><span data-i18n="footerNote">硅基之下游戏库 · UnderSilicon 控制面板 · 已发布内容由平台审核后同步</span></div>
   </div>
 </footer>
 

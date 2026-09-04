@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>投稿工作台 · 硅基之下游戏库</title>
+<meta name="description" content="向硅基之下游戏库提交 ZIP 游戏包或公开 Git 地址。" />
+<link rel="stylesheet" href="assets/css/site.css" />
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html"><span class="brand-mark">⚡</span><span>硅基之下游戏库</span></a>
+    <div class="nav-links">
+      <a href="games.html">游戏</a>
+      <a href="control.html">设备控制</a>
+      <a href="docs/agent-guide.html">开发文档</a>
+      <a href="submit.html" class="nav-cta">投稿</a>
+    </div>
+  </div>
+</nav>
+
+<main class="platform-page container narrow">
+  <header class="platform-head">
+    <p class="eyebrow">GAME SUBMISSION</p>
+    <h1>投稿工作台</h1>
+    <p>可直接上传 ZIP 游戏包，或提交公开 Git 地址。投稿进入人工审核，通过后自动发布到玩法库。</p>
+  </header>
+
+  <p id="platform-message" class="platform-message" aria-live="polite"></p>
+
+  <section id="auth-view" class="platform-panel">
+    <div class="auth-tabs">
+      <button type="button" data-auth-mode="login" class="active">登录</button>
+      <button type="button" data-auth-mode="register">注册</button>
+    </div>
+    <form id="login-form" class="platform-form">
+      <label>邮箱<input name="email" type="email" autocomplete="email" required /></label>
+      <label>密码<input name="password" type="password" autocomplete="current-password" minlength="10" required /></label>
+      <button class="btn btn-primary" type="submit">登录</button>
+    </form>
+    <form id="register-form" class="platform-form" hidden>
+      <label>昵称<input name="displayName" type="text" minlength="2" maxlength="40" autocomplete="nickname" required /></label>
+      <label>邮箱<input name="email" type="email" autocomplete="email" required /></label>
+      <label>密码<input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required /></label>
+      <button class="btn btn-primary" type="submit">创建账号</button>
+    </form>
+  </section>
+
+  <section id="dashboard" hidden>
+    <div class="platform-account">
+      <span id="account-name"></span>
+      <span class="platform-actions"><a id="admin-link" href="admin.html" hidden>审核后台</a><button id="logout" type="button" class="icon-button" title="退出登录">退出</button></span>
+    </div>
+
+    <section class="platform-panel">
+      <div class="panel-title"><div><h2>提交游戏</h2><p>ZIP 根目录必须有 <code>index.html</code> 与 <code>game-manifest</code>。公开 Git 仓库根目录须满足相同结构。</p></div></div>
+      <form id="submission-form" class="platform-form">
+        <label>游戏名称<input name="title" type="text" minlength="2" maxlength="100" required /></label>
+        <label>玩法说明<textarea name="description" maxlength="2000" rows="4" placeholder="说明玩法、所需设备和安全注意事项"></textarea></label>
+        <fieldset class="submission-kind"><legend>投稿方式</legend>
+          <label><input type="radio" name="kind" value="zip" checked /> 上传 ZIP</label>
+          <label><input type="radio" name="kind" value="git" /> 公开 Git 地址</label>
+        </fieldset>
+        <label id="zip-field">ZIP 游戏包<input id="zip-file" name="zipFile" type="file" accept=".zip,application/zip" required /><span>文件大小以服务端限制为准，上传后直达 OSS 隔离区。</span></label>
+        <label id="git-field" hidden>公开 GitHub/GitLab 地址<input id="git-url" name="gitUrl" type="url" placeholder="https://github.com/owner/repository" /><span>仅保存地址供审核员查看；批准发布时才读取当时仓库内容。</span></label>
+        <button class="btn btn-primary" type="submit">提交审核</button>
+      </form>
+    </section>
+
+    <section class="platform-panel">
+      <div class="panel-title"><div><h2>我的投稿</h2><p>审核进度与意见会显示在这里。</p></div></div>
+      <div id="submission-list" class="submission-list"></div>
+    </section>
+  </section>
+</main>
+
+<footer class="footer"><div class="container">硅基之下游戏库 · 所有已发布游戏由 OSS/CDN 提供</div></footer>
+<script src="assets/js/platform-config.js"></script>
+<script src="assets/js/submission.js"></script>
+</body>
+</html>

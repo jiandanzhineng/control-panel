@@ -16,7 +16,7 @@
       <a href="agent-guide.html" data-i18n="navDocs">开发文档</a>
       <a href="../control.html" data-i18n="navControl">设备控制</a>
       <a href="device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
-      <a href="contribute.html" class="active" data-i18n="navContribute">投稿</a>
+      <a href="../submit.html" class="nav-cta" data-i18n="navContribute">投稿</a>
       <div class="lang-switch">
         <button type="button" data-set-locale="zh">中</button>
         <button type="button" data-set-locale="en">EN</button>
@@ -40,7 +40,7 @@
 <h1>投稿与奖励</h1>
 <div class="updated">把你的玩法上架到玩法库 · 投稿送硬件 + Token 套餐</div>
 
-<p>玩法 = 自包含网页。建议先 clone 本仓库，在 <code>games/</code> 目录参考现有游戏，用 Claude Code 或 Codex 辅助写一个新游戏。提交 PR 后，CI 自动构建 <code>registry.json</code> 并发布到玩法网站。玩家在控制面板的「玩法库」里直接看到、直接玩。</p>
+<p>玩法 = 自包含网页。完成后无需 GitHub 账号：将游戏根目录打成 ZIP，或准备公开 GitHub/GitLab 仓库地址，在<a href="../submit.html">投稿工作台</a>提交。人工审核通过后，平台会生成正式游戏包和 <code>registry.json</code>；玩家随即能在控制面板的「玩法库」里直接看到、直接玩。</p>
 
 <h2>投稿奖励</h2>
 <blockquote><p>投稿通过审核并上架后，可获得硬件 + Token 套餐。具体套餐内容、发放方式和适用设备请咨询客服。</p></blockquote>
@@ -51,36 +51,36 @@
   <div class="step">
     <div class="step-num">1</div>
     <div class="step-body">
-      <h4>clone 仓库</h4>
-      <p>先 clone 本仓库，进入 <code>play-registry/</code>，阅读 <a href="getting-started.html" data-i18n="docsStart">快速开始</a> 和现有 <code>games/</code> 目录。</p>
+      <h4>完成自包含游戏</h4>
+      <p>阅读 <a href="getting-started.html" data-i18n="docsStart">快速开始</a> 和开发规范。游戏根目录须包含 <code>index.html</code>、内联 <code>game-manifest</code> 及所需资源。</p>
     </div>
   </div>
   <div class="step">
     <div class="step-num">2</div>
     <div class="step-body">
-      <h4>参考现有游戏写新玩法</h4>
-      <p>新建 <code>games/&lt;your-id&gt;/</code>，用 Claude Code 或 Codex 参考现有游戏实现 <code>index.html</code> / <code>game.js</code>。id 用英文 kebab-case，全局唯一。</p>
+      <h4>检查 manifest 与设备安全</h4>
+      <p>id 用英文 kebab-case，version 使用合法 semver；资源只用相对路径或 <code>/bridge-api/</code>。请在游戏结束和异常路径主动停止设备。</p>
     </div>
   </div>
   <div class="step">
     <div class="step-num">3</div>
     <div class="step-body">
-      <h4>本地构建 + 自测</h4>
-      <p>在 <code>play-registry/</code> 下跑 <code>npm run build &amp;&amp; npm test</code>。构建会校验 semver 版本、id 唯一、资源引用路径、外部 origin 声明，并生成离线包与逐文件 sha256 清单。</p>
+      <h4>本地自测并准备投稿</h4>
+      <p>用浏览器或控制面板客户端测试玩法。ZIP 投稿时，将游戏根目录内容打包，不能额外嵌套一层目录；也可准备公开 GitHub/GitLab 仓库地址。</p>
     </div>
   </div>
   <div class="step">
     <div class="step-num">4</div>
     <div class="step-body">
-      <h4>提交 PR</h4>
-      <p>Fork 仓库 → 新分支提交 <code>games/&lt;your-id&gt;/</code> → 发 PR 到 <code>main</code>。PR 描述里写清玩法意图、所需设备、是否含惩罚/电击等敏感内容。</p>
+      <h4>在投稿工作台提交</h4>
+      <p>打开<a href="../submit.html">投稿工作台</a>注册账号，填写玩法说明后上传 ZIP，或提交公开 Git 地址。ZIP 由浏览器鉴权直传至隔离区。</p>
     </div>
   </div>
   <div class="step">
     <div class="step-num">5</div>
     <div class="step-body">
-      <h4>审核 + 上线</h4>
-      <p>维护者审核安全性与设备兼容性，合并后 CI 自动发布。通常 1–3 个工作日内反馈。</p>
+      <h4>人工审核 + 上线</h4>
+      <p>审核员查看源包或 Git 地址，并在隔离环境测试安全性与设备兼容性。批准后平台同步发布；通常 1–3 个工作日内反馈。</p>
     </div>
   </div>
   <div class="step">
@@ -116,7 +116,7 @@
 <h2>FAQ</h2>
 
 <h3>玩法更新怎么发版？</h3>
-<p>改 <code>games/&lt;id&gt;/</code> 里的内容，把 manifest 的 <code>version</code> bump 一档（按 semver：修复 <code>1.0.1</code>、新增能力 <code>1.1.0</code>、破坏性改动 <code>2.0.0</code>），重新跑 build + test，提 PR。CI 会对比线上 registry 的内容指纹；内容变了但 version 没变会拒绝发布。合并后面板侧会按版本号判定「线上较新」，玩家刷新玩法库即看到新版本。</p>
+<p>更新内容后，把 manifest 的 <code>version</code> bump 一档（按 semver：修复 <code>1.0.1</code>、新增能力 <code>1.1.0</code>、破坏性改动 <code>2.0.0</code>），重新上传 ZIP 或更新公开 Git 地址后新建投稿。平台会校验版本和内容指纹；批准后面板按版本号判定「线上较新」。</p>
 
 <h3>能引用第三方库吗？</h3>
 <p>可以，但必须把库文件放进玩法目录里用相对路径引用（自包含）。不引外部 CDN——玩法要在离线/纯内网环境也能跑。</p>

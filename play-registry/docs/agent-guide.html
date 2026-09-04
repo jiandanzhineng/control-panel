@@ -17,7 +17,7 @@
       <a href="agent-guide.html" data-i18n="navDocs" class="active">开发文档</a>
       <a href="../control.html" data-i18n="navControl">设备控制</a>
       <a href="device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
-      <a href="contribute.html" class="nav-cta" data-i18n="navContribute">投稿</a>
+      <a href="../submit.html" class="nav-cta" data-i18n="navContribute">投稿</a>
       <div class="lang-switch">
         <button type="button" data-set-locale="zh">中</button>
         <button type="button" data-set-locale="en">EN</button>
@@ -53,18 +53,16 @@ https://game.undersilicon.cn/docs/agent-guide.html
 以及 DeviceAPI 参考 https://game.undersilicon.cn/docs/device-api.html
 和设备能力清单 https://game.undersilicon.cn/docs/devices.html
 
-然后 clone 仓库 git@github.com:jiandanzhineng/control-panel.git，
-参考 backend/games/ 里最接近的现有游戏（例如 pressure-edging / drink-pee-unlock / pushup-detection），
-按下面的玩法想法复制其结构，做出一个新游戏：
+按下面的玩法想法做一个自包含网页游戏：
 
 【玩法描述】<在这里写清规则：用什么设备、玩家做什么、什么条件触发强度/电击/锁、如何结束>
 
 要求：
-1. 新目录 play-registry/games/<your-id>/（目录名即游戏 id，kebab-case），至少含 index.html，manifest 内联在 <script id="game-manifest" type="application/json"> 里，且 manifest.id 必须等于目录名。
+1. 游戏根目录至少含 index.html，manifest 内联在 <script id="game-manifest" type="application/json"> 里；id 使用 kebab-case，且 manifest.id 必须等于游戏目录名。
 2. index.html 必须引入桥接脚本 <script src="/bridge-api/device-api-bridge.js"></script>（它创建 window.DeviceAPI）；所有设备交互只走 DeviceAPI，先 await DeviceAPI.ready；可选设备先 isMapped() 再用。
 3. 资源引用只用相对路径或 /bridge-api/ 开头；确需请求外部服务时在 manifest.allowedOrigins 显式声明 origin。
-4. 完成后在 play-registry/ 下跑 npm run build && npm test 确保通过。
-5. 最后说明改了哪些文件、玩法用到哪些设备与能力、是否含电击/锁定等敏感内容。</pre>
+4. 完成后自测，将游戏根目录打成 ZIP（不要嵌套外层目录），或准备公开 GitHub/GitLab 仓库地址。
+5. 最后说明玩法用到哪些设备与能力、是否含电击/锁定等敏感内容；在 https://game.undersilicon.cn/submit.html 投稿。</pre>
 </div>
 <h2>30 秒速览</h2>
 <table>
@@ -74,7 +72,7 @@ https://game.undersilicon.cn/docs/agent-guide.html
   <tr><td>玩法逻辑谁驱动？</td><td>页面自己（<code>setInterval</code>/<code>rAF</code>），宿主不提供 <code>loop()</code>。</td></tr>
   <tr><td>元数据放哪？</td><td>内联 <code>&lt;script id="game-manifest" type="application/json"&gt;</code>，不用单独 manifest.json；<code>id</code> 必须等于目录名。</td></tr>
   <tr><td>本地怎么试玩？</td><td><code>npm run electron:debug</code> 自动把客户端在线游戏源指向本地站（4178），新游戏直接出现在客户端里。</td></tr>
-  <tr><td>怎么上架？</td><td>提交游戏目录，发 PR 到 <code>main</code>，合并后自动发布到 game.undersilicon.cn。</td></tr>
+  <tr><td>怎么上架？</td><td>在投稿工作台上传 ZIP 或填写公开 Git 地址；人工审核批准后由平台发布到 game.undersilicon.cn。</td></tr>
   <tr><td>安全谁兜底？</td><td>会话结束/断连超 180s，宿主强制 <code>close</code> 所有设备，独立于页面逻辑。</td></tr>
 </table>
 <h2>项目结构（Agent 必读）</h2>
@@ -96,7 +94,7 @@ https://game.undersilicon.cn/docs/agent-guide.html
     └── scripts/build-*.js    # registry + 站点构建脚本</code></pre>
 <div class="callout callout-warn">
   <span class="callout-icon">💡</span>
-  <p>Agent 提示：先读 <code>backend/games/</code> 里设备/节奏最接近的那个游戏，复制其结构，<strong>不要从空白起步</strong>。设备能力以 <code>backend/devices/registry.js</code> 为准，文档表格可能滞后。构建时 <code>backend/games</code> 与 <code>play-registry/games</code> 两个源都会进 registry.json，投稿新游戏一律放 <code>play-registry/games/</code>。</p>
+  <p>Agent 提示：优先参考公开文档中的设备与 DeviceAPI 契约；若开发者已有代码库，可选择最接近的本地游戏作为模板。投稿游戏保留为独立目录，打包时以游戏根目录为 ZIP 根目录。不要假设可以写入平台仓库或直接修改 registry。</p>
 </div>
 <h2>参考 URL 速查</h2>
 <table>

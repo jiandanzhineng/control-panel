@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>游戏审核 · 硅基之下游戏库</title>
+<link rel="stylesheet" href="assets/css/site.css" />
+</head>
+<body>
+<nav class="nav"><div class="nav-inner"><a class="brand" href="index.html"><span class="brand-mark">⚡</span><span>硅基之下游戏库</span></a><div class="nav-links"><a href="submit.html">投稿工作台</a><a href="admin.html" class="nav-cta">审核后台</a></div></div></nav>
+<main class="platform-page container narrow">
+  <header class="platform-head"><p class="eyebrow">MODERATION</p><h1>游戏审核</h1><p>当前审核员：<span id="admin-user">验证中</span></p></header>
+  <p id="admin-message" class="platform-message" aria-live="polite"></p>
+  <section class="platform-panel">
+    <div class="panel-title"><div><h2>Registry 维护</h2><p>首次切换旧站时只导入一次；日常发布由批准操作自动更新。</p></div></div>
+    <div class="platform-actions"><button id="registry-rebuild" type="button" class="btn btn-ghost">重建 registry</button><button id="registry-import" type="button" class="btn btn-ghost">导入旧 registry</button></div>
+  </section>
+  <section class="platform-panel"><div id="review-list" class="review-list">加载中…</div></section>
+  <section class="platform-panel"><div class="panel-title"><div><h2>已发布游戏</h2><p>下架只更新 registry，不删除已发布文件。</p></div></div><div id="release-list" class="review-list">加载中…</div></section>
+</main>
+<script src="assets/js/platform-config.js"></script>
+<script src="assets/js/admin.js"></script>
+</body>
+</html>

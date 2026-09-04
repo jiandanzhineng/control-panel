@@ -1,5 +1,7 @@
 # 开发测试记录
 
+- 游戏投稿平台 Go 工具链（免安装）：`C:\Users\46907\AppData\Local\GoPortable\go1.27.0-full\go\bin\go.exe`。在 `game-platform/` 下执行 `go test ./...`；生产构建使用 `game-platform/Dockerfile`。
+
 - 本地测更新用的未打包安装版：`E:\smart\project\control-panel\.tmp\1.0.34-beta.2-win\win-unpacked\UnderSilicon.exe`
 - 当前源码版本：1.0.34（正式渠道）
 - 查本机 MQTT 客户端：`C:\easysmart\tools\emqx\bin\emqx_ctl.cmd clients list`。虚拟网页设备 clientId 形如 `vweb_v-web-cunzhi_xxxxxx`，面板 clientId 形如 `fb-client-DESKTOP-...`。
