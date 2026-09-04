@@ -6,7 +6,7 @@ test('device control game is discoverable and uses DeviceAPI', () => {
   const game = gameService.getGameById('device-control');
   expect(game).toMatchObject({
     id: 'device-control',
-    version: '1.0.4',
+    version: '1.0.5',
     gamePath: '/games/device-control/index.html',
   });
   const source = fs.readFileSync(

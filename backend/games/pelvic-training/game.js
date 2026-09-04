@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   function L() { return (typeof GameI18n !== 'undefined' && GameI18n.t) ? GameI18n.t : function (zh) { return zh; }; }
-  function t(zh, en) { return L()(zh, en); }
+  function t(zh, vars) { return L()(zh, vars); }
   const SENSOR = 'sensor';
   const PUNISH = 'punish';
   const LOCK = 'lock';
@@ -17,7 +17,7 @@
   const view = {
     running: false, startTime: 0, currentPressure: 0, phase: 'relax', phaseRemaining: 0,
     relaxMinPressure: 0, clenchTargetPressure: 0, clenchSuccess: false, clenchFailed: false,
-    successCount: 0, shockCount: 0, statusText: '-', btnText: t('暂停', 'Pause'),
+    successCount: 0, shockCount: 0, statusText: '-', btnText: t('暂停'),
     countProgressPercent: 0, timeProgressPercent: 0,
   };
 
@@ -31,10 +31,10 @@
       if (el.tagName === 'STRONG') { const n = Number(v); if (!Number.isNaN(n)) v = n.toFixed(2); }
       el.textContent = (v === undefined || v === null) ? '' : String(v);
     });
-    const phaseMap = { relax: t('放松阶段', 'Rest'), clench: t('提肛阶段', 'Squeeze') };
+    const phaseMap = { relax: t('放松阶段'), clench: t('提肛阶段') };
     const stageEl = document.getElementById('stageText');
     const remainEl = document.getElementById('remainText');
-    if (stageEl) stageEl.textContent = t('当前阶段：', 'Stage: ') + (phaseMap[view.phase] || '-');
+    if (stageEl) stageEl.textContent = t('当前阶段：') + (phaseMap[view.phase] || '-');
     if (remainEl) remainEl.textContent = String(view.phaseRemaining || 0);
     const cBar = document.getElementById('countBar');
     const tBar = document.getElementById('timeBar');
@@ -84,7 +84,7 @@
         rt.clenchTargetPressure = base + cfg.pressureDelta;
         rt.clenchSuccess = false;
         rt.clenchFailed = false;
-        view.statusText = t('提肛阶段…', 'Squeeze…');
+        view.statusText = t('提肛阶段…');
         addLog('info', `进入提肛阶段，目标 ${rt.clenchTargetPressure.toFixed(2)} kPa`);
       }
     } else {
@@ -101,7 +101,7 @@
         rt.phaseStartTs = now;
         rt.relaxMinPressure = p;
         rt.clenchSuccess = false;
-        view.statusText = t('放松阶段…', 'Rest…');
+        view.statusText = t('放松阶段…');
       }
     }
     if (rt.successCount >= (cfg.targetCount || 0)) { end(); return; }
@@ -126,7 +126,7 @@
     rt.startTime = now; rt.endTime = now + cfg.duration * 60 * 1000;
     rt.lastUpdateTs = now; rt.phase = 'relax'; rt.phaseStartTs = now;
     rt.successCount = 0; rt.shockCount = 0; rt.relaxMinPressure = 0;
-    view.running = true; view.startTime = now; view.statusText = t('放松阶段…', 'Rest…');
+    view.running = true; view.startTime = now; view.statusText = t('放松阶段…');
     try {
       if (DeviceAPI.device(SENSOR).isMapped()) DeviceAPI.device(SENSOR).invoke('reporting', 'setReportDelay', { ms: 100 });
       setLockOpen(false);
@@ -157,7 +157,7 @@
     try { if (DeviceAPI.device(SENSOR).isMapped()) DeviceAPI.device(SENSOR).invoke('reporting', 'setReportDelay', { ms: 5000 }); } catch (_) {}
     rt.running = false; rt.paused = false;
     if (rt.shockTimer) { clearTimeout(rt.shockTimer); rt.shockTimer = null; }
-    view.running = false; view.statusText = t('已结束', 'Ended');
+    view.running = false; view.statusText = t('已结束');
     addLog('info', `提肛训练结束（成功 ${rt.successCount}，电击 ${rt.shockCount}）`);
     render();
   }
@@ -170,8 +170,8 @@
       el.addEventListener('click', () => {
         if (name === 'pause') {
           rt.paused = !rt.paused;
-          view.statusText = rt.paused ? t('已暂停', 'Paused') : (rt.phase === 'relax' ? t('放松阶段…', 'Rest…') : t('提肛阶段…', 'Squeeze…'));
-          view.btnText = rt.paused ? t('继续', 'Resume') : t('暂停', 'Pause');
+          view.statusText = rt.paused ? t('已暂停') : (rt.phase === 'relax' ? t('放松阶段…') : t('提肛阶段…'));
+          view.btnText = rt.paused ? t('继续') : t('暂停');
           addLog('info', rt.paused ? '已暂停' : '已继续');
           render();
         } else if (name === 'shockOnce') {

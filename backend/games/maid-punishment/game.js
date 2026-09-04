@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   function L() { return (typeof GameI18n !== 'undefined' && GameI18n.t) ? GameI18n.t : function (zh) { return zh; }; }
-  function t(zh, en) { return L()(zh, en); }
+  function t(zh, vars) { return L()(zh, vars); }
   const QTZ = 'qtz';      // 老版 qtz_sensor
   const TIPTOE = 'tiptoeSensor'; // 踮脚压力传感器（tiptoePressure）
   const SHOCK = 'shock';  // 老版 shock_device
@@ -23,7 +23,7 @@
   };
   const view = {
     running: false, startTime: 0, isLocked: false, lockedText: '', remainingSec: '-',
-    statusText: '-', btnText: t('暂停', 'Pause'), button0Pressed: false, button1Pressed: false,
+    statusText: '-', btnText: t('暂停'), button0Pressed: false, button1Pressed: false,
     isShocking: false, shockCount: 0, td01Active: false, td01Intensity: 0,
     hasPressure: false, pressure1: '-', pressureViolated: false,
   };
@@ -58,7 +58,7 @@
     setLockOpen(isOpen);
     rt.isLocked = !isOpen;
     view.isLocked = rt.isLocked;
-    view.lockedText = isOpen ? t('已解锁', 'Unlocked') : t('已加锁', 'Locked');
+    view.lockedText = isOpen ? t('已解锁') : t('已加锁');
     render();
   }
   function calcShockVoltage() {
@@ -76,7 +76,7 @@
     rt.isShocking = true;
     rt.shockCount += 1;
     startShock(voltage);
-    view.isShocking = true; view.shockCount = rt.shockCount; view.statusText = t('电击中({v}V)', 'Shocking ({v}V)').replace('{v}', voltage);
+    view.isShocking = true; view.shockCount = rt.shockCount; view.statusText = t('电击中({v}V)').replace('{v}', voltage);
     addLog('warn', `电击 ${voltage}V（第 ${rt.shockCount} 次）`);
     render();
   }
@@ -84,7 +84,7 @@
     if (!rt.isShocking) return;
     stopShockDev();
     rt.isShocking = false;
-    view.isShocking = false; view.statusText = t('运行中', 'Running');
+    view.isShocking = false; view.statusText = t('运行中');
     render();
   }
   function startTd01() {
@@ -146,7 +146,7 @@
     rt.waitingForManualStart = false; rt.isActive = true;
     rt.startTime = Date.now(); rt.lastNoShockTs = Date.now();
     setLock(false);
-    view.statusText = t('运行中', 'Running'); view.running = true;
+    view.statusText = t('运行中'); view.running = true;
     render();
   }
   function loop() {
@@ -183,7 +183,7 @@
     rt.lastNoShockTs = Date.now();
     rt.hasTd01 = DeviceAPI.device(MOTOR).isMapped();
     view.running = true; view.startTime = rt.startTime;
-    view.statusText = rt.waitingForManualStart ? t('等待手动开启', 'Waiting for manual start') : t('运行中', 'Running');
+    view.statusText = rt.waitingForManualStart ? t('等待手动开启') : t('运行中');
     addLog('info', '女仆惩罚启动');
     // 监听 QTZ 按钮（button0/button1 属性）
     DeviceAPI.device(QTZ).onProperty('button0', (nv) => { rt.button0Pressed = (Number(nv) === 1); onButtonsChanged(); });
@@ -218,7 +218,7 @@
     if (rt.hasPressure) { try { DeviceAPI.device(TIPTOE).invoke('reporting', 'setReportDelay', { ms: 5000 }); } catch (_) {} }
     rt.pressureViolated = false; rt.pressureViolatedSince = 0;
     rt.isActive = false;
-    view.running = false; view.statusText = t('已结束', 'Ended');
+    view.running = false; view.statusText = t('已结束');
     addLog('info', `女仆惩罚结束（电击 ${rt.shockCount} 次）`);
     render();
   }
@@ -231,8 +231,8 @@
       el.addEventListener('click', () => {
         if (name === 'pause') {
           rt.paused = !rt.paused;
-          view.statusText = rt.paused ? t('已暂停', 'Paused') : t('运行中', 'Running');
-          view.btnText = rt.paused ? t('继续', 'Resume') : t('暂停', 'Pause');
+          view.statusText = rt.paused ? t('已暂停') : t('运行中');
+          view.btnText = rt.paused ? t('继续') : t('暂停');
           if (rt.paused) { stopShockSeq(); stopTd01(); }
           addLog('info', rt.paused ? '已暂停' : '已继续');
           render();

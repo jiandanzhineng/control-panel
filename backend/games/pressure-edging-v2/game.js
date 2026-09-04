@@ -2,12 +2,12 @@
 (function () {
   'use strict';
   function L() { return (typeof GameI18n !== 'undefined' && GameI18n.t) ? GameI18n.t : function (zh) { return zh; }; }
-  function t(zh, en) { return L()(zh, en); }
+  function t(zh, vars) { return L()(zh, vars); }
   const SENSOR = 'sensor', MOTOR = 'motor', PUNISH = 'punish', LOCK = 'lock';
   const S = { INITIAL_CALM: 'INITIAL_CALM', MIDDLE: 'MIDDLE', EDGING: 'EDGING', DELAY: 'DELAY', SUB_CALM: 'SUB_CALM' };
   const STATE_CN = {
-    INITIAL_CALM: t('平静期', 'Calm'), MIDDLE: t('中期刺激', 'Mid'), EDGING: t('边缘寸止', 'Edging'),
-    DELAY: t('冷却延迟', 'Delay'), SUB_CALM: t('平静期', 'Calm'),
+    INITIAL_CALM: t('平静期'), MIDDLE: t('中期刺激'), EDGING: t('边缘寸止'),
+    DELAY: t('冷却延迟'), SUB_CALM: t('平静期'),
   };
 
   const cfg = {
@@ -25,7 +25,7 @@
     edgingCount: 0, totalStimulationTime: 0,
   };
   const view = {
-    title: t('气压寸止3阶段升级版', 'Pressure edging 3-stage'), startTime: 0, statusText: t('准备就绪', 'Ready'), btnText: t('暂停', 'Pause'),
+    title: t('气压寸止3阶段升级版'), startTime: 0, statusText: t('准备就绪'), btnText: t('暂停'),
     currentPressure: 0, averagePressure: 0, currentIntensity: 0, targetIntensity: 0,
     midPressure: 19.2, criticalPressure: 20, edgingCount: 0, shockCount: 0, totalStimulationTime: 0,
   };
@@ -387,7 +387,7 @@
       if (rt.state !== S.SUB_CALM) rt.state = S.SUB_CALM;
       if (!rt.endCalmLocked) {
         rt.endCalmLocked = true;
-        view.statusText = t('进入结束前起飞期', 'Takeoff before end');
+        view.statusText = t('进入结束前起飞期');
         playVoice('edging_takeoff', 'state', function () { return rt.running && rt.endCalmLocked; });
       }
     } else if (rt.endCalmLocked) rt.endCalmLocked = false;
@@ -403,7 +403,7 @@
           if (rt.recordedMidIntensity < 1) rt.recordedMidIntensity = rt.targetIntensity;
           if (rt.recordedMidIntensity < 1) rt.recordedMidIntensity = cfg.maxMotorIntensity * 0.5;
           rt.state = S.MIDDLE;
-          view.statusText = t('进入中期刺激', 'Entering mid stimulation');
+          view.statusText = t('进入中期刺激');
           addLog('info', `进入中期，基准强度 ${rt.recordedMidIntensity.toFixed(1)}`);
           playVoice('edging_middle', 'state', function () { return rt.running && rt.state === S.MIDDLE; });
         }
@@ -416,11 +416,11 @@
         rt.targetIntensity = clamp(rt.recordedMidIntensity * Math.max(0, factor), 0, cfg.maxMotorIntensity);
         if (pressure >= cfg.criticalPressure) {
           rt.state = S.EDGING; triggerShock(false); rt.edgingCount++;
-          view.edgingCount = rt.edgingCount; view.statusText = t('过载！边缘寸止中…', 'Overload! Holding the edge…');
+          view.edgingCount = rt.edgingCount; view.statusText = t('过载！边缘寸止中…');
           playVoice('edging_peak', 'critical', function () { return rt.running && rt.state === S.EDGING; });
         } else if (pressure < cfg.midPressure) {
           rt.unRandomIntensity = rt.currentIntensity; rt.state = S.SUB_CALM;
-          view.statusText = t('压力回落，进入平静期', 'Pressure dropped, calm');
+          view.statusText = t('压力回落，进入平静期');
           playVoice('edging_calm', 'state', function () { return rt.running && rt.state === S.SUB_CALM; });
         }
         break;
@@ -430,7 +430,7 @@
         if (pressure < cfg.criticalPressure) {
           rt.state = S.DELAY;
           rt.stateTimer = now;
-          view.statusText = t('冷却延迟({n}s)…', 'Cooldown delay ({n}s)…').replace('{n}', cfg.lowPressureDelay);
+          view.statusText = t('冷却延迟({n}s)…').replace('{n}', cfg.lowPressureDelay);
           playVoice('edging_delay', 'state', function () { return rt.running && rt.state === S.DELAY; });
         }
         break;
@@ -439,19 +439,19 @@
         rt.targetIntensity = 0;
         if (pressure >= cfg.criticalPressure) {
           rt.state = S.EDGING;
-          view.statusText = t('过载！边缘寸止中…', 'Overload! Holding the edge…');
+          view.statusText = t('过载！边缘寸止中…');
           playVoice('edging_peak', 'critical', function () { return rt.running && rt.state === S.EDGING; });
         }
         else if (now - rt.stateTimer > cfg.lowPressureDelay * 1000) {
           if (pressure > cfg.midPressure) {
             rt.state = S.MIDDLE;
-            view.statusText = t('延迟结束，高压保持', 'Delay over, holding high');
+            view.statusText = t('延迟结束，高压保持');
             playVoice('edging_middle', 'state', function () { return rt.running && rt.state === S.MIDDLE; });
           }
           else {
             const denom = Math.max(1e-6, cfg.criticalPressure - cfg.sensitivity);
             rt.unRandomIntensity = Math.max(0, cfg.maxMotorIntensity * (cfg.criticalPressure - pressure) / denom);
-            rt.state = S.SUB_CALM; view.statusText = t('延迟结束，重新积累', 'Delay over, rebuilding');
+            rt.state = S.SUB_CALM; view.statusText = t('延迟结束，重新积累');
             playVoice('edging_calm', 'state', function () { return rt.running && rt.state === S.SUB_CALM; });
           }
         }
@@ -496,7 +496,7 @@
     rt.unRandomIntensity = 0; rt.targetIntensity = 0; rt.currentIntensity = 0;
     rt.midIntensity = 0.5 * cfg.maxMotorIntensity; rt.lastUpdateTs = now; rt.lastIntensityUpdateTs = now;
     rt.edgingCount = 0; rt.totalStimulationTime = 0;
-    view.startTime = now; view.statusText = t('准备就绪', 'Ready');
+    view.startTime = now; view.statusText = t('准备就绪');
     view.midPressure = cfg.midPressure; view.criticalPressure = cfg.criticalPressure;
     try {
       if (DeviceAPI.device(SENSOR).isMapped()) DeviceAPI.device(SENSOR).invoke('reporting', 'setReportDelay', { ms: 100 });
@@ -530,7 +530,7 @@
     try { if (DeviceAPI.device(SENSOR).isMapped()) DeviceAPI.device(SENSOR).invoke('reporting', 'setReportDelay', { ms: 5000 }); } catch (_) {}
     rt.running = false; rt.paused = false;
     if (rt.shockTimer) { clearTimeout(rt.shockTimer); rt.shockTimer = null; }
-    view.statusText = t('已结束', 'Ended');
+    view.statusText = t('已结束');
     addLog('info', `结束（边缘 ${rt.edgingCount}，电击 ${rt.shockCount}）`);
     playVoice('edging_end', 'critical', function () { return !rt.running; });
     render();
@@ -542,8 +542,8 @@
       el.addEventListener('click', () => {
         if (name === 'pause') {
           rt.paused = !rt.paused;
-          view.statusText = rt.paused ? t('已暂停', 'Paused') : t('运行中', 'Running');
-          view.btnText = rt.paused ? t('继续', 'Resume') : t('暂停', 'Pause');
+          view.statusText = rt.paused ? t('已暂停') : t('运行中');
+          view.btnText = rt.paused ? t('继续') : t('暂停');
           if (rt.paused) setStrength(0);
           addLog('info', rt.paused ? '已暂停' : '已继续');
           render();
