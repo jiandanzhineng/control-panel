@@ -53,9 +53,9 @@
       el.textContent = (v === undefined || v === null) ? '' : String(v);
     });
     const p = Number(view.progress) || 0;
-    const t = Number(view.targetWeight) || 0;
+    const target = Number(view.targetWeight) || 0;
     const bar = document.getElementById('progressBar');
-    if (bar) bar.style.width = (clamp(t > 0 ? p / t : 0, 0, 1) * 100).toFixed(1) + '%';
+    if (bar) bar.style.width = (clamp(target > 0 ? p / target : 0, 0, 1) * 100).toFixed(1) + '%';
     const tip = document.getElementById('tiptoeVal');
     if (tip) { tip.classList.toggle('ok', !!view.tiptoeOk); tip.classList.toggle('warn', !view.tiptoeOk); }
     const shock = document.getElementById('shockStatusVal');

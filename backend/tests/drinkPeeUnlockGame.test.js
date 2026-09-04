@@ -189,6 +189,13 @@ describe('drink-pee-unlock game loop', () => {
     jest.useRealTimers();
   });
 
+  it('boots and renders i18n binds without shadowing t', async () => {
+    const env = await loadGame();
+    expect(env.game.rt.running).toBe(true);
+    expect(env.document.byBind.get('modeCN').textContent).toBe('喝水');
+    expect(env.document.byBind.get('tiptoeOk').textContent).toBe('正常');
+  });
+
   it('triggers and displays shock when the stable weight countdown expires without a new sample', async () => {
     const env = await loadGame();
 
