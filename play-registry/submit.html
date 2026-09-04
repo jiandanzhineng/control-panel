@@ -36,13 +36,12 @@
     </div>
     <form id="login-form" class="platform-form">
       <label>邮箱<input name="email" type="email" autocomplete="email" required /></label>
-      <label>密码<input name="password" type="password" autocomplete="current-password" minlength="10" required /></label>
+      <label>密码<input name="password" type="password" autocomplete="current-password" minlength="8" required /></label>
       <button class="btn btn-primary" type="submit">登录</button>
     </form>
     <form id="register-form" class="platform-form" hidden>
-      <label>昵称<input name="displayName" type="text" minlength="2" maxlength="40" autocomplete="nickname" required /></label>
       <label>邮箱<input name="email" type="email" autocomplete="email" required /></label>
-      <label>密码<input name="password" type="password" minlength="10" maxlength="128" autocomplete="new-password" required /></label>
+      <label>密码<input name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required /></label>
       <button class="btn btn-primary" type="submit">创建账号</button>
     </form>
   </section>
@@ -56,6 +55,7 @@
     <section class="platform-panel">
       <div class="panel-title"><div><h2>提交游戏</h2><p>ZIP 根目录必须有 <code>index.html</code> 与 <code>game-manifest</code>。公开 Git 仓库根目录须满足相同结构。</p></div></div>
       <form id="submission-form" class="platform-form">
+        <label>作者名<input name="authorName" type="text" minlength="2" maxlength="40" autocomplete="nickname" required /><span>仅作为本次投稿的署名，不会公开邮箱。</span></label>
         <label>游戏名称<input name="title" type="text" minlength="2" maxlength="100" required /></label>
         <label>玩法说明<textarea name="description" maxlength="2000" rows="4" placeholder="说明玩法、所需设备和安全注意事项"></textarea></label>
         <fieldset class="submission-kind"><legend>投稿方式</legend>

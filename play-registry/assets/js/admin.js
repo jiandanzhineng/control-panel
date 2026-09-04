@@ -1,19 +1,42 @@
 (function () {
   'use strict';
   var apiBase = String(window.GamePlatformConfig && window.GamePlatformConfig.apiBase || '').replace(/\/$/, '');
+  var tokenKey = 'game-platform-mobile-token';
   var message = document.getElementById('admin-message');
 
   function api(path, options) {
     options = options || {};
-    var headers = options.headers || {};
+    var headers = Object.assign({}, options.headers || {});
     if (options.body && typeof options.body === 'string') headers['Content-Type'] = 'application/json';
-    return fetch(apiBase + path, Object.assign({ credentials: 'include', headers: headers }, options)).then(function (response) {
+    var token = sessionStorage.getItem(tokenKey);
+    if (token) headers.Authorization = 'Bearer ' + token;
+    var request = Object.assign({}, options);
+    request.headers = headers;
+    return fetch(apiBase + path, request).then(function (response) {
       return response.text().then(function (text) {
         var data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (_) {}
         if (!response.ok) throw new Error((data.error && data.error.message) || ('HTTP ' + response.status));
         return data;
       });
+    });
+  }
+
+  function downloadArchive(id) {
+    var token = sessionStorage.getItem(tokenKey);
+    if (!token) return Promise.reject(new Error('请先在投稿工作台登录 mobile 账号'));
+    return fetch(apiBase + '/api/admin/submissions/' + encodeURIComponent(id) + '/source', {
+      headers: { Authorization: 'Bearer ' + token }
+    }).then(function (response) {
+      if (!response.ok) throw new Error('下载 ZIP 源包失败：HTTP ' + response.status);
+      return response.blob();
+    }).then(function (blob) {
+      var link = document.createElement('a');
+      var url = URL.createObjectURL(blob);
+      link.href = url;
+      link.download = id + '-source.zip';
+      link.click();
+      URL.revokeObjectURL(url);
     });
   }
 
@@ -45,11 +68,12 @@
       var heading = document.createElement('h2'); heading.textContent = item.title;
       var meta = document.createElement('p'); meta.className = 'review-meta'; meta.textContent = item.authorName + ' · ' + (item.kind === 'zip' ? 'ZIP 投稿' : '公开 Git 投稿');
       var description = document.createElement('p'); description.textContent = item.description || '（未填写说明）';
-      var source = document.createElement('a'); source.target = '_blank'; source.rel = 'noopener';
-      source.textContent = item.kind === 'zip' ? '下载 ZIP 源包' : '打开公开 Git 地址';
-      source.href = item.kind === 'zip'
-        ? apiBase + '/api/admin/submissions/' + encodeURIComponent(item.id) + '/source'
-        : item.gitUrl;
+      var source = item.kind === 'zip' ? button('下载 ZIP 源包', function () {
+        downloadArchive(item.id).catch(function (err) { setMessage(err.message, 'error'); });
+      }) : document.createElement('a');
+      if (item.kind !== 'zip') {
+        source.target = '_blank'; source.rel = 'noopener'; source.textContent = '打开公开 Git 地址'; source.href = item.gitUrl;
+      }
       var note = document.createElement('textarea'); note.placeholder = '退回或拒绝时填写审核意见'; note.rows = 3;
       var actions = document.createElement('div'); actions.className = 'platform-actions';
       actions.append(
@@ -104,7 +128,7 @@
 
   api('/api/auth/me').then(function (data) {
     if (data.user.role !== 'admin') throw new Error('当前账号不是审核管理员');
-    document.getElementById('admin-user').textContent = data.user.displayName;
+    document.getElementById('admin-user').textContent = data.user.email;
     return load();
   }).catch(function (err) {
     document.getElementById('review-list').textContent = err.message;

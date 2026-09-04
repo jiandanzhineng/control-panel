@@ -3,6 +3,7 @@
   'use strict';
   var local = root.location.hostname === 'localhost' || root.location.hostname === '127.0.0.1';
   root.GamePlatformConfig = {
-    apiBase: local ? 'http://127.0.0.1:8787' : 'https://game-api.undersilicon.cn'
+    apiBase: local ? 'http://127.0.0.1:8787' : 'https://game-api.undersilicon.cn',
+    identityApiBase: local ? 'http://127.0.0.1:3000' : 'https://api.undersilicon.cn'
   };
 })(window);

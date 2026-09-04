@@ -16,9 +16,8 @@ type Config struct {
 	StorageDriver       string
 	LocalStorageDir     string
 	PublicSiteOrigins   []string
-	AuthSecret          string
-	AdminEmails         map[string]bool
-	CookieSecure        bool
+	IdentityAPIBaseURL  string
+	IdentityTimeout     time.Duration
 	MaxUploadBytes      int64
 	MaxUnpackedBytes    int64
 	MaxArchiveFiles     int
@@ -45,9 +44,8 @@ func loadConfig() (Config, error) {
 		StorageDriver:       strings.ToLower(envOr("GAME_PLATFORM_STORAGE_DRIVER", "filesystem")),
 		LocalStorageDir:     envOr("GAME_PLATFORM_LOCAL_STORAGE_DIR", "./data/objects"),
 		PublicSiteOrigins:   csv(envOr("GAME_PLATFORM_PUBLIC_SITE_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000")),
-		AuthSecret:          os.Getenv("GAME_PLATFORM_AUTH_SECRET"),
-		AdminEmails:         make(map[string]bool),
-		CookieSecure:        envBool("GAME_PLATFORM_COOKIE_SECURE", false),
+		IdentityAPIBaseURL:  strings.TrimRight(strings.TrimSpace(envOr("GAME_PLATFORM_IDENTITY_API_BASE_URL", "http://127.0.0.1:3000")), "/"),
+		IdentityTimeout:     time.Duration(envInt64("GAME_PLATFORM_IDENTITY_TIMEOUT_SECONDS", 10)) * time.Second,
 		MaxUploadBytes:      envInt64("GAME_PLATFORM_MAX_UPLOAD_BYTES", 20*1024*1024),
 		MaxUnpackedBytes:    envInt64("GAME_PLATFORM_MAX_UNPACKED_BYTES", 80*1024*1024),
 		MaxArchiveFiles:     int(envInt64("GAME_PLATFORM_MAX_ARCHIVE_FILES", 200)),
@@ -63,14 +61,8 @@ func loadConfig() (Config, error) {
 			AccessKeySecret:  strings.TrimSpace(os.Getenv("OSS_ACCESS_KEY_SECRET")),
 		},
 	}
-	for _, email := range csv(os.Getenv("GAME_PLATFORM_ADMIN_EMAILS")) {
-		c.AdminEmails[strings.ToLower(email)] = true
-	}
-	if c.AuthSecret == "" {
-		if c.Environment == "production" {
-			return Config{}, fmt.Errorf("GAME_PLATFORM_AUTH_SECRET is required in production")
-		}
-		c.AuthSecret = "development-only-change-me"
+	if c.IdentityAPIBaseURL == "" || c.IdentityTimeout <= 0 {
+		return Config{}, fmt.Errorf("GAME_PLATFORM_IDENTITY_API_BASE_URL and GAME_PLATFORM_IDENTITY_TIMEOUT_SECONDS must be valid")
 	}
 	if c.MaxUploadBytes <= 0 || c.MaxUnpackedBytes < c.MaxUploadBytes || c.MaxArchiveFiles <= 0 {
 		return Config{}, fmt.Errorf("invalid archive limits")
@@ -111,18 +103,6 @@ func envInt64(name string, fallback int64) int64 {
 		return fallback
 	}
 	parsed, err := strconv.ParseInt(value, 10, 64)
-	if err != nil {
-		return fallback
-	}
-	return parsed
-}
-
-func envBool(name string, fallback bool) bool {
-	value := strings.TrimSpace(os.Getenv(name))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseBool(value)
 	if err != nil {
 		return fallback
 	}

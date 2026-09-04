@@ -13,6 +13,7 @@ type App struct {
 	config    Config
 	db        *sql.DB
 	store     ObjectStore
+	identity  *identityClient
 	publishMu sync.Mutex
 }
 
@@ -26,67 +27,83 @@ func newApp(config Config) (*App, error) {
 		db.Close()
 		return nil, err
 	}
-	return &App{config: config, db: db, store: store}, nil
+	identity, err := newIdentityClient(config.IdentityAPIBaseURL, config.IdentityTimeout)
+	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	return &App{config: config, db: db, store: store, identity: identity}, nil
 }
 
 func (a *App) close() error { return a.db.Close() }
 
-func (a *App) userByID(ctx context.Context, id int64) (User, error) {
-	var user User
-	err := a.db.QueryRowContext(ctx, `SELECT id, email, display_name, role FROM users WHERE id = ?`, id).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role)
-	if err != nil {
-		return User{}, err
+func (a *App) syncIdentity(ctx context.Context, user User) error {
+	user.Email = normalizeEmail(user.Email)
+	if user.ID == "" || user.Email == "" {
+		return errors.New("mobile identity is incomplete")
 	}
-	return user, nil
-}
 
-func (a *App) userByEmail(ctx context.Context, email string) (User, string, error) {
-	var user User
-	var passwordHash string
-	err := a.db.QueryRowContext(ctx, `SELECT id, email, display_name, role, password_hash FROM users WHERE email = ?`, normalizeEmail(email)).Scan(&user.ID, &user.Email, &user.DisplayName, &user.Role, &passwordHash)
+	tx, err := a.db.BeginTx(ctx, nil)
 	if err != nil {
-		return User{}, "", err
+		return err
 	}
-	return user, passwordHash, nil
-}
+	defer tx.Rollback()
 
-func (a *App) createUser(ctx context.Context, email, displayName, password string) (User, error) {
-	email = normalizeEmail(email)
-	displayName = strings.TrimSpace(displayName)
-	if !strings.Contains(email, "@") || len(email) > 254 {
-		return User{}, errors.New("email is invalid")
-	}
-	if len(displayName) < 2 || len(displayName) > 40 {
-		return User{}, errors.New("display name must be 2-40 characters")
-	}
-	if len(password) < 10 || len(password) > 128 {
-		return User{}, errors.New("password must be 10-128 characters")
-	}
-	passwordHash, err := hashPassword(password)
-	if err != nil {
-		return User{}, err
-	}
-	role := "author"
-	if a.config.AdminEmails[email] {
-		role = "admin"
-	}
-	result, err := a.db.ExecContext(ctx, `INSERT INTO users(email, display_name, password_hash, role, created_at) VALUES(?, ?, ?, ?, ?)`, email, displayName, passwordHash, role, nowUnix())
-	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "unique") {
-			return User{}, errors.New("email is already registered")
+	var currentEmail string
+	err = tx.QueryRowContext(ctx, `SELECT email FROM identities WHERE id = ?`, user.ID).Scan(&currentEmail)
+	if err == nil {
+		if currentEmail != user.Email {
+			if _, err := tx.ExecContext(ctx, `UPDATE identities SET email = ?, updated_at = ? WHERE id = ?`, user.Email, nowUnix(), user.ID); err != nil {
+				return err
+			}
 		}
-		return User{}, err
+		return tx.Commit()
 	}
-	id, err := result.LastInsertId()
-	if err != nil {
-		return User{}, err
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
 	}
-	return User{ID: id, Email: email, DisplayName: displayName, Role: role}, nil
+
+	var emailOwner string
+	err = tx.QueryRowContext(ctx, `SELECT id FROM identities WHERE email = ?`, user.Email).Scan(&emailOwner)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if _, err := tx.ExecContext(ctx, `INSERT INTO identities(id, email, created_at, updated_at) VALUES(?, ?, ?, ?)`, user.ID, user.Email, nowUnix(), nowUnix()); err != nil {
+			return err
+		}
+	case err != nil:
+		return err
+	case strings.HasPrefix(emailOwner, "legacy:"):
+		// A historical platform account becomes owned by the mobile account only after
+		// the same email successfully authenticates with mobile.
+		legacyEmail := "migrated-" + strings.ReplaceAll(emailOwner, ":", "-") + "@invalid.local"
+		if _, err := tx.ExecContext(ctx, `UPDATE identities SET email = ? WHERE id = ?`, legacyEmail, emailOwner); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO identities(id, email, created_at, updated_at) VALUES(?, ?, ?, ?)`, user.ID, user.Email, nowUnix(), nowUnix()); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE submissions SET author_id = ? WHERE author_id = ?`, user.ID, emailOwner); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE submissions SET reviewed_by = ? WHERE reviewed_by = ?`, user.ID, emailOwner); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM identities WHERE id = ?`, emailOwner); err != nil {
+			return err
+		}
+	default:
+		return errors.New("email is already associated with a different mobile account")
+	}
+	return tx.Commit()
 }
 
-func (a *App) createSubmission(ctx context.Context, user User, title, description, kind, gitURL string) (Submission, error) {
+func (a *App) createSubmission(ctx context.Context, user User, authorName, title, description, kind, gitURL string) (Submission, error) {
+	authorName = strings.TrimSpace(authorName)
 	title = strings.TrimSpace(title)
 	description = strings.TrimSpace(description)
+	if len(authorName) < 2 || len(authorName) > 40 {
+		return Submission{}, errors.New("author name must be 2-40 characters")
+	}
 	if len(title) < 2 || len(title) > 100 {
 		return Submission{}, errors.New("title must be 2-100 characters")
 	}
@@ -114,7 +131,7 @@ func (a *App) createSubmission(ctx context.Context, user User, title, descriptio
 		status = "draft"
 		zipKey = a.config.SubmissionPrefix + "/" + id + "/source.zip"
 	}
-	_, err = a.db.ExecContext(ctx, `INSERT INTO submissions(id, user_id, title, description, kind, git_url, zip_key, status, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, user.ID, title, description, kind, strings.TrimSpace(gitURL), zipKey, status, now, now)
+	_, err = a.db.ExecContext(ctx, `INSERT INTO submissions(id, author_id, author_name, title, description, kind, git_url, zip_key, status, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, user.ID, authorName, title, description, kind, strings.TrimSpace(gitURL), zipKey, status, now, now)
 	if err != nil {
 		return Submission{}, err
 	}
@@ -125,7 +142,7 @@ func (a *App) submissionByID(ctx context.Context, id string) (Submission, error)
 	return scanSubmission(a.db.QueryRowContext(ctx, submissionSelect+` WHERE s.id = ?`, id))
 }
 
-func (a *App) listSubmissions(ctx context.Context, userID int64, status string, admin bool) ([]Submission, error) {
+func (a *App) listSubmissions(ctx context.Context, userID string, status string, admin bool) ([]Submission, error) {
 	query := submissionSelect
 	args := make([]any, 0, 2)
 	if admin {
@@ -134,7 +151,7 @@ func (a *App) listSubmissions(ctx context.Context, userID int64, status string, 
 			args = append(args, status)
 		}
 	} else {
-		query += ` WHERE s.user_id = ?`
+		query += ` WHERE s.author_id = ?`
 		args = append(args, userID)
 	}
 	query += ` ORDER BY s.updated_at DESC`

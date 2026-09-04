@@ -4,26 +4,37 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func testConfig(dir string) Config {
 	return Config{
-		Environment:      "test",
-		DatabasePath:     filepath.Join(dir, "game-platform.db"),
-		StorageDriver:    "filesystem",
-		LocalStorageDir:  filepath.Join(dir, "objects"),
-		AuthSecret:       "test-secret",
-		AdminEmails:      map[string]bool{"admin@example.com": true},
-		MaxUploadBytes:   256 * 1024,
-		MaxUnpackedBytes: 1024 * 1024,
-		MaxArchiveFiles:  20,
-		SubmissionPrefix: "submissions",
+		Environment:        "test",
+		DatabasePath:       filepath.Join(dir, "game-platform.db"),
+		StorageDriver:      "filesystem",
+		LocalStorageDir:    filepath.Join(dir, "objects"),
+		IdentityAPIBaseURL: "http://identity.invalid",
+		IdentityTimeout:    2 * time.Second,
+		MaxUploadBytes:     256 * 1024,
+		MaxUnpackedBytes:   1024 * 1024,
+		MaxArchiveFiles:    20,
+		SubmissionPrefix:   "submissions",
 	}
+}
+
+func testIdentity(t *testing.T, app *App, id, email, role string) User {
+	t.Helper()
+	user := User{ID: id, Email: email, Role: role}
+	if err := app.syncIdentity(context.Background(), user); err != nil {
+		t.Fatal(err)
+	}
+	return user
 }
 
 func gameZIP(t *testing.T, id, version string) []byte {
@@ -59,15 +70,9 @@ func TestZipSubmissionPublishesRegistry(t *testing.T) {
 	}
 	defer app.close()
 	ctx := context.Background()
-	author, err := app.createUser(ctx, "author@example.com", "Author", "correct horse battery staple")
-	if err != nil {
-		t.Fatal(err)
-	}
-	admin, err := app.createUser(ctx, "admin@example.com", "Admin", "correct horse battery staple")
-	if err != nil {
-		t.Fatal(err)
-	}
-	submission, err := app.createSubmission(ctx, author, "Test Game", "description", "zip", "")
+	author := testIdentity(t, app, "mobile-author", "author@example.com", "author")
+	admin := testIdentity(t, app, "mobile-admin", "admin@example.com", "admin")
+	submission, err := app.createSubmission(ctx, author, "Author", "Test Game", "description", "zip", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,11 +123,8 @@ func TestZipCompletionRejectsInvalidArchive(t *testing.T) {
 	}
 	defer app.close()
 	ctx := context.Background()
-	author, err := app.createUser(ctx, "author@example.com", "Author", "correct horse battery staple")
-	if err != nil {
-		t.Fatal(err)
-	}
-	submission, err := app.createSubmission(ctx, author, "Bad ZIP", "", "zip", "")
+	author := testIdentity(t, app, "mobile-author", "author@example.com", "author")
+	submission, err := app.createSubmission(ctx, author, "Author", "Bad ZIP", "", "zip", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -224,5 +226,138 @@ func TestImportRebuildsRegistryAndIsRepeatable(t *testing.T) {
 	}
 	if len(document.Games) != 1 || document.Games[0].ID != "old-game" {
 		t.Fatalf("unexpected imported registry: %#v", document)
+	}
+}
+
+func TestMobileIdentityAuthenticatesPlatformRequests(t *testing.T) {
+	mobile := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/me" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Header.Get("Authorization") {
+		case "Bearer author-token":
+			_, _ = w.Write([]byte(`{"user":{"id":"mobile-author","email":"author@example.com","provider":"email","isAdmin":false}}`))
+		case "Bearer admin-token":
+			_, _ = w.Write([]byte(`{"user":{"id":"mobile-admin","email":"admin@example.com","provider":"email","isAdmin":true}}`))
+		case "Bearer anonymous-token":
+			_, _ = w.Write([]byte(`{"user":{"id":"anonymous-user","email":null,"provider":"anonymous","isAdmin":false}}`))
+		default:
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer mobile.Close()
+
+	config := testConfig(t.TempDir())
+	config.IdentityAPIBaseURL = mobile.URL
+	config.PublicSiteOrigins = []string{"http://127.0.0.1:3000"}
+	app, err := newApp(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.close()
+
+	server := app.routes()
+	request := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	request.Header.Set("Authorization", "Bearer author-token")
+	response := httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("author status = %d, body=%s", response.Code, response.Body.String())
+	}
+	if response.Header().Get("Set-Cookie") != "" {
+		t.Fatal("platform must not issue a local session cookie")
+	}
+	var payload struct {
+		User User `json:"user"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.User.ID != "mobile-author" || payload.User.Role != "author" {
+		t.Fatalf("unexpected identity: %#v", payload.User)
+	}
+
+	for _, token := range []string{"anonymous-token", "revoked-token"} {
+		request = httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+		request.Header.Set("Authorization", "Bearer "+token)
+		response = httptest.NewRecorder()
+		server.ServeHTTP(response, request)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("token %q status = %d, want 401", token, response.Code)
+		}
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/admin/submissions", nil)
+	request.Header.Set("Authorization", "Bearer admin-token")
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("admin status = %d, body=%s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodOptions, "/api/submissions", nil)
+	request.Header.Set("Origin", "http://127.0.0.1:3000")
+	response = httptest.NewRecorder()
+	server.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent || response.Header().Get("Access-Control-Allow-Headers") != "Content-Type, Authorization" {
+		t.Fatalf("unexpected CORS preflight: status=%d headers=%q", response.Code, response.Header().Get("Access-Control-Allow-Headers"))
+	}
+}
+
+func TestLegacyPlatformAccountsMigrateWithoutPasswordHashes(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "game-platform.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := []string{
+		`CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'author', created_at INTEGER NOT NULL)`,
+		`CREATE TABLE submissions (id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, git_url TEXT NOT NULL DEFAULT '', zip_key TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, review_note TEXT NOT NULL DEFAULT '', reviewed_by INTEGER REFERENCES users(id), release_id TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+		`CREATE TABLE releases (id TEXT PRIMARY KEY, submission_id TEXT REFERENCES submissions(id), game_id TEXT NOT NULL, version TEXT NOT NULL, entry_json TEXT NOT NULL, source_hash TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+		`INSERT INTO users(id, email, display_name, password_hash, role, created_at) VALUES(1, 'author@example.com', 'Legacy Author', 'pbkdf2-removed', 'author', 1)`,
+		`INSERT INTO submissions(id, user_id, title, description, kind, status, created_at, updated_at) VALUES('sub_legacy', 1, 'Legacy Game', '', 'git', 'pending', 1, 1)`,
+	}
+	for _, statement := range legacy {
+		if _, err := db.Exec(statement); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	app, err := newApp(testConfig(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.close()
+
+	var legacyTables int
+	if err := app.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'users'`).Scan(&legacyTables); err != nil {
+		t.Fatal(err)
+	}
+	if legacyTables != 0 {
+		t.Fatal("legacy users table and password hashes were retained")
+	}
+	submission, err := app.submissionByID(context.Background(), "sub_legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if submission.UserID != "legacy:1" || submission.AuthorName != "Legacy Author" {
+		t.Fatalf("legacy submission was not preserved: %#v", submission)
+	}
+	if err := app.syncIdentity(context.Background(), User{ID: "mobile-author", Email: "author@example.com", Role: "author"}); err != nil {
+		t.Fatal(err)
+	}
+	submission, err = app.submissionByID(context.Background(), "sub_legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if submission.UserID != "mobile-author" {
+		t.Fatalf("legacy submission owner = %q, want mobile-author", submission.UserID)
 	}
 }

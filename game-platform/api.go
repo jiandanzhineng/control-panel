@@ -3,20 +3,16 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 )
 
-const sessionCookieName = "game_platform_session"
-
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", a.handleHealth)
-	mux.HandleFunc("POST /api/auth/register", a.handleRegister)
-	mux.HandleFunc("POST /api/auth/login", a.handleLogin)
-	mux.HandleFunc("POST /api/auth/logout", a.handleLogout)
 	mux.HandleFunc("GET /api/auth/me", a.handleMe)
 	mux.HandleFunc("GET /api/submissions", a.handleSubmissions)
 	mux.HandleFunc("POST /api/submissions", a.handleCreateSubmission)
@@ -46,7 +42,7 @@ func (a *App) withCORS(next http.Handler) http.Handler {
 				return
 			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
@@ -68,17 +64,12 @@ func (a *App) isAllowedOrigin(origin string) bool {
 }
 
 func (a *App) currentUser(r *http.Request) (User, error) {
-	cookie, err := r.Cookie(sessionCookieName)
+	user, err := a.identity.currentUser(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
-		return User{}, errors.New("authentication required")
+		return User{}, err
 	}
-	id, err := a.parseSession(cookie.Value)
-	if err != nil {
-		return User{}, errors.New("authentication required")
-	}
-	user, err := a.userByID(r.Context(), id)
-	if err != nil {
-		return User{}, errors.New("authentication required")
+	if err := a.syncIdentity(r.Context(), user); err != nil {
+		return User{}, fmt.Errorf("sync mobile identity: %w", err)
 	}
 	return user, nil
 }
@@ -86,7 +77,11 @@ func (a *App) currentUser(r *http.Request) (User, error) {
 func (a *App) requireUser(w http.ResponseWriter, r *http.Request) (User, bool) {
 	user, err := a.currentUser(r)
 	if err != nil {
-		writeError(w, http.StatusUnauthorized, "AUTH_REQUIRED", "please sign in")
+		if errors.Is(err, errIdentityUnauthenticated) {
+			writeError(w, http.StatusUnauthorized, "AUTH_REQUIRED", "please sign in with your mobile account")
+		} else {
+			writeError(w, http.StatusServiceUnavailable, "IDENTITY_UNAVAILABLE", "mobile identity service is unavailable")
+		}
 		return User{}, false
 	}
 	return user, true
@@ -100,78 +95,11 @@ func requireAdmin(w http.ResponseWriter, user User) bool {
 	return true
 }
 
-func (a *App) setSession(w http.ResponseWriter, user User) error {
-	value, err := a.makeSession(user.ID)
-	if err != nil {
-		return err
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    value,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   a.config.CookieSecure,
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int((14 * 24 * time.Hour).Seconds()),
-	})
-	return nil
-}
-
-func (a *App) clearSession(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true, Secure: a.config.CookieSecure, SameSite: http.SameSiteLaxMode, MaxAge: -1})
-}
-
 func (a *App) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if err := a.db.PingContext(r.Context()); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "DATABASE_UNAVAILABLE", "database is unavailable")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Email       string `json:"email"`
-		DisplayName string `json:"displayName"`
-		Password    string `json:"password"`
-	}
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	user, err := a.createUser(r.Context(), input.Email, input.DisplayName, input.Password)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "REGISTER_FAILED", err.Error())
-		return
-	}
-	if err := a.setSession(w, user); err != nil {
-		writeError(w, http.StatusInternalServerError, "SESSION_FAILED", "could not create session")
-		return
-	}
-	writeJSON(w, http.StatusCreated, map[string]any{"user": user})
-}
-
-func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
-	var input struct {
-		Email    string `json:"email"`
-		Password string `json:"password"`
-	}
-	if !decodeJSON(w, r, &input) {
-		return
-	}
-	user, passwordHash, err := a.userByEmail(r.Context(), input.Email)
-	if err != nil || !verifyPassword(passwordHash, input.Password) {
-		writeError(w, http.StatusUnauthorized, "LOGIN_FAILED", "email or password is incorrect")
-		return
-	}
-	if err := a.setSession(w, user); err != nil {
-		writeError(w, http.StatusInternalServerError, "SESSION_FAILED", "could not create session")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": user})
-}
-
-func (a *App) handleLogout(w http.ResponseWriter, _ *http.Request) {
-	a.clearSession(w)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -202,6 +130,7 @@ func (a *App) handleCreateSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
+		AuthorName  string `json:"authorName"`
 		Title       string `json:"title"`
 		Description string `json:"description"`
 		Kind        string `json:"kind"`
@@ -210,7 +139,7 @@ func (a *App) handleCreateSubmission(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	submission, err := a.createSubmission(r.Context(), user, input.Title, input.Description, input.Kind, input.GitURL)
+	submission, err := a.createSubmission(r.Context(), user, input.AuthorName, input.Title, input.Description, input.Kind, input.GitURL)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "SUBMISSION_INVALID", err.Error())
 		return
@@ -290,7 +219,7 @@ func (a *App) handleAdminSubmissions(w http.ResponseWriter, r *http.Request) {
 	if !ok || !requireAdmin(w, user) {
 		return
 	}
-	submissions, err := a.listSubmissions(r.Context(), 0, strings.TrimSpace(r.URL.Query().Get("status")), true)
+	submissions, err := a.listSubmissions(r.Context(), "", strings.TrimSpace(r.URL.Query().Get("status")), true)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "SUBMISSIONS_FAILED", "could not list submissions")
 		return

@@ -2,6 +2,8 @@
   'use strict';
 
   var apiBase = String(window.GamePlatformConfig && window.GamePlatformConfig.apiBase || '').replace(/\/$/, '');
+  var identityApiBase = String(window.GamePlatformConfig && window.GamePlatformConfig.identityApiBase || '').replace(/\/$/, '');
+  var tokenKey = 'game-platform-mobile-token';
   var user = null;
   var authView = document.getElementById('auth-view');
   var dashboard = document.getElementById('dashboard');
@@ -12,9 +14,13 @@
 
   function api(path, options) {
     options = options || {};
-    var headers = options.headers || {};
+    var headers = Object.assign({}, options.headers || {});
     if (options.body && typeof options.body === 'string') headers['Content-Type'] = 'application/json';
-    return fetch(apiBase + path, Object.assign({ credentials: 'include', headers: headers }, options)).then(function (response) {
+    var token = sessionStorage.getItem(tokenKey);
+    if (token) headers.Authorization = 'Bearer ' + token;
+    var request = Object.assign({}, options);
+    request.headers = headers;
+    return fetch(apiBase + path, request).then(function (response) {
       return response.text().then(function (text) {
         var data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (_) {}
@@ -23,6 +29,22 @@
           err.status = response.status;
           throw err;
         }
+        return data;
+      });
+    });
+  }
+
+  function identityApi(path, options) {
+    options = options || {};
+    var headers = Object.assign({}, options.headers || {});
+    if (options.body && typeof options.body === 'string') headers['Content-Type'] = 'application/json';
+    var request = Object.assign({}, options);
+    request.headers = headers;
+    return fetch(identityApiBase + path, request).then(function (response) {
+      return response.text().then(function (text) {
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (_) {}
+        if (!response.ok) throw new Error((data.error && data.error.message) || ('HTTP ' + response.status));
         return data;
       });
     });
@@ -48,8 +70,18 @@
   function showDashboard() {
     authView.hidden = true;
     dashboard.hidden = false;
-    document.getElementById('account-name').textContent = user.displayName + ' · ' + user.email;
+    document.getElementById('account-name').textContent = user.email;
     document.getElementById('admin-link').hidden = user.role !== 'admin';
+  }
+
+  function startMobileSession(data) {
+    if (!data.token) throw new Error('mobile 账号服务没有返回登录凭证');
+    sessionStorage.setItem(tokenKey, data.token);
+    return api('/api/auth/me').then(function (result) {
+      user = result.user;
+      showDashboard();
+      return loadDashboard();
+    });
   }
 
   function setSubmissionKind() {
@@ -128,13 +160,11 @@
     event.preventDefault();
     var form = event.currentTarget;
     setBusy(form, true);
-    api('/api/auth/register', { method: 'POST', body: JSON.stringify({
-      email: form.email.value, displayName: form.displayName.value, password: form.password.value
+    identityApi('/auth/register', { method: 'POST', body: JSON.stringify({
+      email: form.email.value, password: form.password.value
     }) }).then(function (data) {
-      user = data.user;
-      showDashboard();
       setMessage('账号已创建。', 'success');
-      return loadDashboard();
+      return startMobileSession(data);
     }).catch(function (err) { setMessage(err.message, 'error'); }).finally(function () { setBusy(form, false); });
   });
 
@@ -142,14 +172,17 @@
     event.preventDefault();
     var form = event.currentTarget;
     setBusy(form, true);
-    api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: form.email.value, password: form.password.value }) })
-      .then(function (data) { user = data.user; showDashboard(); setMessage('已登录。', 'success'); return loadDashboard(); })
+    identityApi('/auth/login', { method: 'POST', body: JSON.stringify({ email: form.email.value, password: form.password.value }) })
+      .then(function (data) { setMessage('已登录。', 'success'); return startMobileSession(data); })
       .catch(function (err) { setMessage(err.message, 'error'); })
       .finally(function () { setBusy(form, false); });
   });
 
   document.getElementById('logout').addEventListener('click', function () {
-    api('/api/auth/logout', { method: 'POST', body: '{}' }).finally(function () {
+    var token = sessionStorage.getItem(tokenKey);
+    var options = { method: 'POST', headers: token ? { Authorization: 'Bearer ' + token } : {} };
+    identityApi('/auth/logout', options).finally(function () {
+      sessionStorage.removeItem(tokenKey);
       user = null;
       dashboard.hidden = true;
       authView.hidden = false;
@@ -169,7 +202,7 @@
     setBusy(form, true);
     setMessage('正在提交…', '');
     api('/api/submissions', { method: 'POST', body: JSON.stringify({
-      title: form.title.value, description: form.description.value, kind: kind, gitUrl: form.gitUrl.value
+      authorName: form.authorName.value, title: form.title.value, description: form.description.value, kind: kind, gitUrl: form.gitUrl.value
     }) }).then(function (data) {
       if (kind !== 'zip') return data;
       return uploadArchive(data.upload, file, data.submission.id).then(function () {

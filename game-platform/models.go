@@ -3,15 +3,14 @@ package main
 import "encoding/json"
 
 type User struct {
-	ID          int64  `json:"id"`
-	Email       string `json:"email"`
-	DisplayName string `json:"displayName"`
-	Role        string `json:"role"`
+	ID    string `json:"id"`
+	Email string `json:"email"`
+	Role  string `json:"role"`
 }
 
 type Submission struct {
 	ID          string `json:"id"`
-	UserID      int64  `json:"userId"`
+	UserID      string `json:"userId"`
 	AuthorName  string `json:"authorName"`
 	Title       string `json:"title"`
 	Description string `json:"description"`
