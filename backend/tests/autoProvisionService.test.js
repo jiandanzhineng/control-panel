@@ -94,7 +94,10 @@ describe('autoProvisionService', () => {
     await service.start();
     await Promise.allSettled([...service.runs.values()]);
 
-    expect(flashService.startFlash).toHaveBeenCalledWith({ path: 'COM9', deviceType: 'CUNZHI01' });
+    expect(flashService.startFlash).toHaveBeenCalledWith(
+      { path: 'COM9', deviceType: 'CUNZHI01' },
+      { reservationToken: service.token },
+    );
     const entry = entryFor(service, 'COM9');
     expect(entry.stage).toBe('connected');
     expect(entry.flashed).toBe(true);

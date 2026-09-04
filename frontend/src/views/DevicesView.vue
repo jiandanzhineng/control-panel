@@ -670,7 +670,7 @@
               <el-button
                 type="primary"
                 size="small"
-                :disabled="row.status === 'connected' || row.status === 'probing'"
+                :disabled="row.status === 'connected' || row.status === 'probing' || row.status === 'firmware'"
                 @click="connectSerialPort(row.path)"
               >
                 {{ t('devices.connect') }}
@@ -690,7 +690,7 @@
             <el-button
               type="primary"
               size="small"
-              :disabled="port.status === 'connected' || port.status === 'probing'"
+              :disabled="port.status === 'connected' || port.status === 'probing' || port.status === 'firmware'"
               @click="connectSerialPort(port.path)"
             >
               {{ t('devices.connect') }}
@@ -962,7 +962,7 @@ interface SerialPortInfo {
   path: string;
   manufacturer?: string;
   friendlyName?: string;
-  status: 'idle' | 'probing' | 'connected' | 'backoff';
+  status: 'idle' | 'probing' | 'connected' | 'backoff' | 'firmware';
 }
 
 interface FirmwareInfo {
@@ -1371,7 +1371,13 @@ function getConnectionTagType(type: TransportType): 'success' | 'primary' | 'war
 }
 
 function getSerialPortStatus(status: SerialPortInfo['status']) {
-  return { idle: t('devices.serialIdle'), probing: t('devices.serialProbing'), connected: t('devices.serialConnected'), backoff: t('devices.serialBackoff') }[status] || status;
+  return {
+    idle: t('devices.serialIdle'),
+    probing: t('devices.serialProbing'),
+    connected: t('devices.serialConnected'),
+    backoff: t('devices.serialBackoff'),
+    firmware: t('devices.serialFirmware'),
+  }[status] || status;
 }
 
 function startAutoRefresh() {

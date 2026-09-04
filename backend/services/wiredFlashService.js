@@ -168,14 +168,7 @@ class WiredFlashService {
   }
 
   isPortBusy(path) {
-    const svc = this.serialConnectionService;
-    return !!(svc?.sessions?.has(path) || svc?.pendingConnections?.has(path));
-  }
-
-  assertPortFree(path) {
-    if (this.isPortBusy(path)) {
-      throw createServiceError('SERIAL_PORT_BUSY', `串口 ${path} 已被连接占用，请先断开串口连接再操作`, 409);
-    }
+    return this.serialConnectionService?.isFirmwarePortLocked?.(path) === true;
   }
 
   async listPorts() {
@@ -193,6 +186,7 @@ class WiredFlashService {
         return {
           ...port,
           busy: this.isPortBusy(port.path),
+          connected: !!session,
           deviceId: session?.deviceId || null,
         };
       })
@@ -212,17 +206,11 @@ class WiredFlashService {
     if (!normalizedPath) {
       throw createServiceError('SERIAL_PATH_REQUIRED', 'Serial port path is required', 400);
     }
-    this.assertPortFree(normalizedPath);
-
-    const SerialPort = this.getSerialPortClass();
-    const port = new SerialPort({
-      path: normalizedPath,
-      baudRate: IDENTIFY_BAUD_RATE,
-      dataBits: 8,
-      stopBits: 1,
-      parity: 'none',
-      autoOpen: false,
+    const lease = await this.serialConnectionService.acquireFirmwarePort(normalizedPath, {
+      owner: 'wired-identify',
     });
+
+    let port = null;
 
     let log = '';
     let lineBuffer = '';
@@ -246,6 +234,15 @@ class WiredFlashService {
     };
 
     try {
+      const SerialPort = this.getSerialPortClass();
+      port = new SerialPort({
+        path: normalizedPath,
+        baudRate: IDENTIFY_BAUD_RATE,
+        dataBits: 8,
+        stopBits: 1,
+        parity: 'none',
+        autoOpen: false,
+      });
       await new Promise((resolve, reject) => port.open((e) => (e ? reject(e) : resolve())));
       port.on('data', onData);
       await this.setLines(port, { dtr: true, rts: true });
@@ -262,7 +259,11 @@ class WiredFlashService {
       if (error?.code) throw error;
       throw createServiceError('SERIAL_IDENTIFY_FAILED', error?.message || '串口识别失败', 409);
     } finally {
-      if (port.isOpen) await new Promise((resolve) => port.close(() => resolve()));
+      try {
+        if (port?.isOpen) await new Promise((resolve) => port.close(() => resolve()));
+      } finally {
+        lease.release();
+      }
     }
 
     const bootResult = this.parseBootLog(log);
@@ -387,7 +388,7 @@ class WiredFlashService {
     };
   }
 
-  async startFlash({ path: portPath, deviceType } = {}) {
+  async startFlash({ path: portPath, deviceType } = {}, options = {}) {
     const normalizedPath = typeof portPath === 'string' ? portPath.trim() : '';
     if (!normalizedPath) {
       throw createServiceError('SERIAL_PATH_REQUIRED', 'Serial port path is required', 400);
@@ -395,18 +396,29 @@ class WiredFlashService {
     if (!deviceType || typeof deviceType !== 'string') {
       throw createServiceError('DEVICE_TYPE_REQUIRED', 'deviceType is required', 400);
     }
-    this.assertPortFree(normalizedPath);
-
-    const flashId = this.createFlashId();
-    this.recordFlashStatus(flashId, { status: 'pending', progress: 0, msg: '烧录任务已创建' }, {
-      path: normalizedPath,
-      deviceType,
+    const lease = await this.serialConnectionService.acquireFirmwarePort(normalizedPath, {
+      owner: 'wired-flash',
+      reservationToken: options.reservationToken,
     });
 
-    // 延迟一个 tick 启动,保证调用方在 startFlash 返回后再订阅也能看到全部状态流转
-    const run = Promise.resolve().then(() => this.runFlash(flashId, { path: normalizedPath, deviceType }));
-    this.flashPromises.set(flashId, run);
-    run.finally(() => this.flashPromises.delete(flashId)).catch(() => {});
+    let flashId;
+    try {
+      flashId = this.createFlashId();
+      this.recordFlashStatus(flashId, { status: 'pending', progress: 0, msg: '烧录任务已创建' }, {
+        path: normalizedPath,
+        deviceType,
+      });
+
+      // 延迟一个 tick 启动,保证调用方在 startFlash 返回后再订阅也能看到全部状态流转
+      const run = Promise.resolve()
+        .then(() => this.runFlash(flashId, { path: normalizedPath, deviceType }))
+        .finally(() => lease.release());
+      this.flashPromises.set(flashId, run);
+      run.finally(() => this.flashPromises.delete(flashId)).catch(() => {});
+    } catch (error) {
+      lease.release();
+      throw error;
+    }
 
     return { flashId };
   }
@@ -438,7 +450,6 @@ class WiredFlashService {
 
       // 3. 进下载模式并与 ROM 同步(重试 3 次)
       this.recordFlashStatus(flashId, { status: 'entering_bootloader', progress: null, msg: '进入下载模式' });
-      this.assertPortFree(portPath);
       const esptool = await this.loadEsptool();
       const connected = await this.connectWithRetry(portPath, esptool);
       transport = connected.transport;

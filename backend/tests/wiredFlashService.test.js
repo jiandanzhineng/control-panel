@@ -106,7 +106,34 @@ const manifest = {
 };
 
 function makeSerialConnectionService() {
-  return { sessions: new Map(), pendingConnections: new Map() };
+  const service = {
+    sessions: new Map(),
+    pendingConnections: new Map(),
+    firmwareLocks: new Map(),
+    isFirmwarePortLocked: jest.fn((path) => service.firmwareLocks.has(path)),
+    acquireFirmwarePort: jest.fn(async (path, options = {}) => {
+      if (service.firmwareLocks.has(path)) {
+        const error = new Error(`串口 ${path} 已有固件更新任务`);
+        error.code = 'FIRMWARE_UPDATE_IN_PROGRESS';
+        error.status = 409;
+        throw error;
+      }
+      service.firmwareLocks.set(path, options.owner || 'wired-flash');
+      service.sessions.delete(path);
+      service.pendingConnections.delete(path);
+      let released = false;
+      return {
+        path,
+        release: jest.fn(() => {
+          if (released) return false;
+          released = true;
+          service.firmwareLocks.delete(path);
+          return true;
+        }),
+      };
+    }),
+  };
+  return service;
 }
 
 function makeSerialReset() {
@@ -304,14 +331,16 @@ describe('identify 启动日志解析', () => {
     expect(result.deviceType).toBe('QTZ');
   });
 
-  test('串口被占用时报 SERIAL_PORT_BUSY', async () => {
+  test('识别会自动抢占已有串口连接并在结束后释放', async () => {
     const { service, serialConnectionService } = makeService({ cacheDir });
     serialConnectionService.sessions.set('COM17', { deviceId: 'dev-1' });
 
-    await expect(service.identify('COM17')).rejects.toMatchObject({
-      code: 'SERIAL_PORT_BUSY',
-      status: 409,
-    });
+    await service.identify('COM17');
+
+    expect(serialConnectionService.acquireFirmwarePort)
+      .toHaveBeenCalledWith('COM17', { owner: 'wired-identify' });
+    expect(serialConnectionService.sessions.has('COM17')).toBe(false);
+    expect(serialConnectionService.firmwareLocks.has('COM17')).toBe(false);
   });
 
   test('缺少 path 报 400', async () => {
@@ -381,7 +410,7 @@ describe('identify @DEBUG IDENT 协议识别', () => {
 });
 
 describe('listPorts', () => {
-  test('标注被 serialConnectionService 占用的端口', async () => {
+  test('普通串口连接可被固件更新抢占，不标为 busy', async () => {
     MockSerialPort.listResult = [{ path: 'COM17' }, { path: 'COM3' }];
     const { service, serialConnectionService } = makeService({ cacheDir });
     serialConnectionService.sessions.set('COM17', { deviceId: 'dev-1' });
@@ -389,8 +418,18 @@ describe('listPorts', () => {
     const ports = await service.listPorts();
 
     expect(ports).toEqual([
-      { path: 'COM17', busy: true, deviceId: 'dev-1' },
-      { path: 'COM3', busy: false, deviceId: null },
+      { path: 'COM17', busy: false, connected: true, deviceId: 'dev-1' },
+      { path: 'COM3', busy: false, connected: false, deviceId: null },
+    ]);
+  });
+
+  test('仅其他固件任务把端口标为 busy', async () => {
+    MockSerialPort.listResult = [{ path: 'COM17' }];
+    const { service, serialConnectionService } = makeService({ cacheDir });
+    serialConnectionService.firmwareLocks.set('COM17', 'other-flash');
+
+    await expect(service.listPorts()).resolves.toEqual([
+      { path: 'COM17', busy: true, connected: false, deviceId: null },
     ]);
   });
 });
@@ -570,13 +609,26 @@ describe('startFlash 状态机', () => {
     expect(esptool.state.main).toHaveBeenCalledTimes(3);
   });
 
-  test('烧录前端口被占用直接拒绝', async () => {
+  test('烧录自动抢占已有串口连接并在结束后释放', async () => {
     const { service, serialConnectionService } = makeService({ cacheDir });
     serialConnectionService.sessions.set('COM17', { deviceId: 'dev-1' });
 
+    const { flashId } = await service.startFlash({ path: 'COM17', deviceType: 'QTZ' });
+    expect(serialConnectionService.firmwareLocks.has('COM17')).toBe(true);
+    await service.waitForFlash(flashId);
+
+    expect(serialConnectionService.acquireFirmwarePort)
+      .toHaveBeenCalledWith('COM17', { owner: 'wired-flash', reservationToken: undefined });
+    expect(serialConnectionService.sessions.has('COM17')).toBe(false);
+    expect(serialConnectionService.firmwareLocks.has('COM17')).toBe(false);
+  });
+
+  test('同一端口已有固件任务时拒绝并发烧录', async () => {
+    const { service, serialConnectionService } = makeService({ cacheDir });
+    serialConnectionService.firmwareLocks.set('COM17', 'other-flash');
+
     await expect(service.startFlash({ path: 'COM17', deviceType: 'QTZ' })).rejects.toMatchObject({
-      code: 'SERIAL_PORT_BUSY',
-      status: 409,
+      code: 'FIRMWARE_UPDATE_IN_PROGRESS', status: 409,
     });
   });
 

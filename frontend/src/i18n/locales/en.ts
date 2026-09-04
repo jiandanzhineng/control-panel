@@ -524,6 +524,7 @@ const en = {
     serialProbing: 'Probing',
     serialConnected: 'Connected',
     serialBackoff: 'Retry wait',
+    serialFirmware: 'Firmware update',
     detail: 'Device details',
     clearConfirm: 'Delete all devices? This cannot be undone.',
     warning: 'Warning',

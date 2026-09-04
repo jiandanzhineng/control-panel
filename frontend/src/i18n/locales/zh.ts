@@ -524,6 +524,7 @@ const zh = {
     serialProbing: '探测中',
     serialConnected: '已连接',
     serialBackoff: '等待重试',
+    serialFirmware: '固件更新中',
     detail: '设备详情',
     clearConfirm: '确定要删除所有设备吗？此操作不可恢复！',
     warning: '警告',

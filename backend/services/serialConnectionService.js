@@ -31,7 +31,11 @@ function callbackOperation(action) {
 }
 
 function isProbeCancellation(error) {
-  return ['SERIAL_PROBE_CANCELLED', 'SERIAL_PORT_REMOVED'].includes(error?.code);
+  return [
+    'SERIAL_PROBE_CANCELLED',
+    'SERIAL_PORT_REMOVED',
+    'SERIAL_PREEMPTED_BY_FIRMWARE',
+  ].includes(error?.code);
 }
 
 class SerialConnectionService extends EventEmitter {
@@ -57,6 +61,8 @@ class SerialConnectionService extends EventEmitter {
     // 端口预留：编排器（自动化测试）独占某端口时登记在此。
     // 预留期间自动轮询跳过该端口，避免与烧录/受控探测抢口。
     this.reservations = new Map();
+    // 固件识别/烧录拥有最高优先级。锁存在期间所有普通串口流程必须让路。
+    this.firmwareLocks = new Map();
     this.pollTimer = null;
     this.polling = false;
     this.stopping = false;
@@ -96,6 +102,9 @@ class SerialConnectionService extends EventEmitter {
   reservePort(path, token) {
     const normalized = typeof path === 'string' ? path.trim() : '';
     if (!normalized) throw serviceError('SERIAL_PATH_REQUIRED', 'Serial port path is required', 400);
+    if (this.isFirmwarePortLocked(normalized)) {
+      throw serviceError('SERIAL_PREEMPTED_BY_FIRMWARE', `串口 ${normalized} 正在进行固件更新`, 409);
+    }
     const existing = this.reservations.get(normalized);
     if (existing && existing !== token) {
       throw serviceError('SERIAL_PORT_RESERVED', `串口 ${normalized} 已被其他流程预留`, 409);
@@ -114,6 +123,74 @@ class SerialConnectionService extends EventEmitter {
   isPortReserved(path, token) {
     const holder = this.reservations.get(path);
     return holder !== undefined && holder !== token;
+  }
+
+  isFirmwarePortLocked(path) {
+    const normalized = typeof path === 'string' ? path.trim() : '';
+    return normalized ? this.firmwareLocks.has(normalized) : false;
+  }
+
+  async acquireFirmwarePort(path, options = {}) {
+    const normalized = typeof path === 'string' ? path.trim() : '';
+    if (!normalized) throw serviceError('SERIAL_PATH_REQUIRED', 'Serial port path is required', 400);
+    if (this.stopping) throw serviceError('SERIAL_SERVICE_STOPPING', 'Serial service is stopping', 409);
+    if (this.firmwareLocks.has(normalized)) {
+      throw serviceError('FIRMWARE_UPDATE_IN_PROGRESS', `串口 ${normalized} 已有固件更新任务`, 409);
+    }
+
+    const token = Symbol(`firmware:${normalized}`);
+    const owner = typeof options.owner === 'string' && options.owner ? options.owner : 'wired-flash';
+    this.firmwareLocks.set(normalized, { token, owner });
+
+    // 固件更新可抢占其他流程的预留；持有者自己的预留则保留，供更新后继续流水线。
+    const reservation = this.reservations.get(normalized);
+    if (reservation !== undefined && reservation !== options.reservationToken) {
+      this.reservations.delete(normalized);
+    }
+
+    try {
+      const cancellation = serviceError(
+        'SERIAL_PREEMPTED_BY_FIRMWARE',
+        `串口 ${normalized} 已由固件更新接管`,
+        409,
+      );
+      this.probes.get(normalized)?.cancel(cancellation);
+
+      const pending = this.pendingConnections.get(normalized);
+      if (pending) await Promise.allSettled([pending]);
+
+      const session = this.sessions.get(normalized);
+      if (session) {
+        await this.closeSession(session, 'firmware-update');
+        if (session.port.isOpen) {
+          throw serviceError(
+            'SERIAL_PORT_RELEASE_FAILED',
+            `串口 ${normalized} 无法释放，固件更新未开始`,
+            409,
+          );
+        }
+      }
+
+      logger.info('Serial', `固件更新已接管串口 ${normalized} (${owner})`);
+    } catch (error) {
+      if (this.firmwareLocks.get(normalized)?.token === token) this.firmwareLocks.delete(normalized);
+      throw error;
+    }
+
+    let released = false;
+    return {
+      path: normalized,
+      token,
+      owner,
+      release: () => {
+        if (released || this.firmwareLocks.get(normalized)?.token !== token) return false;
+        released = true;
+        this.firmwareLocks.delete(normalized);
+        logger.info('Serial', `固件更新已释放串口 ${normalized} (${owner})`);
+        if (this.settings.autoConnect) this.pollPorts().catch(() => {});
+        return true;
+      },
+    };
   }
 
   async setSettings(patch = {}) {
@@ -166,11 +243,19 @@ class SerialConnectionService extends EventEmitter {
       .map((info) => {
         const session = this.sessions.get(info.path);
         const pending = this.pendingConnections.has(info.path);
-        const inBackoff = !session && !pending && info.nextRetryAt > now;
+        const firmwareLocked = this.isFirmwarePortLocked(info.path);
+        const inBackoff = !firmwareLocked && !session && !pending && info.nextRetryAt > now;
         return {
           ...info.port,
           path: info.path,
-          status: session ? 'connected' : pending ? 'probing' : inBackoff ? 'backoff' : 'idle',
+          status: firmwareLocked
+            ? 'firmware'
+            : session
+              ? 'connected'
+              : pending
+                ? 'probing'
+                : inBackoff ? 'backoff' : 'idle',
+          firmwareLocked,
           deviceId: session?.deviceId || null,
           firmwareVersion: session?.firmwareVersion || null,
           retryAt: inBackoff ? new Date(info.nextRetryAt).toISOString() : null,
@@ -232,6 +317,7 @@ class SerialConnectionService extends EventEmitter {
       const now = this.now();
       for (const info of this.portInfo.values()) {
         if (this.sessions.has(info.path) || this.pendingConnections.has(info.path)) continue;
+        if (this.firmwareLocks.has(info.path)) continue;
         if (this.reservations.has(info.path)) continue;
         if (info.nextRetryAt > now) continue;
         this.connect(info.path, { automatic: true }).catch(() => {});
@@ -245,6 +331,9 @@ class SerialConnectionService extends EventEmitter {
     const normalizedPath = typeof path === 'string' ? path.trim() : '';
     if (!normalizedPath) throw serviceError('SERIAL_PATH_REQUIRED', 'Serial port path is required', 400);
     if (this.stopping) throw serviceError('SERIAL_SERVICE_STOPPING', 'Serial service is stopping', 409);
+    if (this.isFirmwarePortLocked(normalizedPath)) {
+      throw serviceError('SERIAL_PREEMPTED_BY_FIRMWARE', `串口 ${normalizedPath} 正在进行固件更新`, 409);
+    }
 
     const existing = this.sessions.get(normalizedPath);
     if (existing) return this.deviceService.getDeviceForApi(existing.deviceId);
@@ -313,8 +402,15 @@ class SerialConnectionService extends EventEmitter {
     } catch (error) {
       throw serviceError('SERIAL_OPEN_FAILED', error?.message || 'Unable to open serial port', 409);
     }
-    if (this.stopping || (options.automatic && !this.settings.autoConnect)) {
+    if (
+      this.stopping
+      || this.isFirmwarePortLocked(info.path)
+      || (options.automatic && !this.settings.autoConnect)
+    ) {
       await closePort();
+      if (this.isFirmwarePortLocked(info.path)) {
+        throw serviceError('SERIAL_PREEMPTED_BY_FIRMWARE', `串口 ${info.path} 正在进行固件更新`, 409);
+      }
       throw serviceError('SERIAL_PROBE_CANCELLED', 'Serial probe was cancelled', 409);
     }
 
@@ -536,6 +632,7 @@ class SerialConnectionService extends EventEmitter {
     await Promise.allSettled([...this.pendingConnections.values()]);
     const sessions = [...this.sessions.values()];
     await Promise.all(sessions.map((session) => this.closeSession(session, 'shutdown')));
+    this.firmwareLocks.clear();
     this.stopping = false;
   }
 
@@ -547,6 +644,7 @@ class SerialConnectionService extends EventEmitter {
     this.pendingConnections.clear();
     this.probes.clear();
     this.reservations.clear();
+    this.firmwareLocks.clear();
     this.removeAllListeners();
     this.stopping = false;
   }

@@ -334,4 +334,70 @@ describe('SerialConnectionService', () => {
     expect(service.releasePort('COM5', Symbol('other'))).toBe(false);
     expect(service.releasePort('COM5', first)).toBe(true);
   });
+
+  it('firmware update preempts an established serial session and blocks reconnects', async () => {
+    FakeSerialPort.responseForPath.set(
+      'COM5',
+      '@DEBUG READY {"device_id":"aabbccddeeff","firmware_version":"v1.2.3"}\r\n',
+    );
+    const { service, deviceService } = createHarness();
+    const connected = service.connect('COM5');
+    await jest.runAllTimersAsync();
+    await connected;
+
+    const lease = await service.acquireFirmwarePort('COM5', { owner: 'test-flash' });
+
+    expect(service.isFirmwarePortLocked('COM5')).toBe(true);
+    expect(service.sessions.has('COM5')).toBe(false);
+    expect(FakeSerialPort.instances[0].isOpen).toBe(false);
+    expect(deviceService.disconnectTransportDevice)
+      .toHaveBeenCalledWith('aabbccddeeff', 'serial');
+    await expect(service.connect('COM5')).rejects.toMatchObject({
+      code: 'SERIAL_PREEMPTED_BY_FIRMWARE', status: 409,
+    });
+
+    expect(lease.release()).toBe(true);
+    expect(lease.release()).toBe(false);
+    expect(service.isFirmwarePortLocked('COM5')).toBe(false);
+  });
+
+  it('firmware update cancels an in-flight probe before taking the port', async () => {
+    const { service } = createHarness();
+    const pending = service.connect('COM5');
+    const rejected = expect(pending).rejects.toMatchObject({
+      code: 'SERIAL_PREEMPTED_BY_FIRMWARE', status: 409,
+    });
+
+    const lease = await service.acquireFirmwarePort('COM5');
+
+    await rejected;
+    expect(service.pendingConnections.has('COM5')).toBe(false);
+    expect(FakeSerialPort.instances[0].isOpen).toBe(false);
+    expect(service.portInfo.get('COM5')).toMatchObject({ failures: 0, nextRetryAt: 0 });
+    lease.release();
+  });
+
+  it('firmware update overrides foreign reservations but preserves its caller reservation', async () => {
+    const { service } = createHarness();
+    await service.listPorts();
+    const foreignToken = Symbol('foreign');
+    service.reservePort('COM5', foreignToken);
+
+    const firstLease = await service.acquireFirmwarePort('COM5');
+    expect(service.reservations.has('COM5')).toBe(false);
+    expect(service.serializePorts()).toEqual([
+      expect.objectContaining({ path: 'COM5', status: 'firmware', firmwareLocked: true }),
+    ]);
+    expect(() => service.reservePort('COM5', foreignToken)).toThrow(/固件更新/);
+    await expect(service.acquireFirmwarePort('COM5')).rejects.toMatchObject({
+      code: 'FIRMWARE_UPDATE_IN_PROGRESS', status: 409,
+    });
+    firstLease.release();
+
+    const callerToken = Symbol('caller');
+    service.reservePort('COM5', callerToken);
+    const secondLease = await service.acquireFirmwarePort('COM5', { reservationToken: callerToken });
+    expect(service.reservations.get('COM5')).toBe(callerToken);
+    secondLease.release();
+  });
 });

@@ -324,7 +324,10 @@ class AutoProvisionService extends EventEmitter {
       stage: 'flashing', deviceType, flashProgress: 0, message: '准备烧录固件',
     });
     try {
-      const { flashId } = await this.flashService.startFlash({ path, deviceType });
+      const { flashId } = await this.flashService.startFlash(
+        { path, deviceType },
+        { reservationToken: this.token },
+      );
       const unsubscribe = this.flashService.onFlashStatus(flashId, (status) => {
         this.updateEntry(path, {
           stage: 'flashing',
