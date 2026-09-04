@@ -16,7 +16,7 @@
       <span class="brand-mark">⚡</span>
       <span data-i18n="brand">硅基之下游戏库</span>
     </a>
-        <div class="nav-links">
+    <div class="nav-links">
       <a href="games.html" data-i18n="navGames">游戏</a>
       <a href="control.html" data-i18n="navControl">设备控制</a>
       <a href="docs/agent-guide.html" data-i18n="navDocs">开发文档</a>
@@ -27,18 +27,14 @@
         <button type="button" data-set-locale="en">EN</button>
       </div>
     </div>
-    </div>
-  </nav>
+  </div>
+</nav>
 
-<header class="hero">
+<header class="hero hero-compact">
   <div class="container">
     <span class="hero-eyebrow"><span class="dot"></span> <span data-i18n="homeEyebrow">硅基之下 · 在线游戏站</span></span>
     <h1><span data-i18n="homeH1Before">硅基之下</span><span class="grad" data-i18n="homeH1Grad">游戏库</span></h1>
     <p class="lead"><span data-i18n="homeLead">连接你的真实设备，在浏览器里直接玩。每个游戏都是自包含网页，经控制面板同源加载、驱动本机硬件——上新即玩，无需更新 App。</span></p>
-    <div class="hero-actions">
-      <a class="btn btn-primary" href="games.html"><span data-i18n="browseGames">浏览游戏 →</span></a>
-      <a class="btn btn-ghost" href="docs/agent-guide.html"><span data-i18n="makeGame">我要做一个游戏</span></a>
-    </div>
     <div class="stat-row" id="stats">
       <div class="stat"><div class="stat-num" id="stat-games">—</div><div class="stat-label" data-i18n="statGames">在线游戏</div></div>
       <div class="stat"><div class="stat-num" id="stat-devices">—</div><div class="stat-label" data-i18n="statDevices">支持设备类型</div></div>
@@ -47,14 +43,41 @@
   </div>
 </header>
 
-<section class="section">
+<section class="section home-main">
   <div class="container">
-    <div class="prompt-card">
-      <div class="prompt-card-head">
-        <span class="prompt-card-title"><span data-i18n="promptTitleBefore">🤖 想做一个自己的游戏？把这段 </span><span class="grad">Prompt</span><span data-i18n="promptTitleAfter"> 丢给 Claude Code / Codex</span></span>
-        <button class="copy-btn" id="home-copy" data-copy-target="#home-prompt" data-i18n="copyPrompt">复制 Prompt</button>
+    <div class="home-split">
+      <div class="home-col">
+        <div class="home-col-head">
+          <div>
+            <span class="tag">Library</span>
+            <h2 data-i18n="recH2">推荐游戏</h2>
+            <p data-i18n="recLead">精选玩法，完整列表在游戏页。</p>
+          </div>
+          <a class="btn btn-ghost" href="games.html" data-i18n="recAll">查看全部 →</a>
+        </div>
+        <div class="rec-grid" id="rec-grid">
+          <div class="skeleton"></div>
+          <div class="skeleton"></div>
+          <div class="skeleton"></div>
+          <div class="skeleton"></div>
+        </div>
       </div>
-      <pre id="home-prompt">你是「硅基之下」游戏库的玩法开发者。请先阅读开发规范：
+
+      <div class="home-col home-col-guide">
+        <span class="tag">Submit</span>
+        <h2 data-i18n="submitGuideH2">游戏投稿说明</h2>
+        <p data-i18n="submitGuideLead">不用 GitHub 也能投稿。复制 Prompt 让 AI 写游戏，上传 ZIP 或公开 Git 地址，审核通过后上架。</p>
+        <div class="tier-list">
+          <div class="tier"><span class="tier-icon">01</span><div class="tier-info"><div class="tier-name" data-i18n="submitStep1Name">用 AI 做游戏</div><div class="tier-desc" data-i18n="submitStep1Desc">复制 Prompt，交给 Claude Code / Codex 按开发规范实现</div></div></div>
+          <div class="tier"><span class="tier-icon">02</span><div class="tier-info"><div class="tier-name" data-i18n="submitStep2Name">打包并投稿</div><div class="tier-desc" data-i18n="submitStep2Desc">根目录含 index.html 与 game-manifest，打成 ZIP 或准备公开 Git 地址</div></div></div>
+          <div class="tier"><span class="tier-icon">03</span><div class="tier-info"><div class="tier-name" data-i18n="submitStep3Name">审核上架拿奖励</div><div class="tier-desc" data-i18n="submitStep3Desc">通过后玩家可直接玩；上架送硬件 + Token 套餐</div></div></div>
+        </div>
+        <div class="prompt-card">
+          <div class="prompt-card-head">
+            <span class="prompt-card-title"><span class="grad">Prompt</span></span>
+            <button class="copy-btn" id="home-copy" data-copy-target="#home-prompt" data-i18n="copyPrompt">复制 Prompt</button>
+          </div>
+          <pre id="home-prompt">你是「硅基之下」游戏库的玩法开发者。请先阅读开发规范：
 https://game.undersilicon.cn/docs/agent-guide.html
 
 按开发规范做一个自包含游戏，游戏根目录必须包含 index.html、game-manifest 和所需资源：
@@ -64,33 +87,17 @@ https://game.undersilicon.cn/docs/agent-guide.html
 要求：id 使用英文 kebab-case，设备交互只走 window.DeviceAPI；
 完成后自测，并将游戏根目录打成 ZIP，或准备公开 GitHub/GitLab 仓库地址。
 打开 https://game.undersilicon.cn/submit.html 提交审核。</pre>
-      <p style="color:var(--text-soft);font-size:14px;margin-top:14px;"><span data-i18n="promptHint">改完这段描述发给 AI，它会照着规范帮你写出可上架的游戏。完整说明见 Agent 开发指南。</span> <a href="docs/agent-guide.html" data-i18n="agentGuide" data-i18n="agentGuide">Agent 开发指南</a></p>
-    </div>
-  </div>
-</section>
-
-<section class="section">
-  <div class="container">
-    <div class="contribute">
-      <div class="contribute-grid">
-        <div>
-          <span class="hero-eyebrow"><span class="dot"></span> <span data-i18n="contributeEyebrow">玩家投稿计划</span></span>
-          <h2 style="font-size:30px;font-weight:800;letter-spacing:0;margin-bottom:12px;"><span data-i18n="contributeH2">把你的脑洞做成游戏，投稿送硬件 + Token 套餐</span></h2>
-          <p style="color:var(--text-soft);font-size:16px;"><span data-i18n="contributeLead">不用 GitHub 账号也能投稿。完成游戏后上传 ZIP，或填写公开 Git 地址；人工审核通过后，玩家会在控制面板里直接看到、直接玩。</span></p>
-          <div class="tier-list">
-            <div class="tier"><span class="tier-icon">01</span><div class="tier-info"><div class="tier-name" data-i18n="tier1Name">AI 辅助开发</div><div class="tier-desc" data-i18n="tier1Desc">复制首页 Prompt，让 Claude Code / Codex 按开发规范实现</div></div></div>
-            <div class="tier"><span class="tier-icon">02</span><div class="tier-info"><div class="tier-name" data-i18n="tier2Name">上传投稿</div><div class="tier-desc" data-i18n="tier2Desc">上传 ZIP 或填写公开 Git 地址，进入人工审核</div></div></div>
-            <div class="tier"><span class="tier-icon">03</span><div class="tier-info"><div class="tier-name" data-i18n="tier3Name">投稿奖励</div><div class="tier-desc" data-i18n="tier3Desc">通过审核上架后送硬件 + Token 套餐，具体咨询客服</div></div></div>
-          </div>
-          <div style="margin-top:24px;display:flex;gap:12px;flex-wrap:wrap;">
-            <a class="btn btn-primary" href="submit.html"><span data-i18n="viewContribute">提交游戏 →</span></a>
-            <a class="btn btn-ghost" href="docs/agent-guide.html">Agent 开发指南</a>
-          </div>
         </div>
-        <div class="qr-card">
+        <div class="guide-actions">
+          <a class="btn btn-primary" href="submit.html"><span data-i18n="viewContribute">提交游戏 →</span></a>
+          <a class="btn btn-ghost" href="docs/agent-guide.html" data-i18n="agentGuide">Agent 开发指南</a>
+        </div>
+        <div class="qr-inline">
           <img src="assets/img/微信客服二维码.png" alt="微信客服二维码" data-i18n-alt="qrAlt" onerror="this.style.display='none'" />
-          <div class="qr-label" data-i18n="qrLabel">扫码加客服微信</div>
-          <div class="qr-sub" data-i18n="qrSub">投稿审核 · 套餐咨询 · 技术答疑</div>
+          <div>
+            <div class="qr-label" data-i18n="qrLabel">扫码加客服微信</div>
+            <div class="qr-sub" data-i18n="qrSub">投稿审核 · 套餐咨询 · 技术答疑</div>
+          </div>
         </div>
       </div>
     </div>
@@ -111,51 +118,24 @@ https://game.undersilicon.cn/docs/agent-guide.html
   </div>
 </footer>
 
-<script src="assets/js/i18n.js"></script>
-<script>
-// 首页只加载 hero 统计数字；完整列表在 games.html。
-(function () {
-  "use strict";
-  fetch('registry.json')
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (data) {
-      if (!data) return;
-      var games = data.games || [];
-      var capSet = Object.create(null), devSet = Object.create(null);
-      games.forEach(function (g) {
-        (g.devices || []).forEach(function (d) {
-          devSet[d.id] = 1;
-          (d.capabilities || []).forEach(function (c) { capSet[c] = 1; });
-        });
-      });
-      document.getElementById('stat-games').textContent = games.length;
-      document.getElementById('stat-devices').textContent = Object.keys(devSet).length;
-      document.getElementById('stat-caps').textContent = Object.keys(capSet).length;
-    })
-    .catch(function () {});
+<div class="toast" id="toast"></div>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-game-title">
+  <div class="modal-panel">
+    <div class="modal-head">
+      <h3 id="modal-game-title" data-i18n="modalPlay">玩法</h3>
+      <button class="modal-close" aria-label="关闭" data-i18n-aria="close">✕</button>
+    </div>
+    <div class="modal-status" id="modal-status"></div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="modal-cancel" data-i18n="cancel">取消</button>
+      <button class="btn btn-primary" id="modal-start" disabled data-i18n="startPlay">启动玩法 →</button>
+    </div>
+  </div>
+</div>
 
-  // 首页 Prompt 复制按钮
-  document.querySelectorAll('.copy-btn[data-copy-target]').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      var el = document.querySelector(btn.getAttribute('data-copy-target'));
-      if (!el) return;
-      var text = el.textContent, old = btn.textContent;
-      var done = function () {
-        btn.textContent = (window.SiteI18n && SiteI18n.t) ? SiteI18n.t('copied') : '✓ 已复制'; btn.classList.add('copied');
-        setTimeout(function () { btn.textContent = old; btn.classList.remove('copied'); }, 1600);
-      };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(done).catch(function () {});
-      } else {
-        var ta = document.createElement('textarea');
-        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-        document.body.appendChild(ta); ta.select();
-        try { document.execCommand('copy'); done(); } catch (_) {}
-        document.body.removeChild(ta);
-      }
-    });
-  });
-})();
-</script>
+<script src="assets/js/i18n.js"></script>
+<script src="assets/js/play-launcher.js"></script>
+<script src="assets/js/home.js"></script>
 </body>
 </html>

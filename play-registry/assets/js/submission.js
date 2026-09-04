@@ -5,7 +5,7 @@
   var identityApiBase = String(window.GamePlatformConfig && window.GamePlatformConfig.identityApiBase || '').replace(/\/$/, '');
   var tokenKey = 'game-platform-mobile-token';
   var user = null;
-  var authView = document.getElementById('auth-view');
+  var authShell = document.getElementById('auth-shell') || document.getElementById('auth-view');
   var dashboard = document.getElementById('dashboard');
   var message = document.getElementById('platform-message');
   var submissionForm = document.getElementById('submission-form');
@@ -68,7 +68,7 @@
   }
 
   function showDashboard() {
-    authView.hidden = true;
+    authShell.hidden = true;
     dashboard.hidden = false;
     document.getElementById('account-name').textContent = user.email;
     document.getElementById('admin-link').hidden = user.role !== 'admin';
@@ -185,7 +185,7 @@
       sessionStorage.removeItem(tokenKey);
       user = null;
       dashboard.hidden = true;
-      authView.hidden = false;
+      authShell.hidden = false;
       setMessage('已退出登录。', '');
     });
   });
