@@ -210,6 +210,28 @@ afterEach(async () => {
   await fs.rm(cacheDir, { recursive: true, force: true });
 });
 
+describe('固件缓存目录', () => {
+  test('默认使用 BACKEND_DATA_DIR 下的可写目录', async () => {
+    const previousDataDir = process.env.BACKEND_DATA_DIR;
+    const dataDir = path.join(cacheDir, 'app-data');
+    process.env.BACKEND_DATA_DIR = dataDir;
+
+    try {
+      const service = new WiredFlashService({ downloadFetcher: makeDownloadFetcher() });
+      const firmware = manifestService.toFirmwareInfo(manifest.firmwares[1]);
+
+      const cachedPath = await service.ensureFirmwareCached(firmware);
+
+      expect(service.cacheDir).toBe(path.join(path.resolve(dataDir), 'wired-flash-cache'));
+      expect(cachedPath).toBe(path.join(service.cacheDir, `${mergedSha256}.bin`));
+      expect((await fs.readFile(cachedPath)).equals(mergedContent)).toBe(true);
+    } finally {
+      if (previousDataDir == null) delete process.env.BACKEND_DATA_DIR;
+      else process.env.BACKEND_DATA_DIR = previousDataDir;
+    }
+  });
+});
+
 describe('identify 启动日志解析', () => {
   test('解析版本 / MAC / 型号并执行复位时序', async () => {
     MockSerialPort.bootLog = BOOT_LOG;

@@ -56,6 +56,13 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function defaultCacheDir() {
+  const dataDir = process.env.BACKEND_DATA_DIR
+    ? path.resolve(process.env.BACKEND_DATA_DIR)
+    : path.resolve(__dirname, '..', 'data');
+  return path.join(dataDir, 'wired-flash-cache');
+}
+
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -81,7 +88,7 @@ class WiredFlashService {
     this.serialConnectionService = options.serialConnectionService || defaultSerialConnectionService;
     this.manifestService = options.manifestService || manifestService;
     this.downloadFetcher = options.downloadFetcher || null;
-    this.cacheDir = options.cacheDir || path.join(__dirname, '..', 'data', 'wired-flash-cache');
+    this.cacheDir = options.cacheDir || defaultCacheDir();
     this.sleep = options.sleep || sleep;
     this.createFlashId = options.createFlashId || (() => crypto.randomUUID());
     this.createDevice = options.createDevice || ((portPath) => new NodeSerialDevice(portPath));
