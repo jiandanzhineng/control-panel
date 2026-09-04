@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node scripts/build-registry.js",
     "build:site": "node scripts/build-registry.js && node scripts/build-site.js",
-    "test": "node --test test/extract.test.js test/gamehost.test.js",
+    "test": "node --test test/extract.test.js test/gamehost.test.js test/baidu-tongji.test.js",
     "serve": "npm run build:site && npx --yes serve .site"
   },
   "dependencies": {
