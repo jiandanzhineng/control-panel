@@ -145,8 +145,9 @@ function shutdownBackend(reason = 'backend-shutdown', {
       await beforeTransportShutdown();
     }
     await stopRuntimeServices();
-    deviceService.cleanup();
+    await deviceService.cleanup();
     if (closeServer) await closeHttpServer();
+    await logService.flush();
   })().finally(() => {
     backendShutdownPromise = null;
   });
@@ -238,6 +239,7 @@ async function handleTerminationSignal(signal) {
     process.exit(0);
   } catch (error) {
     logger.error('Backend shutdown failed', error?.message || error);
+    await logService.flush().catch(() => {});
     process.exit(1);
   }
 }

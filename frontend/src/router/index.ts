@@ -1,21 +1,21 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
 import type { RouteRecordRaw } from 'vue-router';
-import HomeView from '../views/HomeView.vue';
-import ServicesView from '../views/ServicesView.vue';
-import DevicesView from '../views/DevicesView.vue';
-import PlayLibraryView from '../views/PlayLibraryView.vue';
-import PlayConfigView from '../views/PlayConfigView.vue';
-import GameCurrentView from '../views/GameCurrentView.vue';
-import PluginRunView from '../views/PluginRunView.vue';
-import BrowserView from '../views/BrowserView.vue';
-import LogManagement from '../views/LogManagement.vue';
-import AutoTest from '../views/AutoTest.vue';
-import FirmwareBatchUpgrade from '../views/FirmwareBatchUpgrade.vue';
-import FirmwareUpdate from '../views/FirmwareUpdate.vue';
-import WiredFlashUpdate from '../views/WiredFlashUpdate.vue';
-import AccountView from '../views/AccountView.vue';
-import CustomerServiceView from '../views/CustomerServiceView.vue';
-import SettingsView from '../views/SettingsView.vue';
+const HomeView = () => import('../views/HomeView.vue');
+const ServicesView = () => import('../views/ServicesView.vue');
+const DevicesView = () => import('../views/DevicesView.vue');
+const PlayLibraryView = () => import('../views/PlayLibraryView.vue');
+const PlayConfigView = () => import('../views/PlayConfigView.vue');
+const GameCurrentView = () => import('../views/GameCurrentView.vue');
+const PluginRunView = () => import('../views/PluginRunView.vue');
+const BrowserView = () => import('../views/BrowserView.vue');
+const LogManagement = () => import('../views/LogManagement.vue');
+const AutoTest = () => import('../views/AutoTest.vue');
+const FirmwareBatchUpgrade = () => import('../views/FirmwareBatchUpgrade.vue');
+const FirmwareUpdate = () => import('../views/FirmwareUpdate.vue');
+const WiredFlashUpdate = () => import('../views/WiredFlashUpdate.vue');
+const AccountView = () => import('../views/AccountView.vue');
+const CustomerServiceView = () => import('../views/CustomerServiceView.vue');
+const SettingsView = () => import('../views/SettingsView.vue');
 
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/home' },

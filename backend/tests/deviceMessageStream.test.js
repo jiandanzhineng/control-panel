@@ -9,6 +9,7 @@ jest.mock('../services/mqttClientService', () => ({
 jest.mock('../utils/fileStorage', () => ({
   getItem: jest.fn(() => null),
   setItem: jest.fn(),
+  setItemAsync: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../services/logService', () => ({

@@ -4,9 +4,12 @@ const EventEmitter = require('events');
 const os = require('os');
 
 class LogService extends EventEmitter {
-  constructor() {
+  constructor({ logsDir } = {}) {
     super();
-    this.logsDir = this.getLogsDirectory();
+    this.logsDir = logsDir || this.getLogsDirectory();
+    this.pending = new Map();
+    this.flushTimer = null;
+    this.flushPromise = null;
     this.ensureLogsDirectory();
   }
 
@@ -58,12 +61,46 @@ class LogService extends EventEmitter {
 
     const formattedLog = `[${timestamp}] [${level}] [${module}] ${message}\n`;
     
-    const today = new Date().toISOString().split('T')[0];
+    const today = timestamp.split('T')[0];
     const logFile = path.join(this.logsDir, `${today}.log`);
-    
-    fs.appendFileSync(logFile, formattedLog);
+
+    const lines = this.pending.get(logFile) || [];
+    lines.push(formattedLog);
+    this.pending.set(logFile, lines);
+    if (!this.flushTimer) {
+      this.flushTimer = setTimeout(() => {
+        this.flushTimer = null;
+        void this.flush().catch((error) => {
+          console.error('Failed to write logs:', error);
+        });
+      }, 100);
+      this.flushTimer.unref?.();
+    }
     
     this.emit('newLog', logEntry);
+  }
+
+  flush() {
+    clearTimeout(this.flushTimer);
+    this.flushTimer = null;
+    if (this.flushPromise) return this.flushPromise;
+    if (!this.pending.size) return Promise.resolve();
+
+    this.flushPromise = (async () => {
+      while (this.pending.size) {
+        const [file, lines] = this.pending.entries().next().value;
+        this.pending.delete(file);
+        try {
+          await fs.promises.appendFile(file, lines.join(''));
+        } catch (error) {
+          this.pending.set(file, lines.concat(this.pending.get(file) || []));
+          throw error;
+        }
+      }
+    })().finally(() => {
+      this.flushPromise = null;
+    });
+    return this.flushPromise;
   }
 
   error(module, message) {
@@ -121,3 +158,4 @@ class LogService extends EventEmitter {
 }
 
 module.exports = new LogService();
+module.exports.LogService = LogService;

@@ -44,6 +44,7 @@ const mdnsService = require('../services/mdnsService');
 const serialConnectionService = require('../services/serialConnectionService');
 const deviceService = require('../services/deviceService');
 const deviceWatchdogService = require('../services/deviceWatchdogService');
+const logService = require('../services/logService');
 const backend = require('../index');
 
 describe('backend server lifecycle', () => {
@@ -57,7 +58,8 @@ describe('backend server lifecycle', () => {
       backend.server.close();
       await closed;
     }
-    await backend.stopRuntimeServices();
+    await backend.shutdownBackend('test-cleanup', { closeServer: false });
+    jest.restoreAllMocks();
   });
 
   it('starts mDNS and MQTT when the exported server starts listening', async () => {
@@ -114,5 +116,26 @@ describe('backend server lifecycle', () => {
     expect(mqttService.stop.mock.invocationCallOrder[0])
       .toBeLessThan(deviceService.cleanup.mock.invocationCallOrder[0]);
     expect(backend.server.listening).toBe(false);
+  });
+
+  it('waits for device and log persistence before completing shutdown', async () => {
+    let finishDevices;
+    let finishLogs;
+    deviceService.cleanup.mockImplementationOnce(() => new Promise(resolve => { finishDevices = resolve; }));
+    jest.spyOn(logService, 'flush').mockImplementationOnce(() => new Promise(resolve => { finishLogs = resolve; }));
+    let finished = false;
+    const shutdown = backend.shutdownBackend('flush-test', { closeServer: false })
+      .then(() => { finished = true; });
+    await new Promise(setImmediate);
+    expect(finishDevices).toBeDefined();
+    expect(finishLogs).toBeUndefined();
+    expect(finished).toBe(false);
+    finishDevices();
+    await new Promise(setImmediate);
+    expect(finishLogs).toBeDefined();
+    expect(finished).toBe(false);
+    finishLogs();
+    await shutdown;
+    expect(finished).toBe(true);
   });
 });

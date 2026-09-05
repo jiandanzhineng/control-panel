@@ -4,6 +4,9 @@
   "version": "1.0.36-beta.1",
   "main": "electron/main.js",
   "scripts": {
+    "test:backend": "npm --prefix backend test -- --runInBand",
+    "test:frontend": "npm --prefix frontend test",
+    "check": "npm run test:backend && npm run test:frontend && npm run build:frontend",
     "dev:all": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",

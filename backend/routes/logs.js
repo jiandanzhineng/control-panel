@@ -25,8 +25,9 @@ router.get('/current', (req, res) => {
   });
 });
 
-router.get('/files', (req, res) => {
+router.get('/files', async (req, res) => {
   try {
+    await logService.flush();
     const files = logService.getLogFiles();
     res.json({ files });
   } catch (error) {
@@ -34,7 +35,7 @@ router.get('/files', (req, res) => {
   }
 });
 
-router.get('/download/:filename', (req, res) => {
+router.get('/download/:filename', async (req, res) => {
   const { filename } = req.params;
   
   if (!filename.endsWith('.log')) {
@@ -42,6 +43,7 @@ router.get('/download/:filename', (req, res) => {
   }
 
   try {
+    await logService.flush();
     const filePath = logService.getLogFilePath(filename);
     
     if (!fs.existsSync(filePath)) {

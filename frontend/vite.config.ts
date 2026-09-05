@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { resolve } from 'path'
 import { readFileSync } from 'fs'
 
@@ -22,6 +24,10 @@ export default defineConfig(({ command }) => {
           isCustomElement: (tag) => tag === 'webview',
         },
       },
+    }), Components({
+      dirs: [],
+      dts: false,
+      resolvers: [ElementPlusResolver({ importStyle: false })],
     })],
     resolve: {
       alias: {

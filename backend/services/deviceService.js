@@ -13,6 +13,11 @@ const deviceConnections = require('./deviceConnectionService');
 const nicknameService = require('./nicknameService');
 const firmwareOtaService = require('./firmwareOtaService');
 
+const SAVE_DELAY_MS = 1000;
+let saveTimer = null;
+let savePending = false;
+let savePromise = null;
+
 const state = {
   devices: [],
   selectedDeviceId: null,
@@ -129,7 +134,7 @@ function updateDeviceData(deviceId, data) {
   device.data = { ...prevData, ...incoming };
   device.lastReport = Date.now();
   refreshDeviceRuntimeState(device);
-  saveDevices();
+  scheduleSaveDevices();
 
   // 若有差异则触发回调
   if (changed && state.dataChangeHandlers.length) {
@@ -188,23 +193,65 @@ function selectDevice(deviceId) {
 }
 
 function saveDevices() {
-  try {
-    const persisted = state.devices.map((device) => ({
-      id: device.id,
-      name: device.name,
-      type: device.type,
-      lastReport: device.lastReport || null,
-      data: device.data || {},
-    }));
-    fileStorage.setItem('devices', JSON.stringify(persisted));
-  } catch (error) {
-    console.error('Failed to save devices to fileStorage:', error);
-  }
+  savePending = true;
+  void flushDevices().catch(reportSaveError);
 }
 
-function cleanup() {
+function reportSaveError(error) {
+  console.error('Failed to save devices to fileStorage:', error);
+  scheduleSaveDevices();
+}
+
+function scheduleSaveDevices() {
+  savePending = true;
+  if (saveTimer) return;
+  // A fixed window also saves under continuous reporting; it is not a debounce.
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void flushDevices().catch(reportSaveError);
+  }, SAVE_DELAY_MS);
+  saveTimer.unref?.();
+}
+
+function flushDevices() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  if (savePromise) return savePromise;
+  if (!savePending) return Promise.resolve();
+
+  // Serialize snapshots so an older write cannot restore a deleted device.
+  savePromise = (async () => {
+    while (savePending) {
+      const persisted = state.devices.map((device) => ({
+        id: device.id,
+        name: device.name,
+        type: device.type,
+        lastReport: device.lastReport || null,
+        data: device.data || {},
+      }));
+      savePending = false;
+      try {
+        await fileStorage.setItemAsync('devices', JSON.stringify(persisted));
+      } catch (error) {
+        savePending = true;
+        throw error;
+      }
+    }
+  })().finally(() => {
+    savePromise = null;
+  });
+  return savePromise;
+}
+
+async function cleanup() {
   stopOfflineCheck();
   deviceConnections.clear();
+  try {
+    await flushDevices();
+  } catch (error) {
+    console.error('Failed to save devices to fileStorage:', error);
+    throw error;
+  }
 }
 
 function refreshDeviceRuntimeState(device) {
@@ -537,7 +584,7 @@ function handleTransportMessage(deviceId, payload, connectionType) {
   });
   device.lastReport = Date.now();
   refreshDeviceRuntimeState(device);
-  saveDevices();
+  scheduleSaveDevices();
   emitRawMessage(deviceId, payload);
   if (device.type !== previousType) emitDeviceListChange('type-changed', deviceId);
   return true;
@@ -794,6 +841,7 @@ module.exports = {
   stopOfflineCheck,
   selectDevice,
   saveDevices,
+  flushDevices,
   cleanup,
   // 数据变更回调
   onDeviceDataChange,

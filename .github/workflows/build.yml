@@ -10,7 +10,10 @@ permissions:
   contents: write
 
 jobs:
+  checks:
+    uses: ./.github/workflows/check.yml
   build:
+    needs: checks
     runs-on: windows-latest
     
     steps:
@@ -22,7 +25,7 @@ jobs:
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '22.5.1'
+        node-version: '22'
         cache: 'npm'
 
     - name: Resolve release channel
@@ -68,16 +71,14 @@ jobs:
 
         Write-Host "Release tag $tagName is reachable from $requiredBranch"
         
-    - name: Install dependencies
-      run: |
-        if (Test-Path ".npmrc") { Remove-Item ".npmrc" -Force }
-        npm cache verify
-        npm install
-        cd backend
-        npm install
-        cd ../frontend
-        npm install
-      shell: powershell
+    - name: Install desktop dependencies
+      run: npm ci
+
+    - name: Install backend dependencies
+      run: npm ci --prefix backend
+
+    - name: Install frontend dependencies
+      run: npm ci --prefix frontend
 
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable

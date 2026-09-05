@@ -163,6 +163,7 @@ async function postBundle(body, token) {
 }
 
 async function uploadDiagnostics() {
+  await logService.flush();
   const body = buildBundle(collectPanelLogs(), collectLaunchLog());
   const session = localSessionService.get();
   const result = await postBundle(body, session && session.token);

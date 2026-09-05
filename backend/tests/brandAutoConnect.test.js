@@ -2,6 +2,7 @@ const mockMem = new Map();
 jest.mock('../utils/fileStorage', () => ({
   getItem: (key) => (mockMem.has(key) ? mockMem.get(key) : null),
   setItem: (key, value) => { mockMem.set(key, String(value)); },
+  setItemAsync: async (key, value) => { mockMem.set(key, String(value)); },
 }));
 
 const mockDevices = [];
