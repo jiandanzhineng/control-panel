@@ -182,6 +182,25 @@ const reporting = {
   },
 };
 
+const attitude = {
+  key: 'attitude',
+  name: '姿态感知',
+  value: {
+    source: { op: 'prop', key: 'quat' },
+    watch: ['quat'],
+  },
+  actions: {
+    startMagCalibration: (ctx) => ctx.sendMessage({ method: 'action', action: 'mag_cal_start' }),
+    endMagCalibration: (ctx) => ctx.sendMessage({ method: 'action', action: 'mag_cal_end' }),
+  },
+  events: {
+    attitudeChange: {
+      watch: [{ type: 'prop', key: 'quat' }],
+      trigger: () => true,
+    },
+  },
+};
+
 const motors = {
   key: 'motors',
   name: '多路电机',
@@ -224,6 +243,7 @@ const capabilityDefinitions = {
   buttonInput,
   weight,
   reporting,
+  attitude,
   motors,
   estim,
   pump,
@@ -269,6 +289,7 @@ module.exports = {
   buttonInput,
   weight,
   reporting,
+  attitude,
   motors,
   estim,
   pump,

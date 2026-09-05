@@ -24,6 +24,7 @@ const SAFE_DISCONNECT_PROPERTIES = Object.freeze({
     power: 0,
     report_delay_ms: 5000,
   },
+  DAN01: { report_delay_ms: 200 },
 });
 
 function bytesFromDataView(value) {

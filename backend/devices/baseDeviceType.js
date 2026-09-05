@@ -62,6 +62,9 @@ class BaseDeviceType {
       name: override.name || base.name || capabilityKey,
       actions: override.actions || base.actions || {},
       value: override.value || base.value || null,
+      monitorData: Array.isArray(override.monitorData)
+        ? override.monitorData
+        : getMonitorSpec(capabilityKey),
     };
   }
 
@@ -80,7 +83,7 @@ class BaseDeviceType {
     const rows = [];
     const seen = new Set();
     for (const key of this.capabilityKeys) {
-      for (const item of getMonitorSpec(key)) {
+      for (const item of this.resolveCapability(key).monitorData) {
         if (!item?.key || seen.has(item.key)) continue;
         rows.push(item);
         seen.add(item.key);
@@ -98,7 +101,7 @@ class BaseDeviceType {
         key: cap.key,
         name: cap.name,
         actions: cap.actions,
-        monitorData: getMonitorSpec(key),
+        monitorData: cap.monitorData,
       };
     }
     return result;

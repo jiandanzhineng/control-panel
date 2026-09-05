@@ -33,6 +33,9 @@ describe('BLE hardware protocol', () => {
   it('handles string properties and JSON message channels', () => {
     expect(decodePropertyValue('device_type', new TextEncoder().encode('TD01'))).toBe('TD01');
     expect(new TextDecoder().decode(encodePropertyValue('line1_text', 'ready'))).toBe('ready');
+    expect(decodePropertyValue('quat', new TextEncoder().encode('ff7f000000000000')))
+      .toBe('ff7f000000000000');
+    expect(decodePropertyValue('height', Uint8Array.from([0, 0, 72, 65]))).toBe(12.5);
 
     const message = { method: 'action', action: 'blink' };
     expect(decodeMessage(encodeMessage(message))).toEqual(message);

@@ -11,6 +11,15 @@ const monitorSpecByCapability = {
     { key: 'button0', name: '脚踏1', unit: '状态' },
     { key: 'button1', name: '脚踏2', unit: '状态' },
   ],
+  attitude: [
+    { key: 'quat', name: '四元数', unit: '', visualization: 'attitude', chart: false },
+    { key: 'accel', name: '加速度', unit: 'm/s²', chart: false },
+    { key: 'gyro', name: '角速度', unit: '°/s', chart: false },
+    { key: 'mag', name: '磁场', unit: 'μT', chart: false },
+    { key: 'temperature', name: '温度', unit: '℃' },
+    { key: 'height', name: '高度', unit: 'm' },
+    { key: 'mag_accuracy', name: '磁力计精度', unit: '', chart: false },
+  ],
 };
 
 function getMonitorSpec(capabilityKey) {

@@ -115,6 +115,29 @@ const registeredTypes = [
     close: (ctx) => ctx.writeProps({ shock: 0, voltage: 0, power: 0 }),
   }),
 
+  new BaseDeviceType({
+    type: 'DAN01',
+    name: '十轴姿态传感器',
+    capabilities: {
+      attitude: {},
+      reporting: {},
+      buttonInput: {
+        monitorData: [{ key: 'button0', name: '板载按键', unit: '状态', chart: false }],
+      },
+    },
+    operations: [
+      {
+        key: 'magCalStart', name: '开始磁场校准',
+        capability: 'attitude', action: 'startMagCalibration', input: {},
+      },
+      {
+        key: 'magCalEnd', name: '结束磁场校准',
+        capability: 'attitude', action: 'endMagCalibration', input: {},
+      },
+    ],
+    close: (ctx) => ctx.writeProps({ report_delay_ms: 200 }),
+  }),
+
   // 郊狼：shock=双通道同强度；estim=分通道+波形预设。
   new BaseDeviceType({
     type: 'DGLAB',
