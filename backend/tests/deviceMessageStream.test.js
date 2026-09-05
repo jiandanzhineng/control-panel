@@ -114,4 +114,22 @@ describe('device message stream route', () => {
 
     req.destroy();
   });
+
+  it('requests 100ms reports while monitor streaming and restores idle reports on close', async () => {
+    const sent = [];
+    deviceService.connectTransportDevice(
+      { id: 'sensor-1', name: '姿态传感器', type: 'DAN01', connectionType: 'serial' },
+      { kind: 'serial', send: (payload) => sent.push(payload) },
+    );
+
+    server = createApp().listen(0);
+    const { req, res } = await listenSse(server, '/api/devices/sensor-1/monitor-stream');
+    expect(res.statusCode).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sent).toContainEqual({ method: 'update', report_delay_ms: 100 });
+
+    req.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(sent.at(-1)).toEqual({ method: 'update', report_delay_ms: 5000 });
+  });
 });

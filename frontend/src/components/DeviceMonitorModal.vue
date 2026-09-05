@@ -141,8 +141,6 @@ const monitorConfig = ref({})
 const currentData = ref({})
 const lastUpdateTime = ref('')
 const chartData = ref({})
-const updateTimer = ref(null)
-const pendingUpdates = ref({})
 
 const hasMonitorData = computed(() => {
   return Object.keys(monitorConfig.value).length > 0
@@ -282,43 +280,21 @@ function handleRealtimeData(data) {
   if (!data || !data.data) return
   
   const timestamp = data.timestamp || new Date().toISOString()
-  
-  // 累积待更新的数据
-  Object.assign(pendingUpdates.value, data.data)
-  
-  // 防抖处理，200ms 内只执行最后一次更新
-  if (updateTimer.value) {
-    clearTimeout(updateTimer.value)
-  }
-  
-  updateTimer.value = setTimeout(() => {
-    // 批量更新当前数据
-    currentData.value = { ...currentData.value, ...pendingUpdates.value }
-    lastUpdateTime.value = new Date(timestamp).toLocaleString()
-    
-    // 批量更新图表数据
-    for (const [key, value] of Object.entries(pendingUpdates.value)) {
-      if (monitorConfig.value[key] && typeof value === 'number') {
-        if (!chartData.value[key]) {
-          chartData.value[key] = []
-        }
-        
-        chartData.value[key].push({
-          time: new Date(timestamp).toLocaleTimeString(),
-          value: value
-        })
-        
-        // 保持最多50个数据点
-        if (chartData.value[key].length > 50) {
-          chartData.value[key].shift()
-        }
+  const updates = data.data
+  currentData.value = { ...currentData.value, ...updates }
+  lastUpdateTime.value = new Date(timestamp).toLocaleString()
+  const chartTime = new Date(timestamp).toLocaleTimeString()
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (monitorConfig.value[key] && typeof value === 'number') {
+      if (!chartData.value[key]) {
+        chartData.value[key] = []
       }
+
+      chartData.value[key].push({ time: chartTime, value })
+      if (chartData.value[key].length > 50) chartData.value[key].shift()
     }
-    
-    // 清空待更新数据
-    pendingUpdates.value = {}
-    updateTimer.value = null
-  }, 200)
+  }
 }
 
 function closeConnection() {
@@ -327,13 +303,7 @@ function closeConnection() {
     eventSource.value = null
   }
   
-  if (updateTimer.value) {
-    clearTimeout(updateTimer.value)
-    updateTimer.value = null
-  }
-  
   connected.value = false
-  pendingUpdates.value = {}
 }
 
 watch(() => props.visible, (newVisible) => {

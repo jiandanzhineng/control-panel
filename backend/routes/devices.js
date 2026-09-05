@@ -435,7 +435,7 @@ router.get('/:id/monitor-stream', (req, res) => {  const deviceId = req.params.i
     const initialData = { deviceId, type: device.type, data: device.data || {} };
     res.write(`event: history\ndata: ${JSON.stringify(initialData)}\n\n`);
 
-    deviceService.notifyDeviceUpdate(deviceId, { report_delay_ms: 250 });
+    deviceService.notifyDeviceUpdate(deviceId, { report_delay_ms: 100 });
 
     const dataChangeHandler = (eventData) => {
       if (eventData.deviceId === deviceId) {
