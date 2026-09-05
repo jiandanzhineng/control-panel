@@ -44,6 +44,12 @@ let appTray = null;
 let closeAskInFlight = false;
 let localAppWindow = null;
 
+function quitAndInstallUpdate() {
+  void quitCoordinator.quitAfterShutdown(() => {
+    autoUpdater.quitAndInstall(true, true);
+  });
+}
+
 function getUpdateSettingsPath() {
   return path.join(app.getPath('userData'), 'update-settings.json');
 }
@@ -836,10 +842,10 @@ async function initAutoUpdate() {
           defaultId: 0,
         })
         .then(({ response }) => {
-          if (response === 0) autoUpdater.quitAndInstall();
+          if (response === 0) quitAndInstallUpdate();
         });
     } catch {
-      autoUpdater.quitAndInstall();
+      quitAndInstallUpdate();
     }
   });
 
