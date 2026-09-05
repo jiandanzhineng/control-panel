@@ -1,3 +1,7 @@
+const { installStdioErrorGuards } = require('./stdioErrorGuard.js');
+
+installStdioErrorGuards();
+
 const path = require('path');
 const { app, BrowserWindow, dialog, ipcMain, shell, webContents } = require('electron');
 
