@@ -35,7 +35,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { track } from '../analytics';
+import { trackPlayEnd } from '../playAnalytics';
 import { clearActivePlay } from '../composables/useActivePlay';
 import { listenDeviceButtonPress } from '../composables/useButtonStart';
 import PlayCarrierShell from '../components/PlayCarrierShell.vue';
@@ -102,9 +102,9 @@ async function stopCurrentBridge() {
   } catch (_) {}
 }
 
-async function stopGame() {
+async function stopGame(reason = 'user_stop') {
   stopping.value = true;
-  track('game_stop', { game_id: String(route.query.id || 'unknown') });
+  trackPlayEnd(reason);
   await stopCurrentBridge();
   clearActivePlay();
   iframeSrc.value = '';
@@ -113,7 +113,7 @@ async function stopGame() {
 }
 
 function cancelWait() {
-  void stopGame();
+  void stopGame('cancel_wait');
 }
 
 async function startWaiting(deviceId: string) {
@@ -142,6 +142,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  trackPlayEnd('leave');
   stopCurrentBridge();
 });
 </script>

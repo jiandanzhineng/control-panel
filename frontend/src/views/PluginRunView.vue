@@ -34,6 +34,7 @@
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
+import { trackPlayEnd } from '../playAnalytics';
 import { clearActivePlay } from '../composables/useActivePlay';
 import PlayCarrierShell from '../components/PlayCarrierShell.vue';
 
@@ -62,6 +63,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  trackPlayEnd('leave');
   stopBridgeOnly();
 });
 
@@ -124,6 +126,7 @@ async function stopBridgeOnly() {
 
 async function stopPlugin() {
   stopping.value = true;
+  trackPlayEnd('user_stop');
   await stopBridgeOnly();
   stopped.value = true;
   clearActivePlay();

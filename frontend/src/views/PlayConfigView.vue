@@ -478,7 +478,8 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { track } from '../analytics';
+import { trackPlayStart } from '../playAnalytics';
+import { mappedDeviceCount, mappedDeviceTypes, mappedRoles } from '../playSession';
 import { setActivePlay } from '../composables/useActivePlay';
 import { listenDeviceButtonPress } from '../composables/useButtonStart';
 import { currentLocale } from '../i18n';
@@ -1240,9 +1241,14 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
     const playTitle = title.value;
 
     if (carrierType.value === 'game') {
-      track('game_start', {
-        game_id: playId.value || externalUrl || 'unknown',
-        device_count: Object.keys(deviceMapping).length,
+      trackPlayStart({
+        carrier: 'game',
+        id: playId.value || externalUrl || 'unknown',
+        version: String(play.value?.version || ''),
+        source: String(play.value?.source || route.query.source || ''),
+        device_types: mappedDeviceTypes(deviceMapping, devices.value),
+        roles: mappedRoles(deviceMapping),
+        device_count: mappedDeviceCount(deviceMapping),
       });
       const resumeQuery: Record<string, string> = {
         id: playId.value,
@@ -1273,9 +1279,14 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
       });
       const data = await res.json();
       if (!res.ok) throw new Error(apiErrorMessage(data, t('playConfig.pluginStartFailed')));
-      track('plugin_start', {
-        plugin_id: playId.value,
-        device_count: Object.keys(deviceMapping).length,
+      trackPlayStart({
+        carrier: 'plugin',
+        id: playId.value,
+        version: String(play.value?.version || ''),
+        source: String(play.value?.source || 'plugin'),
+        device_types: mappedDeviceTypes(deviceMapping, devices.value),
+        roles: mappedRoles(deviceMapping),
+        device_count: mappedDeviceCount(deviceMapping),
       });
       setActivePlay({ carrierType: 'plugin', id: playId.value, title: playTitle, resume: { name: 'plugin_run', params: { id: playId.value } } });
       router.push({ name: 'plugin_run', params: { id: playId.value } });

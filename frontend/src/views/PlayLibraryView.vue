@@ -118,6 +118,7 @@ import { ref, computed, onMounted, watch, markRaw } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { track } from '../analytics';
+import { trackPlayEnd } from '../playAnalytics';
 import { useActivePlay, clearActivePlay } from '../composables/useActivePlay';
 import LocalAppCard from '../components/LocalAppCard.vue';
 import { currentLocale } from '../i18n';
@@ -268,7 +269,7 @@ async function stopCurrent() {
       }
       const result = await window.pluginApi.stopCurrent();
       if (result?.ok === false) throw new Error(result.error || t('plays.stopPluginFailed'));
-      track('plugin_stop', { plugin_id: current.id });
+      trackPlayEnd('user_stop');
     } else {
       const res = await fetch('/api/games/stop-current', { method: 'POST' });
       const data = await res.json().catch(() => ({}));
@@ -277,7 +278,7 @@ async function stopCurrent() {
         return;
       }
       if (!res.ok || data.error) throw new Error(data?.message || t('plays.stopFailed'));
-      track('game_stop');
+      trackPlayEnd('user_stop');
     }
     if (current?.carrierType === 'local-app') {
       await window.localAppWindowApi?.close();

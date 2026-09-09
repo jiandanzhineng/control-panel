@@ -4,6 +4,7 @@
 - 前端组件按需导入使用 `unplugin-vue-components@29.2.0`，配置在 `frontend/vite.config.ts`。保留 Element Plus 全局样式以维持主题覆盖顺序，图标由各组件显式导入。
 - 设备上报保存窗口为 1 秒，异步写临时文件后替换设备记录；日志每 100ms 批量追加。后端退出、日志下载与诊断上传会等待相应队列完成。
 
+- 玩法统计（2026-09-09）：走 OpenPanel 看板 `https://op.shiroha.tech`，事件 `game_start`/`game_stop`（及插件对应事件）。属性含 version、source、device_types、roles、duration_ms、end_reason。无 heartbeat。上报 `https://op.shiroha.tech/api/track`。
 - 游戏平台生产 API（2026-09-05）：`https://game-api.undersilicon.cn` 部署在 `47.242.37.88`，systemd 服务 `game-platform` 仅监听 `127.0.0.1:8787`。程序 `/opt/game-platform/current/game-platform`，配置 `/etc/game-platform/game-platform.env`，SQLite `/var/lib/game-platform/game-platform.db`，Nginx `/etc/nginx/conf.d/game-api.undersilicon.cn.conf`。日志用 `journalctl -u game-platform`。
 - 游戏平台 OSS：公开 bucket `ezs-games`；待审 bucket `ezs-game-submissions` 为 private，只允许 `https://game.undersilicon.cn` POST，`submissions/` 7 天清理。ESA 站点 `undersilicon.cn` 的既有 API/admin 缓存规则已补 `no_cache`，全局 CORS 规则排除 `game-api.undersilicon.cn`，由源站返回精确 Origin。
 - 2026-09-05 生产验证：mobile `/me` 返回 `isAdmin: true`，game API 映射为 `admin`；ZIP 创建、OSS 直传、归档校验、待审、退回、批准发布和下架均通过。Electron 生产构建经 CDP 验证从 `/games/cache/` 运行已发布包，QA 页面进入 `ready`，无控制台或资源加载错误。
