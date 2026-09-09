@@ -479,7 +479,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { trackPlayStart } from '../playAnalytics';
-import { mappedDeviceCount, mappedDeviceTypes, mappedRoles } from '../playSession';
+import { mappedDeviceCount, mappedDeviceMacs, mappedDeviceTypes, mappedRoles } from '../playSession';
 import { setActivePlay } from '../composables/useActivePlay';
 import { listenDeviceButtonPress } from '../composables/useButtonStart';
 import { currentLocale } from '../i18n';
@@ -1247,6 +1247,7 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
         version: String(play.value?.version || ''),
         source: String(play.value?.source || route.query.source || ''),
         device_types: mappedDeviceTypes(deviceMapping, devices.value),
+        device_macs: mappedDeviceMacs(deviceMapping),
         roles: mappedRoles(deviceMapping),
         device_count: mappedDeviceCount(deviceMapping),
       });
@@ -1285,6 +1286,7 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
         version: String(play.value?.version || ''),
         source: String(play.value?.source || 'plugin'),
         device_types: mappedDeviceTypes(deviceMapping, devices.value),
+        device_macs: mappedDeviceMacs(deviceMapping),
         roles: mappedRoles(deviceMapping),
         device_count: mappedDeviceCount(deviceMapping),
       });

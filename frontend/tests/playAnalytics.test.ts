@@ -4,6 +4,7 @@ import test from 'node:test'
 import {
   durationMs,
   mappedDeviceCount,
+  mappedDeviceMacs,
   mappedDeviceTypes,
   mappedRoles,
   playEventProps,
@@ -14,7 +15,7 @@ test('uniqueSorted drops blanks and sorts', () => {
   assert.equal(uniqueSorted(['TD01', '', 'CUNZHI01', 'TD01']), 'CUNZHI01,TD01')
 })
 
-test('mapped device fields ignore empty roles and never emit ids', () => {
+test('mapped device fields ignore empty roles and report macs', () => {
   const mapping = {
     sensor: ['aa'],
     motor: ['bb', 'cc'],
@@ -27,6 +28,7 @@ test('mapped device fields ignore empty roles and never emit ids', () => {
   ]
   assert.equal(mappedRoles(mapping), 'motor,sensor')
   assert.equal(mappedDeviceCount(mapping), 3)
+  assert.equal(mappedDeviceMacs(mapping), 'aa,bb,cc')
   assert.equal(mappedDeviceTypes(mapping, devices), 'CUNZHI01,TD01')
 })
 
@@ -37,6 +39,7 @@ test('playEventProps uses game_id or plugin_id', () => {
     version: '1.3.6',
     source: 'remote',
     device_types: 'CUNZHI01,TD01',
+    device_macs: 'aa,bb',
     roles: 'motor,sensor',
     device_count: 2,
   }

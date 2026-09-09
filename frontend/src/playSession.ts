@@ -6,6 +6,7 @@ export type PlaySession = {
   version: string;
   source: string;
   device_types: string;
+  device_macs: string;
   roles: string;
   device_count: number;
   startedAt: number;
@@ -29,6 +30,14 @@ export function mappedDeviceCount(mapping: Record<string, string[]> | null | und
     for (const id of list || []) if (id) ids.add(id);
   }
   return ids.size;
+}
+
+export function mappedDeviceMacs(mapping: Record<string, string[]> | null | undefined): string {
+  const ids: string[] = [];
+  for (const list of Object.values(mapping || {})) {
+    for (const id of list || []) if (id) ids.push(id);
+  }
+  return uniqueSorted(ids);
 }
 
 export function mappedDeviceTypes(
@@ -56,6 +65,7 @@ export function playEventProps(
     version: session.version,
     source: session.source,
     device_types: session.device_types,
+    device_macs: session.device_macs,
     roles: session.roles,
     device_count: session.device_count,
     ...extra,
