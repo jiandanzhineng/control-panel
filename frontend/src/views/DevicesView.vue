@@ -912,6 +912,10 @@
     />
       </el-tab-pane>
 
+      <el-tab-pane :label="t('devices.batch')" name="batch">
+        <DeviceBatchControl :devices="devices" :type-configs="deviceTypeConfigs" />
+      </el-tab-pane>
+
       <el-tab-pane :label="t('devices.brands')" name="brands">
         <BrandsPanel />
       </el-tab-pane>
@@ -932,6 +936,7 @@ import { useRouter } from 'vue-router'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
 import RemoteProjectionPanel from '../components/RemoteProjectionPanel.vue'
 import BrandsPanel from '../components/BrandsPanel.vue'
+import DeviceBatchControl from '../components/DeviceBatchControl.vue'
 import { track } from '../analytics'
 import { listDevices, getDeviceTypes, getDeviceTypeConfigs } from '../api/devices'
 
@@ -1011,7 +1016,7 @@ function opName(operation: { key?: string; name?: string }) {
   return translated === i18nKey ? (operation?.name || key) : translated;
 }
 
-const activeTab = ref<'devices' | 'remote'>('devices');
+const activeTab = ref<'devices' | 'batch' | 'brands' | 'remote'>('devices');
 const devices = ref<Device[]>([]);
 const deviceTypeMap = ref<Record<string, string>>({});
 const deviceTypeConfigs = ref<Record<string, any>>({});
@@ -1419,6 +1424,10 @@ watch(selectedDeviceId, (deviceId) => {
     loadFirmwareInfo(deviceId);
     setupOtaStatusConnection(deviceId);
   }
+});
+
+watch(activeTab, (tab) => {
+  if (tab === 'batch') refreshDevices().catch(() => {});
 });
 
 function handleCurrentChange(currentRow: Device | null) {

@@ -26,6 +26,20 @@ router.delete('/all', async (req, res) => {
   }
 });
 
+router.post('/batch/operations', (req, res) => {
+  try {
+    const result = deviceService.batchExecuteOperation({
+      type: req.body?.type,
+      operationKey: req.body?.operationKey,
+      deviceIds: req.body?.deviceIds,
+      params: (req.body && req.body.params) || {},
+    });
+    res.json(result);
+  } catch (e) {
+    sendError(res, e.code || 'DEVICE_BATCH_OPERATION_FAILED', e.message || String(e), e.status || 500);
+  }
+});
+
 function getBatchFirmwareDevices(scope = 'online') {
   const rows = deviceService.listDevicesForApi();
   if (scope === 'all') return rows;

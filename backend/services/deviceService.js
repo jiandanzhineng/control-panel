@@ -821,6 +821,61 @@ function deviceHasCapabilities(deviceId, capabilities = []) {
   return device ? deviceRegistry.hasCapabilities(device.type, capabilities) : false;
 }
 
+function _batchThrow(code, message, status = 400) {
+  const error = new Error(message);
+  error.code = code;
+  error.status = status;
+  throw error;
+}
+
+function _batchResolveTargets(typeKey, deviceIds) {
+  const ofType = listDevicesForApi().filter((d) => d.type === typeKey);
+  const requested = Array.isArray(deviceIds)
+    ? [...new Set(deviceIds.map((id) => String(id || '').trim()).filter(Boolean))]
+    : [];
+  if (requested.length === 0) return ofType.filter((d) => d.connected);
+  const targets = requested.map((id) => ofType.find((d) => d.id === id) || getDeviceForApi(id) || { id, missing: true });
+  const mismatch = targets.find((d) => !d.missing && d.type !== typeKey);
+  if (mismatch) _batchThrow('DEVICE_TYPE_MISMATCH', `设备 ${mismatch.id} 不是类型 ${typeKey}`);
+  return targets;
+}
+
+function batchExecuteOperation({ type, operationKey, deviceIds, params = {} } = {}) {
+  const typeKey = String(type || '').trim();
+  const opKey = String(operationKey || '').trim();
+  if (!typeKey) _batchThrow('DEVICE_TYPE_REQUIRED', '缺少设备类型');
+  if (!opKey) _batchThrow('DEVICE_OPERATION_REQUIRED', '缺少操作');
+  const deviceType = deviceRegistry.getDeviceType(typeKey);
+  const supported = (deviceType.operations || []).some((op) => op && op.key === opKey);
+  if (!supported) _batchThrow('DEVICE_OPERATION_NOT_SUPPORTED', `设备类型 ${typeKey} 不支持操作: ${opKey}`);
+  const results = [];
+  let ok = 0;
+  let failed = 0;
+  let skipped = 0;
+  for (const device of _batchResolveTargets(typeKey, deviceIds)) {
+    const id = device.id;
+    if (device.missing) {
+      results.push({ id, ok: false, error: { code: 'DEVICE_NOT_FOUND', message: '设备不存在' } });
+      failed += 1;
+      continue;
+    }
+    if (!device.connected) {
+      results.push({ id, ok: false, skipped: true });
+      skipped += 1;
+      continue;
+    }
+    try {
+      executeDeviceOperation(id, opKey, params);
+      results.push({ id, ok: true });
+      ok += 1;
+    } catch (error) {
+      results.push({ id, ok: false, error: { code: error.code || 'OPERATION_FAILED', message: error.message } });
+      failed += 1;
+    }
+  }
+  return { type: typeKey, operationKey: opKey, total: results.length, ok, failed, skipped, results };
+}
+
 module.exports = {
   // 状态与快照
   state,
@@ -871,6 +926,7 @@ module.exports = {
   // 设备操作和监控数据相关
   executeDeviceOperation,
   executeDeviceOperationAndWait,
+  batchExecuteOperation,
   invokeDeviceCapability,
   invokeDeviceCapabilityAndWait,
   invokeDeviceClose,

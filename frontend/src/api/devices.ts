@@ -90,6 +90,28 @@ export function executeDeviceOperation(id: string, opKey: string, payload: Recor
   });
 }
 
+export interface BatchOperationResult {
+  type: string;
+  operationKey: string;
+  total: number;
+  ok: number;
+  failed: number;
+  skipped: number;
+  results: Array<{ id: string; ok: boolean; skipped?: boolean; error?: { code?: string; message?: string } }>;
+}
+
+export function batchExecuteOperation(body: {
+  type: string;
+  operationKey: string;
+  deviceIds?: string[];
+  params?: Record<string, unknown>;
+}): Promise<BatchOperationResult> {
+  return request<BatchOperationResult>('/api/devices/batch/operations', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
 export function invokeCapability(
   id: string,
   capability: string,
