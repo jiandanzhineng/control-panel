@@ -37,6 +37,9 @@
                 <el-dropdown-item command="serial" :icon="Link" :disabled="serialBusy">
 {{ serialBusy ? t('devices.serialConnecting') : t('devices.serialConnect') }}
                 </el-dropdown-item>
+                <el-dropdown-item command="batch" :icon="Operation">
+                  {{ t('devices.batch') }}
+                </el-dropdown-item>
                 <el-dropdown-item command="firmware" :icon="Upload">
                   {{ t('firmware.title') }}
                 </el-dropdown-item>
@@ -910,10 +913,13 @@
       :device-info="monitorDevice"
       @close="closeMonitorModal"
     />
-      </el-tab-pane>
-
-      <el-tab-pane :label="t('devices.batch')" name="batch">
-        <DeviceBatchControl :devices="devices" :type-configs="deviceTypeConfigs" />
+    <el-dialog
+      v-model="batchDialogVisible"
+      :title="t('devices.batch')"
+      width="min(720px, calc(100vw - 24px))"
+    >
+      <DeviceBatchControl :devices="devices" :type-configs="deviceTypeConfigs" />
+    </el-dialog>
       </el-tab-pane>
 
       <el-tab-pane :label="t('devices.brands')" name="brands">
@@ -931,7 +937,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Link, Loading, SetUp, Tools } from '@element-plus/icons-vue'
+import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Link, Loading, SetUp, Tools, Operation } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
 import RemoteProjectionPanel from '../components/RemoteProjectionPanel.vue'
@@ -1016,7 +1022,8 @@ function opName(operation: { key?: string; name?: string }) {
   return translated === i18nKey ? (operation?.name || key) : translated;
 }
 
-const activeTab = ref<'devices' | 'batch' | 'brands' | 'remote'>('devices');
+const activeTab = ref<'devices' | 'brands' | 'remote'>('devices');
+const batchDialogVisible = ref(false);
 const devices = ref<Device[]>([]);
 const deviceTypeMap = ref<Record<string, string>>({});
 const deviceTypeConfigs = ref<Record<string, any>>({});
@@ -1287,14 +1294,21 @@ async function updateSerialAutoConnect(value: boolean | string | number) {
   }
 }
 
-function handleDeviceToolCommand(command: 'provision' | 'serial' | 'firmware') {
+function handleDeviceToolCommand(command: 'provision' | 'serial' | 'firmware' | 'batch') {
   if (command === 'provision') {
     openProvisionDialog();
   } else if (command === 'serial') {
     openSerialDialog();
   } else if (command === 'firmware') {
     router.push('/devices/firmware');
+  } else if (command === 'batch') {
+    openBatchDialog();
   }
+}
+
+function openBatchDialog() {
+  batchDialogVisible.value = true;
+  refreshDevices().catch(() => {});
 }
 
 async function openSerialDialog() {
@@ -1426,8 +1440,8 @@ watch(selectedDeviceId, (deviceId) => {
   }
 });
 
-watch(activeTab, (tab) => {
-  if (tab === 'batch') refreshDevices().catch(() => {});
+watch(batchDialogVisible, (open) => {
+  if (open) refreshDevices().catch(() => {});
 });
 
 function handleCurrentChange(currentRow: Device | null) {
