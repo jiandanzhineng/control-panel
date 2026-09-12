@@ -16,6 +16,7 @@ jest.mock('../services/firmwareOtaService', () => ({}));
 
 const mqttClient = require('../services/mqttClientService');
 const deviceService = require('../services/deviceService');
+const virtualDeviceService = require('../services/virtualDeviceService');
 
 function addConnectedDevice({ id, name, type }) {
   return deviceService.connectTransportDevice(
@@ -91,6 +92,20 @@ describe('batchExecuteOperation', () => {
       operationKey: 'unlock',
       deviceIds: ['shock-1'],
     })).toThrow(/不是类型/);
+  });
+
+  it('unlocks in-process virtual locks and records commands', () => {
+    for (let i = 0; i < 10; i += 1) {
+      virtualDeviceService.createDevice({ id: `vlock-${i}`, type: 'ZIDONGSUO', properties: { open: 0 } });
+    }
+    const result = deviceService.batchExecuteOperation({
+      type: 'ZIDONGSUO',
+      operationKey: 'unlock',
+    });
+    expect(result).toMatchObject({ total: 10, ok: 10, failed: 0, skipped: 0 });
+    expect(virtualDeviceService.getDevice('vlock-0').properties.open).toBe(1);
+    expect(virtualDeviceService.getCommands('vlock-9').some((cmd) => cmd.props && cmd.props.open === 1)).toBe(true);
+    for (let i = 0; i < 10; i += 1) virtualDeviceService.deleteDevice(`vlock-${i}`);
   });
 });
 

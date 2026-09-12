@@ -629,7 +629,10 @@ function executeDeviceOperation(deviceId, operationKey, params = {}) {
   }
   const deviceType = deviceRegistry.getDeviceType(device.type);
   try {
-    deviceType.invokeOperation(deviceId, operationKey, params, devicePublishFn);
+    deviceType.invokeOperation(deviceId, operationKey, params, (id, message) => {
+      if (_interceptVirtualWrite(id, message)) return message;
+      return devicePublishFn(id, message);
+    });
     return { success: true, message: '操作执行成功' };
   } catch (error) {
     const wrappedError = new Error(`操作执行失败: ${error.message}`);
