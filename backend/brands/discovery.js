@@ -61,10 +61,14 @@ function nativeBridgePort(brand, port) {
   return brand === 'dglab' ? 3002 : 3001;
 }
 
-/** 经本机桥列出附近品牌蓝牙，不走 noble / 网页蓝牙。 */
+/** 列出附近品牌蓝牙。未注入 fetchImpl 时走 noble；测试仍可注入本机桥 HTTP。 */
 async function listNativeBle({ brand, port, fetchImpl } = {}) {
+  if (!fetchImpl) {
+    const nobleBle = require('./nobleBle');
+    return nobleBle.scan({ brand, timeoutMs: 4000 });
+  }
   const p = nativeBridgePort(brand, port);
-  const fetchFn = fetchImpl || globalThis.fetch.bind(globalThis);
+  const fetchFn = fetchImpl;
   const base = `http://127.0.0.1:${p}`;
   try { await fetchFn(`${base}/api/rescan`, { method: 'POST' }); } catch (_) { /* 扫描已在跑 */ }
   const res = await fetchFn(`${base}/api/devices`);

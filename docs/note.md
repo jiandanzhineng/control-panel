@@ -27,7 +27,8 @@
 - 国内账号/诊断库在 `47.116.46.164`（control_panel_mobile `.env` 的 SERVER_IP），SSH `root` + `~/.ssh/ci.pem`。容器 `undersilicon-cn-api-1` / `undersilicon-cn-postgres-1`，库 `undersilicon_api`。后台 `https://undersilicon-admin.pages.dev/telemetry` 打 `https://api.undersilicon.cn`，就是这台。查包：`docker exec undersilicon-cn-postgres-1 psql -U undersilicon -d undersilicon_api`，表 `diagnostic_log_bundles`。`GET /admin/telemetry/log-bundles` 带 `Cache-Control: max-age=86400`，浏览器会缓存列表一天。
 - 诊断日志上传：日志管理页「上传诊断日志」→ `POST /api/logs/upload-diagnostics` → 国内 `POST https://api.undersilicon.cn/telemetry/log-bundles`，`reason=user_report`。匿名 id 在 `BACKEND_DATA_DIR/diagnostic-anonymous-id.json`。页面「完整日志包」只拉最近 40 条。数字人 stdout 模块名 `DigitalHuman`，文件 `current/tmp_launch.log`。
 - 品牌设备相关测试：`cd backend; npm test -- --runInBand tests/brandDevices.test.js tests/webBle.test.js tests/dglabV2.test.js`
-- Windows 品牌蓝牙产品路径：主进程监管 `tools/ycy_bridge.exe`、`dglab_bridge.exe`，后端 `brandService` 经 `127.0.0.1:3001/3002` 扫描连接并登记设备。前端只 REST。网页蓝牙仅开发用、不进设备层。设备 ID 为 12 位小写 MAC（无冒号、无 `ycy:` 前缀），与其它设备一致。
+- Windows 品牌蓝牙产品路径（feat/noble-brand-ble）：后端 `@stoprocent/noble` 直连 WinRT，不经 `ycy_bridge`。注入 `fetchImpl` 的测试仍走旧本机桥 HTTP。网页蓝牙仅开发用。设备 ID 仍为 12 位小写 MAC。
+- ESP32-C3 模拟杯：COM17（CH343），芯片 MAC `60:55:f9:7c:34:2c`，BLE 地址 `60:55:f9:7c:34:2e`，广播名 `YCY-FJB-03`，GATT `FF40/FF41写/FF42通知`。固件 MicroPython `tools/ycy-c3-mock/main.py`。真机命令：`node tools/noble-ycy-e2e.js`。esptool 用 IDF 5.5 venv：`C:\Users\46907\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe -m esptool`。
 - 编桥：`%USERPROFILE%\.cargo\bin\cargo.exe build --release --manifest-path bridge/Cargo.toml`，再 `npm run build:bridge`。Windows `PeripheralId` 用平台地址字符串，禁止当 UUID。
 - Vite 纯浏览器网页蓝牙只用于开发连 GATT，不保证登记进设备层，不能映射玩法。产品以 Electron 为准。Mac 本机桥连上后走 `/api/brands/connect` mode=native，控制仍走能力接口。
 - 品牌网页蓝牙自动连接设置：`GET/PUT /api/brands/settings`，名单 `GET /api/brands/saved-ble`，默认 autoConnect / autoConnectAll 均为 true。役次元 Chromium 设备 ID 会随 BLE 随机地址变，自动连按广播名静默扫描，沿用已保存设备 id。

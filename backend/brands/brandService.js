@@ -11,6 +11,7 @@ const { YcyWebBleConnection } = require('./ycyWebBleConnection');
 const { SosexyWebBleConnection } = require('./sosexyWebBleConnection');
 const { GxpWebBleConnection } = require('./gxpWebBleConnection');
 const { NativeBridgeConnection } = require('./nativeBridgeConnection');
+const { NobleBleConnection } = require('./nobleConnection');
 const dglabV2 = require('./protocols/dglabV2');
 const discovery = require('./discovery');
 const ycyProto = require('./protocols/ycy');
@@ -194,11 +195,15 @@ async function connect(brand, opts = {}) {
     type = brand === 'dglab'
       ? 'DGLAB'
       : resolveDeviceType(brand, { model: name, mode: 'ble', type: opts.type });
-    connection = new NativeBridgeConnection({
-      brand, deviceId: finalDeviceId, address: opts.address,
-      port: opts.port || (brand === 'dglab' ? 3002 : 3001), type,
-      fetchImpl: opts.fetchImpl,
-    });
+    connection = opts.fetchImpl
+      ? new NativeBridgeConnection({
+        brand, deviceId: finalDeviceId, address: opts.address,
+        port: opts.port || (brand === 'dglab' ? 3002 : 3001), type,
+        fetchImpl: opts.fetchImpl,
+      })
+      : new NobleBleConnection({
+        brand, deviceId: finalDeviceId, address: opts.address, type,
+      });
   } else if (brand === 'dglab') {
     const host = opts.host;
     const port = opts.port;
@@ -325,8 +330,13 @@ function scheduleReconnect(deviceId, kind, error) {
 // 依据既有 metadata 重建一个同类适配器（用于无原生 reconnect 的连接）。
 function rebuildConnection(deviceId, meta) {
   if (meta.mode === 'native') {
-    return new NativeBridgeConnection({
-      brand: meta.brand, deviceId, address: meta.address, port: meta.port, type: meta.type,
+    if (meta.kind === 'native-bridge') {
+      return new NativeBridgeConnection({
+        brand: meta.brand, deviceId, address: meta.address, port: meta.port, type: meta.type,
+      });
+    }
+    return new NobleBleConnection({
+      brand: meta.brand, deviceId, address: meta.address, type: meta.type,
     });
   }
   if (meta.brand === 'dglab') {
