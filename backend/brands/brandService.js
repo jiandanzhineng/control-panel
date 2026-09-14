@@ -641,19 +641,20 @@ async function tickAutoConnect() {
   try {
     const on = new Set(listSavedBleDevices().filter((d) => d.connected && d.name).map((d) => d.name.trim().toUpperCase()));
     const saved = listSavedBleDevices();
-    for (const brand of SUPPORTED) {
-      let found = [];
-      try { found = await discover(brand, { mode: 'native' }); } catch (_) { continue; }
-      for (const d of found) {
-        const name = String(d.name || '').trim().toUpperCase();
-        if (name && on.has(name)) continue;
-        const savedHit = saved.some((s) => bleNamesMatch(s.name, d.name));
-        if (!settings.autoConnectAll && !(settings.autoConnect && savedHit)) continue;
-        try {
-          await connect(brand, { mode: 'native', address: d.address, name: d.name, deviceId: d.deviceId });
-          if (name) on.add(name);
-        } catch (_) { /* 下一轮 */ }
-      }
+    const nobleBle = require('./nobleBle');
+    let found = [];
+    try { found = await nobleBle.scan(); } catch (_) { found = []; }
+    for (const d of found) {
+      const brand = nobleBle.detectBrand(d.name);
+      if (!brand) continue;
+      const name = String(d.name || '').trim().toUpperCase();
+      if (name && on.has(name)) continue;
+      const savedHit = saved.some((s) => bleNamesMatch(s.name, d.name));
+      if (!settings.autoConnectAll && !(settings.autoConnect && savedHit)) continue;
+      try {
+        await connect(brand, { mode: 'native', address: d.address, name: d.name });
+        if (name) on.add(name);
+      } catch (_) { /* 下一轮 */ }
     }
   } finally { autoBusy = false; }
 }

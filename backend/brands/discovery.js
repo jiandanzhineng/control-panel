@@ -65,7 +65,7 @@ function nativeBridgePort(brand, port) {
 async function listNativeBle({ brand, port, fetchImpl } = {}) {
   if (!fetchImpl) {
     const nobleBle = require('./nobleBle');
-    return nobleBle.scan({ brand, timeoutMs: 4000 });
+    return nobleBle.scan({ brand });
   }
   const p = nativeBridgePort(brand, port);
   const fetchFn = fetchImpl;

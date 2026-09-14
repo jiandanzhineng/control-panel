@@ -63,6 +63,42 @@ describe('NobleBle connect/write', () => {
   });
 });
 
+describe('nobleBle 扫描合并', () => {
+  test('并行 scan 只启动一次，第一台后很快返回', async () => {
+    let starts = 0;
+    const listeners = [];
+    const p = {
+      id: 'aa:bb:cc:dd:ee:ff',
+      address: 'aa:bb:cc:dd:ee:ff',
+      advertisement: { localName: 'YCY-FJB-03' },
+      rssi: -40,
+    };
+    const nobleImpl = {
+      state: 'poweredOn',
+      on(ev, fn) { if (ev === 'discover') listeners.push(fn); },
+      removeListener(ev, fn) {
+        const i = listeners.indexOf(fn);
+        if (i >= 0) listeners.splice(i, 1);
+      },
+      startScanningAsync: async () => {
+        starts += 1;
+        setImmediate(() => listeners.forEach((fn) => fn(p)));
+      },
+      stopScanningAsync: async () => {},
+    };
+    const ble = new NobleBle({ nobleImpl });
+    const t0 = Date.now();
+    const [ycyList, dglabList] = await Promise.all([
+      ble.scan({ brand: 'ycy' }),
+      ble.scan({ brand: 'dglab' }),
+    ]);
+    expect(starts).toBe(1);
+    expect(ycyList[0].name).toBe('YCY-FJB-03');
+    expect(dglabList).toEqual([]);
+    expect(Date.now() - t0).toBeLessThan(1500);
+  });
+});
+
 describe('NobleBleConnection 组帧', () => {
   test('setFjb 经 inner 写成 0x35 12', async () => {
     const written = [];

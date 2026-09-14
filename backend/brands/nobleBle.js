@@ -5,7 +5,8 @@
 const ycy = require('./protocols/ycy');
 
 const WRITE_HINTS = ['ff41', 'ff31', 'ff71', 'ae01', 'ff03', 'ee03'];
-const SCAN_MS = 5000;
+const SCAN_MS = 2500;
+const SETTLE_MS = 400;
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -40,6 +41,19 @@ function matchesBrand(brand, name) {
     || ['FJB', 'ENEMA', 'GLJ', 'DJ'].some((k) => n.includes(k));
 }
 
+function detectBrand(name) {
+  if (matchesBrand('sosexy', name)) return 'sosexy';
+  if (matchesBrand('gxp', name)) return 'gxp';
+  if (matchesBrand('dglab', name)) return 'dglab';
+  if (matchesBrand('ycy', name)) return 'ycy';
+  return null;
+}
+
+function filterBrand(list, brand) {
+  if (!brand) return list;
+  return list.filter((d) => matchesBrand(brand, d.name));
+}
+
 function isWritable(c) {
   const p = c.properties;
   if (!p) return false;
@@ -61,6 +75,7 @@ class NobleBle {
     this._noble = nobleImpl || null;
     this._peripherals = new Map();
     this._sessions = new Map();
+    this._scanShared = null;
   }
 
   noble() {
@@ -85,24 +100,52 @@ class NobleBle {
     });
   }
 
-  async scan({ brand = 'ycy', timeoutMs = SCAN_MS } = {}) {
+  async scan({ brand = null, timeoutMs = SCAN_MS, settleMs = SETTLE_MS } = {}) {
+    if (this._scanShared) {
+      return filterBrand(await this._scanShared, brand);
+    }
+    this._scanShared = this._runScan({ timeoutMs, settleMs });
+    try {
+      return filterBrand(await this._scanShared, brand);
+    } finally {
+      this._scanShared = null;
+    }
+  }
+
+  async _runScan({ timeoutMs, settleMs }) {
     const n = this.noble();
     await this.waitReady();
     const found = new Map();
+    let settle;
+    const done = new Promise((resolve) => { settle = resolve; });
+    let early = null;
     const onDiscover = (p) => {
       const name = nameOf(p);
-      if (!matchesBrand(brand, name)) return;
       const id = addrOf(p);
+      if (!id) return;
       this._peripherals.set(id, p);
+      if (!detectBrand(name)) return;
+      const isNew = !found.has(id);
       found.set(id, { id, address: id, name, rssi: p.rssi });
+      if (isNew && found.size === 1 && settleMs >= 0) {
+        early = setTimeout(() => settle('early'), settleMs);
+      }
     };
     n.on('discover', onDiscover);
-    if (typeof n.startScanningAsync === 'function') await n.startScanningAsync([], false);
-    else await new Promise((res, rej) => n.startScanning([], false, (e) => (e ? rej(e) : res())));
-    await sleep(timeoutMs);
-    if (typeof n.stopScanningAsync === 'function') await n.stopScanningAsync();
-    else await new Promise((res) => n.stopScanning(() => res()));
-    n.removeListener('discover', onDiscover);
+    try {
+      if (typeof n.startScanningAsync === 'function') await n.startScanningAsync([], false);
+      else await new Promise((res, rej) => n.startScanning([], false, (e) => (e ? rej(e) : res())));
+      const timer = setTimeout(() => settle('timeout'), timeoutMs);
+      await done;
+      clearTimeout(timer);
+      if (early) clearTimeout(early);
+    } finally {
+      n.removeListener('discover', onDiscover);
+      try {
+        if (typeof n.stopScanningAsync === 'function') await n.stopScanningAsync();
+        else await new Promise((res) => n.stopScanning(() => res()));
+      } catch (_) { /* ignore */ }
+    }
     return [...found.values()];
   }
 
@@ -111,7 +154,7 @@ class NobleBle {
     let p = this._peripherals.get(key)
       || [...this._peripherals.values()].find((x) => addrOf(x) === key);
     if (!p) {
-      await this.scan({ brand: 'ycy', timeoutMs: 4000 });
+      await this.scan({ timeoutMs: SCAN_MS });
       p = this._peripherals.get(key)
         || [...this._peripherals.values()].find((x) => addrOf(x) === key);
     }
@@ -183,6 +226,7 @@ module.exports = {
   NobleBle,
   pickWriteChar,
   matchesBrand,
+  detectBrand,
   WRITE_HINTS,
   scan: (opts) => shared.scan(opts),
   connect: (addr) => shared.connect(addr),
