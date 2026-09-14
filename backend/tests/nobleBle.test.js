@@ -24,6 +24,10 @@ describe('nobleBle 写特征选择', () => {
     expect(pickWriteChar([ff41]).uuid).toBe('ff41');
   });
 
+  test('无 write 属性的 FF41 仍选用', () => {
+    expect(pickWriteChar([{ uuid: 'ff41', properties: {} }]).uuid).toBe('ff41');
+  });
+
   test('名称识别杯/电击', () => {
     expect(matchesBrand('ycy', 'YCY-FJB-03')).toBe(true);
     expect(matchesBrand('dglab', 'YCY-FJB-03')).toBe(false);
@@ -84,6 +88,33 @@ describe('NobleBle connect/write', () => {
     ble._peripherals.set('eb:34:02:8f:f6:a5', p);
     const conn = await ble.connect('eb:34:02:8f:f6:a5');
     expect(n).toBeGreaterThan(1);
+    expect(conn.writeUuid.toLowerCase()).toContain('ff41');
+  });
+
+  test('GATT 一直为空则断开重连再发现', async () => {
+    const write = fakeChar('0000ff41-0000-1000-8000-00805f9b34fb');
+    let n = 0;
+    let disconnected = 0;
+    const p = {
+      id: 'eb:34:02:8f:f6:a5',
+      address: 'eb:34:02:8f:f6:a5',
+      advertisement: { localName: 'YCY-XX' },
+      state: 'disconnected',
+      connectAsync: async () => { p.state = 'connected'; },
+      disconnectAsync: async () => { disconnected += 1; p.state = 'disconnected'; },
+      discoverAllServicesAndCharacteristicsAsync: async () => {
+        n += 1;
+        if (disconnected === 0) return { services: [], characteristics: [] };
+        return { services: [{ characteristics: [write] }], characteristics: [write] };
+      },
+    };
+    const ble = new NobleBle({
+      nobleImpl: { state: 'poweredOn', on() {}, removeListener() {} },
+    });
+    ble._peripherals.set('eb:34:02:8f:f6:a5', p);
+    const conn = await ble.connect('eb:34:02:8f:f6:a5');
+    expect(disconnected).toBeGreaterThan(0);
+    expect(n).toBeGreaterThan(2);
     expect(conn.writeUuid.toLowerCase()).toContain('ff41');
   });
 });

@@ -6,8 +6,18 @@ const ycy = require('./protocols/ycy');
 const logger = require('../utils/logger');
 
 const WRITE_HINTS = ['ff41', 'ff31', 'ff71', 'ae01', 'ff03', 'ee03'];
+const SERVICE_HINTS = ['ff40', 'ff30', 'ff00', 'ee01', 'ae00'];
 const SCAN_MS = 2500;
 const SETTLE_MS = 400;
+
+function shortUuid(u) {
+  const s = String(u || '').toLowerCase().replace(/-/g, '');
+  return s.startsWith('0000') && s.length >= 8 ? s.slice(4, 8) : s.slice(0, 8);
+}
+
+function charSummary(chars) {
+  return (chars || []).map((c) => shortUuid(c.uuid)).join(',') || 'none';
+}
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
@@ -72,7 +82,14 @@ function pickWriteChar(chars) {
     const hit = list.find((c) => String(c.uuid || '').toLowerCase().includes(hint) && isWritable(c));
     if (hit) return hit;
   }
-  return list.find(isWritable) || null;
+  const any = list.find(isWritable);
+  if (any) return any;
+  // WinRT 有时不带 write 属性，仍按已知 UUID 选用。
+  for (const hint of WRITE_HINTS) {
+    const hit = list.find((c) => String(c.uuid || '').toLowerCase().includes(hint));
+    if (hit) return hit;
+  }
+  return null;
 }
 
 class NobleBle {
@@ -147,7 +164,16 @@ class NobleBle {
         });
       });
     }
-    return characteristics.length ? characteristics : services.flatMap((s) => s.characteristics || []);
+    let chars = characteristics.length ? characteristics : services.flatMap((s) => s.characteristics || []);
+    if (chars.length) return chars;
+    if (typeof p.discoverSomeServicesAndCharacteristicsAsync !== 'function') return chars;
+    try {
+      const got = await p.discoverSomeServicesAndCharacteristicsAsync(SERVICE_HINTS, []);
+      services = got.services || [];
+      characteristics = got.characteristics || [];
+      chars = characteristics.length ? characteristics : services.flatMap((s) => s.characteristics || []);
+    } catch (_) { /* 按已知服务再发现失败则保持空 */ }
+    return chars;
   }
 
   _findPeripheral(address) {
@@ -240,21 +266,33 @@ class NobleBle {
     logger.info('[ble] gatt connected', { address: key, ms: Date.now() - t0 });
     let write = null;
     let chars = [];
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      await sleep(attempt === 1 ? 150 : 400);
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      await sleep(attempt === 1 ? 250 : 400);
       chars = await this._discoverChars(p);
       write = pickWriteChar(chars);
       if (write) break;
-      logger.warn('[ble] gatt empty, retry', { address: key, attempt, charCount: chars.length });
+      logger.warn('[ble] gatt empty, retry', { address: key, attempt, chars: charSummary(chars) });
+    }
+    if (!write) {
+      logger.warn('[ble] gatt reconnect', { address: key });
+      try {
+        if (typeof p.disconnectAsync === 'function') await p.disconnectAsync();
+        else p.disconnect();
+      } catch (_) { /* ignore */ }
+      await sleep(500);
+      if (typeof p.connectAsync === 'function') await p.connectAsync();
+      else await new Promise((res, rej) => p.connect((e) => (e ? rej(e) : res())));
+      await sleep(400);
+      chars = await this._discoverChars(p);
+      write = pickWriteChar(chars);
     }
     if (!write) {
       try {
         if (typeof p.disconnectAsync === 'function') await p.disconnectAsync();
         else p.disconnect();
       } catch (_) { /* ignore */ }
-      const u = chars.map((c) => `${c.uuid}:${JSON.stringify(c.properties || {})}`).join(',');
-      logger.error('[ble] no write char', { address: key, chars: u, ms: Date.now() - t0 });
-      throw new Error(`设备尚未发现写特征/未就绪 (${u || 'no-chars'})`);
+      logger.error('[ble] no write char', { address: key, chars: charSummary(chars), ms: Date.now() - t0 });
+      throw new Error(`设备尚未发现写特征/未就绪 (${charSummary(chars)})`);
     }
     this._sessions.set(key, { peripheral: p, write, chars });
     logger.info('[ble] ready', { address: key, writeUuid: write.uuid, charCount: chars.length, ms: Date.now() - t0 });
