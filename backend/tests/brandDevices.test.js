@@ -316,4 +316,16 @@ describe('本机桥适配器', () => {
     expect(posts[0].body.addr).toBe('aa:bb');
     expect(posts[0].body.frame.toUpperCase()).toBe(hex(ycy.buildFjb03({ stroke: 20, vibe: 20, axis: 0 })));
   });
+
+  test('GATT 未就绪时 connect 失败而不是假成功', async () => {
+    const fetchImpl = async (url) => {
+      if (String(url).includes('/api/connect')) return { ok: true, json: async () => ({ ok: true }) };
+      return { ok: true, json: async () => ({ devices: [{ id: 'aabb', ready: false, connection: {} }] }) };
+    };
+    const conn = new NativeBridgeConnection({
+      brand: 'ycy', deviceId: 'aabb', address: 'aa:bb', port: 3001, type: 'YCY_CUP',
+      fetchImpl, readyTimeoutMs: 80,
+    });
+    await expect(conn.connect()).rejects.toThrow(/写特征|未就绪/);
+  });
 });

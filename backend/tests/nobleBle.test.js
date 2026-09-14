@@ -61,6 +61,31 @@ describe('NobleBle connect/write', () => {
     expect(write.written[0].equals(frame)).toBe(true);
     expect(out.written).toBe(frame.toString('hex'));
   });
+
+  test('GATT 第一次空特征会重试', async () => {
+    const write = fakeChar('0000ff41-0000-1000-8000-00805f9b34fb');
+    let n = 0;
+    const p = {
+      id: 'eb:34:02:8f:f6:a5',
+      address: 'eb:34:02:8f:f6:a5',
+      advertisement: { localName: 'YCY-XX' },
+      state: 'disconnected',
+      connectAsync: async () => { p.state = 'connected'; },
+      discoverAllServicesAndCharacteristicsAsync: async () => {
+        n += 1;
+        if (n === 1) return { services: [], characteristics: [] };
+        return { services: [{ characteristics: [write] }], characteristics: [write] };
+      },
+      disconnectAsync: async () => {},
+    };
+    const ble = new NobleBle({
+      nobleImpl: { state: 'poweredOn', on() {}, removeListener() {} },
+    });
+    ble._peripherals.set('eb:34:02:8f:f6:a5', p);
+    const conn = await ble.connect('eb:34:02:8f:f6:a5');
+    expect(n).toBeGreaterThan(1);
+    expect(conn.writeUuid.toLowerCase()).toContain('ff41');
+  });
 });
 
 describe('nobleBle 扫描合并', () => {

@@ -7,14 +7,24 @@ const { SosexyWebBleConnection } = require('./sosexyWebBleConnection');
 const { GxpWebBleConnection } = require('./gxpWebBleConnection');
 const { DGLabV2WebBleConnection } = require('./webBleConnection');
 
+function sameBleId(a, b) {
+  const x = String(a || '').toLowerCase();
+  const y = String(b || '').toLowerCase();
+  if (x === y) return true;
+  const hx = x.replace(/[^0-9a-f]/g, '');
+  const hy = y.replace(/[^0-9a-f]/g, '');
+  return hx.length >= 12 && hx === hy;
+}
+
 class NativeBridgeConnection {
-  constructor({ brand, deviceId, address, port, type, fetchImpl } = {}) {
+  constructor({ brand, deviceId, address, port, type, fetchImpl, readyTimeoutMs } = {}) {
     this.brand = type === 'SOSEXY_PID0004' ? 'sosexy' : (type === 'GXP_XA9935' ? 'gxp' : brand);
     this.deviceId = deviceId;
     this.address = address;
     this.port = Number(port);
     this.type = type;
     this.mode = 'native';
+    this._readyTimeoutMs = Number(readyTimeoutMs) > 0 ? Number(readyTimeoutMs) : 8000;
     this._fetch = fetchImpl || globalThis.fetch.bind(globalThis);
     this._inner = type === 'SOSEXY_PID0004'
       ? new SosexyWebBleConnection({ deviceId, type, mode: 'native', send: (msg) => this._sendYcy(msg) })
@@ -32,15 +42,15 @@ class NativeBridgeConnection {
     const res = await this._fetch(`${base}/api/connect?addr=${encodeURIComponent(this.address)}`, { method: 'POST' });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || json.ok === false) throw new Error(json.msg || '本机桥连接失败');
-    const deadline = Date.now() + 8000;
+    const deadline = Date.now() + this._readyTimeoutMs;
     while (Date.now() < deadline) {
       const st = await this._fetch(`${base}/api/devices`);
       const data = await st.json().catch(() => ({}));
-      const hit = (data.devices || []).find((d) => d.id === this.address);
+      const hit = (data.devices || []).find((d) => sameBleId(d.id, this.address));
       if (hit?.ready) return this;
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 50));
     }
-    return this;
+    throw new Error('设备尚未发现写特征/未就绪');
   }
 
   async _postSend(body) {

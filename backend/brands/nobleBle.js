@@ -130,6 +130,26 @@ class NobleBle {
     }
   }
 
+  async _discoverChars(p) {
+    let services = [];
+    let characteristics = [];
+    if (typeof p.discoverAllServicesAndCharacteristicsAsync === 'function') {
+      const got = await p.discoverAllServicesAndCharacteristicsAsync();
+      services = got.services || [];
+      characteristics = got.characteristics || [];
+    } else {
+      await new Promise((res, rej) => {
+        p.discoverAllServicesAndCharacteristics((e, s, c) => {
+          if (e) return rej(e);
+          services = s || [];
+          characteristics = c || [];
+          res();
+        });
+      });
+    }
+    return characteristics.length ? characteristics : services.flatMap((s) => s.characteristics || []);
+  }
+
   _findPeripheral(address) {
     const key = String(address || '').toLowerCase();
     const hex = hexKey(address);
@@ -218,28 +238,20 @@ class NobleBle {
       }
     }
     logger.info('[ble] gatt connected', { address: key, ms: Date.now() - t0 });
-    await sleep(150);
-    let services = [];
-    let characteristics = [];
-    if (typeof p.discoverAllServicesAndCharacteristicsAsync === 'function') {
-      const got = await p.discoverAllServicesAndCharacteristicsAsync();
-      services = got.services || [];
-      characteristics = got.characteristics || [];
-    } else {
-      await new Promise((res, rej) => {
-        p.discoverAllServicesAndCharacteristics((e, s, c) => {
-          if (e) return rej(e);
-          services = s || [];
-          characteristics = c || [];
-          res();
-        });
-      });
+    let write = null;
+    let chars = [];
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      await sleep(attempt === 1 ? 150 : 400);
+      chars = await this._discoverChars(p);
+      write = pickWriteChar(chars);
+      if (write) break;
+      logger.warn('[ble] gatt empty, retry', { address: key, attempt, charCount: chars.length });
     }
-    const chars = characteristics.length
-      ? characteristics
-      : services.flatMap((s) => s.characteristics || []);
-    const write = pickWriteChar(chars);
     if (!write) {
+      try {
+        if (typeof p.disconnectAsync === 'function') await p.disconnectAsync();
+        else p.disconnect();
+      } catch (_) { /* ignore */ }
       const u = chars.map((c) => `${c.uuid}:${JSON.stringify(c.properties || {})}`).join(',');
       logger.error('[ble] no write char', { address: key, chars: u, ms: Date.now() - t0 });
       throw new Error(`设备尚未发现写特征/未就绪 (${u || 'no-chars'})`);
