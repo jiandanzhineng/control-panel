@@ -3,6 +3,7 @@
  * 不经过 ycy_bridge HTTP。测试可注入 nobleImpl。
  */
 const ycy = require('./protocols/ycy');
+const logger = require('../utils/logger');
 
 const WRITE_HINTS = ['ff41', 'ff31', 'ff71', 'ae01', 'ff03', 'ee03'];
 const SCAN_MS = 2500;
@@ -30,6 +31,10 @@ function nameOf(p) {
 
 function addrOf(p) {
   return String(p.address || p.id || '').toLowerCase();
+}
+
+function hexKey(s) {
+  return String(s || '').toLowerCase().replace(/[^0-9a-f]/g, '');
 }
 
 function matchesBrand(brand, name) {
@@ -76,6 +81,7 @@ class NobleBle {
     this._peripherals = new Map();
     this._sessions = new Map();
     this._scanShared = null;
+    this._scanSettle = null;
   }
 
   noble() {
@@ -112,12 +118,23 @@ class NobleBle {
     }
   }
 
+  _findPeripheral(address) {
+    const key = String(address || '').toLowerCase();
+    const hex = hexKey(address);
+    return this._peripherals.get(key)
+      || [...this._peripherals.values()].find((x) => addrOf(x) === key || hexKey(addrOf(x)) === hex)
+      || null;
+  }
+
   async _runScan({ timeoutMs, settleMs }) {
     const n = this.noble();
+    const t0 = Date.now();
+    logger.info('[ble] scan start', { timeoutMs, settleMs });
     await this.waitReady();
     const found = new Map();
     let settle;
     const done = new Promise((resolve) => { settle = resolve; });
+    this._scanSettle = settle;
     let early = null;
     const onDiscover = (p) => {
       const name = nameOf(p);
@@ -127,6 +144,7 @@ class NobleBle {
       if (!detectBrand(name)) return;
       const isNew = !found.has(id);
       found.set(id, { id, address: id, name, rssi: p.rssi });
+      if (isNew) logger.info('[ble] scan found', { name, id, rssi: p.rssi, ms: Date.now() - t0 });
       if (isNew && found.size === 1 && settleMs >= 0) {
         early = setTimeout(() => settle('early'), settleMs);
       }
@@ -136,10 +154,12 @@ class NobleBle {
       if (typeof n.startScanningAsync === 'function') await n.startScanningAsync([], false);
       else await new Promise((res, rej) => n.startScanning([], false, (e) => (e ? rej(e) : res())));
       const timer = setTimeout(() => settle('timeout'), timeoutMs);
-      await done;
+      const reason = await done;
       clearTimeout(timer);
       if (early) clearTimeout(early);
+      logger.info('[ble] scan done', { reason, count: found.size, ms: Date.now() - t0 });
     } finally {
+      this._scanSettle = null;
       n.removeListener('discover', onDiscover);
       try {
         if (typeof n.stopScanningAsync === 'function') await n.stopScanningAsync();
@@ -150,18 +170,29 @@ class NobleBle {
   }
 
   async connect(address) {
+    const t0 = Date.now();
     const key = String(address || '').toLowerCase();
-    let p = this._peripherals.get(key)
-      || [...this._peripherals.values()].find((x) => addrOf(x) === key);
+    let p = this._findPeripheral(address);
+    logger.info('[ble] connect', { address: key, cached: !!p });
     if (!p) {
       await this.scan({ timeoutMs: SCAN_MS });
-      p = this._peripherals.get(key)
-        || [...this._peripherals.values()].find((x) => addrOf(x) === key);
+      p = this._findPeripheral(address);
     }
-    if (!p) throw new Error(`未找到设备 ${address}`);
-    if (typeof p.connectAsync === 'function') await p.connectAsync();
-    else await new Promise((res, rej) => p.connect((e) => (e ? rej(e) : res())));
-    await sleep(300);
+    if (this._scanSettle) this._scanSettle('pre-connect');
+    if (this._scanShared) await this._scanShared.catch(() => {});
+    if (!p) {
+      logger.error('[ble] connect fail', { address: key, err: 'not found', ms: Date.now() - t0 });
+      throw new Error(`未找到设备 ${address}`);
+    }
+    try {
+      if (typeof p.connectAsync === 'function') await p.connectAsync();
+      else await new Promise((res, rej) => p.connect((e) => (e ? rej(e) : res())));
+    } catch (e) {
+      logger.error('[ble] gatt connect fail', { address: key, err: e.message, ms: Date.now() - t0 });
+      throw e;
+    }
+    logger.info('[ble] gatt connected', { address: key, ms: Date.now() - t0 });
+    await sleep(150);
     let services = [];
     let characteristics = [];
     if (typeof p.discoverAllServicesAndCharacteristicsAsync === 'function') {
@@ -183,10 +214,12 @@ class NobleBle {
       : services.flatMap((s) => s.characteristics || []);
     const write = pickWriteChar(chars);
     if (!write) {
-      const u = chars.map((c) => `${c.uuid}:${Object.keys(c.properties || {}).filter((k) => c.properties[k])}`).join(',');
+      const u = chars.map((c) => `${c.uuid}:${JSON.stringify(c.properties || {})}`).join(',');
+      logger.error('[ble] no write char', { address: key, chars: u, ms: Date.now() - t0 });
       throw new Error(`设备尚未发现写特征/未就绪 (${u || 'no-chars'})`);
     }
     this._sessions.set(key, { peripheral: p, write, chars });
+    logger.info('[ble] ready', { address: key, writeUuid: write.uuid, charCount: chars.length, ms: Date.now() - t0 });
     return { address: key, writeUuid: write.uuid };
   }
 
@@ -203,8 +236,14 @@ class NobleBle {
     const without = Array.isArray(char.properties)
       ? char.properties.includes('writeWithoutResponse')
       : !!char.properties?.writeWithoutResponse;
-    if (typeof char.writeAsync === 'function') await char.writeAsync(buf, without);
-    else await new Promise((res, rej) => char.write(buf, without, (e) => (e ? rej(e) : res())));
+    try {
+      if (typeof char.writeAsync === 'function') await char.writeAsync(buf, without);
+      else await new Promise((res, rej) => char.write(buf, without, (e) => (e ? rej(e) : res())));
+    } catch (e) {
+      logger.error('[ble] write fail', { address: key, err: e.message, hex: buf.toString('hex') });
+      throw e;
+    }
+    logger.info('[ble] write', { address: key, hex: buf.toString('hex'), without });
     return { ok: true, written: buf.toString('hex') };
   }
 

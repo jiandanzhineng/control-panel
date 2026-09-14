@@ -45,7 +45,13 @@
               <span class="candidate-name">{{ brandLabel(classifyBleBrand(c.name), c.name) }}</span>
               <span class="candidate-meta">{{ BRAND_LABEL[classifyBleBrand(c.name)] || t('brands.ycy') }} · {{ c.name }}</span>
             </div>
-            <el-button size="small" type="primary" @click="ycyWebblePick(c)">{{ t('brands.select') }}</el-button>
+            <el-button
+              size="small"
+              type="primary"
+              :loading="connectingId === c.id"
+              :disabled="!!connectingId"
+              @click="ycyWebblePick(c)"
+            >{{ connectingId === c.id ? t('brands.connectingNamed', { name: c.name }) : t('brands.select') }}</el-button>
           </div>
         </div>
 
@@ -815,6 +821,7 @@ const ycyWebbleDevices = ref<YcyWebbleDevice[]>([])
 const ycyWebbleCandidates = ref<Array<{ id: string; name: string; address?: string; deviceId?: string; brand?: string }>>([])
 let ycyScanUnsub: (() => void) | null = null
 const scanningYcyWebble = ref(false)
+const connectingId = ref('')
 function ycyWebbleCancelScan() {
   brandBle.cancelSelection().catch(() => {})
 }
@@ -863,6 +870,8 @@ function openMoreConnect(kind: string | number) {
   }
 }
 async function ycyWebblePick(c: { id: string; name: string; address?: string; deviceId?: string; brand?: string }) {
+  connectingId.value = c.id
+  ElMessage.info(t('brands.connectingNamed', { name: c.name }))
   try {
     const brand = classifyBleBrand(c.name)
     await brandsApi.connect({
@@ -877,6 +886,7 @@ async function ycyWebblePick(c: { id: string; name: string; address?: string; de
     await refreshConnected()
     ElMessage.success(t('brands.connectedNamed', { name: brandLabel(brand, c.name) }))
   } catch (e: any) { ElMessage.error(e?.message || t('brands.connectFailed')) }
+  finally { connectingId.value = '' }
 }
 const ycyWebbleUnlisten = new Map<string, () => void>()
 const ycyWebbleHint = computed(() => {

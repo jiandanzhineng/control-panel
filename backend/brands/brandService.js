@@ -204,6 +204,9 @@ async function connect(brand, opts = {}) {
       : new NobleBleConnection({
         brand, deviceId: finalDeviceId, address: opts.address, type,
       });
+    logger.info('[ble] brand connect start', {
+      brand, address: opts.address, type, deviceId: finalDeviceId, via: opts.fetchImpl ? 'rust' : 'noble',
+    });
   } else if (brand === 'dglab') {
     const host = opts.host;
     const port = opts.port;
