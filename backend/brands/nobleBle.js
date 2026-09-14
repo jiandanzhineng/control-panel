@@ -82,6 +82,7 @@ class NobleBle {
     this._sessions = new Map();
     this._scanShared = null;
     this._scanSettle = null;
+    this._connecting = false;
   }
 
   noble() {
@@ -107,6 +108,12 @@ class NobleBle {
   }
 
   async scan({ brand = null, timeoutMs = SCAN_MS, settleMs = SETTLE_MS } = {}) {
+    if (this._connecting) {
+      const cached = [...this._peripherals.values()]
+        .map((p) => ({ id: addrOf(p), address: addrOf(p), name: nameOf(p), rssi: p.rssi }))
+        .filter((d) => detectBrand(d.name));
+      return filterBrand(cached, brand);
+    }
     if (this._scanShared) {
       return filterBrand(await this._scanShared, brand);
     }
@@ -173,7 +180,9 @@ class NobleBle {
     const t0 = Date.now();
     const key = String(address || '').toLowerCase();
     let p = this._findPeripheral(address);
-    logger.info('[ble] connect', { address: key, cached: !!p });
+    this._connecting = true;
+    logger.info('[ble] connect', { address: key, cached: !!p, state: p?.state });
+    try {
     if (!p) {
       await this.scan({ timeoutMs: SCAN_MS });
       p = this._findPeripheral(address);
@@ -184,12 +193,16 @@ class NobleBle {
       logger.error('[ble] connect fail', { address: key, err: 'not found', ms: Date.now() - t0 });
       throw new Error(`未找到设备 ${address}`);
     }
-    try {
-      if (typeof p.connectAsync === 'function') await p.connectAsync();
-      else await new Promise((res, rej) => p.connect((e) => (e ? rej(e) : res())));
-    } catch (e) {
-      logger.error('[ble] gatt connect fail', { address: key, err: e.message, ms: Date.now() - t0 });
-      throw e;
+    if (p.state !== 'connected') {
+      try {
+        if (typeof p.connectAsync === 'function') await p.connectAsync();
+        else await new Promise((res, rej) => p.connect((e) => (e ? rej(e) : res())));
+      } catch (e) {
+        if (!/already connected/i.test(e.message || '')) {
+          logger.error('[ble] gatt connect fail', { address: key, err: e.message, ms: Date.now() - t0 });
+          throw e;
+        }
+      }
     }
     logger.info('[ble] gatt connected', { address: key, ms: Date.now() - t0 });
     await sleep(150);
@@ -221,6 +234,9 @@ class NobleBle {
     this._sessions.set(key, { peripheral: p, write, chars });
     logger.info('[ble] ready', { address: key, writeUuid: write.uuid, charCount: chars.length, ms: Date.now() - t0 });
     return { address: key, writeUuid: write.uuid };
+    } finally {
+      this._connecting = false;
+    }
   }
 
   async write(address, frame, writeUuid) {
