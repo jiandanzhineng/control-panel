@@ -117,7 +117,12 @@ class NobleBle {
     if (this._scanShared) {
       return filterBrand(await this._scanShared, brand);
     }
-    this._scanShared = this._runScan({ timeoutMs, settleMs });
+    this._scanShared = (async () => {
+      const first = await this._runScan({ timeoutMs, settleMs });
+      if (first.length) return first;
+      logger.info('[ble] scan empty, retry');
+      return this._runScan({ timeoutMs, settleMs });
+    })();
     try {
       return filterBrand(await this._scanShared, brand);
     } finally {
@@ -139,6 +144,7 @@ class NobleBle {
     logger.info('[ble] scan start', { timeoutMs, settleMs });
     await this.waitReady();
     const found = new Map();
+    const seen = new Set();
     let settle;
     const done = new Promise((resolve) => { settle = resolve; });
     this._scanSettle = settle;
@@ -148,7 +154,13 @@ class NobleBle {
       const id = addrOf(p);
       if (!id) return;
       this._peripherals.set(id, p);
-      if (!detectBrand(name)) return;
+      if (!detectBrand(name)) {
+        if (!seen.has(id)) {
+          seen.add(id);
+          logger.info('[ble] scan seen', { name: name || '(no name)', id, rssi: p.rssi, ms: Date.now() - t0 });
+        }
+        return;
+      }
       const isNew = !found.has(id);
       found.set(id, { id, address: id, name, rssi: p.rssi });
       if (isNew) logger.info('[ble] scan found', { name, id, rssi: p.rssi, ms: Date.now() - t0 });
@@ -158,8 +170,9 @@ class NobleBle {
     };
     n.on('discover', onDiscover);
     try {
-      if (typeof n.startScanningAsync === 'function') await n.startScanningAsync([], false);
-      else await new Promise((res, rej) => n.startScanning([], false, (e) => (e ? rej(e) : res())));
+      // allowDuplicates=true：Windows 首包常无名字，名字在后续广播；false 会丢掉第二包。
+      if (typeof n.startScanningAsync === 'function') await n.startScanningAsync([], true);
+      else await new Promise((res, rej) => n.startScanning([], true, (e) => (e ? rej(e) : res())));
       const timer = setTimeout(() => settle('timeout'), timeoutMs);
       const reason = await done;
       clearTimeout(timer);
