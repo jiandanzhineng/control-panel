@@ -1,12 +1,12 @@
 {
   "name": "backend",
-  "version": "1.0.36-beta.3",
+  "version": "1.0.36-beta.4",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon",
     "dev:native": "node --watch index.js",
-    "test": "jest",
+    "test": "jest --forceExit",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage"
   },
