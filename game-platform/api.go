@@ -172,6 +172,30 @@ func (a *App) handleSubmissionAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch parts[1] {
+	case "update":
+		var input struct {
+			AuthorName  string `json:"authorName"`
+			Title       string `json:"title"`
+			Description string `json:"description"`
+		}
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		if strings.TrimSpace(input.Title) == "" || len([]rune(input.Title)) > 100 {
+			writeError(w, http.StatusBadRequest, "SUBMISSION_INVALID", "title is required")
+			return
+		}
+		_, err = a.db.ExecContext(r.Context(), `UPDATE submissions SET author_name = ?, title = ?, description = ?, status = 'pending', review_note = '', reviewed_by = NULL, updated_at = ? WHERE id = ? AND author_id = ? AND status IN ('published','changes_requested','rejected')`, strings.TrimSpace(input.AuthorName), strings.TrimSpace(input.Title), strings.TrimSpace(input.Description), nowUnix(), submission.ID, user.ID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "UPDATE_FAILED", "could not update submission")
+			return
+		}
+		submission, err = a.submissionByID(r.Context(), submission.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "UPDATE_FAILED", "could not read submission")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"submission": submission})
 	case "complete":
 		submission, err = a.completeZipSubmission(r.Context(), submission)
 		if err != nil {
