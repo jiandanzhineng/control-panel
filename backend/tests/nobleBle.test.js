@@ -28,6 +28,12 @@ describe('nobleBle 写特征选择', () => {
     expect(pickWriteChar([{ uuid: 'ff41', properties: {} }]).uuid).toBe('ff41');
   });
 
+  test('灌肠机一代优先 FF B1', () => {
+    const ffb1 = fakeChar('0000ffb1-0000-1000-8000-00805f9b34fb');
+    const ff41 = fakeChar('0000ff41-0000-1000-8000-00805f9b34fb');
+    expect(pickWriteChar([ff41, ffb1]).uuid).toContain('ffb1');
+  });
+
   test('名称识别杯/电击', () => {
     expect(matchesBrand('ycy', 'YCY-FJB-03')).toBe(true);
     expect(matchesBrand('dglab', 'YCY-FJB-03')).toBe(false);

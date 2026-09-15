@@ -98,6 +98,19 @@ const MOTOR_SPEED_MAX = 20;
 const FJB03_STROKE_MAX = 40;
 const FJB03_AXIS_MAX = 20;
 const PUMP_RATE_DEFAULT = 3;
+const PUMP_DURATION_DEFAULT = 60;
+
+/** 按广播名分型。FJB-03 用真机杯帧；其他 FJB/TDD 用官方玩具三路速度。 */
+function classifyYcyName(name) {
+  const n = String(name || '');
+  if (/灌肠|enema|glj|yisk/i.test(n)) return 'YCY_ENEMA';
+  if (/fjb-?03/i.test(n)) return 'YCY_CUP';
+  if (/fjb|tdd|跳蛋/i.test(n)) return 'YCY_TOY';
+  if (/杯|cup/i.test(n)) return 'YCY_CUP';
+  if (/toy|玩具|电机/i.test(n)) return 'YCY_TOY';
+  if (/dj|ems|电击/i.test(n)) return 'YCY_EMS';
+  return null;
+}
 
 /** 强度映射：UI 量纲 0–100 → 设备量纲 1–276（0 表示关闭通道）。 */
 function mapStrengthToYcy(value) {
@@ -225,6 +238,17 @@ function buildMotor({ speed = 0 } = {}) {
   return withChecksum(Buffer.from([0x35, FAMILY.MOTOR_CONTROL, s]));
 }
 
+/** 官方跳蛋/飞机杯（FJB-01）速度帧：35 12 A B C 校验，每路 0–20。 */
+function buildToySpeeds({ a = 0, b = 0, c = 0 } = {}) {
+  return withChecksum(Buffer.from([
+    0x35,
+    FAMILY.MOTOR_CONTROL,
+    clamp(a, 0, MOTOR_SPEED_MAX),
+    clamp(b, 0, MOTOR_SPEED_MAX),
+    clamp(c, 0, MOTOR_SPEED_MAX),
+  ]));
+}
+
 /**
  * YCY-FJB-03 真机帧（6 字节）：35 12 [旋转 0–40] [震动 0–20] [第三轴 0–20] [校验和]。
  * 旋转 1–20 正转、21–40 反转。不是 4 字节玩具电机帧，也不是 AES 泵帧。
@@ -272,8 +296,13 @@ function buildPumpV3({ scene = 'stop', air = 1, water = 1 } = {}) {
  *
  * 返回 16 字节密文 Buffer（即 BLE 直发帧，无额外 0x35 包头）。
  */
-function buildPumpEncrypted({ protocol = 'v1', scene = 'stop', rate = PUMP_RATE_DEFAULT, ss = 0 } = {}) {
-  const ssHex = hex4(clamp(ss, 0, 0xffff));
+function buildPumpEncrypted({
+  protocol = 'v1', scene = 'stop', rate = PUMP_RATE_DEFAULT, ss, pad,
+} = {}) {
+  const duration = scene === 'stop'
+    ? 0
+    : (Number.isFinite(Number(ss)) ? Number(ss) : PUMP_DURATION_DEFAULT);
+  const ssHex = hex4(clamp(duration, 0, 0xffff));
   const rateHex = hex2(clamp(rate, 1, 0xff));
   let plain;
   if (protocol === 'v2') {
@@ -295,10 +324,13 @@ function buildPumpEncrypted({ protocol = 'v1', scene = 'stop', rate = PUMP_RATE_
     }
   }
 
-  // 明文零填充至 16 字节（AES 单块）。
   const plainBuf = Buffer.from(plain, 'hex');
   const padded = Buffer.alloc(16);
   plainBuf.copy(padded, 0, 0, Math.min(plainBuf.length, 16));
+  if (plainBuf.length < 16) {
+    if (Buffer.isBuffer(pad) && pad.length >= 16) pad.copy(padded, plainBuf.length, plainBuf.length);
+    else crypto.randomFillSync(padded, plainBuf.length);
+  }
 
   // AES-128-ECB + NoPadding。ECB 不使用 IV（传 null）；单块结果与 CBC 零 IV 等价。
   const key = Buffer.from(PUMP_CIPHER_KEY, 'hex');
@@ -343,10 +375,12 @@ function toBleFrame(brandCommand) {
       return buildEmsStop();
     case 'setSpeed':
       return buildMotor({ speed: brandCommand.speed });
+    case 'setToySpeeds':
+      return buildToySpeeds(brandCommand);
     case 'setToyMode':
       return buildMotor({ speed: brandCommand.mode });
     case 'stopToy':
-      return buildMotor({ speed: 0 });
+      return buildToySpeeds({ a: 0, b: 0, c: 0 });
     case 'setFjb':
       return buildFjb03(brandCommand);
     case 'stopFjb':
@@ -607,7 +641,9 @@ module.exports = {
   MOTOR_SPEED_MAX,
   FJB03_STROKE_MAX,
   FJB03_AXIS_MAX,
+  PUMP_DURATION_DEFAULT,
   GLOBAL_STOP_COMMAND,
+  classifyYcyName,
   mapStrengthToYcy,
   checksum,
   buildEmsHandshake,
@@ -615,6 +651,7 @@ module.exports = {
   buildEmsStop,
   buildXlIntensity,
   buildMotor,
+  buildToySpeeds,
   buildFjb03,
   buildPumpV3,
   buildPumpEncrypted,

@@ -27,6 +27,7 @@ const YCY_NAME_KEYWORDS = ['YCY', 'YYC', 'YSKJ', 'YOKO', 'YOKONEX', 'YISK', 'DJ-
 // 灌肠机 YISK:    FF70 写 / FF72 通知
 // AE00 系统通道:  AE01 写 / AE02 通知（疑似第二通道/泵）
 const KNOWN_WRITE_UUIDS = [
+  '0000ffb1-0000-1000-8000-00805f9b34fb',
   '0000ff31-0000-1000-8000-00805f9b34fb',
   '0000ff41-0000-1000-8000-00805f9b34fb',
   '0000ff71-0000-1000-8000-00805f9b34fb',
@@ -41,6 +42,7 @@ const KNOWN_NOTIFY_UUIDS = [
 // requestDevice 的 optionalServices：列出役次元各型号服务 + 标准电池/设备信息服务，
 // 确保即便设备名不匹配前缀也能连接并枚举特征。
 const OPTIONAL_SERVICES = [
+  '0000ffb0-0000-1000-8000-00805f9b34fb',
   '0000ff30-0000-1000-8000-00805f9b34fb',
   '0000ff40-0000-1000-8000-00805f9b34fb',
   '0000ff70-0000-1000-8000-00805f9b34fb',

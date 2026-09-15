@@ -287,7 +287,7 @@ const registeredTypes = [
             brand: 'ycy', cmd: 'pump',
             protocol: params?.protocol || 'v1',
             scene: params?.scene || 'guan',
-            rate: params?.rate, ss: params?.ss,
+            rate: params?.rate, ss: params?.ss ?? 60,
           }),
           stop: (ctx, params) => ctx.sendMessage({
             brand: 'ycy', cmd: 'pump',
@@ -303,7 +303,7 @@ const registeredTypes = [
           brand: 'ycy', cmd: 'pump',
           protocol: params?.protocol || 'v1',
           scene: params?.scene || 'guan',
-          rate: params?.rate, ss: params?.ss,
+          rate: params?.rate, ss: params?.ss ?? 60,
         }),
       },
       {
@@ -321,7 +321,7 @@ const registeredTypes = [
       },
       {
         key: 'stop', name: '全部停止',
-        invoke: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+        invoke: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'stop' }),
       },
     ],
     // 灌肠机的输出通道是泵；stopAll 仅是电刺激帧，不能保证泵停止。

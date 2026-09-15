@@ -305,5 +305,6 @@ describe('役次元型号分类', () => {
     expect(resolveType('YYC-DJ-V2')).toBe('YCY_EMS');
     expect(resolveType('YISK-003V3')).toBe('YCY_ENEMA');
     expect(resolveType('YCY-FJB-03')).toBe('YCY_CUP');
+    expect(resolveType('YCY-FJB-01')).toBe('YCY_TOY');
   });
 });

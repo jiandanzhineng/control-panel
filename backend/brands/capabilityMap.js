@@ -43,18 +43,22 @@ function mergeFjbState(prev, channels = {}) {
 }
 
 function createYcyNormState() {
-  return { fjb: { stroke: 0, vibe: 0, axis: 0 }, ems: { A: 0, B: 0 } };
+  return { fjb: { stroke: 0, vibe: 0, axis: 0 }, ems: { A: 0, B: 0 }, toy: { a: 0, b: 0, c: 0 } };
 }
 
 function normalizeYcyCommand(state, brandCommand, mode) {
   const c = brandCommand || {};
   if (c.cmd === 'setMotors') {
     const ch = c.channels || {};
-    if (ch.a != null && ch.stroke == null) {
-      return { ...c, cmd: 'setSpeed', speed: toLevel255(ch.a, 20) || 0 };
+    if (ch.stroke != null || ch.vibe != null || ch.axis != null) {
+      state.fjb = mergeFjbState(state.fjb, ch);
+      return { brand: 'ycy', cmd: 'setFjb', ...state.fjb };
     }
-    state.fjb = mergeFjbState(state.fjb, ch);
-    return { brand: 'ycy', cmd: 'setFjb', ...state.fjb };
+    if (!state.toy) state.toy = { a: 0, b: 0, c: 0 };
+    if (ch.a != null) state.toy.a = toLevel255(ch.a, 20) || 0;
+    if (ch.b != null) state.toy.b = toLevel255(ch.b, 20) || 0;
+    if (ch.c != null) state.toy.c = toLevel255(ch.c, 20) || 0;
+    return { brand: 'ycy', cmd: 'setToySpeeds', ...state.toy };
   }
   if (c.cmd === 'setFjb') {
     state.fjb = {
@@ -66,6 +70,7 @@ function normalizeYcyCommand(state, brandCommand, mode) {
   }
   if (c.cmd === 'stopFjb' || c.cmd === 'stopToy' || c.cmd === 'stopAll') {
     state.fjb = { stroke: 0, vibe: 0, axis: 0 };
+    if (state.toy) state.toy = { a: 0, b: 0, c: 0 };
     if (c.cmd === 'stopAll') state.ems = { A: 0, B: 0 };
     if (mode === 'bridge' && c.cmd !== 'stopAll') return { brand: 'ycy', cmd: 'stopAll' };
   }

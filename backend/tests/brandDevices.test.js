@@ -38,6 +38,15 @@ describe('能力换算', () => {
     expect(next).toEqual({ stroke: 10, vibe: 20, axis: 2 });
   });
 
+  test('YCYConnection 把玩具 a 轴合成官方三路速度', () => {
+    const conn = new YCYConnection({ deviceId: 'x', mode: 'ble' });
+    const n = conn._normalize({
+      brand: 'ycy', cmd: 'setMotors',
+      channels: { a: { value: 255, direction: 1 } },
+    });
+    expect(n).toMatchObject({ cmd: 'setToySpeeds', a: 20, b: 0, c: 0 });
+  });
+
   test('YCYConnection 把 setMotors 合成 setFjb', () => {
     const conn = new YCYConnection({ deviceId: 'x', mode: 'bridge' });
     const n = conn._normalize({
@@ -102,6 +111,7 @@ describe('役次元 YCY 协议', () => {
     // YCY-FJB-03：6 字节 35 12 旋转 震动 轴 校验（真机对拍）
     expect(hex(ycy.buildFjb03({ stroke: 15, vibe: 0, axis: 0 }))).toBe('35120F000056');
     expect(hex(ycy.buildFjb03({ stroke: 0, vibe: 0, axis: 0 }))).toBe('351200000047');
+    expect(hex(ycy.buildToySpeeds({ a: 10, b: 0, c: 0 }))).toBe('35120A000051');
   });
 
   test('桥接消息构造与连接翻译', async () => {
@@ -127,15 +137,25 @@ describe('役次元 YCY 协议', () => {
     expect(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'setFjb', stroke: 15 })))
       .toBe('35120F000056');
     expect(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'stopFjb' }))).toBe('351200000047');
+    expect(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'setToySpeeds', a: 10, b: 0, c: 0 }))).toBe('35120A000051');
+    expect(hex(ycy.toBleFrame({ brand: 'ycy', cmd: 'stopToy' }))).toBe('351200000047');
   });
 
   test('pump v1/v2 加密帧：AES-128-ECB + 16 字节密文', async () => {
-    const ct = ycy.buildPumpEncrypted({ protocol: 'v1', scene: 'stop' });
+    const ct = ycy.buildPumpEncrypted({ protocol: 'v1', scene: 'stop', pad: Buffer.alloc(16) });
     expect(Buffer.isBuffer(ct)).toBe(true);
     expect(ct.length).toBe(16); // 单块 AES-128 密文
-    // 相同输入应得相同密文（确定性，无 IV）
-    const ct2 = ycy.buildPumpEncrypted({ protocol: 'v1', scene: 'stop' });
-    expect(hex(ct)).toBe(hex(ct2));
+    const zero = Buffer.alloc(16);
+    const ctStop = ycy.buildPumpEncrypted({ protocol: 'v1', scene: 'stop', pad: zero });
+    expect(hex(ctStop)).toBe(hex(ycy.buildPumpEncrypted({ protocol: 'v1', scene: 'stop', pad: zero })));
+    const crypto = require('crypto');
+    const dec = crypto.createDecipheriv('aes-128-ecb', Buffer.from(ycy.PUMP_CIPHER_KEY, 'hex'), null);
+    dec.setAutoPadding(false);
+    const plain = Buffer.concat([
+      dec.update(ycy.buildPumpEncrypted({ protocol: 'v1', scene: 'guan', pad: zero })),
+      dec.final(),
+    ]);
+    expect(hex(plain.subarray(0, 7))).toBe('BF0FA00201003C');
     // toBleFrame 同样产出 16 字节密文
     const frame = ycy.toBleFrame({ brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'stop' });
     expect(frame.length).toBe(16);
@@ -264,10 +284,10 @@ describe('设备类型层发出品牌命令（接入 Bridge / 设备映射）', 
     expect(captured).toEqual({ brand: 'ycy', cmd: 'triggerInstruction', commandId: 'enema_on' });
   });
 
-  test('YCY_ENEMA 全部停止 → stopAll', () => {
+  test('YCY_ENEMA 全部停止 → pump stop', () => {
     let captured = null;
     registry.getDeviceType('YCY_ENEMA').invokeOperation('devE', 'stop', {}, (id, msg) => { captured = msg; return msg; });
-    expect(captured).toEqual({ brand: 'ycy', cmd: 'stopAll' });
+    expect(captured).toMatchObject({ brand: 'ycy', cmd: 'pump', scene: 'stop' });
   });
 });
 
@@ -285,8 +305,9 @@ describe('役次元 设备类型推断（resolveDeviceType）', () => {
     expect(resolveDeviceType('ycy', { mode: 'bridge' })).toBe('YCY_EMS');
   });
 
-  test('ble 模式 FJB 归为杯，不再当成玩具电机', () => {
+  test('ble 模式 FJB-03 为杯，FJB-01 为官方玩具帧', () => {
     expect(resolveDeviceType('ycy', { mode: 'ble', model: 'YCY-FJB-03' })).toBe('YCY_CUP');
+    expect(resolveDeviceType('ycy', { mode: 'ble', model: 'YCY-FJB-01' })).toBe('YCY_TOY');
   });
 
   test('ble 模式未知 YSKJ / DJ / YISK 型号分类保守且一致', () => {

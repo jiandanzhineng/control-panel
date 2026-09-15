@@ -460,8 +460,9 @@ function ycyPanelType(dev: { type?: string; name?: string }) {
   if (/SOSEXY|啵啵贝/i.test(n)) return 'SOSEXY_PID0004'
   if (/XA9935|GXP|艾萝/i.test(n)) return 'GXP_XA9935'
   if (/灌肠|enema|glj|yisk/i.test(n)) return 'YCY_ENEMA'
-  if (/杯|cup|fjb/i.test(n)) return 'YCY_CUP'
-  if (/toy|玩具|tdd/i.test(n)) return 'YCY_TOY'
+  if (/fjb-?03/i.test(n)) return 'YCY_CUP'
+  if (/fjb|tdd|跳蛋|toy|玩具/i.test(n)) return 'YCY_TOY'
+  if (/杯|cup/i.test(n)) return 'YCY_CUP'
   if (/dj|ems|电击/i.test(n)) return 'YCY_EMS'
   return 'YCY_EMS'
 }
@@ -1054,7 +1055,7 @@ async function ycyFjbStop(dev: BrandDevice) {
 async function ycyPumpApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`ycyPump:${dev.deviceId}`, async () => {
-    await devicesApi.invokeCapability(dev.deviceId, 'pump', 'start', { scene: s.scene || 'guan' })
+    await devicesApi.invokeCapability(dev.deviceId, 'pump', 'start', { scene: s.scene || 'guan', ss: 60 })
     ElMessage.success(t('brands.sent'))
   }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
 }

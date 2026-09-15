@@ -5,8 +5,8 @@
 const ycy = require('./protocols/ycy');
 const logger = require('../utils/logger');
 
-const WRITE_HINTS = ['ff41', 'ff31', 'ff71', 'ae01', 'ff03', 'ee03'];
-const SERVICE_HINTS = ['ff40', 'ff30', 'ff00', 'ee01', 'ae00'];
+const WRITE_HINTS = ['ffb1', 'ff41', 'ff31', 'ff71', 'ae01', 'ff03', 'ee03'];
+const SERVICE_HINTS = ['ffb0', 'ff40', 'ff30', 'ff00', 'ee01', 'ae00'];
 const SCAN_MS = 2500;
 const SETTLE_MS = 400;
 

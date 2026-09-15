@@ -76,15 +76,8 @@ function resolveDeviceType(brand, { model, mode, type } = {}) {
   if (brand === 'ycy') {
     // 前端显式选择优先（杯 / 灌肠机 / 电击器 / 玩具 等）
     if (type) return type;
-    if (mode === 'ble') {
-      if (model && /灌肠|enema|glj|yisk/i.test(model)) return 'YCY_ENEMA';
-      if (model && /杯|cup|fjb/i.test(model)) return 'YCY_CUP';
-      if (model && /toy|玩具|电机/i.test(model)) return 'YCY_TOY';
-      return 'YCY_EMS';
-    }
-    // 桥接模式默认按电击器；若名称暗示杯/灌肠则细分
-    if (model && /灌肠|enema|glj|yisk/i.test(model)) return 'YCY_ENEMA';
-    if (model && /杯|cup|fjb/i.test(model)) return 'YCY_CUP';
+    const named = ycyProto.classifyYcyName(model);
+    if (named) return named;
     return 'YCY_EMS';
   }
   return 'base';
