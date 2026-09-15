@@ -124,7 +124,7 @@ class NobleBle {
     });
   }
 
-  async scan({ brand = null, timeoutMs = SCAN_MS, settleMs = SETTLE_MS } = {}) {
+  async scan({ brand = null, timeoutMs = SCAN_MS, settleMs = SETTLE_MS, quiet = false } = {}) {
     if (this._connecting) {
       const cached = [...this._peripherals.values()]
         .map((p) => ({ id: addrOf(p), address: addrOf(p), name: nameOf(p), rssi: p.rssi }))
@@ -135,10 +135,10 @@ class NobleBle {
       return filterBrand(await this._scanShared, brand);
     }
     this._scanShared = (async () => {
-      const first = await this._runScan({ timeoutMs, settleMs });
+      const first = await this._runScan({ timeoutMs, settleMs, quiet });
       if (first.length) return first;
-      logger.info('[ble] scan empty, retry');
-      return this._runScan({ timeoutMs, settleMs });
+      if (!quiet) logger.info('[ble] scan empty, retry');
+      return this._runScan({ timeoutMs, settleMs, quiet });
     })();
     try {
       return filterBrand(await this._scanShared, brand);
@@ -184,10 +184,11 @@ class NobleBle {
       || null;
   }
 
-  async _runScan({ timeoutMs, settleMs }) {
+  async _runScan({ timeoutMs, settleMs, quiet = false }) {
     const n = this.noble();
     const t0 = Date.now();
-    logger.info('[ble] scan start', { timeoutMs, settleMs });
+    const scanLog = quiet ? logger.debug.bind(logger) : logger.info.bind(logger);
+    scanLog('[ble] scan start', { timeoutMs, settleMs });
     await this.waitReady();
     const found = new Map();
     const seen = new Set();
@@ -203,13 +204,13 @@ class NobleBle {
       if (!detectBrand(name)) {
         if (!seen.has(id)) {
           seen.add(id);
-          logger.info('[ble] scan seen', { name: name || '(no name)', id, rssi: p.rssi, ms: Date.now() - t0 });
+          logger.debug('[ble] scan seen', { name: name || '(no name)', id, rssi: p.rssi, ms: Date.now() - t0 });
         }
         return;
       }
       const isNew = !found.has(id);
       found.set(id, { id, address: id, name, rssi: p.rssi });
-      if (isNew) logger.info('[ble] scan found', { name, id, rssi: p.rssi, ms: Date.now() - t0 });
+      if (isNew) scanLog('[ble] scan found', { name, id, rssi: p.rssi, ms: Date.now() - t0 });
       if (isNew && found.size === 1 && settleMs >= 0) {
         early = setTimeout(() => settle('early'), settleMs);
       }
@@ -223,7 +224,7 @@ class NobleBle {
       const reason = await done;
       clearTimeout(timer);
       if (early) clearTimeout(early);
-      logger.info('[ble] scan done', { reason, count: found.size, ms: Date.now() - t0 });
+      scanLog('[ble] scan done', { reason, count: found.size, ms: Date.now() - t0 });
     } finally {
       this._scanSettle = null;
       n.removeListener('discover', onDiscover);
@@ -243,7 +244,7 @@ class NobleBle {
     logger.info('[ble] connect', { address: key, cached: !!p, state: p?.state });
     try {
     if (!p) {
-      await this.scan({ timeoutMs: SCAN_MS });
+      await this.scan({ timeoutMs: SCAN_MS, quiet: true });
       p = this._findPeripheral(address);
     }
     if (this._scanSettle) this._scanSettle('pre-connect');

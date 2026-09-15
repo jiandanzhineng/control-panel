@@ -639,7 +639,7 @@ async function tickAutoConnect() {
     const saved = listSavedBleDevices();
     const nobleBle = require('./nobleBle');
     let found = [];
-    try { found = await nobleBle.scan(); } catch (_) { found = []; }
+    try { found = await nobleBle.scan({ quiet: true }); } catch (_) { found = []; }
     for (const d of found) {
       const brand = nobleBle.detectBrand(d.name);
       if (!brand) continue;
