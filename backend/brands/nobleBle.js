@@ -5,8 +5,9 @@
 const ycy = require('./protocols/ycy');
 const logger = require('../utils/logger');
 
-const WRITE_HINTS = ['ffb1', 'ff41', 'ff31', 'ff71', 'ae01', 'ff03', 'ee03'];
-const SERVICE_HINTS = ['ffb0', 'ff40', 'ff30', 'ff00', 'ee01', 'ae00'];
+const WRITE_HINTS = ['150a', '1504', 'ffb1', 'ff41', 'ff31', 'ff71', 'ae01', 'ff03', 'ee03'];
+const SERVICE_HINTS = ['180c', '180b', 'ffb0', 'ff40', 'ff30', 'ff00', 'ee01', 'ae00'];
+const GAP_SHORT = new Set(['2a00', '2a01', '2a02', '2a03', '2a04', '2a05', '2a06', '2a07', '2a08', '2a09', '2aa6', '1800', '1801']);
 const SCAN_MS = 2500;
 const SETTLE_MS = 400;
 
@@ -76,17 +77,31 @@ function isWritable(c) {
   return !!(p.write || p.writeWithoutResponse);
 }
 
+function isGapChar(c) {
+  return GAP_SHORT.has(shortUuid(c.uuid));
+}
+
+function uuidEq(a, b) {
+  if (!a || !b) return false;
+  const x = String(a).toLowerCase();
+  const y = String(b).toLowerCase();
+  if (x === y) return true;
+  const sx = shortUuid(a);
+  const sy = shortUuid(b);
+  return sx === sy && sx.length === 4;
+}
+
 function pickWriteChar(chars) {
   const list = chars || [];
+  const hinted = (c, hint) => String(c.uuid || '').toLowerCase().includes(hint) && !isGapChar(c);
   for (const hint of WRITE_HINTS) {
-    const hit = list.find((c) => String(c.uuid || '').toLowerCase().includes(hint) && isWritable(c));
+    const hit = list.find((c) => hinted(c, hint) && isWritable(c));
     if (hit) return hit;
   }
-  const any = list.find(isWritable);
+  const any = list.find((c) => isWritable(c) && !isGapChar(c));
   if (any) return any;
-  // WinRT 有时不带 write 属性，仍按已知 UUID 选用。
   for (const hint of WRITE_HINTS) {
-    const hit = list.find((c) => String(c.uuid || '').toLowerCase().includes(hint));
+    const hit = list.find((c) => hinted(c, hint));
     if (hit) return hit;
   }
   return null;
@@ -296,8 +311,10 @@ class NobleBle {
       throw new Error(`设备尚未发现写特征/未就绪 (${charSummary(chars)})`);
     }
     this._sessions.set(key, { peripheral: p, write, chars });
-    logger.info('[ble] ready', { address: key, writeUuid: write.uuid, charCount: chars.length, ms: Date.now() - t0 });
-    return { address: key, writeUuid: write.uuid };
+    const writeShort = shortUuid(write.uuid);
+    const proto = writeShort === '150a' ? 'v3' : (writeShort === '1504' || String(write.uuid).toLowerCase().includes('955a1504') ? 'v2' : undefined);
+    logger.info('[ble] ready', { address: key, writeUuid: write.uuid, proto, charCount: chars.length, ms: Date.now() - t0 });
+    return { address: key, writeUuid: write.uuid, proto };
     } finally {
       this._connecting = false;
     }
@@ -309,7 +326,8 @@ class NobleBle {
     if (!sess) throw new Error('设备未就绪');
     let char = sess.write;
     if (writeUuid) {
-      char = sess.chars.find((c) => String(c.uuid).toLowerCase() === String(writeUuid).toLowerCase()) || char;
+      char = (sess.chars || []).find((c) => uuidEq(c.uuid, writeUuid));
+      if (!char) throw new Error(`写特征不匹配 ${writeUuid}`);
     }
     if (!char) throw new Error('写特征未缓存');
     const buf = Buffer.isBuffer(frame) ? frame : Buffer.from(frame);
@@ -346,6 +364,7 @@ module.exports = {
   pickWriteChar,
   matchesBrand,
   detectBrand,
+  uuidEq,
   WRITE_HINTS,
   scan: (opts) => shared.scan(opts),
   connect: (addr) => shared.connect(addr),

@@ -3,8 +3,7 @@
 // 这是「跨平台」主路径：Windows / Linux / macOS 的浏览器（Chrome / Edge）原生支持，
 // 无需安装任何东西，别人打开页面即可用。
 //   - 郊狼 2.0 在 macOS 上也能走此路径；
-//   - 郊狼 3.0 在 macOS 上会被 Chromium 报 "No Services found"（私有 GATT 枚举限制），
-//     此时前端会自动改走原生桥（dglab_bridge，仅 macOS）——见 BrandsPanel 的回退逻辑。
+//   - 郊狼 3.0（47L）产品路径是 noble，不走本 WebBLE V2 客户端。
 //
 // 支持同时连接多台设备（按 device.id 维护多个 GATT 客户端）。
 //
@@ -34,9 +33,8 @@ const V2_CHARS = {
 };
 const DGLAB_V2_NAMES = ['D-LAB', 'DG-LAB', 'COYOTE', 'YSKJ', 'ESTIM'];
 // 系统蓝牙选择器只用「设备名前缀」过滤无关设备（按服务 UUID 过滤对郊狼无效：
-// 郊狼广播不含 955a180b，按服务过滤会“搜不到”）。2.0 名称以 D-LAB/DG-LAB 开头，
-// 3.0 以 47L 开头；列出这些前缀即可在弹出选择器里只显示郊狼设备。
-const DGLAB_V2_NAME_PREFIXES = ['D-LAB', 'DG-LAB', '47L'];
+// 郊狼广播不含 955a180b，按服务过滤会“搜不到”）。网页蓝牙只接 2.0；3.0（47L）走 noble。
+const DGLAB_V2_NAME_PREFIXES = ['D-LAB', 'DG-LAB'];
 
 declare global {
   interface Window {

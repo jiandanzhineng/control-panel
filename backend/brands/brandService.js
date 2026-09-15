@@ -195,7 +195,7 @@ async function connect(brand, opts = {}) {
         fetchImpl: opts.fetchImpl,
       })
       : new NobleBleConnection({
-        brand, deviceId: finalDeviceId, address: opts.address, type,
+        brand, deviceId: finalDeviceId, address: opts.address, type, name: finalName,
       });
     logger.info('[ble] brand connect start', {
       brand, address: opts.address, type, deviceId: finalDeviceId, via: opts.fetchImpl ? 'rust' : 'noble',
@@ -332,7 +332,7 @@ function rebuildConnection(deviceId, meta) {
       });
     }
     return new NobleBleConnection({
-      brand: meta.brand, deviceId, address: meta.address, type: meta.type,
+      brand: meta.brand, deviceId, address: meta.address, type: meta.type, name: meta.name,
     });
   }
   if (meta.brand === 'dglab') {
