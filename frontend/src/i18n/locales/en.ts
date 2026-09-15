@@ -828,6 +828,8 @@ const en = {
     axis: '3rd axis {n}',
     left: 'Left {n}',
     right: 'Right {n}',
+    channelA: 'Channel A {n}',
+    channelB: 'Channel B {n}',
     speed: 'Speed {n}',
     startPump: 'Start pump',
     playId: 'Play ID',

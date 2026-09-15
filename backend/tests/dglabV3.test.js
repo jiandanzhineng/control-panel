@@ -57,6 +57,13 @@ describe('DG-LAB V3 协议', () => {
     expect(v3.applyCommand(on, { cmd: 'stopPattern' })).toEqual({ a: 0, b: 0 });
   });
 
+  test('setEstim 分通道保留另一通道', () => {
+    const a = v3.applyCommand({ a: 0, b: 40 }, { cmd: 'setEstim', channel: 'A', intensity: 128 });
+    expect(a).toEqual({ a: 100, b: 40 });
+    const b = v3.applyCommand(a, { cmd: 'setEstim', channel: 'B', intensity: 0 });
+    expect(b).toEqual({ a: 100, b: 0 });
+  });
+
   test('nextB0 绝对强度且停机通道静音', () => {
     const frame = v3.nextB0({ a: 40, b: 0 });
     expect(frame[0]).toBe(0xB0);

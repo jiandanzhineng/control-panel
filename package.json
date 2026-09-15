@@ -1,7 +1,7 @@
 {
   "name": "undersilicon",
   "private": true,
-  "version": "1.0.36-beta.4",
+  "version": "1.0.36-beta.5",
   "main": "electron/main.js",
   "scripts": {
     "test:backend": "npm --prefix backend test -- --runInBand",

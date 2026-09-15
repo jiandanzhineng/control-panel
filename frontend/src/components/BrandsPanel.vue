@@ -66,14 +66,20 @@
               </div>
               <el-button size="small" :icon="Close" @click="disconnectDevice(dev)">{{ t('brands.disconnect') }}</el-button>
             </div>
-            <div v-if="dev.brand === 'dglab'" class="control-grid">
-              <div class="control-field">
-                <label>{{ t('brands.intensity', { n: ctl(dev).intensity }) }}</label>
-                <el-slider v-model="ctl(dev).intensity" :min="0" :max="100" />
+            <div v-if="dev.brand === 'dglab'" class="control-stack">
+              <div class="control-row">
+                <div class="control-field"><label>{{ t('brands.intensity', { n: ctl(dev).intensity }) }}</label><el-slider v-model="ctl(dev).intensity" :min="0" :max="100" /></div>
+                <div class="control-actions">
+                  <el-button type="primary" size="small" :loading="opLoading[`dglabApply:${dev.deviceId}`]" @click="dglabApply(dev)">{{ t('brands.apply') }}</el-button>
+                  <el-button size="small" :loading="opLoading[`dglabStop:${dev.deviceId}`]" @click="dglabStop(dev)">{{ t('brands.stop') }}</el-button>
+                </div>
               </div>
-              <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`dglabApply:${dev.deviceId}`]" @click="dglabApply(dev)">{{ t('brands.apply') }}</el-button>
-                <el-button size="small" :loading="opLoading[`dglabStop:${dev.deviceId}`]" @click="dglabStop(dev)">{{ t('brands.stop') }}</el-button>
+              <div class="control-row">
+                <div class="control-field"><label>{{ t('brands.channelA', { n: ctl(dev).aStrength }) }}</label><el-slider v-model="ctl(dev).aStrength" :min="0" :max="255" /></div>
+                <div class="control-field"><label>{{ t('brands.channelB', { n: ctl(dev).bStrength }) }}</label><el-slider v-model="ctl(dev).bStrength" :min="0" :max="255" /></div>
+                <div class="control-actions">
+                  <el-button type="primary" size="small" :loading="opLoading[`dglabEstim:${dev.deviceId}`]" @click="dglabEstimApply(dev)">{{ t('brands.applyShock') }}</el-button>
+                </div>
               </div>
             </div>
             <div v-else-if="ycyPanelType(dev) === 'SOSEXY_PID0004'" class="control-stack">
@@ -939,6 +945,15 @@ async function dglabStop(dev: BrandDevice) {
   await withLoading(`dglabStop:${dev.deviceId}`, async () => {
     await devicesApi.invokeCapability(dev.deviceId, 'shock', 'stop', {})
   }).catch((e: any) => { ElMessage.error(e?.message || t('brands.stopFailed')) })
+}
+
+async function dglabEstimApply(dev: BrandDevice) {
+  const s = ctl(dev)
+  await withLoading(`dglabEstim:${dev.deviceId}`, async () => {
+    await devicesApi.invokeCapability(dev.deviceId, 'estim', 'set', { channel: 'A', intensity: s.aStrength })
+    await devicesApi.invokeCapability(dev.deviceId, 'estim', 'set', { channel: 'B', intensity: s.bStrength })
+    ElMessage.success(t('brands.sent'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
 }
 
 async function ycyTrigger(dev: BrandDevice) {

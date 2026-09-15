@@ -828,6 +828,8 @@ const zh = {
     axis: '第三轴 {n}',
     left: '左通道 {n}',
     right: '右通道 {n}',
+    channelA: 'A通道 {n}',
+    channelB: 'B通道 {n}',
     speed: '速度 {n}',
     startPump: '启动泵',
     playId: '玩法编号',

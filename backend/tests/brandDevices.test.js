@@ -278,6 +278,11 @@ describe('设备类型层发出品牌命令（接入 Bridge / 设备映射）', 
     expect(registry.hasCapability('DGLAB', 'strength')).toBe(false);
   });
 
+  test('DGLAB estim.set 分通道', () => {
+    const m = emit('DGLAB', 'estim', 'set', { channel: 'A', intensity: 128 });
+    expect(m).toMatchObject({ brand: 'dglab', cmd: 'setEstim', channel: 'A', intensity: 128 });
+  });
+
   test('YCY_ENEMA 触发指令 → triggerInstruction', () => {
     let captured = null;
     registry.getDeviceType('YCY_ENEMA').invokeOperation('devE', 'trigger', { commandId: 'enema_on' }, (id, msg) => { captured = msg; return msg; });
