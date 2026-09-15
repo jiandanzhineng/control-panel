@@ -110,7 +110,7 @@
       + '<div class="game-card-foot">'
         + '<span class="game-size">' + (g.sha256 ? ('sha ' + g.sha256.slice(0, 8)) : '') + (g.size ? ' · ' + fmtSize(g.size) : '') + '</span>'
         + '<span class="game-actions">'
-          + '<a class="play-link ghost" href="game-detail.html?id=' + encodeURIComponent(g.id) + '">介绍</a>'
+          + '<a class="play-link ghost" href="game-intro.html?id=' + encodeURIComponent(g.id) + '">介绍</a>'
           + '<button class="play-link ghost" type="button" data-cache="' + esc(g.id) + '">' + t('cache') + '</button>'
           + '<button class="play-link" type="button" data-launch="' + esc(g.id) + '">' + t('launch') + '</button>'
         + '</span>'
@@ -206,3 +206,4 @@
     setTimeout(tryOpen, 300);
   }
 })();
+
