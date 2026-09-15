@@ -38,6 +38,7 @@ class NobleBleConnection {
     if (!this._inner && this.brand === 'dglab') {
       const v3 = dglabV3.isV3Name(this.name) || dglabV3.isV3WriteUuid(ready?.writeUuid);
       if (dglabV3.isV3Name(this.name) && !dglabV3.isV3WriteUuid(ready?.writeUuid)) {
+        try { await this._ble.disconnect(this.address); } catch (_) { /* ignore */ }
         throw new Error('郊狼 3.0 未发现写特征 150A');
       }
       if (v3) {

@@ -46,6 +46,13 @@ describe('nobleBle 写特征选择', () => {
     expect(pickWriteChar([gap, write]).uuid).toContain('150a');
     expect(pickWriteChar([gap])).toBeNull();
   });
+
+  test('Nordic DFU 写特征不当控制通道', () => {
+    const dfu = fakeChar('8ec90002-f315-4f60-9fb8-838830daea50', { write: true });
+    expect(pickWriteChar([dfu])).toBeNull();
+    const write = fakeChar('0000150a-0000-1000-8000-00805f9b34fb', { write: true });
+    expect(pickWriteChar([dfu, write]).uuid).toContain('150a');
+  });
 });
 
 describe('NobleBle connect/write', () => {

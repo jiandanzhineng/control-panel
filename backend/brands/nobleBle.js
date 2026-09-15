@@ -81,6 +81,11 @@ function isGapChar(c) {
   return GAP_SHORT.has(shortUuid(c.uuid));
 }
 
+function isBlockedChar(c) {
+  if (isGapChar(c)) return true;
+  return String(c.uuid || '').toLowerCase().includes('8ec9');
+}
+
 function uuidEq(a, b) {
   if (!a || !b) return false;
   const x = String(a).toLowerCase();
@@ -93,12 +98,12 @@ function uuidEq(a, b) {
 
 function pickWriteChar(chars) {
   const list = chars || [];
-  const hinted = (c, hint) => String(c.uuid || '').toLowerCase().includes(hint) && !isGapChar(c);
+  const hinted = (c, hint) => String(c.uuid || '').toLowerCase().includes(hint) && !isBlockedChar(c);
   for (const hint of WRITE_HINTS) {
     const hit = list.find((c) => hinted(c, hint) && isWritable(c));
     if (hit) return hit;
   }
-  const any = list.find((c) => isWritable(c) && !isGapChar(c));
+  const any = list.find((c) => isWritable(c) && !isBlockedChar(c));
   if (any) return any;
   for (const hint of WRITE_HINTS) {
     const hit = list.find((c) => hinted(c, hint));
@@ -115,6 +120,7 @@ class NobleBle {
     this._scanShared = null;
     this._scanSettle = null;
     this._connecting = false;
+    this._inflight = new Map();
   }
 
   noble() {
@@ -251,7 +257,26 @@ class NobleBle {
     return [...found.values()];
   }
 
+  _readyInfo(key, sess) {
+    const write = sess.write;
+    const writeShort = shortUuid(write.uuid);
+    const proto = writeShort === '150a' ? 'v3' : (writeShort === '1504' || String(write.uuid).toLowerCase().includes('955a1504') ? 'v2' : undefined);
+    return { address: key, writeUuid: write.uuid, proto };
+  }
+
   async connect(address) {
+    const key = String(address || '').toLowerCase();
+    const sess = this._sessions.get(key);
+    if (sess?.write) return this._readyInfo(key, sess);
+    const pending = this._inflight.get(key);
+    if (pending) return pending;
+    const job = this._connectOnce(address);
+    this._inflight.set(key, job);
+    try { return await job; }
+    finally { this._inflight.delete(key); }
+  }
+
+  async _connectOnce(address) {
     const t0 = Date.now();
     const key = String(address || '').toLowerCase();
     let p = this._findPeripheral(address);
