@@ -275,10 +275,9 @@ function getAppRoot() {
   return app.isPackaged ? app.getAppPath() : path.join(__dirname, '..');
 }
 
-// 监管原生桥进程：Electron 在 app 启动时拉起 ycy_bridge / dglab_bridge，崩溃后 1s 自动重启。
-// 这样"本机桥接"通道对所有用户、所有平台开箱即稳定——由主进程统一监管，
-// 不再依赖开发机专属的 launchd plist（launchd 是 macOS 专属，无法覆盖 Windows / Linux）。
-// 二进制由跨平台 Rust 桥(bridge/)构建：macOS 为 tools/ycy_bridge，Windows 为 tools/ycy_bridge.exe。
+// 监管原生桥进程：macOS 启动时拉起 ycy_bridge / dglab_bridge，崩溃后 1s 自动重启。
+// Windows 产品路径是 noble，不拉桥，避免和 WinRT 扫描抢适配器。
+// 二进制由跨平台 Rust 桥(bridge/)构建：macOS 为 tools/ycy_bridge。
 // 路径解析复用 getResourcePath：开发环境走项目 tools/，打包后走 resources/tools/。
 function superviseBridge(name, binaryRelBase) {
   if (process.platform !== 'darwin' && process.platform !== 'win32') return;
@@ -321,6 +320,8 @@ function superviseBridge(name, binaryRelBase) {
 }
 
 function superviseBridges() {
+  // Windows 品牌蓝牙走 noble。Rust 桥会另开 WinRT 扫描，面板就收不到 47L 等广播。
+  if (process.platform === 'win32') return;
   superviseBridge('ycy_bridge', 'tools/ycy_bridge');
   superviseBridge('dglab_bridge', 'tools/dglab_bridge');
 }
