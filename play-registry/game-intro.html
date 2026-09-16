@@ -1,5 +1,75 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>游戏介绍 · 硅基之下游戏库</title><link rel="stylesheet" href="assets/css/site.css"><script src="assets/js/baidu-tongji.js"></script><style>.detail-hero{padding:56px 48px;border-radius:28px;background:linear-gradient(135deg,#19152f,#553b87);color:#fff;box-shadow:0 22px 60px #24164430}.detail-icon{font-size:42px;margin-bottom:20px}.detail-hero h1{font-size:clamp(32px,5vw,54px);margin:0 0 14px}.detail-hero p{max-width:720px;color:#ddd5f5;font-size:17px;line-height:1.8}.detail-byline{display:flex;gap:10px;align-items:center;color:#c9b9ec;margin-top:25px}.detail-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:20px;margin-top:22px}.detail-card{padding:28px;border:1px solid var(--line,#e8e5f0);border-radius:20px;background:var(--panel,#fff)}.detail-card h2{margin-top:0}.detail-card p{line-height:1.8;color:var(--muted,#6b6780);white-space:pre-line}.detail-list{margin:0;padding-left:22px;line-height:2;color:var(--muted,#6b6780)}.detail-tags{display:flex;flex-wrap:wrap;gap:8px}@media(max-width:700px){.detail-hero{padding:34px 24px}.detail-grid{grid-template-columns:1fr}}</style></head><body>
-<nav class="nav"><div class="nav-inner"><a class="brand" href="index.html">⚡ 硅基之下游戏库</a><div class="nav-links"><a href="games.html">游戏</a><a href="author.html" class="nav-cta">作者管理</a></div></div></nav>
-<main class="platform-page container"><p id="detail-message" class="platform-message"></p><section id="detail-content"></section></main>
-<script src="assets/js/game-detail.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title data-i18n-title="introTitle">游戏介绍 · 硅基之下游戏库</title>
+<meta name="description" content="查看玩法介绍、所需设备和操作步骤，再从本页启动。" />
+<link rel="stylesheet" href="assets/css/site.css" />
+<script src="assets/js/baidu-tongji.js"></script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
 
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark">⚡</span>
+      <span data-i18n="brand">硅基之下游戏库</span>
+    </a>
+    <div class="nav-links">
+      <a href="games.html" data-i18n="navGames" class="active">游戏</a>
+      <a href="control.html" data-i18n="navControl">设备控制</a>
+      <a href="docs/agent-guide.html" data-i18n="navDocs">开发文档</a>
+      <a href="docs/device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
+      <a href="submit.html" class="nav-cta" data-i18n="navContribute">投稿</a>
+      <div class="lang-switch">
+        <button type="button" data-set-locale="zh">中</button>
+        <button type="button" data-set-locale="en">EN</button>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<main class="platform-page container">
+  <p id="detail-message" class="platform-message" aria-live="polite"></p>
+  <section id="detail-content">
+    <div class="skeleton detail-skeleton"></div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-links">
+      <a href="games.html" data-i18n="navGames">游戏</a>
+      <a href="control.html" data-i18n="navControl">设备控制</a>
+      <a href="docs/agent-guide.html" data-i18n="navDocs">开发文档</a>
+      <a href="docs/device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
+      <a href="docs/devices.html" data-i18n="footerDevices">设备清单</a>
+      <a href="submit.html" data-i18n="navContribute">投稿</a>
+    </div>
+    <div><span data-i18n="footerNoteGames">UnderSilicon 控制面板 · 远程玩法仓库 · 已发布内容由平台审核后同步</span></div>
+  </div>
+</footer>
+
+<div class="toast" id="toast"></div>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-game-title">
+  <div class="modal-panel">
+    <div class="modal-head">
+      <h3 id="modal-game-title" data-i18n="modalPlay">玩法</h3>
+      <button class="modal-close" aria-label="关闭" data-i18n-aria="close">✕</button>
+    </div>
+    <div class="modal-status" id="modal-status"></div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="modal-cancel" data-i18n="cancel">取消</button>
+      <button class="btn btn-primary" id="modal-start" disabled data-i18n="startPlay">启动玩法 →</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/i18n.js"></script>
+<script src="assets/js/play-launcher.js"></script>
+<script src="assets/js/game-detail.js"></script>
+</body>
+</html>

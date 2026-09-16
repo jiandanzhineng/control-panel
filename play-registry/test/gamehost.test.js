@@ -256,6 +256,7 @@ test('cardHtml 渲染出 data-cache 和 data-launch 两个按钮', async () => {
   const html = ctx.__elements.grid.innerHTML;
   assert.match(html, /data-cache="demo"/);
   assert.match(html, /data-launch="demo"/);
+  assert.match(html, /game-intro\.html\?id=demo/);
 });
 
 test('无宿主时 cache 给出明确提示且不触发 127.0.0.1', async () => {
