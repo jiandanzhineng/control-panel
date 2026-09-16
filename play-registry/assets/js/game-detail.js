@@ -41,14 +41,18 @@
   }
 
   function gameIdFromLocation() {
-    var pathMatch = location.pathname.match(/\/games\/([^/]+)\.html$/);
-    if (pathMatch && pathMatch[1]) return decodeURIComponent(pathMatch[1]);
+    var path = location.pathname || "";
+    var marker = "/games/";
+    var idx = path.lastIndexOf(marker);
+    if (idx >= 0 && path.slice(-5) === ".html") {
+      return decodeURIComponent(path.slice(idx + marker.length, path.length - 5));
+    }
     return new URLSearchParams(location.search).get("id");
   }
 
   function registryUrl() {
-    if (/\/games\/[^/]+\.html$/.test(location.pathname)) return "/registry.json";
-    return "registry.json";
+    if (location.protocol === "file:") return "registry.json";
+    return "/registry.json";
   }
 
   function fmtSize(bytes) {

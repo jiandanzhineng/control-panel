@@ -59,6 +59,7 @@ function makeContext(options) {
       href: opts.href || 'https://site.example/game-intro.html?id=demo',
       search: opts.search || '?id=demo',
       pathname: opts.pathname || '/game-intro.html',
+      protocol: opts.protocol || 'https:',
     },
     URL,
     URLSearchParams,
