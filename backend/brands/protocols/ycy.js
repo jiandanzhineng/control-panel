@@ -66,7 +66,8 @@ const FAMILY = {
   MOTOR_CONTROL: 0x12,   // 马达 / 玩具电机速度
   STEP_CONTROL: 0x13,    // 计步
   ANGLE_CONTROL: 0x14,   // 角度
-  QUERY: 0x71,           // 查询
+  QUERY: 0x71,           // 电击器查询（非 FJB-01）
+  TOY_INFO: 0x10,        // FJB-01 产品信息查询
 };
 
 // 通道字节（与 protocol.py 的 YCYChannel 对齐）。
@@ -249,6 +250,23 @@ function buildToySpeeds({ a = 0, b = 0, c = 0 } = {}) {
   ]));
 }
 
+/** FJB-01 产品信息查询：35 10 校验。 */
+function buildToyInfoQuery() { return withChecksum(Buffer.from([0x35, FAMILY.TOY_INFO])); }
+
+/** FJB-01 固定模式：35 11 马达位图 模式 校验。 */
+function buildToyFixedMode({ motors = 0, mode = 0 } = {}) {
+  return withChecksum(Buffer.from([0x35, 0x11, clamp(motors, 0, 0x07), clamp(mode, 0, 0xff)]));
+}
+
+/** FJB-01 通知解析；返回产品信息或电量，非法/校验失败返回 null。 */
+function parseToyNotification(value) {
+  const b = Buffer.from(value || []);
+  if (b.length < 3 || checksum(b.subarray(0, -1)) !== b[b.length - 1] || b[0] !== 0x35) return null;
+  if (b[1] === 0x10 && b.length >= 10) return { type: 'info', productId: b[2], productVersion: b[3], motorModes: { a: b[4], b: b[5], c: b[6] } };
+  if (b[1] === 0x13 && b.length >= 5 && b[2] === 0x01) return { type: 'battery', battery: b[3] };
+  return null;
+}
+
 /**
  * YCY-FJB-03 真机帧（6 字节）：35 12 [旋转 0–40] [震动 0–20] [第三轴 0–20] [校验和]。
  * 旋转 1–20 正转、21–40 反转。不是 4 字节玩具电机帧，也不是 AES 泵帧。
@@ -377,6 +395,10 @@ function toBleFrame(brandCommand) {
       return buildMotor({ speed: brandCommand.speed });
     case 'setToySpeeds':
       return buildToySpeeds(brandCommand);
+    case 'toyInfoQuery':
+      return buildToyInfoQuery();
+    case 'setToyFixedMode':
+      return buildToyFixedMode(brandCommand);
     case 'setToyMode':
       return buildMotor({ speed: brandCommand.mode });
     case 'stopToy':
@@ -652,6 +674,9 @@ module.exports = {
   buildXlIntensity,
   buildMotor,
   buildToySpeeds,
+  buildToyInfoQuery,
+  buildToyFixedMode,
+  parseToyNotification,
   buildFjb03,
   buildPumpV3,
   buildPumpEncrypted,

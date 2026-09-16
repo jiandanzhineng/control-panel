@@ -112,6 +112,11 @@ describe('役次元 YCY 协议', () => {
     expect(hex(ycy.buildFjb03({ stroke: 15, vibe: 0, axis: 0 }))).toBe('35120F000056');
     expect(hex(ycy.buildFjb03({ stroke: 0, vibe: 0, axis: 0 }))).toBe('351200000047');
     expect(hex(ycy.buildToySpeeds({ a: 10, b: 0, c: 0 }))).toBe('35120A000051');
+    expect(hex(ycy.buildToyInfoQuery())).toBe('351045');
+    expect(hex(ycy.buildToyFixedMode({ motors: 7, mode: 2 }))).toBe('351107024F');
+    expect(ycy.parseToyNotification(Buffer.from('35100102030405000000', 'hex'))).toBeNull();
+    const info = Buffer.from([0x35, 0x10, 1, 2, 3, 4, 5, 0, 0]);
+    expect(ycy.parseToyNotification(Buffer.concat([info, Buffer.from([ycy.checksum(info)])]))).toMatchObject({ type: 'info', productId: 1, motorModes: { a: 3, b: 4, c: 5 } });
   });
 
   test('桥接消息构造与连接翻译', async () => {

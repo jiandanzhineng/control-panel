@@ -145,12 +145,23 @@ class WebBluetoothYcyClient {
       try { this.device.gatt?.disconnect(); } catch (_) {}
       throw new Error('未找到可写特征，设备可能不支持 BLE 直控');
     }
+    if (/FJB-01/i.test(this.device.name || '')) {
+      const query = new Uint8Array([0x35, 0x10, 0x45]);
+      if (this.writeChar.properties?.writeWithoutResponse) await this.writeChar.writeValueWithoutResponse(query);
+      else await this.writeChar.writeValueWithResponse(query);
+    }
 
     // 订阅通知（状态/电量回传）。
     if (notify) {
       try {
         await notify.startNotifications();
-        notify.addEventListener('characteristicvaluechanged', () => { /* 暂仅记录，解析待协议补充 */ });
+        notify.addEventListener('characteristicvaluechanged', (event: Event) => {
+          const v = (event.target as BluetoothRemoteGATTCharacteristic).value;
+          if (!v || v.byteLength < 5) return;
+          const bytes = Array.from(new Uint8Array(v.buffer, v.byteOffset, v.byteLength));
+          const sum = bytes.slice(0, -1).reduce((s, x) => (s + x) & 0xff, 0);
+          if (bytes[0] === 0x35 && bytes[1] === 0x13 && bytes[2] === 0x01 && sum === bytes[bytes.length - 1]) this.emitBattery(bytes[3]);
+        });
       } catch (_) { /* 部分设备不支持 notify */ }
     }
 
