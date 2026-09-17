@@ -35,6 +35,7 @@ type RegistryEntry struct {
 	ID             string         `json:"id"`
 	Title          string         `json:"title"`
 	Description    string         `json:"description"`
+	AuthorName     string         `json:"authorName,omitempty"`
 	Version        string         `json:"version"`
 	Source         string         `json:"source"`
 	Devices        []any          `json:"devices"`

@@ -114,6 +114,23 @@ const DEMO = {
   },
 };
 
+test('社区投稿展示 registry 署名，缺署名时显示未知作者', async () => {
+  const named = Object.assign({}, DEMO, { id: 'community', source: 'community', authorName: '投稿人' });
+  const ctx = makeContext({ games: [named], search: '?id=community', href: 'https://site.example/game-intro.html?id=community' });
+  load(ctx);
+  await flush();
+  await flush();
+  assert.match(ctx.__elements['detail-content'].innerHTML, /投稿人/);
+
+  const unknown = Object.assign({}, DEMO, { id: 'community', source: 'community' });
+  delete unknown.author;
+  const ctx2 = makeContext({ games: [unknown], search: '?id=community', href: 'https://site.example/game-intro.html?id=community' });
+  load(ctx2);
+  await flush();
+  await flush();
+  assert.match(ctx2.__elements['detail-content'].innerHTML, /未知作者|Unknown author/);
+});
+
 test('介绍页从 registry 渲染标题、设备和启动按钮', async () => {
   const ctx = makeContext({ games: [DEMO] });
   const calls = { open: [], cache: [] };

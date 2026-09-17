@@ -93,7 +93,7 @@ func TestZipSubmissionPublishesRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entry.ID != "test-game" || entry.PackageURL == "" || entry.Path == "" {
+	if entry.ID != "test-game" || entry.PackageURL == "" || entry.Path == "" || entry.AuthorName != "Author" {
 		t.Fatalf("unexpected published entry: %#v", entry)
 	}
 	registry, err := app.store.Get(ctx, "registry.json", 128*1024)
@@ -104,7 +104,7 @@ func TestZipSubmissionPublishesRegistry(t *testing.T) {
 	if err := json.Unmarshal(registry, &document); err != nil {
 		t.Fatal(err)
 	}
-	if document.SchemaVersion != 2 || len(document.Games) != 1 || document.Games[0].ID != entry.ID {
+	if document.SchemaVersion != 2 || len(document.Games) != 1 || document.Games[0].ID != entry.ID || document.Games[0].AuthorName != "Author" {
 		t.Fatalf("unexpected registry: %#v", document)
 	}
 	if _, err := app.store.Get(ctx, entry.Path, 128*1024); err != nil {
@@ -112,6 +112,42 @@ func TestZipSubmissionPublishesRegistry(t *testing.T) {
 	}
 	if _, err := app.store.Get(ctx, entry.PackageURL, 128*1024); err != nil {
 		t.Fatalf("published package is missing: %v", err)
+	}
+}
+
+func TestRebuildRegistryBackfillsPublishedAuthorName(t *testing.T) {
+	config := testConfig(t.TempDir())
+	app, err := newApp(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.close()
+	ctx := context.Background()
+	author := testIdentity(t, app, "mobile-author", "author@example.com", "author")
+	submission, err := app.createSubmission(ctx, author, "Posted Author", "Old Game", "", "zip", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.db.ExecContext(ctx, `UPDATE submissions SET status = 'published' WHERE id = ?`, submission.ID); err != nil {
+		t.Fatal(err)
+	}
+	entryJSON := `{"id":"old-game","title":"Old Game","version":"1.0.0","source":"community","path":"games/old-game/index.html","packageUrl":"packages/old-game.zip","packageSha256":"12345678"}`
+	if _, err := app.db.ExecContext(ctx, `INSERT INTO releases(id, submission_id, game_id, version, entry_json, source_hash, status, created_at) VALUES(?, ?, 'old-game', '1.0.0', ?, '12345678', 'active', 1)`, "rel_old", submission.ID, entryJSON); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.rebuildRegistry(ctx); err != nil {
+		t.Fatal(err)
+	}
+	registry, err := app.store.Get(ctx, "registry.json", 128*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var document registryDocument
+	if err := json.Unmarshal(registry, &document); err != nil {
+		t.Fatal(err)
+	}
+	if len(document.Games) != 1 || document.Games[0].AuthorName != "Posted Author" {
+		t.Fatalf("expected backfilled author, got %#v", document.Games)
 	}
 }
 

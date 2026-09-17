@@ -86,6 +86,7 @@ func (a *App) publishSubmission(ctx context.Context, submission Submission, revi
 		ID:             game.ID,
 		Title:          game.Title,
 		Description:    game.Description,
+		AuthorName:     strings.TrimSpace(submission.AuthorName),
 		Version:        game.Version,
 		Source:         "community",
 		Devices:        game.Devices,
@@ -183,20 +184,23 @@ func (a *App) rebuildRegistry(ctx context.Context) error {
 }
 
 func (a *App) activeEntries(ctx context.Context) ([]RegistryEntry, error) {
-	rows, err := a.db.QueryContext(ctx, `SELECT entry_json FROM releases WHERE status = 'active' ORDER BY game_id ASC`)
+	rows, err := a.db.QueryContext(ctx, `SELECT r.entry_json, COALESCE(s.author_name, ''), COALESCE(s.status, '') FROM releases r LEFT JOIN submissions s ON s.id = r.submission_id WHERE r.status = 'active' ORDER BY r.game_id ASC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	entries := []RegistryEntry{}
 	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
+		var raw, authorName, status string
+		if err := rows.Scan(&raw, &authorName, &status); err != nil {
 			return nil, err
 		}
 		var entry RegistryEntry
 		if err := json.Unmarshal([]byte(raw), &entry); err != nil {
 			return nil, fmt.Errorf("stored registry entry is invalid: %w", err)
+		}
+		if entry.AuthorName == "" && status == "published" {
+			entry.AuthorName = strings.TrimSpace(authorName)
 		}
 		entries = append(entries, entry)
 	}

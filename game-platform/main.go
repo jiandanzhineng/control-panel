@@ -21,6 +21,13 @@ func main() {
 		log.Fatal(err)
 	}
 	defer app.close()
+	if len(os.Args) > 1 && os.Args[1] == "rebuild-registry" {
+		if err := app.rebuildRegistry(context.Background()); err != nil {
+			log.Fatal(err)
+		}
+		log.Printf("registry rebuilt")
+		return
+	}
 	server := &http.Server{
 		Addr:              config.ListenAddr,
 		Handler:           app.routes(),
