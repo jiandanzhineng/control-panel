@@ -3,13 +3,13 @@
   if (!root.GameI18n || typeof root.GameI18n.register !== 'function') return;
   root.GameI18n.register({
     en: {
-      "喝水/憋尿解锁玩法": "Drink / hold-pee unlock",
+      "喝水/液体收集解锁玩法": "Drink / liquid-collection unlock",
       "初始化": "Init",
       "未映射": "Unmapped",
       "不可用": "Unavailable",
       "正常": "OK",
       "异常": "Fail",
-      "排泄": "Hold pee",
+      "液体收集": "Liquid collection",
       "喝水": "Drink",
       "已映射": "Mapped",
       "电击中": "Shocking",

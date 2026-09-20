@@ -1,4 +1,4 @@
-// 喝水/憋尿解锁玩法 — 页面自驱动（DeviceAPI），逻辑/UI 对齐老版 drinkPeeUnlockEmbedded.js
+// 喝水/液体收集解锁玩法 — 页面自驱动（DeviceAPI），逻辑/UI 对齐老版 drinkPeeUnlockEmbedded.js
 (function () {
   'use strict';
   function L() { return (typeof GameI18n !== 'undefined' && GameI18n.t) ? GameI18n.t : function (zh) { return zh; }; }
@@ -32,7 +32,7 @@
     vibeActive: false, vibeTimer: null, lastProgressLogTs: 0,
   };
   const view = {
-    title: t('喝水/憋尿解锁玩法'), statusText: t('初始化'), remainingSec: '-', initialWeight: '-',
+    title: t('喝水/液体收集解锁玩法'), statusText: t('初始化'), remainingSec: '-', initialWeight: '-',
     progress: 0, targetWeight: 500, shockCount: 0, cooldownRemainingSec: 0, lastPunishReason: '',
     weight: '-', pressure: '-', tiptoeOk: false, punishCountdown: '-', mode: 'drink',
     tiptoeQtz: '-', tiptoePressureText: '-', tiptoePressureThreshold: 0, tiptoePressureMax: '-',
@@ -48,7 +48,7 @@
     $('[data-bind]').forEach((el) => {
       const k = el.getAttribute('data-bind');
       if (k === 'tiptoeOk') { el.textContent = view.tiptoeOk ? t('正常') : t('异常'); return; }
-      if (k === 'modeCN') { el.textContent = view.mode === 'pee' ? t('排泄') : t('喝水'); return; }
+      if (k === 'modeCN') { el.textContent = view.mode === 'pee' ? t('液体收集') : t('喝水'); return; }
       let v = (k in view) ? view[k] : el.textContent;
       el.textContent = (v === undefined || v === null) ? '' : String(v);
     });
@@ -232,7 +232,7 @@
     if (r.indexOf('未保持双脚踮脚') >= 0) return 'punish_tiptoe_qtz';
     if (r.indexOf('脚跟落地') >= 0 || r.indexOf('压力超阈值') >= 0) return 'punish_tiptoe_cunzhi';
     if (r.indexOf('喝水') >= 0) return 'punish_drink_stall';
-    if (r.indexOf('排泄') >= 0) return 'punish_pee_stall';
+    if (r.indexOf('液体收集') >= 0) return 'punish_pee_stall';
     return null;
   }
   // 根据结束原因映射语音 key
@@ -503,7 +503,7 @@
       if (!tiptoeCunzhiOk()) { enterPunish('踮脚惩罚：脚跟落地(压力超阈值)'); return; }
       const countdown = punishCountdownSec(now);
       if (countdown !== null && countdown <= 0) {
-        const type = cfg.mode === 'pee' ? '排泄惩罚' : '喝水惩罚';
+        const type = cfg.mode === 'pee' ? '液体收集惩罚' : '喝水惩罚';
         enterPunish(`${type}：${Number(cfg.stableWindowSec) || 0}秒内无有效重量变化`);
         return;
       }
@@ -607,7 +607,7 @@
   let loopTimer = null;
   async function boot() {
     if (typeof GameI18n !== 'undefined' && GameI18n.apply) GameI18n.apply();
-    view.title = t('喝水/憋尿解锁玩法');
+    view.title = t('喝水/液体收集解锁玩法');
     render();
     try { await DeviceAPI.ready; } catch (_) {}
     const p = DeviceAPI.params || {};

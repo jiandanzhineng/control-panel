@@ -38,5 +38,6 @@
 - 2026-09-04 串口抢占真机验证：`COM17` 上的 `RT01` 先建立普通业务连接，再发起 merged 固件烧录。烧录会自动关闭原串口句柄、移除业务会话并加固件锁；到 100% 后释放锁，设备以同一 ID 和 `v1.1.40` 重新连接成功。
 
 - 2026-09-15 游戏网站新增 game-detail.html 游戏介绍页、author.html 作者管理页；作者修改已发布投稿通过 POST /api/submissions/:id/update 回到待审核。
+- 2026-09-20：`drink-pee-unlock` 对外称「喝水/液体收集」，pee 模式是容器放秤上、秤变重。不要写憋尿/排尿/排泄，也不要写成站上秤、喝水变重。游戏版本 2.3.5。
 - 2026-09-16 游戏介绍页入口为 `game-intro.html?id=`（`game-detail.html` 同页保留）。介绍页跟站点深色主题、中英切换，本页可启动/缓存。
 - 2026-09-17 公开 `registry.json` 的社区游戏带 `authorName`（来自投稿署名）。介绍页读该字段；缺署名且非 builtin 才显示未知作者。生产重建：`game-platform rebuild-registry`（加载 `/etc/game-platform/game-platform.env`）。
