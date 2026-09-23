@@ -1,5 +1,7 @@
 # 开发测试记录
 
+- 2026-09-23 双客户端远程游戏实测：使用隔离后端（被控端 `5301`、主控端 `5302`）、前端（`5303`/`5304`）、本机 EMQX `1883` 和临时房间服务 `8787`。被控端创建虚拟设备 `test_qiya(QIYA)`、`test_td01(TD01)`、`test_dianji(DIANJI)`、`test_lock(ZIDONGSUO)`，四个设备均在线。设备投影控制通过 MQTT 实测：TD01 `power=99`、电脉冲 `voltage=18/shock=1`、自动锁 `open=0`，均收到 `projection.write-result`。远程游戏房间使用 `gameId=remote-game`、容量 2；主控端加入并授权后，远程启动 `surge-edging` HostRuntime，改参数、暂停/继续、`forceEdge`（边缘次数 1/电击次数 1）、`shockOnce`（电击次数 2）和停止均成功；停止快照为 `ENDED/remote-stop`，虚拟 TD01/电脉冲/自动锁收到停止或复位指令。撤销授权后主控命令返回 `CONTROL_NOT_AUTHORIZED`。本次只验证本机虚拟设备和 MQTT，不代表真实硬件输出；测试临时服务和文件已清理。
+
 - 2026-09-23 远程游戏 HostRuntime：`surge-edging` 1.2.0 的逻辑在后端 `backend/game-runtime` 执行，页面只渲染快照。远程游戏房间 `gameId=remote-game`、容量 2，和设备投影房间分开。全量验证：后端 93 个测试套件 / 579 个测试通过（1 个既有跳过项），前端 11 个测试通过，`npm run build:frontend` 通过；品牌自动重连 12 个测试通过。本轮用 mock 设备验证停止/电击/远控授权、旧序列丢弃和客户端释放；没有做真实设备输出验证。已发布的 `packages/surge-edging-1.1.2-*.zip` 未重建，网站包仍是 iframe 版，直到下次 registry 构建。
 
 - 2026-09-23 游戏运行层：用户要求游戏逻辑继续使用 JavaScript。新游戏应拆分为无浏览器依赖的 `game-core.js` 与 WebView 渲染层；移动端引擎评估见 `E:\smart\project\control_panel_mobile\docs\research\2026-09-23-js-game-core-runtime-feasibility.md`，当前不把锁屏持续运行写成已验证能力。
