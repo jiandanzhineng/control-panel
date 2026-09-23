@@ -56,3 +56,4 @@
 
 - 2026-09-23 PC 游戏 UI 重做：frontend/src/views/GameRuntimeView.vue 按原游戏窄容器、卡片、曲线、进度条重现，本地与远程共用；独立远程工作区路由 /remote-game；视觉验证使用 BrowserOS neo，前端 Vite 端口 5174，后端 npm run dev:backend。
 - 2026-09-23 游戏运行 UI 重构：GameRuntimeView 只负责 HostRuntime 轮询、生命周期和命令适配；GameRuntimeSurface 按 gameId 分发游戏自己的渲染组件，本地、远程和配置预览共用同一套游戏表面。surge-edging 曲线保留压力实线、强度虚线、峰值标记和中间压力微调；未做真实硬件输出验证。
+- 2026-09-24 PC 双 Electron 实测：A/B 创建、加入、授权、远程启动 pressure-edging-v2、暂停/继续、运行中改参、B 断线后 A 继续、A 停止和设备复位均通过；仅虚拟设备与本机 MQTT，未验证真实硬件。
