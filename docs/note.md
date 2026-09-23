@@ -1,6 +1,6 @@
 # 开发测试记录
 
-- 2026-09-23 远程游戏 HostRuntime：`surge-edging` 1.2.0 的逻辑在后端 `backend/game-runtime` 执行，页面只渲染快照。远程游戏房间 `gameId=remote-game`、容量 2，和设备投影房间分开。验证命令：`npm --prefix backend test -- --runInBand`、`npm --prefix frontend test`、`npm run build:frontend`。本轮用 mock 设备验证停止/电击/远控授权；没有做真实设备输出验证。已发布的 `packages/surge-edging-1.1.2-*.zip` 未重建，网站包仍是 iframe 版，直到下次 registry 构建。
+- 2026-09-23 远程游戏 HostRuntime：`surge-edging` 1.2.0 的逻辑在后端 `backend/game-runtime` 执行，页面只渲染快照。远程游戏房间 `gameId=remote-game`、容量 2，和设备投影房间分开。全量验证：后端 93 个测试套件 / 579 个测试通过（1 个既有跳过项），前端 11 个测试通过，`npm run build:frontend` 通过；品牌自动重连 12 个测试通过。本轮用 mock 设备验证停止/电击/远控授权、旧序列丢弃和客户端释放；没有做真实设备输出验证。已发布的 `packages/surge-edging-1.1.2-*.zip` 未重建，网站包仍是 iframe 版，直到下次 registry 构建。
 
 - 2026-09-23 游戏运行层：用户要求游戏逻辑继续使用 JavaScript。新游戏应拆分为无浏览器依赖的 `game-core.js` 与 WebView 渲染层；移动端引擎评估见 `E:\smart\project\control_panel_mobile\docs\research\2026-09-23-js-game-core-runtime-feasibility.md`，当前不把锁屏持续运行写成已验证能力。
 

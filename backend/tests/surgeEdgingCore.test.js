@@ -56,6 +56,7 @@ describe('surge-edging core', () => {
     expect(paused.snapshot.paused).toBe(true);
     expect(paused.effects).toEqual(expect.arrayContaining([
       { type: 'device.stop-strength', role: 'motor' },
+      { type: 'device.shock-stop', role: 'punish' },
     ]));
     const resumed = core.resume(4000);
     expect(resumed.ok).toBe(true);

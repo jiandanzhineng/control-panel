@@ -199,6 +199,27 @@ describe('remote game service', () => {
     expect(host.pause).toHaveBeenCalledTimes(1);
   });
 
+  test('older sequence envelopes are ignored even with a new message id', async () => {
+    const { broker, host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    const topic = 'rooms/room-1/commands/owner';
+    const base = {
+      protocolVersion: 1,
+      roomSessionId: 'room-1:0',
+      senderConnectionEpoch: 'operator-epoch',
+      timestamp: '2026-09-23T00:00:00.000Z',
+      payload: {},
+      type: 'game.pause',
+    };
+    publish(broker, topic, { ...base, messageId: 'seq-2', sequence: 2 });
+    publish(broker, topic, { ...base, messageId: 'seq-1', sequence: 1 });
+    await flush();
+    expect(host.pause).toHaveBeenCalledTimes(1);
+  });
+
   test('operator mqtt close does not stop the host runtime', async () => {
     const { broker, host, owner, operator } = pair();
     await owner.create({ token: 'owner' });
@@ -228,7 +249,7 @@ describe('remote game service', () => {
   });
 
   test('closing the room revokes the operator and clears remote device state', async () => {
-    const { owner, operator } = pair();
+    const { broker, owner, operator } = pair();
     await owner.create({ token: 'owner' });
     await operator.join({ token: 'operator', joinCode: 'JOIN123' });
     await flush();
@@ -238,5 +259,6 @@ describe('remote game service', () => {
     expect(operator.getStatus().active).toBe(false);
     expect(operator.getStatus().devices).toEqual([]);
     expect(operator.getStatus().authorized).toBe(false);
+    expect([...broker.clients].some((client) => client.options.clientId === 'client-operator')).toBe(false);
   });
 });

@@ -91,7 +91,10 @@ class SurgeEdgingCore {
     this.rt.pauseStartedAt = nowMs;
     this.rt.currentIntensity = 0;
     this.rt.lastSentStrength = 0;
+    this.rt.isShocking = false;
+    this.rt.shockUntilMs = 0;
     this._effects.push({ type: 'device.stop-strength', role: 'motor' });
+    this._effects.push({ type: 'device.shock-stop', role: 'punish' });
     this._log('info', '已暂停', nowMs);
     return this._ok(nowMs);
   }

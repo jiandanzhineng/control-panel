@@ -53,6 +53,7 @@ class RemoteGameService {
   constructor({
     host,
     api,
+    beforeHostStart = null,
     mqttConnect = mqtt.connect,
     now = () => Date.now(),
     setTimer = setTimeout,
@@ -64,6 +65,7 @@ class RemoteGameService {
   } = {}) {
     this.host = host || require('../game-runtime/gameHostService');
     this.api = api || require('./roomApiService');
+    this.beforeHostStart = beforeHostStart;
     this.mqttConnect = mqttConnect;
     this.now = now;
     this.setTimer = setTimer;
@@ -181,7 +183,14 @@ class RemoteGameService {
       }, COMMAND_TIMEOUT_MS);
       session.pending.set(messageId, { resolve, reject, timer });
     });
-    await this._publishEnvelope(session, `commands/${session.room.hostUserId}`, type, payload || {}, messageId);
+    try {
+      await this._publishEnvelope(session, `commands/${session.room.hostUserId}`, type, payload || {}, messageId);
+    } catch (error) {
+      const pending = session.pending.get(messageId);
+      session.pending.delete(messageId);
+      if (pending) this.clearTimer(pending.timer);
+      throw error;
+    }
     return response;
   }
 
@@ -232,6 +241,7 @@ class RemoteGameService {
       authorized: false,
       lastError: null,
       sequences: new Map(),
+      receivedSequences: new Map(),
       seenMessageIds: new Set(),
       operatorsOnline: new Map(),
       pending: new Map(),
@@ -323,9 +333,14 @@ class RemoteGameService {
   }
 
   _publishEnvelope(session, suffix, type, payload, messageId = randomUUID()) {
+    const envelope = this._buildEnvelope(session, suffix, type, payload, messageId);
+    return this._publish(session, `rooms/${session.room.id}/${suffix}`, JSON.stringify(envelope));
+  }
+
+  _buildEnvelope(session, suffix, type, payload, messageId = randomUUID()) {
     const sequence = (session.sequences.get(suffix) || 0) + 1;
     session.sequences.set(suffix, sequence);
-    const envelope = {
+    return {
       protocolVersion: PROTOCOL_VERSION,
       roomSessionId: session.roomSessionId,
       messageId,
@@ -335,15 +350,20 @@ class RemoteGameService {
       timestamp: new Date(this.now()).toISOString(),
       payload,
     };
-    return this._publish(session, `rooms/${session.room.id}/${suffix}`, JSON.stringify(envelope));
   }
 
   _publishPresence(session, status) {
     if (!session.client) return Promise.resolve();
+    const envelope = this._buildEnvelope(
+      session,
+      `presence/${session.credential.userId}`,
+      'client.presence',
+      { status },
+    );
     return this._publish(
       session,
       this._presenceTopic(session),
-      JSON.stringify({ status }),
+      JSON.stringify(envelope),
       { qos: 1, retain: true },
     );
   }
@@ -358,16 +378,14 @@ class RemoteGameService {
     if (!String(topic).startsWith(base)) return;
     const suffix = String(topic).slice(base.length);
     if (suffix.startsWith('presence/')) {
-      this._onPresence(session, suffix.slice('presence/'.length), parseJson(rawPayload));
+      const payload = parseJson(rawPayload);
+      const envelope = payload?.protocolVersion === PROTOCOL_VERSION ? payload : null;
+      if (envelope && !this._acceptIncoming(session, suffix, envelope)) return;
+      this._onPresence(session, suffix.slice('presence/'.length), envelope ? envelope.payload : payload);
       return;
     }
     const envelope = parseJson(rawPayload);
-    if (!envelope || envelope.protocolVersion !== PROTOCOL_VERSION || envelope.roomSessionId !== session.roomSessionId) return;
-    if (typeof envelope.messageId !== 'string' || !envelope.messageId || session.seenMessageIds.has(envelope.messageId)) return;
-    session.seenMessageIds.add(envelope.messageId);
-    if (session.seenMessageIds.size > MAX_SEEN_MESSAGE_IDS) {
-      session.seenMessageIds.delete(session.seenMessageIds.values().next().value);
-    }
+    if (!this._acceptIncoming(session, suffix, envelope)) return;
     if (session.role === 'owner' && suffix === `commands/${session.room.hostUserId}`) {
       await this._onOwnerCommand(session, envelope);
     } else if (session.role === 'operator' && suffix === 'events') {
@@ -419,6 +437,7 @@ class RemoteGameService {
   async _dispatch(type, payload) {
     if (type === 'client.snapshot.request') return this.getStatus();
     if (type === 'game.start') {
+      if (this.beforeHostStart) await this.beforeHostStart();
       return this.host.start({
         gameId: payload.gameId,
         deviceMap: payload.deviceMap,
@@ -464,12 +483,37 @@ class RemoteGameService {
       session.games = [];
       session.gameSnapshot = null;
       this._failPending(session, this._error('SESSION_REVOKED', '远程会话已结束'));
-      if (this.session === session) this.session = null;
+      if (this.session === session) {
+        this.session = null;
+        this._clearTimers(session);
+        void this._endClient(session, true);
+      }
     }
   }
 
   async _respond(session, requestId, payload) {
     await this._publishEnvelope(session, 'events', 'client.response', { requestId, ...payload });
+  }
+
+  _acceptIncoming(session, suffix, envelope) {
+    if (!envelope || envelope.protocolVersion !== PROTOCOL_VERSION
+      || envelope.roomSessionId !== session.roomSessionId) return false;
+    if (typeof envelope.messageId !== 'string' || !envelope.messageId
+      || session.seenMessageIds.has(envelope.messageId)) return false;
+    if (envelope.senderConnectionEpoch != null && typeof envelope.senderConnectionEpoch !== 'string') return false;
+    if (envelope.sequence != null) {
+      const sequence = Number(envelope.sequence);
+      if (!Number.isSafeInteger(sequence) || sequence < 1) return false;
+      const key = `${suffix}:${envelope.senderConnectionEpoch || ''}`;
+      const previous = session.receivedSequences.get(key) || 0;
+      if (sequence <= previous) return false;
+      session.receivedSequences.set(key, sequence);
+    }
+    session.seenMessageIds.add(envelope.messageId);
+    if (session.seenMessageIds.size > MAX_SEEN_MESSAGE_IDS) {
+      session.seenMessageIds.delete(session.seenMessageIds.values().next().value);
+    }
+    return true;
   }
 
   async _publishClientSnapshot(session) {
@@ -537,7 +581,12 @@ class RemoteGameService {
   }
 }
 
-const remoteGameService = new RemoteGameService();
+const remoteGameService = new RemoteGameService({
+  beforeHostStart: async () => {
+    await require('./localAppProcessService').stopAll();
+    try { require('./bridgeService').exitCurrent(); } catch (_) {}
+  },
+});
 
 module.exports = remoteGameService;
 module.exports.RemoteGameService = RemoteGameService;

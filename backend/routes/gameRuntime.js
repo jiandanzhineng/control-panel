@@ -1,5 +1,6 @@
 const express = require('express');
 const gameHost = require('../game-runtime/gameHostService');
+const bridgeService = require('../services/bridgeService');
 const { sendError } = require('../utils/http');
 
 const router = express.Router();
@@ -19,9 +20,11 @@ router.get('/games', (req, res) => {
   res.json([{ id: GAME_ID, title: TITLE, version: VERSION, runtimeMode: 'host', params: PARAMS, devices: DEVICES }]);
 });
 
-router.post('/start', (req, res) => {
+router.post('/start', async (req, res) => {
   try {
     const body = req.body || {};
+    await require('../services/localAppProcessService').stopAll();
+    try { bridgeService.exitCurrent(); } catch (_) {}
     res.status(201).json(gameHost.start({
       gameId: body.gameId,
       deviceMap: body.deviceMap,

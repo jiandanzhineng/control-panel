@@ -626,10 +626,13 @@ function listSavedBleDevices() {
 }
 
 let autoTimer = null;
+let autoStartTimer = null;
 let autoBusy = false;
+let autoGeneration = 0;
 const AUTO_MS = 10000;
 
 async function tickAutoConnect() {
+  const generation = autoGeneration;
   if (autoBusy) return;
   const settings = getSettings();
   if (!settings.autoConnect && !settings.autoConnectAll) return;
@@ -640,6 +643,7 @@ async function tickAutoConnect() {
     const nobleBle = require('./nobleBle');
     let found = [];
     try { found = await nobleBle.scan({ quiet: true }); } catch (_) { found = []; }
+    if (generation !== autoGeneration) return;
     for (const d of found) {
       const brand = nobleBle.detectBrand(d.name);
       if (!brand) continue;
@@ -656,6 +660,8 @@ async function tickAutoConnect() {
 }
 
 function stopAutoConnect() {
+  autoGeneration += 1;
+  if (autoStartTimer) { clearTimeout(autoStartTimer); autoStartTimer = null; }
   if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
 }
 
@@ -666,7 +672,11 @@ function startAutoConnect() {
     return settings;
   }
   if (!autoTimer) {
-    tickAutoConnect().catch(() => {});
+    const generation = autoGeneration;
+    autoStartTimer = setTimeout(() => {
+      autoStartTimer = null;
+      if (generation === autoGeneration) tickAutoConnect().catch(() => {});
+    }, 0);
     autoTimer = setInterval(() => { tickAutoConnect().catch(() => {}); }, AUTO_MS);
   }
   return settings;

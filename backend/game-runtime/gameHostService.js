@@ -147,8 +147,8 @@ class GameHostService {
     const nowMs = this.now();
     const result = session.runtime.core.stop(nowMs, reason);
     this._clearShockTimers(session);
-    this._resetMappedDevices(session, reason);
-    this._applyResult(session, result, nowMs);
+    const hasStopAll = this._applyResult(session, result, nowMs);
+    if (!hasStopAll) this._resetMappedDevices(session, reason);
     this._clearTick(session);
     this.endedSnapshot = result.snapshot || session.runtime.snapshot();
     this.session = null;
@@ -174,10 +174,10 @@ class GameHostService {
     const session = this.session;
     if (!session) return this.getStatus();
     const result = session.runtime.tick(nowMs);
-    this._applyResult(session, result, nowMs);
+    const hasStopAll = this._applyResult(session, result, nowMs);
     if (result.snapshot?.ended) {
       this._clearShockTimers(session);
-      this._resetMappedDevices(session, result.snapshot.endReason || 'ended');
+      if (!hasStopAll) this._resetMappedDevices(session, result.snapshot.endReason || 'ended');
       this._clearTick(session);
       this.endedSnapshot = result.snapshot;
       this.session = null;
@@ -213,8 +213,10 @@ class GameHostService {
   }
 
   _applyResult(session, result, nowMs) {
-    if (!result) return;
+    if (!result) return false;
+    const hasStopAll = (result.effects || []).some((effect) => effect?.type === 'device.stop-all');
     this._executeEffects(session, result.effects || [], nowMs);
+    return hasStopAll;
   }
 
   _executeEffects(session, effects, nowMs) {
