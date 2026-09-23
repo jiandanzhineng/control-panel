@@ -1,5 +1,7 @@
 # 开发测试记录
 
+- 2026-09-23 CDP 双 Electron 回归：隔离前端 `5303/5304`、后端 `5301/5302`、房间服务 `8787`、CDP `9224/9225`，被控端虚拟设备 `electron_qiya/electron_td01/electron_dianji/electron_lock`。主控创建并加入房间、授权、启动 `surge-edging`，暂停/继续、强度、电击、强制边缘、参数 `duration 20→21`、停止均通过；停止快照为 `ENDED/remote-stop`，设备均安全复位。主控与被控端随后离开房间，最终 `remote-game.active=false`、`game-runtime.active=false`。隔离后端 `/api/dev-access` 保持 `enabled=true` 供手测，未改生产代码。
+
 - 2026-09-23 PC/手机双向远控方案：手机仓库 `docs/plans/2026-09-23-mobile-pc-remote-game-runtime.md` 为跨端 v2 交接规范，PC 草稿已补兼容要求。核对 PC 基线 `7ec92bb`；此记录为文档核对，非功能验收。设备管理需加入客户端远控，commands topic 应使用发送者 credential.userId；三阶段玩法为 `pressure-edging-v2`，不要与 `surge-edging` 混用。
 
 - 2026-09-23 双客户端远程游戏实测：使用隔离后端（被控端 `5301`、主控端 `5302`）、前端（`5303`/`5304`）、本机 EMQX `1883` 和临时房间服务 `8787`。被控端创建虚拟设备 `test_qiya(QIYA)`、`test_td01(TD01)`、`test_dianji(DIANJI)`、`test_lock(ZIDONGSUO)`，四个设备均在线。设备投影控制通过 MQTT 实测：TD01 `power=99`、电脉冲 `voltage=18/shock=1`、自动锁 `open=0`，均收到 `projection.write-result`。远程游戏房间使用 `gameId=remote-game`、容量 2；主控端加入并授权后，远程启动 `surge-edging` HostRuntime，改参数、暂停/继续、`forceEdge`（边缘次数 1/电击次数 1）、`shockOnce`（电击次数 2）和停止均成功；停止快照为 `ENDED/remote-stop`，虚拟 TD01/电脉冲/自动锁收到停止或复位指令。撤销授权后主控命令返回 `CONTROL_NOT_AUTHORIZED`。本次只验证本机虚拟设备和 MQTT，不代表真实硬件输出；测试临时服务和文件已清理。
