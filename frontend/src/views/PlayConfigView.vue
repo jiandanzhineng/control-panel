@@ -1,5 +1,5 @@
 <template>
-  <div class="play-config-page">
+  <div class="play-config-page game-config-surface">
     <el-card shadow="never" class="config-header-card">
       <template #header>
         <div class="card-header">
@@ -1379,6 +1379,42 @@ onUnmounted(() => {
   max-width: 1200px;
   margin: 0 auto;
   box-sizing: border-box;
+}
+
+/* 游戏配置沿用游戏运行页的窄容器、白色卡片和圆角节奏，避免配置和游玩像两个产品。 */
+.game-config-surface {
+  max-width: 900px;
+  padding: 20px 16px 40px;
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+.game-config-surface .el-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .05);
+  background: #fff;
+}
+
+.game-config-surface .el-card__header {
+  padding: 16px 20px;
+  border-bottom-color: #f1f5f9;
+}
+
+.game-config-surface .el-card__body {
+  padding: 20px;
+}
+
+.game-config-surface .param-section-title {
+  border-radius: 8px;
+  background: #f1f5f9;
+}
+
+.game-config-surface .action-section {
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fff;
 }
 
 .config-header-card,

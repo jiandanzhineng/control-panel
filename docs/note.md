@@ -53,3 +53,5 @@
 - 2026-09-20：`drink-pee-unlock` 对外称「喝水/液体收集」，pee 模式是容器放秤上、秤变重。不要写憋尿/排尿/排泄，也不要写成站上秤、喝水变重。游戏版本 2.3.5。
 - 2026-09-16 游戏介绍页入口为 `game-intro.html?id=`（`game-detail.html` 同页保留）。介绍页跟站点深色主题、中英切换，本页可启动/缓存。
 - 2026-09-17 公开 `registry.json` 的社区游戏带 `authorName`（来自投稿署名）。介绍页读该字段；缺署名且非 builtin 才显示未知作者。生产重建：`game-platform rebuild-registry`（加载 `/etc/game-platform/game-platform.env`）。
+
+- 2026-09-23 PC 游戏 UI 重做：frontend/src/views/GameRuntimeView.vue 按原游戏窄容器、卡片、曲线、进度条重现，本地与远程共用；独立远程工作区路由 /remote-game；视觉验证使用 BrowserOS neo，前端 Vite 端口 5174，后端 npm run dev:backend。

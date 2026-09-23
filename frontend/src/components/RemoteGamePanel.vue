@@ -1,13 +1,20 @@
 <template>
-  <section class="remote-game">
-    <div class="head">
+  <section class="remote-game" :class="{ standalone }">
+    <div v-if="!standalone" class="head">
       <div>
+        <span class="eyebrow">CONTROL PANEL / REMOTE WORKSPACE</span>
         <h2>{{ t('remoteGame.title') }}</h2>
         <p>{{ t('remoteGame.desc') }}</p>
       </div>
       <el-button :icon="Refresh" circle :loading="loading" @click="refresh" />
     </div>
     <el-alert v-if="error" type="error" :title="error" show-icon @close="error = ''" />
+
+    <div v-if="status.active" class="remote-steps" aria-label="remote game steps">
+      <span class="step" :class="{ current: !status.authorized && !status.snapshot?.running }">1 · {{ t('remoteGame.roomStep') }}</span>
+      <span class="step" :class="{ current: status.authorized && !status.snapshot?.running }">2 · {{ t('remoteGame.authStep') }}</span>
+      <span class="step" :class="{ current: !!status.snapshot?.running }">3 · {{ t('remoteGame.gameStep') }}</span>
+    </div>
 
     <template v-if="!status.active">
       <el-radio-group v-model="mode" class="mode">
@@ -109,6 +116,8 @@ import {
 import { controlsEnabled } from '../play/gameRuntimeSession'
 
 const { t } = useI18n()
+const props = withDefaults(defineProps<{ standalone?: boolean }>(), { standalone: false })
+const standalone = computed(() => props.standalone)
 const mode = ref<'owner' | 'operator'>('owner')
 const joinCode = ref('')
 const status = ref<RemoteGameStatus>({ active: false })
@@ -267,11 +276,17 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 </script>
 
 <style scoped>
-.remote-game { display: grid; gap: 12px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--el-border-color); }
-.head { display: flex; justify-content: space-between; gap: 12px; }
-.head h2 { margin: 0; font-size: 18px; }
+.remote-game { display: grid; gap: 16px; margin-top: 20px; padding: 20px; border: 1px solid #dbe4ef; border-radius: 18px; background: linear-gradient(135deg, #f8fbff, #eef4fb); }
+.remote-game.standalone { max-width: 960px; margin: 0 auto; padding: 24px; border: 1px solid #dbe4ef; box-shadow: 0 8px 30px rgba(30, 64, 175, .08); }
+.head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+.eyebrow { display: block; margin-bottom: 4px; color: #64748b; font-size: 11px; letter-spacing: .08em; }
+.head h2 { margin: 0; font-size: 22px; color: #0f172a; }
 .head p, .muted { margin: 4px 0 0; color: var(--el-text-color-secondary); }
+.remote-steps { display: flex; flex-wrap: wrap; gap: 8px; }
+.step { padding: 6px 10px; border: 1px solid #dbe4ef; border-radius: 99px; color: #64748b; background: rgba(255,255,255,.72); font-size: 12px; }
+.step.current { border-color: #93c5fd; color: #1d4ed8; background: #eff6ff; font-weight: 600; }
 .mode, .join, .session { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.session { padding: 10px 12px; border: 1px solid #dbe4ef; border-radius: 12px; background: rgba(255,255,255,.78); }
 .join .el-input { flex: 1; min-width: 180px; }
 .setup { display: grid; gap: 16px; }
 .setup-section { border-top: 1px solid var(--el-border-color-lighter); padding-top: 12px; }

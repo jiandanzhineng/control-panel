@@ -11,11 +11,18 @@ export interface GameRuntimeSnapshot {
   averagePressure?: number
   midPressure?: number
   criticalPressure?: number
+  startedAtMs?: number
+  endedAtMs?: number
+  endTimeMs?: number
+  endReason?: string
   currentIntensity?: number
   targetIntensity?: number
   edgingCount?: number
   shockCount?: number
   totalStimulationTime?: number
+  edgePeak?: number
+  lastEdgePeak?: number
+  isShocking?: boolean
   params?: Record<string, unknown>
   logs?: Array<{ level?: string; message: string; atMs?: number }>
 }

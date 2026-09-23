@@ -7,6 +7,7 @@ const PlayLibraryView = () => import('../views/PlayLibraryView.vue');
 const PlayConfigView = () => import('../views/PlayConfigView.vue');
 const GameCurrentView = () => import('../views/GameCurrentView.vue');
 const GameRuntimeView = () => import('../views/GameRuntimeView.vue');
+const RemoteGameWorkspaceView = () => import('../views/RemoteGameWorkspaceView.vue');
 const PluginRunView = () => import('../views/PluginRunView.vue');
 const BrowserView = () => import('../views/BrowserView.vue');
 const LogManagement = () => import('../views/LogManagement.vue');
@@ -47,6 +48,7 @@ const routes: RouteRecordRaw[] = [
   // 运行态（全屏覆盖层，靠「启动」进入、「停止」退出，不进侧边栏）
   { path: '/plays/game/current', name: 'game_current', component: GameCurrentView, meta: { titleKey: 'gameRun.title' } },
   { path: '/plays/game/runtime', name: 'game_runtime', component: GameRuntimeView, meta: { titleKey: 'gameRun.title' } },
+  { path: '/remote-game', name: 'remote_game', component: RemoteGameWorkspaceView, meta: { titleKey: 'remoteGame.title' } },
   { path: '/plays/plugin/:id/run', name: 'plugin_run', component: PluginRunView, meta: { titleKey: 'pluginRun.title' } },
 
   { path: '/browser', name: 'browser', component: BrowserView, meta: { titleKey: 'nav.browser' } },

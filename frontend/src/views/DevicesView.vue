@@ -928,7 +928,13 @@
 
       <el-tab-pane :label="t('devices.remote')" name="remote">
         <RemoteProjectionPanel />
-        <RemoteGamePanel />
+        <div class="remote-game-entry">
+          <div>
+            <strong>{{ t('remoteGame.title') }}</strong>
+            <span>{{ t('remoteGame.desc') }}</span>
+          </div>
+          <el-button type="primary" plain @click="router.push('/remote-game')">{{ t('remoteGame.openWorkspace') }}</el-button>
+        </div>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -942,7 +948,6 @@ import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Lin
 import { useRouter } from 'vue-router'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
 import RemoteProjectionPanel from '../components/RemoteProjectionPanel.vue'
-import RemoteGamePanel from '../components/RemoteGamePanel.vue'
 import BrandsPanel from '../components/BrandsPanel.vue'
 import DeviceBatchControl from '../components/DeviceBatchControl.vue'
 import { track } from '../analytics'
@@ -2112,6 +2117,22 @@ async function executeDeviceOperation(device: Device, operation: any) {
 </script>
 
 <style scoped>
+.remote-game-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid #dbe4ef;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+.remote-game-entry div { display: grid; gap: 3px; }
+.remote-game-entry span { color: var(--el-text-color-secondary); font-size: 13px; }
+@media (max-width: 640px) {
+  .remote-game-entry { align-items: stretch; flex-direction: column; }
+}
 .devices-page {
   padding: 20px;
   width: 100%;
