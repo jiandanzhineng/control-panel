@@ -9,8 +9,8 @@ export interface RemoteGameStatus {
   connected?: boolean
   authorized?: boolean
   operatorOnline?: boolean
-  games?: Array<{ id: string; title?: string; version?: string; params?: any[]; devices?: any[] }>
-  devices?: Array<{ id: string; name?: string; type?: string; capabilities?: string[] }>
+  games?: Array<{ id: string; title?: string; version?: string; runtimeMode?: string; params?: any[]; devices?: any[] }>
+  devices?: Array<{ id: string; name?: string; type?: string; connected?: boolean; capabilities?: string[] }>
   snapshot?: GameRuntimeSnapshot | null
   lastError?: string | null
 }

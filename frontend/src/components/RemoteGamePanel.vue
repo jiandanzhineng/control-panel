@@ -8,7 +8,6 @@
       <el-button :icon="Refresh" circle :loading="loading" @click="refresh" />
     </div>
     <el-alert v-if="error" type="error" :title="error" show-icon @close="error = ''" />
-    <p class="hint">{{ t('remoteGame.noRaw') }}</p>
 
     <template v-if="!status.active">
       <el-radio-group v-model="mode" class="mode">
@@ -34,7 +33,7 @@
       </div>
 
       <GameRuntimeView
-        v-if="status.role === 'owner'"
+        v-if="status.role === 'owner' && status.snapshot?.running"
         source="local"
         embedded
         :navigate-on-end="false"
@@ -42,27 +41,39 @@
 
       <template v-else>
         <el-alert v-if="!status.authorized" type="info" :closable="false" :title="t('gameRuntime.waitAuth')" show-icon />
-        <div v-else class="setup">
-          <el-select v-model="gameId" :placeholder="t('remoteGame.games')">
-            <el-option v-for="game in status.games || []" :key="game.id" :label="game.title || game.id" :value="game.id" />
-          </el-select>
-          <div v-for="device in selectedGame?.devices || []" :key="device.id" class="map-row">
-            <span>{{ device.label || device.id }}</span>
-            <el-select v-model="deviceMap[device.id]" clearable :placeholder="t('remoteGame.map')">
-              <el-option v-for="item in status.devices || []" :key="item.id" :label="item.name || item.id" :value="item.id" />
+        <div v-if="status.authorized && !status.snapshot?.running" class="setup">
+          <div class="setup-section">
+            <h3>{{ t('remoteGame.games') }}</h3>
+            <el-select v-model="gameId" :placeholder="t('remoteGame.games')" class="game-select">
+              <el-option v-for="game in hostGames" :key="game.id" :label="game.title || game.id" :value="game.id" />
             </el-select>
           </div>
-          <PlayParamsForm
-            v-if="selectedGame"
-            :params="selectedGame.params || []"
-            :model="params"
-            :disabled="!controls.params"
-            :submit-text="t('gameRuntime.saveParams')"
-            @submit="saveParams"
-          />
-          <el-button type="primary" :disabled="!controls.start" @click="startGame">{{ t('remoteGame.start') }}</el-button>
+          <template v-if="selectedGame">
+            <div class="setup-section">
+              <h3>{{ t('playConfig.mapping') }}</h3>
+              <div v-for="role in selectedGame.devices || []" :key="role.id" class="map-row">
+                <div class="role-name">
+                  <strong>{{ role.label || role.id }}</strong>
+                  <el-tag size="small" :type="role.required ? 'danger' : 'info'">{{ role.required ? t('common.required') : t('common.optional') }}</el-tag>
+                </div>
+                <el-checkbox-group v-model="deviceMap[role.id]" class="device-options">
+                  <el-checkbox v-for="device in availableDevices(role)" :key="device.id" :value="device.id">{{ device.name || device.id }}</el-checkbox>
+                  <span v-if="!availableDevices(role).length" class="muted">{{ t('remoteGame.noDevice') }}</span>
+                </el-checkbox-group>
+              </div>
+            </div>
+            <div class="setup-section">
+              <h3>{{ t('playConfig.params') }}</h3>
+              <PlayParamsForm :params="visibleParams" :model="params" :show-submit="false" :show-reset="true" @reset="resetParams" />
+            </div>
+            <el-alert v-if="blocking.length" type="warning" :closable="false" :title="blocking.join('；')" show-icon />
+            <div class="start-row">
+              <el-button type="primary" :loading="busy" :disabled="!controls.start || blocking.length > 0" @click="startGame">{{ t('remoteGame.start') }}</el-button>
+            </div>
+          </template>
         </div>
         <GameRuntimeView
+          v-if="status.snapshot?.running"
           source="remote"
           embedded
           :navigate-on-end="false"
@@ -104,12 +115,18 @@ const status = ref<RemoteGameStatus>({ active: false })
 const loading = ref(false)
 const busy = ref(false)
 const error = ref('')
-const gameId = ref('')
-const deviceMap = reactive<Record<string, string>>({})
+const gameId = ref(localStorage.getItem('remoteGame:selectedGame') || '')
+const deviceMap = reactive<Record<string, string[]>>({})
 const params = reactive<Record<string, any>>({})
 let timer: ReturnType<typeof setInterval> | null = null
+let configuredGameId = ''
 
-const selectedGame = computed(() => (status.value.games || []).find((game) => game.id === gameId.value))
+const hostGames = computed(() => (status.value.games || []).filter((game) => game.runtimeMode === 'host'))
+const selectedGame = computed(() => hostGames.value.find((game) => game.id === gameId.value))
+const visibleParams = computed(() => (selectedGame.value?.params || []).filter((param) => (
+  !param.device || (selectedGame.value?.devices || []).find((role) => role.id === param.device)?.required !== false
+    || !!deviceMap[param.device]?.length
+)))
 const controls = computed(() => controlsEnabled({
   authorized: !!status.value.authorized,
   running: !!status.value.snapshot?.running,
@@ -117,19 +134,74 @@ const controls = computed(() => controlsEnabled({
   connection: status.value.connected === false ? 'reconnecting' : 'live',
 }))
 
-watch(selectedGame, (game) => {
-  for (const key of Object.keys(params)) delete params[key]
-  for (const item of game?.params || []) {
-    if (item.default !== undefined) params[item.key] = item.default
+function availableDevices(role: any) {
+  const required = Array.isArray(role.capabilities) ? role.capabilities : []
+  return (status.value.devices || []).filter((device) => device.connected !== false
+    && required.every((capability: string) => device.capabilities?.includes(capability)))
+}
+
+const blocking = computed(() => {
+  if (!selectedGame.value) return [t('remoteGame.pickGame')]
+  const items: string[] = []
+  for (const role of selectedGame.value.devices || []) {
+    const ids = deviceMap[role.id] || []
+    if (role.required && !ids.length) items.push(t('playConfig.requiredUnmapped', { role: role.label || role.id }))
+    for (const id of ids) {
+      if (!availableDevices(role).some((device) => device.id === id)) {
+        items.push(t('playConfig.deviceOffline', { role: role.label || role.id }))
+      }
+    }
   }
+  for (const spec of selectedGame.value.params || []) {
+    const value = params[spec.key]
+    if (spec.required && (value === undefined || value === null || value === '')) items.push(t('playConfig.paramRequired', { name: spec.label || spec.key }))
+    if (spec.type === 'number' && value !== undefined && (!Number.isFinite(Number(value))
+      || (spec.min !== undefined && Number(value) < spec.min)
+      || (spec.max !== undefined && Number(value) > spec.max))) items.push(t('playConfig.paramTypeNumber', { key: spec.label || spec.key }))
+  }
+  if (gameId.value === 'pressure-edging-v2' && Number(params.midPressure) >= Number(params.criticalPressure)) {
+    items.push(t('remoteGame.thresholdOrder'))
+  }
+  return items
 })
+
+function configKey(id: string) { return `gameConfig:remote:${id}` }
+
+function resetParams() {
+  for (const key of Object.keys(params)) delete params[key]
+  for (const spec of selectedGame.value?.params || []) params[spec.key] = spec.default
+}
+
+function configureGame(id: string) {
+  for (const key of Object.keys(deviceMap)) delete deviceMap[key]
+  resetParams()
+  const game = hostGames.value.find((item) => item.id === id)
+  if (!game) return
+  configuredGameId = id
+  localStorage.setItem('remoteGame:selectedGame', id)
+  let saved: any = null
+  try { saved = JSON.parse(localStorage.getItem(configKey(id)) || 'null') } catch (_) {}
+  for (const role of game.devices || []) {
+    const options = availableDevices(role)
+    const prior = saved?.deviceMap?.[role.id]
+    deviceMap[role.id] = Array.isArray(prior)
+      ? prior.filter((deviceId: string) => options.some((device) => device.id === deviceId))
+      : (options[0] ? [options[0].id] : [])
+  }
+  for (const spec of game.params || []) {
+    if (saved?.params?.[spec.key] !== undefined) params[spec.key] = saved.params[spec.key]
+  }
+}
+
+watch(gameId, (id) => { configureGame(id) })
 
 async function refresh() {
   loading.value = true
   try {
     status.value = await getRemoteGameStatus()
-    if (!gameId.value && status.value.games?.length) gameId.value = status.value.games[0].id
-    error.value = ''
+    if (status.value.snapshot?.running && status.value.snapshot.gameId) gameId.value = status.value.snapshot.gameId
+    if (!hostGames.value.some((game) => game.id === gameId.value)) gameId.value = hostGames.value[0]?.id || ''
+    if (gameId.value && configuredGameId !== gameId.value) configureGame(gameId.value)
   } catch (e: any) {
     error.value = e?.message || t('remote.loadFailed')
   } finally {
@@ -139,44 +211,52 @@ async function refresh() {
 
 async function create() {
   busy.value = true
-  try { status.value = await createRemoteGame() } catch (e: any) { error.value = e?.message || t('remote.createFailed') }
+  try { status.value = await createRemoteGame(); error.value = '' } catch (e: any) { error.value = e?.message || t('remote.createFailed') }
   finally { busy.value = false }
 }
 
 async function join() {
   busy.value = true
-  try { status.value = await joinRemoteGame(joinCode.value.trim()) } catch (e: any) { error.value = e?.message || t('remote.joinFailed') }
+  try { status.value = await joinRemoteGame(joinCode.value.trim()); await refresh(); error.value = '' } catch (e: any) { error.value = e?.message || t('remote.joinFailed') }
   finally { busy.value = false }
 }
 
 async function toggleAuth() {
-  status.value = status.value.authorized ? await revokeRemoteGame() : await authorizeRemoteGame()
+  try { status.value = status.value.authorized ? await revokeRemoteGame() : await authorizeRemoteGame(); error.value = '' }
+  catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
 }
 
 async function leave() {
-  status.value = await stopRemoteGame()
+  try { status.value = await stopRemoteGame(); error.value = '' }
+  catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
 }
 
 async function startGame() {
-  const mapping: Record<string, string[]> = {}
-  for (const [role, id] of Object.entries(deviceMap)) if (id) mapping[role] = [id]
-  await sendRemoteGameCommand('game.start', { gameId: gameId.value, deviceMap: mapping, params: { ...params } })
-  await refresh()
+  if (blocking.value.length || busy.value) return
+  busy.value = true
+  try {
+    await sendRemoteGameCommand('game.start', { gameId: gameId.value, deviceMap: { ...deviceMap }, params: { ...params } })
+    localStorage.setItem(configKey(gameId.value), JSON.stringify({ deviceMap, params }))
+    error.value = ''
+    await refresh()
+  } catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
+  finally { busy.value = false }
 }
 
 async function saveParams(value: Record<string, unknown>) {
-  Object.assign(params, value)
-  if (status.value.snapshot?.running) {
-    await sendRemoteGameCommand('game.setParams', { params: value })
+  try {
+    if (status.value.snapshot?.running) await sendRemoteGameCommand('game.setParams', { params: value })
+    Object.assign(params, value)
+    error.value = ''
     await refresh()
-  }
+  } catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
 }
 
 async function sendAction(name: string, payload?: unknown) {
   const type = name === 'stop' ? 'game.stop' : name === 'pause' ? 'game.pause' : name === 'resume' ? 'game.resume' : 'game.action'
   const body = type === 'game.action' ? { action: name, payload } : undefined
-  await sendRemoteGameCommand(type, body)
-  await refresh()
+  try { await sendRemoteGameCommand(type, body); error.value = ''; await refresh() }
+  catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
 }
 
 onMounted(() => {
@@ -189,9 +269,17 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 <style scoped>
 .remote-game { display: grid; gap: 12px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--el-border-color); }
 .head { display: flex; justify-content: space-between; gap: 12px; }
-.head h2 { margin: 0; }
-.head p, .hint { margin: 4px 0 0; color: var(--el-text-color-secondary); }
-.mode, .join, .session, .setup, .map-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.map-row { width: 100%; }
-.map-row .el-select, .join .el-input { flex: 1; min-width: 180px; }
+.head h2 { margin: 0; font-size: 18px; }
+.head p, .muted { margin: 4px 0 0; color: var(--el-text-color-secondary); }
+.mode, .join, .session { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.join .el-input { flex: 1; min-width: 180px; }
+.setup { display: grid; gap: 16px; }
+.setup-section { border-top: 1px solid var(--el-border-color-lighter); padding-top: 12px; }
+.setup-section h3 { margin: 0 0 10px; font-size: 15px; }
+.game-select { width: min(100%, 360px); }
+.map-row { display: grid; grid-template-columns: minmax(150px, 210px) 1fr; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
+.role-name { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.device-options { display: flex; gap: 8px 16px; align-items: center; flex-wrap: wrap; }
+.start-row { display: flex; justify-content: flex-end; }
+@media (max-width: 650px) { .map-row { grid-template-columns: 1fr; gap: 6px; } }
 </style>

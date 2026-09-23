@@ -10,6 +10,7 @@ export interface GameRuntimeSnapshot {
   currentPressure?: number
   averagePressure?: number
   midPressure?: number
+  criticalPressure?: number
   currentIntensity?: number
   targetIntensity?: number
   edgingCount?: number

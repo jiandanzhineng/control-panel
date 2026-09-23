@@ -106,12 +106,10 @@ async function flush() {
   }
 }
 
-function pair() {
+function pair({ games = [{ id: 'surge-edging', title: '气压突变寸止', runtimeMode: 'host', params: [], devices: [] }], devices = [{ id: 'dev-1', name: '气压', type: 'QIYA', capabilities: ['sphincterPressure'] }] } = {}) {
   const broker = new FakeBroker();
   const api = createApi();
   const host = mockHost();
-  const games = [{ id: 'surge-edging', title: '气压突变寸止', runtimeMode: 'host', params: [], devices: [] }];
-  const devices = [{ id: 'dev-1', name: '气压', type: 'QIYA', capabilities: ['sphincterPressure'] }];
   const owner = new RemoteGameService({
     host, api, mqttConnect: broker.connect, listGames: () => games, listDevices: () => devices, ...timers(),
   });
@@ -127,6 +125,32 @@ function publish(broker, topic, envelope) {
 }
 
 describe('remote game service', () => {
+  test('remote start rejects unsupported games and invalid required device mappings', async () => {
+    const { host, owner, operator } = pair({
+      games: [{ id: 'pressure-edging-v2', runtimeMode: 'host', devices: [
+        { id: 'sensor', label: '气压传感器', required: true, capabilities: ['sphincterPressure', 'reporting'] },
+        { id: 'motor', label: '刺激器', required: true, capabilities: ['strength'] },
+      ] }],
+      devices: [
+        { id: 'sensor-1', connected: true, capabilities: ['sphincterPressure', 'reporting'] },
+        { id: 'motor-1', connected: true, capabilities: ['strength'] },
+        { id: 'offline', connected: false, capabilities: ['strength'] },
+      ],
+    });
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    const command = (gameId, deviceMap) => operator.command({ type: 'game.start', payload: { gameId, deviceMap, params: {} } });
+    expect(await command('unknown', {})).toMatchObject({ ok: false, code: 'GAME_NOT_HOSTED' });
+    expect(await command('pressure-edging-v2', { sensor: ['sensor-1'] })).toMatchObject({ ok: false, code: 'DEVICE_MAPPING_REQUIRED' });
+    expect(await command('pressure-edging-v2', { sensor: ['sensor-1'], motor: ['offline'] })).toMatchObject({ ok: false, code: 'DEVICE_OFFLINE' });
+    expect(await command('pressure-edging-v2', { sensor: ['motor-1'], motor: ['motor-1'] })).toMatchObject({ ok: false, code: 'DEVICE_CAPABILITY_MISMATCH' });
+    expect(host.start).not.toHaveBeenCalled();
+    expect(await command('pressure-edging-v2', { sensor: ['sensor-1'], motor: ['motor-1'] })).toMatchObject({ ok: true });
+    expect(host.start).toHaveBeenCalledWith(expect.objectContaining({ gameId: 'pressure-edging-v2' }));
+  });
+
   test('owner creates a remote-game room and operator receives a snapshot', async () => {
     const { api, owner, operator } = pair();
     const created = await owner.create({ token: 'owner' });

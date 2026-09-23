@@ -1000,6 +1000,11 @@ const en = {
     games: 'Games',
     start: 'Start game',
     map: 'Device mapping',
+    noDevice: 'No matching online device',
+    pickGame: 'Select a game',
+    thresholdOrder: 'Mid pressure must be below critical pressure',
+    criticalPressure: 'Critical pressure',
+    commandFailed: 'Remote game command failed',
     noRaw: 'Remote game does not expose raw device controls.',
   },
   electron: {

@@ -1,6 +1,10 @@
 const mqtt = require('mqtt');
 const { randomUUID } = require('crypto');
-const manifest = require('../game-runtime/cores/surge-edging-manifest');
+const manifests = [
+  require('../game-runtime/cores/surge-edging-manifest'),
+  require('../game-runtime/cores/pressure-edging-v2-manifest'),
+];
+const deviceRegistry = require('../devices/registry');
 
 const PROTOCOL_VERSION = 1;
 const MAX_SEEN_MESSAGE_IDS = 1024;
@@ -25,28 +29,14 @@ function parseJson(payload) {
 }
 
 function defaultListGames() {
-  const hostGame = {
+  return manifests.map((manifest) => ({
     id: manifest.GAME_ID,
     title: manifest.TITLE,
     version: manifest.VERSION,
     runtimeMode: 'host',
     devices: manifest.DEVICES,
     params: manifest.PARAMS,
-  };
-  let rows = [];
-  try {
-    rows = require('./gameService').listGames().map((game) => ({
-      id: game.id,
-      title: game.name || game.title || game.id,
-      version: game.version || '1.0.0',
-      runtimeMode: game.id === manifest.GAME_ID ? 'host' : 'iframe',
-      devices: game.devices || [],
-      params: game.params || [],
-    }));
-  } catch (_) {}
-  const byId = new Map(rows.map((row) => [row.id, row]));
-  byId.set(hostGame.id, { ...(byId.get(hostGame.id) || {}), ...hostGame });
-  return [...byId.values()];
+  }));
 }
 
 class RemoteGameService {
@@ -437,6 +427,7 @@ class RemoteGameService {
   async _dispatch(type, payload) {
     if (type === 'client.snapshot.request') return this.getStatus();
     if (type === 'game.start') {
+      this._validateStart(payload);
       if (this.beforeHostStart) await this.beforeHostStart();
       return this.host.start({
         gameId: payload.gameId,
@@ -451,6 +442,25 @@ class RemoteGameService {
     if (type === 'game.stop') return this.host.stop({ reason: 'remote-stop' });
     if (type === 'game.action') return this.host.action(payload.action, payload.payload);
     throw this._error('COMMAND_NOT_ALLOWED', '命令不在白名单');
+  }
+
+  _validateStart(payload) {
+    const game = this.listGames().find((item) => item.id === payload.gameId && item.runtimeMode === 'host');
+    if (!game) throw this._error('GAME_NOT_HOSTED', '该游戏暂不支持远程启动');
+    const available = new Map(this._deviceList().map((device) => [device.id, device]));
+    for (const role of game.devices || []) {
+      const ids = payload.deviceMap?.[role.id] || [];
+      if (!Array.isArray(ids) || (role.required && ids.length === 0)) {
+        throw this._error('DEVICE_MAPPING_REQUIRED', `${role.label || role.id}未映射`);
+      }
+      for (const id of ids) {
+        const device = available.get(id);
+        if (!device || device.connected === false) throw this._error('DEVICE_OFFLINE', `${role.label || role.id}设备不在线`);
+        if ((role.capabilities || []).some((capability) => !device.capabilities?.includes(capability))) {
+          throw this._error('DEVICE_CAPABILITY_MISMATCH', `${role.label || role.id}设备能力不匹配`);
+        }
+      }
+    }
   }
 
   _onOperatorEvent(session, envelope) {
@@ -548,7 +558,8 @@ class RemoteGameService {
       id: device.id,
       name: device.nickname || device.name || device.id,
       type: device.type,
-      capabilities: device.capabilities || [],
+      connected: !!device.connected,
+      capabilities: deviceRegistry.getDeviceCapabilities(device.type),
     }));
   }
 

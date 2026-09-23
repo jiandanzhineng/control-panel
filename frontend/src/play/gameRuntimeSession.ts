@@ -14,6 +14,19 @@ export function restoreFromStatus(status: { snapshot?: Record<string, unknown> |
   return status?.snapshot || null
 }
 
+export function syncParamsDraft(
+  draft: Record<string, unknown>,
+  previous: Record<string, unknown>,
+  current: Record<string, unknown>,
+): Record<string, unknown> {
+  for (const [key, value] of Object.entries(current)) {
+    if (!(key in previous) || Object.is(draft[key], previous[key]) || !Object.is(value, previous[key])) {
+      draft[key] = value
+    }
+  }
+  return { ...current }
+}
+
 export function controlsEnabled(input: {
   authorized: boolean
   running: boolean

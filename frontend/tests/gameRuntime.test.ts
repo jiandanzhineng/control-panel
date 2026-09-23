@@ -7,6 +7,7 @@ import {
   restoreFromStatus,
   runtimeViewMode,
   shouldStopAfterStatusFailure,
+  syncParamsDraft,
 } from '../src/play/gameRuntimeSession.ts'
 
 test('host mode does not create an iframe carrier', () => {
@@ -39,4 +40,15 @@ test('a short network failure does not request stop', () => {
   assert.equal(shouldStopAfterStatusFailure(5), false)
   const controls = controlsEnabled({ authorized: true, running: true, connection: 'reconnecting' })
   assert.equal(controls.stop, false)
+})
+
+test('snapshot polling preserves unsaved parameter edits and accepts server updates', () => {
+  const draft: Record<string, unknown> = {}
+  let previous = syncParamsDraft(draft, {}, { duration: 2, criticalPressure: 20 })
+  draft.duration = 4
+  previous = syncParamsDraft(draft, previous, { duration: 2, criticalPressure: 20 })
+  assert.equal(draft.duration, 4)
+  previous = syncParamsDraft(draft, previous, { duration: 3, criticalPressure: 20 })
+  assert.equal(draft.duration, 3)
+  assert.deepEqual(previous, { duration: 3, criticalPressure: 20 })
 })

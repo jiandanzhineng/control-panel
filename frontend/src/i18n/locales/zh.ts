@@ -1000,6 +1000,11 @@ const zh = {
     games: '可启动的游戏',
     start: '启动游戏',
     map: '设备映射',
+    noDevice: '无匹配的在线设备',
+    pickGame: '请选择游戏',
+    thresholdOrder: '中间兴奋压力必须低于临界气压',
+    criticalPressure: '临界气压',
+    commandFailed: '远程游戏操作失败',
     noRaw: '远程游戏不提供设备原始控制。',
   },
   electron: {

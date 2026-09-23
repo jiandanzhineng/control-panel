@@ -1,8 +1,9 @@
 const { randomUUID } = require('crypto');
 const { SurgeEdgingCore, GAME_ID } = require('./cores/surge-edging-core');
+const { PressureEdgingV2Core, GAME_ID: PRESSURE_V2_ID } = require('./cores/pressure-edging-v2-core');
 const { GameCoreRuntime } = require('./gameCoreRuntime');
 
-const HOST_GAMES = new Set([GAME_ID]);
+const HOST_GAMES = new Set([GAME_ID, PRESSURE_V2_ID]);
 const TICK_MS = 80;
 const STOP_CAPABILITIES = ['shock', 'strength', 'motors', 'estim', 'pump', 'lock', 'reporting'];
 
@@ -12,6 +13,7 @@ function isHostGame(gameId) {
 
 function createCore(gameId, params, random) {
   if (gameId === GAME_ID) return new SurgeEdgingCore({ params, random });
+  if (gameId === PRESSURE_V2_ID) return new PressureEdgingV2Core({ params, random });
   const error = new Error('该游戏尚未接入 HostRuntime');
   error.code = 'GAME_NOT_HOSTED';
   throw error;

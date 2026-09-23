@@ -16,8 +16,13 @@ router.get('/status', (req, res) => {
 });
 
 router.get('/games', (req, res) => {
-  const { GAME_ID, TITLE, VERSION, PARAMS, DEVICES } = require('../game-runtime/cores/surge-edging-manifest');
-  res.json([{ id: GAME_ID, title: TITLE, version: VERSION, runtimeMode: 'host', params: PARAMS, devices: DEVICES }]);
+  const manifests = [
+    require('../game-runtime/cores/surge-edging-manifest'),
+    require('../game-runtime/cores/pressure-edging-v2-manifest'),
+  ];
+  res.json(manifests.map(({ GAME_ID, TITLE, VERSION, PARAMS, DEVICES }) => ({
+    id: GAME_ID, title: TITLE, version: VERSION, runtimeMode: 'host', params: PARAMS, devices: DEVICES,
+  })));
 });
 
 router.post('/start', async (req, res) => {

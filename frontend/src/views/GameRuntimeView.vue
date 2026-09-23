@@ -21,9 +21,20 @@
         <div><span>{{ t('gameRuntime.pressure') }}</span><b>{{ view.currentPressure ?? 0 }}</b><small>Avg {{ view.averagePressure ?? 0 }}</small></div>
         <div><span>{{ t('gameRuntime.intensity') }}</span><b>{{ view.currentIntensity ?? 0 }}</b><small>{{ t('gameRuntime.target') }} {{ view.targetIntensity ?? 0 }}</small></div>
         <div><span>{{ t('gameRuntime.mid') }}</span><b>{{ view.midPressure ?? 0 }}</b></div>
+        <div v-if="view.criticalPressure !== undefined"><span>{{ t('remoteGame.criticalPressure') }}</span><b>{{ view.criticalPressure }}</b></div>
         <div><span>{{ t('gameRuntime.edges') }}</span><b>{{ view.edgingCount ?? 0 }}</b></div>
         <div><span>{{ t('gameRuntime.shocks') }}</span><b>{{ view.shockCount ?? 0 }}</b></div>
         <div><span>{{ t('gameRuntime.stim') }}</span><b>{{ view.totalStimulationTime ?? 0 }}s</b></div>
+      </section>
+
+      <section v-if="view.gameId === 'pressure-edging-v2'" class="thresholds">
+        <div v-for="item in thresholdControls" :key="item.which" class="threshold-row">
+          <span>{{ item.label }}</span>
+          <el-button-group>
+            <el-button :icon="Minus" :disabled="!controls.action" :aria-label="`${item.label} -0.1`" @click="send('adjustThreshold', { which: item.which, delta: -0.1 })" />
+            <el-button :icon="Plus" :disabled="!controls.action" :aria-label="`${item.label} +0.1`" @click="send('adjustThreshold', { which: item.which, delta: 0.1 })" />
+          </el-button-group>
+        </div>
       </section>
 
       <section class="actions">
@@ -55,6 +66,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import { Minus, Plus } from '@element-plus/icons-vue'
 import PlayParamsForm from '../components/PlayParamsForm.vue'
 import { clearActivePlay, setActivePlay } from '../composables/useActivePlay'
 import { listenDeviceButtonPress } from '../composables/useButtonStart'
@@ -67,7 +79,7 @@ import {
   stopGameRuntime,
   type GameRuntimeSnapshot,
 } from '../api/gameRuntime'
-import { controlsEnabled, restoreFromStatus, shouldStopAfterStatusFailure } from '../play/gameRuntimeSession'
+import { controlsEnabled, restoreFromStatus, shouldStopAfterStatusFailure, syncParamsDraft } from '../play/gameRuntimeSession'
 
 const props = withDefaults(defineProps<{
   source?: 'local' | 'remote'
@@ -104,6 +116,8 @@ const waiting = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let stopWait: (() => void) | null = null
 let failures = 0
+let lastParams: Record<string, unknown> = {}
+let lastGameId = ''
 
 const view = computed(() => props.source === 'remote' ? props.snapshot : localSnapshot.value)
 const connection = computed(() => props.source === 'remote' ? props.connection : localConnection.value)
@@ -113,6 +127,10 @@ const controls = computed(() => controlsEnabled({
   paused: !!view.value?.paused,
   connection: connection.value,
 }))
+const thresholdControls = computed(() => [
+  { which: 'mid', label: t('gameRuntime.mid') },
+  { which: 'crit', label: t('remoteGame.criticalPressure') },
+])
 
 watch(() => props.paramsSchema, (value) => {
   if (props.source === 'remote') schema.value = value || []
@@ -121,7 +139,11 @@ watch(() => props.paramsSchema, (value) => {
 watch(view, (value) => {
   const params = value?.params
   if (!params) return
-  for (const [key, item] of Object.entries(params)) draft[key] = item
+  if (value.gameId !== lastGameId) {
+    lastParams = {}
+    lastGameId = value.gameId || ''
+  }
+  lastParams = syncParamsDraft(draft, lastParams, params)
   if (value?.ended && props.navigateOnEnd && props.source === 'local') finish('ended')
 }, { immediate: true })
 
@@ -196,16 +218,19 @@ function finish(reason: string) {
 
 onMounted(async () => {
   if (props.source !== 'local') return
-  const games = await listHostGames().catch(() => [])
-  const id = String(route.query.id || games[0]?.id || '')
-  schema.value = games.find((game: any) => game.id === id)?.params || games[0]?.params || []
   if (String(route.query.startMode || '') === 'button') {
+    const games = await listHostGames().catch(() => [])
+    const id = String(route.query.id || games[0]?.id || '')
+    schema.value = games.find((game: any) => game.id === id)?.params || []
     waiting.value = true
     const trigger = String(route.query.startTriggerDeviceId || '')
     if (trigger) stopWait = listenDeviceButtonPress(trigger, () => { void beginDeferred() })
     return
   }
   await poll()
+  const games = await listHostGames().catch(() => [])
+  const id = String(localSnapshot.value?.gameId || route.query.id || games[0]?.id || '')
+  schema.value = games.find((game: any) => game.id === id)?.params || []
   pollTimer = setInterval(() => { void poll() }, 1000)
 })
 
@@ -224,6 +249,8 @@ onBeforeUnmount(() => {
 .metrics div { border: 1px solid var(--el-border-color); border-radius: 12px; padding: 12px; display: grid; gap: 4px; }
 .metrics span, .metrics small { color: var(--el-text-color-secondary); }
 .metrics b { font-size: 28px; }
+.thresholds { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+.threshold-row { display: flex; gap: 8px; align-items: center; }
 .logs ul { list-style: none; margin: 8px 0 0; padding: 0; max-height: 180px; overflow: auto; }
 .logs li { padding: 4px 0; border-bottom: 1px dashed var(--el-border-color-lighter); }
 .wait-card { padding: 32px 16px; text-align: center; }
