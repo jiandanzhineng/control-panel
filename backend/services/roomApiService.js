@@ -46,11 +46,15 @@ async function request(path, { method = 'GET', token, body } = {}) {
   return data;
 }
 
-function createRoom(token, capacity = 8) {
+function createRoom(token, capacity = 8, options = {}) {
   return request('/rooms', {
     method: 'POST',
     token,
-    body: { gameId: 'remote-device-projection', gameVersion: '1.0.0', capacity },
+    body: {
+      gameId: options.gameId || 'remote-device-projection',
+      gameVersion: options.gameVersion || '1.0.0',
+      capacity,
+    },
   });
 }
 

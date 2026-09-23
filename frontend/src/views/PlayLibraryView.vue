@@ -119,7 +119,7 @@ import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { track } from '../analytics';
 import { trackPlayEnd } from '../playAnalytics';
-import { useActivePlay, clearActivePlay } from '../composables/useActivePlay';
+import { useActivePlay, clearActivePlay, setActivePlay } from '../composables/useActivePlay';
 import LocalAppCard from '../components/LocalAppCard.vue';
 import { currentLocale } from '../i18n';
 import { localizePlay } from '../i18n/play';
@@ -210,6 +210,17 @@ async function loadAll() {
   } catch (e: any) {
     error.value = e?.message || t('plays.loadPluginsFailed');
   }
+  try {
+    const status = await fetch('/api/games/status').then((r) => r.json());
+    if (status?.running && status.runtimeMode === 'host') {
+      setActivePlay({
+        carrierType: 'game',
+        id: status.gameId,
+        title: status.snapshot?.title || status.gameId,
+        resume: { name: 'game_runtime', query: { id: status.gameId } },
+      });
+    }
+  } catch (_) {}
 }
 
 function openDevGuide() {

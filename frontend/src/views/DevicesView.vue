@@ -928,6 +928,7 @@
 
       <el-tab-pane :label="t('devices.remote')" name="remote">
         <RemoteProjectionPanel />
+        <RemoteGamePanel />
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -941,6 +942,7 @@ import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Lin
 import { useRouter } from 'vue-router'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
 import RemoteProjectionPanel from '../components/RemoteProjectionPanel.vue'
+import RemoteGamePanel from '../components/RemoteGamePanel.vue'
 import BrandsPanel from '../components/BrandsPanel.vue'
 import DeviceBatchControl from '../components/DeviceBatchControl.vue'
 import { track } from '../analytics'

@@ -17,6 +17,8 @@ const { browserApiCors } = require('./middleware/browserApiAccess');
 const externalGameAccessService = require('./services/externalGameAccessService');
 const serialConnectionService = require('./services/serialConnectionService');
 const remoteProjectionService = require('./services/remoteProjectionService');
+const remoteGameService = require('./services/remoteGameService');
+const gameHostService = require('./game-runtime/gameHostService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -140,6 +142,8 @@ function shutdownBackend(reason = 'backend-shutdown', {
   backendShutdownPromise = (async () => {
     await deviceWatchdogService.shutdown(reason);
     await localAppProcessService.stopAll().catch(() => ({ ok: false }));
+    await remoteGameService.shutdown();
+    await gameHostService.shutdown();
     await remoteProjectionService.shutdown();
     if (typeof beforeTransportShutdown === 'function') {
       await beforeTransportShutdown();
@@ -203,6 +207,8 @@ app.use('/api/virtual-devices', require('./routes/virtualDevices'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/voice', require('./routes/voice'));
 app.use('/api/remote-projection', require('./routes/remoteProjection'));
+app.use('/api/game-runtime', require('./routes/gameRuntime'));
+app.use('/api/remote-game', require('./routes/remoteGame'));
 app.use('/api/dev-access', require('./routes/devAccess'));
 app.use('/api/brands', require('./routes/brands'));
 

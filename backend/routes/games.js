@@ -4,6 +4,7 @@ const { sendError } = require('../utils/http');
 const gameService = require('../services/gameService');
 const gameCacheService = require('../services/gameCacheService');
 const bridgeService = require('../services/bridgeService');
+const gameHost = require('../game-runtime/gameHostService');
 
 // 抓取第三方游戏网页，解析内联 game-manifest，返回与本地游戏一致的结构
 // 必须在 /:id 之前注册，避免被参数路由捕获
@@ -51,7 +52,17 @@ router.get('/', (req, res) => {
 });
 
 router.get('/status', (req, res) => {
-  res.json({ running: false });
+  const status = gameHost.getStatus();
+  res.json({
+    running: !!status.running,
+    runtimeMode: status.runtimeMode || null,
+    sessionId: status.sessionId || null,
+    gameId: status.gameId || null,
+    deviceMap: status.deviceMap || null,
+    snapshot: status.snapshot || null,
+    source: status.source || null,
+    ended: !!status.ended,
+  });
 });
 
 router.post('/played', (req, res) => {
@@ -87,22 +98,52 @@ router.get('/:id/meta', (req, res) => {
 router.post('/:id/start', async (req, res) => {
   try {
     const localAppProcessService = require('../services/localAppProcessService');
-    await localAppProcessService.stopAll();
-    const g = gameService.getGameById(req.params.id);
-    if (!g) return sendError(res, 'GAME_NOT_FOUND', '游戏不存在', 404);
-    const { deviceMapping = {}, parameters = {} } = req.body || {};
+    const { deviceMapping = {}, parameters = {}, source = 'local', defer = false } = req.body || {};
     const normalizedMap = {};
     for (const [k, v] of Object.entries(deviceMapping)) {
       normalizedMap[k] = Array.isArray(v) ? v : (v ? [v] : []);
     }
+    if (gameHost.isHostGame(req.params.id)) {
+      if (defer) {
+        return res.json({
+          ok: true,
+          deferred: true,
+          deviceMap: normalizedMap,
+          params: parameters,
+          runtime: { mode: 'host', gameId: req.params.id },
+        });
+      }
+      await localAppProcessService.stopAll();
+      try { bridgeService.exitCurrent(); } catch (_) {}
+      const started = gameHost.start({
+        gameId: req.params.id,
+        deviceMap: normalizedMap,
+        params: parameters,
+        source,
+      });
+      const g = gameService.getGameById(req.params.id);
+      return res.json({
+        ok: true,
+        gamePath: g?.gamePath || null,
+        deviceMap: started.deviceMap,
+        params: started.snapshot?.params || parameters,
+        runtime: { mode: 'host', ...started },
+      });
+    }
+    await localAppProcessService.stopAll();
+    const g = gameService.getGameById(req.params.id);
+    if (!g && !req.body?.gamePath && !req.body?.externalUrl) {
+      return sendError(res, 'GAME_NOT_FOUND', '游戏不存在', 404);
+    }
     res.json({
       ok: true,
-      gamePath: g.gamePath,
+      gamePath: g?.gamePath || req.body?.gamePath || null,
       deviceMap: normalizedMap,
       params: parameters,
+      runtime: { mode: 'iframe' },
     });
   } catch (e) {
-    sendError(res, 'GAME_START_FAILED', e?.message || String(e), 500);
+    sendError(res, e?.code || 'GAME_START_FAILED', e?.message || String(e), 500);
   }
 });
 
@@ -110,7 +151,9 @@ router.post('/stop-current', async (req, res) => {
   try {
     const localAppProcessService = require('../services/localAppProcessService');
     await localAppProcessService.stopAll();
-    res.json(bridgeService.exitCurrent());
+    const host = gameHost.stop({ reason: 'explicit-exit' });
+    const bridge = bridgeService.exitCurrent();
+    res.json({ ...bridge, host });
   } catch (e) {
     sendError(res, 'GAME_STOP_FAILED', e?.message || String(e), 500);
   }

@@ -150,7 +150,7 @@ let disposeLocalAppWindow: (() => void) | null = null
 const menuActive = computed(() => (route.path.startsWith('/plays') ? '/plays' : route.path))
 
 // 沉浸式页面隐藏全局顶栏（面包屑），避免与页面自带工具栏叠加
-const hideHeader = computed(() => route.path === '/browser' || route.path.startsWith('/plays/game/current'))
+const hideHeader = computed(() => route.path === '/browser' || route.path.startsWith('/plays/game/current') || route.path.startsWith('/plays/game/runtime'))
 
 const checkMobile = () => {
   isMobile.value = window.innerWidth <= 768

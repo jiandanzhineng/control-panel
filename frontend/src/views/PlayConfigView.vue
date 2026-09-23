@@ -481,6 +481,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { trackPlayStart } from '../playAnalytics';
 import { mappedDeviceCount, mappedDeviceMacs, mappedDeviceTypes, mappedRoles } from '../playSession';
 import { setActivePlay } from '../composables/useActivePlay';
+import { isHostRuntime, requestGameStart } from '../play/launchGame';
 import { listenDeviceButtonPress } from '../composables/useButtonStart';
 import { currentLocale } from '../i18n';
 import { localeTag } from '../i18n/locale';
@@ -1251,6 +1252,28 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
         roles: mappedRoles(deviceMapping),
         device_count: mappedDeviceCount(deviceMapping),
       });
+      const started = await requestGameStart(
+        playId.value,
+        { ...deviceMapping },
+        { ...parameters },
+        mode === 'button',
+        {
+          gamePath: installedGamePath || (play.value as any)?.gamePath || String(route.query.gamePath || ''),
+          externalUrl,
+        },
+      );
+      if (isHostRuntime(started)) {
+        const hostQuery: Record<string, string> = { id: playId.value };
+        if (started.deferred) {
+          hostQuery.startMode = mode;
+          hostQuery.deviceMap = JSON.stringify({ ...deviceMapping });
+          hostQuery.params = JSON.stringify({ ...parameters });
+          if (startTriggerDeviceId.value) hostQuery.startTriggerDeviceId = startTriggerDeviceId.value;
+        }
+        setActivePlay({ carrierType: 'game', id: playId.value, title: playTitle, resume: { name: 'game_runtime', query: hostQuery } });
+        router.push({ name: 'game_runtime', query: hostQuery });
+        return;
+      }
       const resumeQuery: Record<string, string> = {
         id: playId.value,
         deviceMap: JSON.stringify({ ...deviceMapping }),

@@ -1,7 +1,7 @@
 # surge-edging 测试文档
 
 - 游戏 ID：surge-edging
-- 游戏版本：1.1.2
+- 游戏版本：1.2.0
 - 所需设备：QIYA（sphincterPressure + reporting，必需）、TD01（strength，必需）；DIANJI（shock，可选）、ZIDONGSUO（lock，可选）
 - 测试方式：虚拟设备（`tools/vdev-cli` 或 REST 注入 pressure）、实机输出观察
 - 时间允许误差：±300ms
