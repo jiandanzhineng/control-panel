@@ -1,6 +1,6 @@
 # 远程游戏与客户端级远控方案
 
-> 状态：宏观方案，待确认客户端级远控范围
+> 状态：宏观方案，客户端级远控范围已确认；JS 运行层待做原型验证
 
 ## 1. 目标
 
@@ -52,7 +52,9 @@ A 在远程连接页明确授权后，B 获得 Control Panel 内部的受限客�
 
 Android 优先复用现有 `flutter_foreground_task` 的前台服务、wake lock 和 MQTT 通道，将 GameHostRuntime 纳入同一服务；不能只依赖 `WakelockPlus`，因为它主要防止屏幕自动熄灭，不能覆盖用户主动锁屏。当前 `GameRunPage` 的 `onPause` 安全停机逻辑要改为“解绑显示层”，只有用户明确停止、会话结束、超时或异常安全收尾才停止运行层。
 
-游戏运行层可以先用 Dart 实现三阶段寸止；如果要保留 HTML/JavaScript 逻辑，再评估在后台 isolate 中嵌入 QuickJS/Hermes。无论实现语言如何，运行层都必须提供统一的 `GameSnapshot`、命令、版本和恢复接口。Android 前台服务也不能完全消除厂商杀进程，需要保存快照并支持重启恢复；iOS 和 OHOS 的后台执行能力另行做平台验证，不能直接套用 Android 保证。
+游戏逻辑继续使用 JavaScript，但不再要求它运行在 WebView 页面里。每个游戏包拆成与浏览器无关的 `game-core.js` 和浏览器渲染适配层：核心只处理状态机、输入、计时、随机数和设备意图，页面只渲染 `GameSnapshot` 并发送命令。Android 首选在前台服务承载的 Dart isolate 中嵌入 QuickJS（当前候选为 `flutter_js`），由宿主显式调用 `core.step(monotonicNow, events)`；不能让关键逻辑依赖 JS `setInterval`，也不能让核心直接访问 DOM、Canvas、Audio 或 WebSocket。PC 端由 Electron 主进程/Worker 使用同一份 JS Core，A、B 只更换 HostRuntime/RemoteRuntime。
+
+`flutter_js` 的 Android 实现是 QuickJS，iOS 使用系统 JavaScriptCore，并提供独立 isolate 运行入口；这证明技术路径可行，但还不等于本项目已完成后台/锁屏验收。Android 前台服务仍需通知、必要的 partial wake lock、快照持久化和重启恢复；厂商杀进程、iOS/OHOS 后台限制仍需分别验证。具体引擎比较和 `surge-edging` 拆分边界见移动端调研文档。
 
 ## 6. 三阶段寸止落地
 
@@ -89,8 +91,9 @@ B 运行同一套 Vue 客户端，但注入 `RemoteClientApi`：
 5. 增加断线、重复命令、旧会话、切换新游戏和设备复位测试。
 6. 用两个真实客户端联调，再做真实设备安全验证。
 
-## 10. 待确认
+## 10. 已确认边界与验证项
 
-1. “可以修改所有参数”是否包含游戏运行中即时修改，还是至少包含开始前和暂停时修改。
-2. B 是否需要接收 A 的语音/声音，还是只同步视觉 UI 和状态。
-3. Android 首版是否明确允许锁屏后继续驱动设备，并以常驻通知、超时和本地急停作为运行提示。
+- A、B 都可修改全部游戏参数，包括运行中允许修改的参数；A 负责校验并广播最终生效值。
+- 设备管理、游戏库、游戏开始设置页和游戏运行页纳入客户端级远控；普通设置页不纳入。
+- 首版不传输 A 的音频流，B 先完成视觉 UI 和操作同步；语音/音频同步作为后续独立能力。
+- Android 按锁屏后继续运行的目标设计，但前台服务、厂商后台策略、进程重启和真实设备安全收尾必须完成验证后才能发布该能力。

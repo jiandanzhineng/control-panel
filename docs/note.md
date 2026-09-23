@@ -1,5 +1,7 @@
 # 开发测试记录
 
+- 2026-09-23 游戏运行层：用户要求游戏逻辑继续使用 JavaScript。新游戏应拆分为无浏览器依赖的 `game-core.js` 与 WebView 渲染层；移动端引擎评估见 `E:\smart\project\control_panel_mobile\docs\research\2026-09-23-js-game-core-runtime-feasibility.md`，当前不把锁屏持续运行写成已验证能力。
+
 - 2026-09-05 桌面检查入口：仓库根目录 `npm run check`，依次运行后端 Jest、前端 Node 测试和前端类型检查/生产构建。CI 使用 Node 22 最新补丁版；前端 TypeScript 测试使用 Node 内置类型擦除，建议本地 Node 22.18+。
 - 前端组件按需导入使用 `unplugin-vue-components@29.2.0`，配置在 `frontend/vite.config.ts`。保留 Element Plus 全局样式以维持主题覆盖顺序，图标由各组件显式导入。
 - 设备上报保存窗口为 1 秒，异步写临时文件后替换设备记录；日志每 100ms 批量追加。后端退出、日志下载与诊断上传会等待相应队列完成。

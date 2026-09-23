@@ -1,5 +1,9 @@
 # 统一游戏运行时方案设计
 
+> 旧版前台网页方案。关于远程游戏、锁屏继续运行和 JavaScript 核心脱离 WebView，
+> 以 [`docs/plan/2026-09-23-remote-game-client-control.md`](../plan/2026-09-23-remote-game-client-control.md)
+> 与移动端 JS 运行层调研为准；本文中“无需独立 JS 引擎”和“逻辑必须在 WebView 前台运行”不再适用于新游戏。
+
 > 游戏 = 网页 · 前台运行 · 通过 Bridge 控制设备 · PC 和 Android 统一
 
 ## 1. 核心理念
