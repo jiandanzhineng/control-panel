@@ -55,3 +55,4 @@
 - 2026-09-17 公开 `registry.json` 的社区游戏带 `authorName`（来自投稿署名）。介绍页读该字段；缺署名且非 builtin 才显示未知作者。生产重建：`game-platform rebuild-registry`（加载 `/etc/game-platform/game-platform.env`）。
 
 - 2026-09-23 PC 游戏 UI 重做：frontend/src/views/GameRuntimeView.vue 按原游戏窄容器、卡片、曲线、进度条重现，本地与远程共用；独立远程工作区路由 /remote-game；视觉验证使用 BrowserOS neo，前端 Vite 端口 5174，后端 npm run dev:backend。
+- 2026-09-23 游戏运行 UI 重构：GameRuntimeView 只负责 HostRuntime 轮询、生命周期和命令适配；GameRuntimeSurface 按 gameId 分发游戏自己的渲染组件，本地、远程和配置预览共用同一套游戏表面。surge-edging 曲线保留压力实线、强度虚线、峰值标记和中间压力微调；未做真实硬件输出验证。

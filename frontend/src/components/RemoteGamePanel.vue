@@ -56,6 +56,12 @@
             </el-select>
           </div>
           <template v-if="selectedGame">
+            <GameRuntimeSurface
+              mode="config"
+              embedded
+              :snapshot="configPreview"
+              :controls="disabledSurfaceControls"
+            />
             <div class="setup-section">
               <h3>{{ t('playConfig.mapping') }}</h3>
               <div v-for="role in selectedGame.devices || []" :key="role.id" class="map-row">
@@ -102,6 +108,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Refresh } from '@element-plus/icons-vue'
 import PlayParamsForm from './PlayParamsForm.vue'
+import GameRuntimeSurface from './GameRuntimeSurface.vue'
 import GameRuntimeView from '../views/GameRuntimeView.vue'
 import {
   authorizeRemoteGame,
@@ -132,6 +139,26 @@ let configuredGameId = ''
 
 const hostGames = computed(() => (status.value.games || []).filter((game) => game.runtimeMode === 'host'))
 const selectedGame = computed(() => hostGames.value.find((game) => game.id === gameId.value))
+const disabledSurfaceControls = { pause: false, resume: false, action: false, stop: false, params: false }
+const configPreview = computed(() => {
+  const game = selectedGame.value
+  if (!game) return null
+  const values = { ...params }
+  return {
+    gameId: game.id,
+    title: game.title || game.id,
+    phase: 'IDLE',
+    phaseText: t('gameRuntime.configPreview'),
+    currentPressure: 0,
+    averagePressure: 0,
+    midPressure: Number(values.midPressure ?? 50),
+    criticalPressure: Number(values.criticalPressure ?? 20),
+    currentIntensity: 0,
+    targetIntensity: 0,
+    params: values,
+    logs: [],
+  }
+})
 const visibleParams = computed(() => (selectedGame.value?.params || []).filter((param) => (
   !param.device || (selectedGame.value?.devices || []).find((role) => role.id === param.device)?.required !== false
     || !!deviceMap[param.device]?.length
