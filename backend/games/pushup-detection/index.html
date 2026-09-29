@@ -8,9 +8,9 @@
 {
   "id": "pushup-detection",
   "title": "俯卧撑检测训练",
-  "description": "用 QTZ 距离阈值识别俯卧撑上下动作。支持无动作惩罚、连击奖励（跳蛋/捶背）与自动锁。",
-  "howTo": "1. 映射 QTZ（必需）\n2. 可选：自动锁、电击、跳蛋、捶背\n3. 按身高调整下降/上升阈值\n4. 在时限内完成目标次数",
-  "version": "2.1.3",
+  "description": "用 QTZ 距离阈值识别俯卧撑上下动作。支持无动作惩罚、共用电机输出与自动锁。",
+  "howTo": "1. 映射 QTZ（必需）\n2. 可选：自动锁、电击、电机（TD01 或 PJ01）\n3. 按身高调整下降/上升阈值\n4. 在时限内完成目标次数",
+  "version": "2.1.4",
   "devices": [
     {
       "id": "qtz",
@@ -40,18 +40,11 @@
     },
     {
       "id": "vibrator",
-      "label": "跳蛋",
+      "label": "电机（TD01/PJ01）",
       "capabilities": [
         "strength"
       ],
-      "required": false
-    },
-    {
-      "id": "pj01",
-      "label": "捶背器",
-      "capabilities": [
-        "strength"
-      ],
+      "maxDevices": 1,
       "required": false
     }
   ],
@@ -203,8 +196,8 @@
       "key": "vibratorIntensity",
       "type": "number",
       "default": 100,
-      "label": "跳蛋强度",
-      "description": "奖励时跳蛋强度",
+      "label": "电机强度",
+      "description": "奖励和惩罚时的电机强度（TD01 或 PJ01）",
       "group": "reward",
       "min": 0,
       "max": 255,
@@ -212,31 +205,31 @@
       "device": "vibrator"
     },
     {
+      "key": "pj01Duration",
+      "type": "number",
+      "default": 5,
+      "label": "惩罚电机时长",
+      "unit": "秒",
+      "description": "无动作惩罚时电机工作时间",
+      "group": "punish",
+      "min": 1,
+      "max": 60,
+      "step": 1,
+      "device": "vibrator",
+      "required": false
+    },
+    {
       "key": "vibratorDuration",
       "type": "number",
       "default": 15,
-      "label": "跳蛋时长",
+      "label": "电机时长",
       "unit": "秒",
-      "description": "奖励振动持续时间",
+      "description": "奖励时电机工作时间",
       "group": "reward",
       "min": 1,
       "max": 120,
       "step": 1,
       "device": "vibrator"
-    },
-    {
-      "key": "pj01Duration",
-      "type": "number",
-      "default": 5,
-      "label": "捶背时长",
-      "unit": "秒",
-      "description": "奖励时捶背器工作时长",
-      "group": "reward",
-      "min": 1,
-      "max": 60,
-      "step": 1,
-      "device": "pj01",
-      "required": false
     },
     {
       "key": "enableVoice",
@@ -250,14 +243,13 @@
   "i18n": {
     "en": {
       "title": "Push-up trainer",
-      "description": "Uses QTZ distance thresholds to detect push-up up/down. Idle punish, combo rewards (vibe / back-pat), and auto lock.",
-      "howTo": "1. Map QTZ (required)\n2. Optional: lock, shock, vibe, back-pat\n3. Adjust down/up thresholds for height\n4. Hit the target count within the time limit",
+      "description": "Uses QTZ distance thresholds to detect push-ups. Includes idle punishment, a shared motor output, and auto lock.",
+      "howTo": "1. Map QTZ (required)\n2. Optional: lock, shock, motor (TD01 or PJ01)\n3. Adjust down/up thresholds for height\n4. Hit the target count within the time limit",
       "devices": {
         "qtz": "QTZ distance sensor",
         "lock": "Auto lock",
         "shock": "Shock device",
-        "vibrator": "Vibrator",
-        "pj01": "Back-pat motor"
+        "vibrator": "Motor (TD01/PJ01)"
       },
       "params": {
         "duration": "Duration",
@@ -271,9 +263,9 @@
         "randomDurationRange": "Duration jitter",
         "rewardTriggerCount": "Reward combo",
         "rewardTriggerProbability": "Reward chance",
-        "vibratorIntensity": "Vibe intensity",
-        "vibratorDuration": "Vibe duration",
-        "pj01Duration": "Back-pat duration",
+        "vibratorIntensity": "Motor intensity",
+        "vibratorDuration": "Motor duration",
+        "pj01Duration": "Punishment motor duration",
         "enableVoice": "Voice prompts"
       },
       "paramDescriptions": {
@@ -288,9 +280,9 @@
         "randomDurationRange": "Random offset around the shock duration.",
         "rewardTriggerCount": "Combo count that can trigger a reward.",
         "rewardTriggerProbability": "Chance to actually grant a reward after the combo.",
-        "vibratorIntensity": "Vibrator intensity for rewards.",
-        "vibratorDuration": "Reward vibration duration.",
-        "pj01Duration": "Back-pat duration for rewards.",
+        "vibratorIntensity": "Motor intensity for rewards and punishments (TD01 or PJ01).",
+        "vibratorDuration": "Reward motor duration.",
+        "pj01Duration": "Motor duration for idle punishment.",
         "enableVoice": "Play count and punish voice lines."
       },
       "paramUnits": {
@@ -384,12 +376,8 @@
           <div class="device-value"><span data-bind="shockingText">空闲</span></div>
         </div>
         <div class="device-card" data-class="vibratorOn:warn">
-          <div class="device-title" data-en="Vibrator">跳蛋</div>
+          <div class="device-title" data-en="Motor">电机</div>
           <div class="device-value"><span data-bind="vibratorOnText">待机</span></div>
-        </div>
-        <div class="device-card" data-class="pj01On:warn">
-          <div class="device-title" data-en="Back-pat">捶背</div>
-          <div class="device-value"><span data-bind="pj01OnText">关闭</span></div>
         </div>
       </div>
       <div class="chips" style="margin-top:10px;">

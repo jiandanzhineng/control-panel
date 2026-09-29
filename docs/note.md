@@ -1,5 +1,7 @@
 # 开发测试记录
 
+- 2026-09-29 俯卧撑游戏：`backend/games/pushup-detection` 与移动端 `assets/games/pushup-detection` 同步；`vibrator` 是共用的电机输出槽，可接 TD01 或 PJ01，奖励与惩罚都使用 `vibratorIntensity`，各自保留时长参数。定向测试：`npm --prefix backend test -- --runInBand pushup-detection-output.test.js`。
+
 - 2026-09-23 三阶段远程启动回归：双隔离 Electron 的被控端前端/后端/CDP 为 `5303/5301/9224`，主控端为 `5304/5302/9225`；测试房间服务 `8787`、本机 MQTT `1883`。虚拟设备 `electron_qiya/electron_td01/electron_dianji/electron_lock` 在被控端 `POST /api/virtual-devices/batch` 创建。CDP 实测主控选择 `pressure-edging-v2`、自动设备映射、启动前参数 3 分钟、运行中改为 4 分钟、气压驱动中期/边缘、暂停/继续、电击一次及自动停止、强制边缘、阈值微调 19.2→19.3、停止；两端快照一致，结束 `remote-stop` 后 TD01/电击/锁/传感器收到复位命令。`npm run check`：后端 584 通过、1 跳过，前端 12 通过，构建通过。仅虚拟设备验证，未验证真实硬件输出。隔离后端 `/api/dev-access` 为 `enabled=true`，仅供本机手测。
 
 - 2026-09-23 CDP 双 Electron 回归：隔离前端 `5303/5304`、后端 `5301/5302`、房间服务 `8787`、CDP `9224/9225`，被控端虚拟设备 `electron_qiya/electron_td01/electron_dianji/electron_lock`。主控创建并加入房间、授权、启动 `surge-edging`，暂停/继续、强度、电击、强制边缘、参数 `duration 20→21`、停止均通过；停止快照为 `ENDED/remote-stop`，设备均安全复位。主控与被控端随后离开房间，最终 `remote-game.active=false`、`game-runtime.active=false`。隔离后端 `/api/dev-access` 保持 `enabled=true` 供手测，未改生产代码。

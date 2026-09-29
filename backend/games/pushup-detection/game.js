@@ -6,8 +6,7 @@
   const QTZ = 'qtz';        // 老版 distance_sensor
   const LOCK = 'lock';      // 老版 auto_lock
   const SHOCK = 'shock';    // 老版 shock_device
-  const VIBE = 'vibrator';  // 老版 vibrator_device
-  // 老版 pj01_device 在新 manifest 无对应设备，保留 UI 状态但下发自动跳过（isMapped 为 false）
+  const MOTOR = 'vibrator'; // Keep the logical ID for saved mappings and params.
 
   const cfg = {
     duration: 15, targetCount: 30, downThreshold: 15, upThreshold: 35, idleTimeLimit: 15,
@@ -18,24 +17,23 @@
   const rt = {
     startTime: 0, running: false, paused: false, isLocked: false,
     completedCount: 0, consecutiveCount: 0, currentDistance: 0, phase: 'up',
-    lastActionTs: 0, lastIdleWarnTs: 0, shocking: false, vibratorOn: false, pj01On: false,
+    lastActionTs: 0, lastIdleWarnTs: 0, shocking: false, vibratorOn: false, punishMotorOn: false,
     punishmentCount: 0, rewardCount: 0,
-    shockTimer: null, vibratorTimer: null, pj01Timer: null,
+    shockTimer: null, vibratorTimer: null, punishMotorTimer: null,
   };
   const view = {
     running: false, startTime: 0, remainText: '-', completedCount: 0, targetCount: 30,
     completionRate: 0, phase: '-', currentDistance: 0, idleSec: 0, btnText: t('暂停'),
-    isLocked: false, shocking: false, vibratorOn: false, pj01On: false,
+    isLocked: false, shocking: false, vibratorOn: false,
     punishmentCount: 0, rewardCount: 0, statusText: '-',
-    isLockedText: t('未锁'), shockingText: t('空闲'), vibratorOnText: t('待机'), pj01OnText: t('关闭'),
+    isLockedText: t('未锁'), shockingText: t('空闲'), vibratorOnText: t('待机'),
   };
 
   const $ = (s) => Array.from(document.querySelectorAll(s));
   function render() {
     view.isLockedText = rt.isLocked ? t('已锁') : t('未锁');
     view.shockingText = rt.shocking ? t('进行中') : t('空闲');
-    view.vibratorOnText = rt.vibratorOn ? t('工作中') : t('待机');
-    view.pj01OnText = rt.pj01On ? t('工作中') : t('关闭');
+    view.vibratorOnText = view.vibratorOn ? t('工作中') : t('待机');
     $('[data-bind]').forEach((el) => {
       const k = el.getAttribute('data-bind');
       let v = (k in view) ? view[k] : el.textContent;
@@ -75,14 +73,10 @@
   }
 
   function setStrength(dev, v) { if (DeviceAPI.device(dev).isMapped()) DeviceAPI.device(dev).invoke('strength', 'set', { value: Math.round(v) }); }
-  function mappedPhysicalIds(dev) {
-    const ids = DeviceAPI.deviceMap && DeviceAPI.deviceMap[dev];
-    if (Array.isArray(ids)) return ids.map((id) => String(id));
-    return ids === undefined || ids === null || ids === false ? [] : [String(ids)];
-  }
-  function sharesMappedDevice(first, second) {
-    const other = new Set(mappedPhysicalIds(second));
-    return mappedPhysicalIds(first).some((id) => other.has(id));
+  function updateMotor() {
+    const active = rt.vibratorOn || rt.punishMotorOn;
+    view.vibratorOn = active;
+    setStrength(MOTOR, active ? cfg.vibratorIntensity : 0);
   }
   function startShock(voltage) { if (DeviceAPI.device(SHOCK).isMapped()) DeviceAPI.device(SHOCK).invoke('shock', 'start', { voltage }); }
   function stopShockDev() { if (DeviceAPI.device(SHOCK).isMapped()) DeviceAPI.device(SHOCK).invoke('shock', 'stop', {}); }
@@ -108,16 +102,16 @@
   function triggerReward() {
     if (rt.vibratorOn) return;
     rt.vibratorOn = true; rt.rewardCount += 1;
-    view.vibratorOn = true; view.rewardCount = rt.rewardCount;
+    view.rewardCount = rt.rewardCount;
     addLog('warn', `奖励干扰 开始 强度=${cfg.vibratorIntensity} 时长=${cfg.vibratorDuration}s`);
     speak(t('奖励'));
-    setStrength(VIBE, cfg.vibratorIntensity);
+    updateMotor();
     rt.vibratorTimer = setTimeout(stopVibrator, Math.max(1, cfg.vibratorDuration) * 1000);
   }
   function stopVibrator() {
     if (!rt.vibratorOn) return;
-    rt.vibratorOn = false; view.vibratorOn = false;
-    setStrength(VIBE, 0);
+    rt.vibratorOn = false;
+    updateMotor();
     if (rt.vibratorTimer) { clearTimeout(rt.vibratorTimer); rt.vibratorTimer = null; }
     addLog('info', '奖励干扰停止');
   }
@@ -135,22 +129,19 @@
     speak(t('惩罚'));
     startShock(Math.round(intensity));
     rt.shockTimer = setTimeout(stopShockSeq, Math.round(duration * 1000));
-    startPJ01();
+    startPunishMotor();
   }
-  function startPJ01() {
-    if (rt.pj01On) return;
-    // A single TD01 is auto-mapped to both optional strength slots. Do not
-    // overwrite the configured vibrator reward with the back-pat max value.
-    if (sharesMappedDevice(VIBE, 'pj01')) return;
-    rt.pj01On = true; view.pj01On = true;
-    setStrength('pj01', 255); // 无映射则自动跳过
-    rt.pj01Timer = setTimeout(stopPJ01, Math.max(1, cfg.pj01Duration) * 1000);
+  function startPunishMotor() {
+    if (rt.punishMotorOn) return;
+    rt.punishMotorOn = true;
+    updateMotor();
+    rt.punishMotorTimer = setTimeout(stopPunishMotor, Math.max(1, cfg.pj01Duration) * 1000);
   }
-  function stopPJ01() {
-    if (!rt.pj01On) return;
-    rt.pj01On = false; view.pj01On = false;
-    setStrength('pj01', 0);
-    if (rt.pj01Timer) { clearTimeout(rt.pj01Timer); rt.pj01Timer = null; }
+  function stopPunishMotor() {
+    if (!rt.punishMotorOn) return;
+    rt.punishMotorOn = false;
+    updateMotor();
+    if (rt.punishMotorTimer) { clearTimeout(rt.punishMotorTimer); rt.punishMotorTimer = null; }
   }
   function stopShockSeq() {
     if (!rt.shocking) return;
@@ -193,7 +184,7 @@
     rt.running = true; rt.paused = false;
     rt.completedCount = 0; rt.consecutiveCount = 0; rt.phase = 'up';
     rt.lastActionTs = Date.now(); rt.lastIdleWarnTs = 0;
-    rt.shocking = false; rt.vibratorOn = false; rt.pj01On = false;
+    rt.shocking = false; rt.vibratorOn = false; rt.punishMotorOn = false;
     rt.punishmentCount = 0; rt.rewardCount = 0;
     view.running = true; view.startTime = rt.startTime; view.statusText = t('准备就绪');
     view.targetCount = cfg.targetCount;
@@ -231,11 +222,12 @@
   function end() {
     if (!rt.running) return;
     rt.running = false;
-    [rt.shockTimer, rt.vibratorTimer, rt.pj01Timer].forEach((t) => { if (t) clearTimeout(t); });
-    rt.shockTimer = rt.vibratorTimer = rt.pj01Timer = null;
+    [rt.shockTimer, rt.vibratorTimer, rt.punishMotorTimer].forEach((t) => { if (t) clearTimeout(t); });
+    rt.shockTimer = rt.vibratorTimer = rt.punishMotorTimer = null;
+    rt.vibratorOn = rt.punishMotorOn = false;
+    view.vibratorOn = false;
     stopShockDev();
-    setStrength(VIBE, 0);
-    setStrength('pj01', 0);
+    setStrength(MOTOR, 0);
     if (DeviceAPI.device(QTZ).isMapped()) DeviceAPI.device(QTZ).invoke('distance', 'configure', { reportDelayMs: 10000 });
     setLock(true);
     view.running = false; view.statusText = t('训练结束');

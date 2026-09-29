@@ -513,6 +513,7 @@ interface PlayDevice {
   label?: string;
   capabilities?: string[];
   required?: boolean;
+  maxDevices?: number;
 }
 interface PlayParam {
   key: string;
@@ -711,10 +712,11 @@ const deviceMappings = computed(() => {
   return requiredDevices.value.map(rd => ({
     roleName: rd.id || t('playConfig.unknownRole'),
     roleLabel: deviceRoleLabel(rd),
-    deviceIds: deviceMapping[rdKey(rd)] || [],
+    deviceIds: [...(deviceMapping[rdKey(rd)] || [])],
     logicalId: rd.id,
     required: rd.required,
     capabilities: rdCapabilities(rd),
+    maxDevices: rd.maxDevices,
   }));
 });
 
@@ -869,7 +871,14 @@ function clearReactive(obj: Record<string, any>) {
 function updateMapping(row: any) {
   const key = String(row.logicalId ?? '');
   if (key) {
-    deviceMapping[key] = Array.isArray(row.deviceIds) ? row.deviceIds.slice() : [];
+    const selected = Array.isArray(row.deviceIds) ? row.deviceIds.slice() : [];
+    if (row.maxDevices === 1 && selected.length > 1) {
+      const previous = deviceMapping[key] || [];
+      const added = selected.find((id: string) => !previous.includes(id));
+      deviceMapping[key] = added ? [added] : selected.slice(-1);
+    } else {
+      deviceMapping[key] = selected;
+    }
   }
 }
 
@@ -1081,7 +1090,7 @@ async function loadAll() {
           const dev = getDevice(id);
           return dev && dev.connected && typeSupportsCapabilities(dev.type, capabilities);
         });
-        deviceMapping[key] = valid;
+        deviceMapping[key] = rd.maxDevices === 1 ? valid.slice(0, 1) : valid;
       } else {
         const candidate = devices.value.find(d => d.connected && typeSupportsCapabilities(d.type, capabilities));
         deviceMapping[key] = candidate ? [candidate.id] : [];
