@@ -75,6 +75,15 @@
   }
 
   function setStrength(dev, v) { if (DeviceAPI.device(dev).isMapped()) DeviceAPI.device(dev).invoke('strength', 'set', { value: Math.round(v) }); }
+  function mappedPhysicalIds(dev) {
+    const ids = DeviceAPI.deviceMap && DeviceAPI.deviceMap[dev];
+    if (Array.isArray(ids)) return ids.map((id) => String(id));
+    return ids === undefined || ids === null || ids === false ? [] : [String(ids)];
+  }
+  function sharesMappedDevice(first, second) {
+    const other = new Set(mappedPhysicalIds(second));
+    return mappedPhysicalIds(first).some((id) => other.has(id));
+  }
   function startShock(voltage) { if (DeviceAPI.device(SHOCK).isMapped()) DeviceAPI.device(SHOCK).invoke('shock', 'start', { voltage }); }
   function stopShockDev() { if (DeviceAPI.device(SHOCK).isMapped()) DeviceAPI.device(SHOCK).invoke('shock', 'stop', {}); }
   function setLockOpen(open) { if (DeviceAPI.device(LOCK).isMapped()) DeviceAPI.device(LOCK).invoke('lock', 'setOpen', { open: !!open }); }
@@ -130,6 +139,9 @@
   }
   function startPJ01() {
     if (rt.pj01On) return;
+    // A single TD01 is auto-mapped to both optional strength slots. Do not
+    // overwrite the configured vibrator reward with the back-pat max value.
+    if (sharesMappedDevice(VIBE, 'pj01')) return;
     rt.pj01On = true; view.pj01On = true;
     setStrength('pj01', 255); // 无映射则自动跳过
     rt.pj01Timer = setTimeout(stopPJ01, Math.max(1, cfg.pj01Duration) * 1000);
