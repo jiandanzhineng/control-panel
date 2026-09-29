@@ -51,14 +51,6 @@
       </div>
     </el-card>
 
-    <GameRuntimeSurface
-      v-if="carrierType === 'game' && configPreview"
-      mode="config"
-      :snapshot="configPreview"
-      :controls="disabledSurfaceControls"
-      embedded
-    />
-
     <!-- 设备映射 -->
     <el-card shadow="never" class="device-mapping-card">
       <template #header>
@@ -494,8 +486,6 @@ import { listenDeviceButtonPress } from '../composables/useButtonStart';
 import { currentLocale } from '../i18n';
 import { localeTag } from '../i18n/locale';
 import { localizePlay } from '../i18n/play';
-import GameRuntimeSurface from '../components/GameRuntimeSurface.vue';
-import type { GameRuntimeSnapshot } from '../api/gameRuntime';
 
 import {
   Setting,
@@ -595,26 +585,6 @@ const isMobile = ref(window.innerWidth <= 768);
 function onResize() { isMobile.value = window.innerWidth <= 768; }
 
 const title = computed(() => play.value?.title || play.value?.name || play.value?.id || t('playConfig.unknownPlay'));
-
-const disabledSurfaceControls = { pause: false, resume: false, action: false, stop: false, params: false };
-const configPreview = computed<GameRuntimeSnapshot | null>(() => {
-  if (carrierType.value !== 'game' || !play.value) return null;
-  const params = { ...parameters };
-  return {
-    gameId: play.value.id,
-    title: title.value,
-    phase: 'IDLE',
-    phaseText: t('gameRuntime.configPreview'),
-    currentPressure: 0,
-    averagePressure: 0,
-    midPressure: Number(params.midPressure ?? 50),
-    criticalPressure: Number(params.criticalPressure ?? 20),
-    currentIntensity: 0,
-    targetIntensity: 0,
-    params,
-    logs: [],
-  };
-});
 
 const requiredDevices = computed(() => {
   const arr = (play.value?.devices || []).filter(Boolean);
@@ -1303,6 +1273,10 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
       );
       if (isHostRuntime(started)) {
         const hostQuery: Record<string, string> = { id: playId.value };
+        const hostGamePath = installedGamePath || (play.value as any)?.gamePath || String(route.query.gamePath || '');
+        if (hostGamePath) hostQuery.gamePath = hostGamePath;
+        hostQuery.locale = currentLocale();
+        hostQuery.localeTag = localeTag(currentLocale());
         if (started.deferred) {
           hostQuery.startMode = mode;
           hostQuery.deviceMap = JSON.stringify({ ...deviceMapping });

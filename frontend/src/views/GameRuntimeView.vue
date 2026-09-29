@@ -1,34 +1,41 @@
 <template>
-  <div class="runtime-view" :class="{ embedded }">
-    <div class="runtime-shell">
+  <PlayCarrierShell v-if="!embedded" mode="iframe" :stoppable="!!iframeSrc || waiting" :stopping="stopping" @stop="stop">
+    <div class="runtime-view">
       <div v-if="connection === 'reconnecting'" class="connection-alert">
         <el-alert type="warning" :closable="false" :title="t('gameRuntime.reconnecting')" show-icon />
       </div>
-
       <div v-if="waiting" class="wait-card">
         <span class="eyebrow">{{ t('gameRuntime.title') }}</span>
         <h2>{{ t('gameRuntime.waitingButton') }}</h2>
-        <p>{{ t('gameRuntime.startNow') }}</p>
         <el-button type="primary" @click="beginDeferred">{{ t('gameRuntime.startNow') }}</el-button>
       </div>
-
-      <GameRuntimeSurface
-        v-else-if="view"
-        :snapshot="view"
-        :mode="source"
-        :authorized="authorized"
-        :connection="connection"
-        :params-schema="schema"
-        :model="draft"
-        :controls="controls"
-        :embedded="embedded"
-        @action="send"
-        @params="submitParams"
-        @stop="stop"
-      />
-
-      <el-empty v-else class="empty-state" :description="t('gameRuntime.empty')" />
+      <template v-else>
+        <div class="frame-wrap">
+          <iframe v-if="iframeSrc" :src="iframeSrc" class="game-frame" allow="fullscreen; autoplay"></iframe>
+          <div v-else-if="pageResolving" class="page-hint">{{ t('gameRuntime.loadingPage') }}</div>
+          <el-empty v-else class="empty-state" :description="pageError || t('gameRuntime.empty')" />
+        </div>
+        <details v-if="schema.length" class="params-panel">
+          <summary>{{ t('gameRuntime.params') }}<span>{{ t('gameRuntime.paramsHint') }}</span></summary>
+          <PlayParamsForm :params="schema" :model="draft" :disabled="!controls.params" :submit-text="t('gameRuntime.saveParams')" @submit="submitParams" />
+        </details>
+      </template>
     </div>
+  </PlayCarrierShell>
+
+  <div v-else class="runtime-view embedded">
+    <div v-if="connection === 'reconnecting'" class="connection-alert">
+      <el-alert type="warning" :closable="false" :title="t('gameRuntime.reconnecting')" show-icon />
+    </div>
+    <div class="frame-wrap">
+      <iframe v-if="iframeSrc" :src="iframeSrc" class="game-frame" allow="fullscreen; autoplay"></iframe>
+      <div v-else-if="pageResolving" class="page-hint">{{ t('gameRuntime.loadingPage') }}</div>
+      <el-empty v-else class="empty-state" :description="pageError || t('gameRuntime.empty')" />
+    </div>
+    <details v-if="schema.length" class="params-panel">
+      <summary>{{ t('gameRuntime.params') }}<span>{{ t('gameRuntime.paramsHint') }}</span></summary>
+      <PlayParamsForm :params="schema" :model="draft" :disabled="!controls.params" :submit-text="t('gameRuntime.saveParams')" @submit="submitParams" />
+    </details>
   </div>
 </template>
 
@@ -36,10 +43,14 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
-import GameRuntimeSurface from '../components/GameRuntimeSurface.vue'
+import PlayCarrierShell from '../components/PlayCarrierShell.vue'
+import PlayParamsForm from '../components/PlayParamsForm.vue'
 import { clearActivePlay, setActivePlay } from '../composables/useActivePlay'
 import { listenDeviceButtonPress } from '../composables/useButtonStart'
-import { getGameRuntimeStatus, listHostGames, sendGameRuntimeAction, setGameRuntimeParams, startGameRuntime, stopGameRuntime, type GameRuntimeSnapshot } from '../api/gameRuntime'
+import { currentLocale } from '../i18n'
+import { localeTag } from '../i18n/locale'
+import { getGameRuntimeStatus, listHostGames, setGameRuntimeParams, startGameRuntime, stopGameRuntime, type GameRuntimeSnapshot } from '../api/gameRuntime'
+import { buildGameRuntimePageSrc, resolveGamePagePath } from '../play/gamePagePath'
 import { controlsEnabled, restoreFromStatus, shouldStopAfterStatusFailure, syncParamsDraft } from '../play/gameRuntimeSession'
 
 const props = withDefaults(defineProps<{
@@ -48,19 +59,24 @@ const props = withDefaults(defineProps<{
   authorized?: boolean
   connection?: 'live' | 'reconnecting' | 'idle'
   paramsSchema?: Array<Record<string, any>>
+  pagePath?: string
   embedded?: boolean
   navigateOnEnd?: boolean
 }>(), {
-  source: 'local', snapshot: null, authorized: true, connection: 'live', paramsSchema: () => [], embedded: false, navigateOnEnd: true,
+  source: 'local', snapshot: null, authorized: true, connection: 'live', paramsSchema: () => [], pagePath: '', embedded: false, navigateOnEnd: true,
 })
 
-const emit = defineEmits<{ action: [name: string, payload?: unknown]; params: [value: Record<string, unknown>]; stop: [] }>()
+const emit = defineEmits<{ params: [value: Record<string, unknown>] }>()
 const { t } = useI18n(); const route = useRoute(); const router = useRouter()
 const localSnapshot = ref<GameRuntimeSnapshot | null>(null)
 const localConnection = ref<'live' | 'reconnecting' | 'idle'>('idle')
 const schema = ref<Array<Record<string, any>>>([])
 const draft = reactive<Record<string, any>>({})
 const waiting = ref(false)
+const stopping = ref(false)
+const pagePath = ref('')
+const pageResolving = ref(false)
+const pageError = ref('')
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let stopWait: (() => void) | null = null
 let failures = 0
@@ -71,8 +87,15 @@ const embedded = computed(() => props.embedded)
 const view = computed(() => props.source === 'remote' ? props.snapshot : localSnapshot.value)
 const connection = computed(() => props.source === 'remote' ? props.connection : localConnection.value)
 const controls = computed(() => controlsEnabled({ authorized: props.authorized, running: !!view.value?.running, paused: !!view.value?.paused, connection: connection.value }))
+const iframeSrc = computed(() => {
+  const runtime = props.source === 'remote' ? 'remote' : 'host'
+  const locale = String(route.query.locale || currentLocale())
+  const tag = String(route.query.localeTag || localeTag(currentLocale()))
+  return buildGameRuntimePageSrc(pagePath.value, runtime, locale, tag)
+})
 
 watch(() => props.paramsSchema, (value) => { if (props.source === 'remote') schema.value = value || [] }, { immediate: true })
+watch(() => props.pagePath, (value) => { if (props.source === 'remote') { pagePath.value = value || ''; pageResolving.value = !value; pageError.value = '' } }, { immediate: true })
 watch(view, (value) => {
   if (!value) return
   if (value.gameId !== lastGameId || value.startedAtMs !== Number(lastParams.__startedAtMs)) { lastParams = {}; lastGameId = value.gameId || '' }
@@ -80,10 +103,29 @@ watch(view, (value) => {
   if (value.ended && props.navigateOnEnd && props.source === 'local') finish('ended')
 }, { immediate: true, deep: true })
 
+async function ensurePagePath(gameId: string) {
+  if (props.source === 'remote') return
+  const fromQuery = String(route.query.gamePath || '')
+  if (fromQuery) { pagePath.value = fromQuery; return }
+  const id = String(gameId || route.query.id || '')
+  if (!id || pagePath.value) return
+  pageResolving.value = true
+  try {
+    pagePath.value = await resolveGamePagePath(id)
+    pageError.value = pagePath.value ? '' : t('gameRuntime.pageUnavailable')
+  } catch (_) {
+    pageError.value = t('gameRuntime.pageUnavailable')
+  } finally {
+    pageResolving.value = false
+  }
+}
+
 function applyStatus(status: any) {
   localSnapshot.value = restoreFromStatus(status) as GameRuntimeSnapshot | null
   localConnection.value = 'live'; failures = 0
-  if (status?.running) setActivePlay({ carrierType: 'game', id: status.gameId || status.snapshot?.gameId || 'surge-edging', title: status.snapshot?.title || status.gameId || t('gameRuntime.title'), resume: { name: 'game_runtime', query: { id: status.gameId || '' } } })
+  const gameId = status?.gameId || status?.snapshot?.gameId || ''
+  if (gameId) void ensurePagePath(gameId)
+  if (status?.running) setActivePlay({ carrierType: 'game', id: gameId || 'surge-edging', title: status.snapshot?.title || gameId || t('gameRuntime.title'), resume: { name: 'game_runtime', query: { id: gameId } } })
 }
 
 async function poll() {
@@ -99,19 +141,17 @@ async function beginDeferred() {
   if (!pollTimer) pollTimer = setInterval(() => { void poll() }, 1000)
 }
 
-async function send(name: string, payload?: unknown) {
-  if (props.source === 'remote') { emit('action', name, payload); return }
-  await sendGameRuntimeAction(name, payload); await poll()
-}
-
 async function submitParams(value: Record<string, unknown>) {
   if (props.source === 'remote') { emit('params', value); return }
   applyStatus(await setGameRuntimeParams(value))
 }
 
 async function stop() {
-  if (props.source === 'remote') { emit('stop'); return }
-  await stopGameRuntime('user_stop'); finish('user_stop')
+  if (props.source === 'remote') return
+  stopping.value = true
+  try { await stopGameRuntime('user_stop') } catch (_) {}
+  stopping.value = false
+  finish('user_stop')
 }
 
 function finish(reason: string) {
@@ -140,5 +180,19 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); stopWait?.() })
 </script>
 
 <style scoped>
-.runtime-view { min-height: 100%; background: #f8fafc; }.runtime-view.embedded { background: transparent; }.runtime-shell { min-height: 100%; }.connection-alert { max-width: 600px; margin: 0 auto; padding: 16px 16px 0; }.wait-card { max-width: 600px; margin: 0 auto; padding: 48px 20px; text-align: center; }.wait-card h2 { margin: 8px 0; }.wait-card p { color: #64748b; }.eyebrow { color: #64748b; font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; }.empty-state { padding: 48px 16px; }
+.runtime-view { display: flex; flex-direction: column; height: 100%; background: #f8fafc; }
+.runtime-view.embedded { height: auto; background: transparent; }
+.connection-alert { max-width: 600px; margin: 0 auto; padding: 16px 16px 0; width: 100%; box-sizing: border-box; }
+.wait-card { max-width: 600px; margin: auto; padding: 48px 20px; text-align: center; }
+.wait-card h2 { margin: 8px 0 16px; }
+.eyebrow { color: #64748b; font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; }
+.frame-wrap { flex: 1; position: relative; min-height: 0; }
+.runtime-view.embedded .frame-wrap { min-height: 520px; }
+.game-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+.page-hint { padding: 48px 16px; text-align: center; color: #64748b; }
+.empty-state { padding: 48px 16px; }
+.params-panel { flex: 0 0 auto; background: #fff; border-top: 1px solid #e2e8f0; }
+.params-panel summary { display: flex; justify-content: space-between; gap: 12px; padding: 12px 20px; cursor: pointer; font-weight: 600; }
+.params-panel summary span { color: #64748b; font-size: .76rem; font-weight: 400; }
+.params-panel :deep(.params-form) { padding: 0 20px 20px; }
 </style>

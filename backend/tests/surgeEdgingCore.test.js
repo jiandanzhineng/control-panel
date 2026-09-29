@@ -29,6 +29,8 @@ describe('surge-edging core', () => {
     expect(snap.params.surgeRiseKpa).toBe(1);
     expect(snap.params.voiceEnabled).toBe(true);
     expect(snap.running).toBe(false);
+    expect(snap.endCalmLocked).toBe(false);
+    expect(snap.edgeTriggerTs).toBe(0);
 
     const low = core.setParams({ duration: 0, surgeRiseKpa: 9, hack: true, running: true });
     expect(low.ok).toBe(true);
@@ -79,21 +81,19 @@ describe('surge-edging core', () => {
     const later = core.snapshot();
     expect(later.phase).toBe(frozen.phase);
     expect(later.currentIntensity).toBe(frozen.currentIntensity);
-    expect(later.totalStimulationTime).toBe(frozen.totalStimulationTime);
+    expect(later.edgeTriggerTs).toBe(frozen.edgeTriggerTs);
     expect(later.edgingCount).toBe(frozen.edgingCount);
     expect(later.endTimeMs).toBe(frozen.endTimeMs);
     expect(later.paused).toBe(true);
   });
 
-  test('dual-window surge enters edging and emits stop plus shock', () => {
+  test('窗口最小值突变进入边缘期并下发停止与电击', () => {
     const core = createCore({
       duration: 20,
-      surgeWindowMs: 500,
       surgeRiseKpa: 1,
       minSurgeMs: 100,
       shockVoltage: 20,
       shockDuration: 3,
-      midPressure: 50,
     });
     core.start(0);
     fillWindow(core, 0, 10, 12, 100);
@@ -107,9 +107,23 @@ describe('surge-edging core', () => {
     ]));
   });
 
+  test('中期回落需连续低于中间压 midDelay 秒才转平静期', () => {
+    const core = createCore({ surgeRiseKpa: 1, minSurgeMs: 100, midDelay: 2 });
+    core.start(0);
+    fillWindow(core, 0, 55, 12, 100); // 初始中间压 50，55 ≥ 50 → 中期
+    const mid = feed(core, 1200, 55);
+    expect(mid.snapshot.phase).toBe('MIDDLE');
+    feed(core, 1300, 40); // 开始回落，计时起点
+    const dip = feed(core, 2200, 40); // 连续回落 0.9s < midDelay 2s
+    expect(dip.snapshot.phase).toBe('MIDDLE');
+    expect(dip.snapshot.targetIntensity).toBe(20); // 公式越界被封顶到 dmax
+    const calm = feed(core, 3400, 40); // 连续回落 2.1s > midDelay
+    expect(calm.snapshot.phase).toBe('SUB_CALM');
+    expect(calm.logs.some((entry) => entry.message.includes('压力连续回落'))).toBe(true);
+  });
+
   test('edging release enters cooldown and cooldown returns to calm', () => {
     const core = createCore({
-      surgeWindowMs: 500,
       surgeRiseKpa: 1,
       minSurgeMs: 100,
       lowPressureDelay: 2,

@@ -9,15 +9,31 @@ const deviceRegistry = require('../devices/registry');
 const PROTOCOL_VERSION = 1;
 const MAX_SEEN_MESSAGE_IDS = 1024;
 const HEARTBEAT_MS = 10000;
+const SNAPSHOT_MS = 500;
 const COMMAND_TIMEOUT_MS = 8000;
 const COMMANDS = new Set([
+  'client.hello',
   'client.snapshot.request',
+  'client.workspace.set',
+  'games.list',
+  'game.meta',
+  'game.config.get',
+  'game.config.set',
   'game.start',
   'game.setParams',
   'game.pause',
   'game.resume',
   'game.stop',
   'game.action',
+  'devices.list',
+  'devices.scan.start',
+  'devices.scan.stop',
+  'devices.connect',
+  'devices.disconnect',
+  'devices.rename',
+  'devices.controlConnection.set',
+  'devices.invoke',
+  'devices.stop',
 ]);
 
 function parseJson(payload) {
@@ -119,6 +135,9 @@ class RemoteGameService {
       session.timers.heartbeat = this.setRepeating(() => {
         void this.api.heartbeat(session.token, session.room.id).catch(() => {});
       }, HEARTBEAT_MS);
+      session.timers.snapshot = this.setRepeating(() => {
+        void this._publishGameSnapshot(session).catch(() => {});
+      }, SNAPSHOT_MS);
       return this.getStatus();
     } catch (error) {
       this.session = null;
@@ -163,8 +182,14 @@ class RemoteGameService {
 
   async command({ type, payload } = {}) {
     const session = this.session;
-    if (!session || session.role !== 'operator') throw this._error('NOT_OPERATOR', '当前不是远程客户端');
+    if (!session) throw this._error('NOT_OPERATOR', '当前不是远程客户端');
     if (!COMMANDS.has(type)) throw this._error('COMMAND_NOT_ALLOWED', '命令不在白名单');
+    if (session.role === 'owner') {
+      const result = await this._dispatch(type, payload || {});
+      await this._publishClientSnapshot(session);
+      await this._publishGameSnapshot(session);
+      return { ok: true, result };
+    }
     const messageId = randomUUID();
     const response = new Promise((resolve, reject) => {
       const timer = this.setTimer(() => {
@@ -174,7 +199,7 @@ class RemoteGameService {
       session.pending.set(messageId, { resolve, reject, timer });
     });
     try {
-      await this._publishEnvelope(session, `commands/${session.room.hostUserId}`, type, payload || {}, messageId);
+      await this._publishEnvelope(session, `commands/${session.credential.userId}`, type, payload || {}, messageId);
     } catch (error) {
       const pending = session.pending.get(messageId);
       session.pending.delete(messageId);
@@ -238,8 +263,9 @@ class RemoteGameService {
       games: [],
       devices: [],
       gameSnapshot: null,
-      timers: { heartbeat: null },
+      timers: { heartbeat: null, snapshot: null },
       hostUnsub: null,
+      responseCache: new Map(),
     };
   }
 
@@ -296,14 +322,14 @@ class RemoteGameService {
     if (this.session !== session) return;
     const base = `rooms/${session.room.id}`;
     const topics = session.role === 'owner'
-      ? [`${base}/commands/${session.room.hostUserId}`, `${base}/presence/+`]
+      ? [`${base}/commands/+`, `${base}/presence/+`]
       : [`${base}/events`, `${base}/presence/${session.room.hostUserId}`];
     await this._subscribe(session, topics);
     await this._publishPresence(session, 'online');
     session.connected = true;
     session.lastError = null;
     if (session.role === 'operator') {
-      await this._publishEnvelope(session, `commands/${session.room.hostUserId}`, 'client.snapshot.request', {});
+      await this._publishEnvelope(session, `commands/${session.credential.userId}`, 'client.snapshot.request', {});
     } else {
       await this._publishClientSnapshot(session);
     }
@@ -375,8 +401,17 @@ class RemoteGameService {
       return;
     }
     const envelope = parseJson(rawPayload);
+    if (session.role === 'owner' && suffix.startsWith('commands/')) {
+      const senderUserId = suffix.slice('commands/'.length);
+      if (!senderUserId || senderUserId.includes('/')) return;
+      const cached = session.responseCache.get(envelope?.messageId);
+      if (cached) {
+        await this._publishEnvelope(session, 'events', 'client.response', cached);
+        return;
+      }
+    }
     if (!this._acceptIncoming(session, suffix, envelope)) return;
-    if (session.role === 'owner' && suffix === `commands/${session.room.hostUserId}`) {
+    if (session.role === 'owner' && suffix.startsWith('commands/')) {
       await this._onOwnerCommand(session, envelope);
     } else if (session.role === 'operator' && suffix === 'events') {
       this._onOperatorEvent(session, envelope);
@@ -425,7 +460,12 @@ class RemoteGameService {
   }
 
   async _dispatch(type, payload) {
+    if (type === 'client.hello' || type === 'client.workspace.set') return this.getStatus();
     if (type === 'client.snapshot.request') return this.getStatus();
+    if (type === 'games.list') return { games: this.listGames() };
+    if (type === 'game.meta') return { games: this.listGames() };
+    if (type === 'game.config.get') return this._hostStatus()?.snapshot?.params || {};
+    if (type === 'game.config.set') return this.host.setParams(payload.params || payload);
     if (type === 'game.start') {
       this._validateStart(payload);
       if (this.beforeHostStart) await this.beforeHostStart();
@@ -441,7 +481,90 @@ class RemoteGameService {
     if (type === 'game.resume') return this.host.resume();
     if (type === 'game.stop') return this.host.stop({ reason: 'remote-stop' });
     if (type === 'game.action') return this.host.action(payload.action, payload.payload);
+    if (type === 'devices.list') return {
+      devices: this._deviceList(),
+      actions: { scan: false, connect: false, disconnect: true, rename: true, invoke: true, stop: true },
+    };
+    if (type === 'devices.rename') return this._renameDevice(payload);
+    if (type === 'devices.controlConnection.set') return this._setControlConnection(payload);
+    if (type === 'devices.invoke') return this._invokeDevice(payload);
+    if (type === 'devices.stop') return this._stopDevice(payload);
+    if (type === 'devices.disconnect') return this._disconnectDevice(payload);
+    if (type === 'devices.scan.start' || type === 'devices.scan.stop' || type === 'devices.connect') {
+      throw this._error('DEVICE_ACTION_UNSUPPORTED', '该主机未开放远程扫描或连接');
+    }
     throw this._error('COMMAND_NOT_ALLOWED', '命令不在白名单');
+  }
+
+  _deviceService() {
+    return this.host?.devices || require('./deviceService');
+  }
+
+  _requireDeviceId(payload) {
+    const deviceId = String(payload?.deviceId || '').trim();
+    if (!deviceId) throw this._error('DEVICE_ID_REQUIRED', '缺少设备 ID');
+    const device = this._deviceService().getDeviceForApi?.(deviceId);
+    if (!device) throw this._error('DEVICE_NOT_FOUND', '设备不存在');
+    return { deviceId, device };
+  }
+
+  _isMappedToRunningGame(deviceId) {
+    const status = this._hostStatus();
+    if (!status?.active || !status?.deviceMap) return false;
+    return Object.values(status.deviceMap).some((ids) => Array.isArray(ids) && ids.includes(deviceId));
+  }
+
+  async _stopRunningGameForDevice(deviceId, reason) {
+    if (this._isMappedToRunningGame(deviceId)) {
+      await this.host.stop({ reason });
+    }
+  }
+
+  _renameDevice(payload) {
+    const { deviceId } = this._requireDeviceId(payload);
+    const name = String(payload?.name || '').trim();
+    if (!name) throw this._error('DEVICE_NAME_REQUIRED', '设备名称不能为空');
+    return this._deviceService().updateDeviceMeta(deviceId, { name });
+  }
+
+  _setControlConnection(payload) {
+    const { deviceId } = this._requireDeviceId(payload);
+    const connectionType = String(payload?.connectionType || '').trim();
+    if (!connectionType) throw this._error('CONNECTION_TYPE_REQUIRED', '缺少控制连接类型');
+    return this._deviceService().setControlConnection(deviceId, connectionType);
+  }
+
+  async _invokeDevice(payload) {
+    const { deviceId } = this._requireDeviceId(payload);
+    const capability = String(payload?.capability || '').trim();
+    const action = String(payload?.action || '').trim();
+    if (!capability || !action) throw this._error('DEVICE_INVOKE_INVALID', '缺少能力或动作');
+    const input = payload?.input && typeof payload.input === 'object'
+      ? payload.input
+      : (payload?.params && typeof payload.params === 'object' ? payload.params : {});
+    if (action !== 'stop' && this._isMappedToRunningGame(deviceId)) {
+      throw this._error('DEVICE_BUSY', '设备正被运行中的游戏占用');
+    }
+    return this._deviceService().invokeDeviceCapabilityAndWait(deviceId, capability, action, input);
+  }
+
+  async _stopDevice(payload) {
+    const { deviceId } = this._requireDeviceId(payload);
+    await this._stopRunningGameForDevice(deviceId, 'remote-device-stop');
+    return this._deviceService().stopExecutionDeviceAndWait(deviceId);
+  }
+
+  async _disconnectDevice(payload) {
+    const { deviceId, device } = this._requireDeviceId(payload);
+    await this._stopRunningGameForDevice(deviceId, 'remote-device-disconnect');
+    const connectionType = String(
+      payload?.connectionType ?? device.controlConnection ?? '',
+    ).trim();
+    if (!connectionType) {
+      throw this._error('CONNECTION_TYPE_REQUIRED', '缺少可断开的控制连接');
+    }
+    await this._deviceService().disconnectDeviceConnections(deviceId, connectionType);
+    return { ok: true, deviceId };
   }
 
   _validateStart(payload) {
@@ -502,7 +625,12 @@ class RemoteGameService {
   }
 
   async _respond(session, requestId, payload) {
-    await this._publishEnvelope(session, 'events', 'client.response', { requestId, ...payload });
+    const response = { requestId, ...payload };
+    session.responseCache.set(requestId, response);
+    if (session.responseCache.size > MAX_SEEN_MESSAGE_IDS) {
+      session.responseCache.delete(session.responseCache.keys().next().value);
+    }
+    await this._publishEnvelope(session, 'events', 'client.response', response);
   }
 
   _acceptIncoming(session, suffix, envelope) {
@@ -573,7 +701,8 @@ class RemoteGameService {
 
   _clearTimers(session) {
     if (session.timers?.heartbeat) this.clearRepeating(session.timers.heartbeat);
-    if (session.timers) session.timers.heartbeat = null;
+    if (session.timers?.snapshot) this.clearRepeating(session.timers.snapshot);
+    if (session.timers) session.timers = { heartbeat: null, snapshot: null };
   }
 
   _endClient(session, force = false) {

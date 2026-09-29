@@ -8,9 +8,9 @@
 {
   "id": "surge-edging",
   "title": "气压突变寸止",
-  "description": "自适应气压寸止玩法：双窗口比较检测气压突变（本窗口[-τ,0]最大值 − 前一窗口[-2τ,-τ]平均值 ≥ 1kPa）进入边缘期；中间压力随每次边缘期自动校准（峰值-1kPa），不依赖绝对临界压，防漏气影响体验。",
+  "description": "三阶段寸止改版，不用微调气压，不怕漏气，末尾增加倒计时",
   "howTo": "1. 映射气压传感器与 TD01（必需）\n2. 可选：电击、自动锁\n3. 按需调整突变窗口/抬升阈值\n4. 可用界面按钮微调中间压力",
-  "version": "1.2.0",
+  "version": "1.4.0",
   "devices": [
     {
       "id": "sensor",
@@ -73,16 +73,17 @@
       "recommended": "30-90"
     },
     {
-      "key": "surgeWindowMs",
+      "key": "surgeWindowSec",
       "type": "number",
-      "default": 500,
+      "default": 1.5,
       "label": "突变检测窗口",
-      "unit": "毫秒",
-      "description": "双窗口宽度 τ：本窗口[-τ,0]最大值与前一窗口[-2τ,-τ]平均值之差达阈值视为突变",
-      "group": "core",
-      "min": 200,
-      "max": 2000,
-      "step": 50
+      "unit": "秒",
+      "description": "窗口越长，对突变越敏感；检测窗口宽度 τ：当前气压 − 本窗口[-τ,0]最小值 ≥ 阈值视为突变",
+      "group": "advanced",
+      "min": 0.5,
+      "max": 5.0,
+      "step": 0.5,
+      "required": false
     },
     {
       "key": "surgeRiseKpa",
@@ -90,7 +91,7 @@
       "default": 1.0,
       "label": "突变抬升阈值",
       "unit": "kPa",
-      "description": "本窗口最大值 − 前一窗口平均值 ≥ 此值视为突变，进入边缘期",
+      "description": "当前气压 − 本窗口最小值 ≥ 此值视为突变，进入边缘期",
       "group": "core",
       "min": 0.2,
       "max": 5.0,
@@ -99,7 +100,7 @@
     {
       "key": "midOffsetKpa",
       "type": "number",
-      "default": 1.0,
+      "default": 0.8,
       "label": "中间压偏移",
       "unit": "kPa",
       "description": "中间压力 = 本次边缘期峰值 - 该偏移，每次边缘期自动更新",
@@ -113,17 +114,17 @@
       "type": "number",
       "default": 50,
       "label": "TD01最大强度",
-      "description": "刺激强度上限（0-100）",
+      "description": "刺激强度上限（0-255）",
       "group": "difficulty",
       "min": 1,
-      "max": 100,
+      "max": 255,
       "step": 1,
       "device": "motor"
     },
     {
       "key": "lowPressureDelay",
       "type": "number",
-      "default": 5,
+      "default": 10,
       "label": "冷却延迟",
       "unit": "秒",
       "description": "边缘期结束后强度保持为零的冷却时长",
@@ -135,26 +136,14 @@
     {
       "key": "maxEdgeSec",
       "type": "number",
-      "default": 5,
+      "default": 10,
       "label": "边缘期最长时长",
       "unit": "秒",
       "description": "边缘期最长持续时间，超时强制进入冷却，防止意外压力波动导致锁死在边缘期",
-      "group": "difficulty",
+      "group": "advanced",
       "min": 1,
       "max": 60,
-      "step": 1
-    },
-    {
-      "key": "rampRate",
-      "type": "number",
-      "default": 2,
-      "label": "强度递增上限",
-      "unit": "每秒",
-      "description": "强度每秒最多增加多少",
-      "group": "difficulty",
-      "min": 0.1,
-      "max": 50,
-      "step": 0.1,
+      "step": 1,
       "required": false
     },
     {
@@ -163,12 +152,11 @@
       "default": 2,
       "label": "平静期缓升",
       "unit": "每秒",
-      "description": "平静期强度每秒抬升幅度",
+      "description": "平静期强度每秒抬升幅度，同时作为强度递增上限（目标强度每秒最多升这么多）",
       "group": "difficulty",
       "min": 0.1,
       "max": 50,
-      "step": 0.5,
-      "required": false
+      "step": 0.5
     },
     {
       "key": "randomPercent",
@@ -199,14 +187,27 @@
     {
       "key": "sendIntervalMs",
       "type": "number",
-      "default": 2000,
+      "default": 1000,
       "label": "强度下发间隔",
       "unit": "毫秒",
-      "description": "平静期/中期每隔此时长下发一次最新强度（默认2秒）；边缘期触发时立即发送停止命令（归零不受限速）。低频率确保 MQTT 命令链路不积压",
+      "description": "如果发现跳蛋响应延迟可以增大间隔；平静期/中期每隔此时长下发一次最新强度（默认1秒）；边缘期触发时立即发送停止命令（归零不受限速）。低频率确保 MQTT 命令链路不积压",
       "group": "advanced",
       "min": 200,
       "max": 5000,
       "step": 50,
+      "required": false
+    },
+    {
+      "key": "midDelay",
+      "type": "number",
+      "default": 5,
+      "label": "中期防回落时长",
+      "unit": "秒",
+      "description": "进入中期后的前 midDelay 秒内不因压力回落切换到平静期（防止语音反复切换）；边缘期触发不受影响",
+      "group": "advanced",
+      "min": 0,
+      "max": 20,
+      "step": 1,
       "required": false
     },
     {
@@ -215,11 +216,10 @@
       "default": 5,
       "label": "中期强度下限",
       "description": "中期强度下限 dmin：P≥P1+ΔP 时维持的最小强度",
-      "group": "advanced",
+      "group": "difficulty",
       "min": 0,
       "max": 10,
-      "step": 1,
-      "required": false
+      "step": 1
     },
     {
       "key": "midIntensityMax",
@@ -227,11 +227,10 @@
       "default": 20,
       "label": "中期强度上限",
       "description": "中期强度上限 dmax：P=P1 时的强度，P∈[P1,P1+ΔP] 线性过渡；有效范围 10~Dmax，越界自动替换为 min(20, Dmax)",
-      "group": "advanced",
+      "group": "difficulty",
       "min": 10,
       "max": 100,
-      "step": 1,
-      "required": false
+      "step": 1
     },
     {
       "key": "shockVoltage",
@@ -271,6 +270,7 @@
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>
+<script src="/bridge-api/game-runtime-bridge.js"></script>
 <style>
   :root{--bg:#f8fafc;--card:#fff;--text:#1e293b;--sub:#64748b;--border:#e2e8f0;--primary:#3b82f6;--danger:#ef4444;--warn:#f59e0b;--ok:#22c55e;}
   body{margin:0;padding:16px;font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.5;}
@@ -328,7 +328,6 @@
   <div class="card">
     <div class="actions">
       <button class="primary" data-action="pause"><span data-bind="btnText">暂停</span></button>
-      <button data-action="addIntensity">+10 强度</button>
       <button class="danger" data-action="shockOnce">⚡ 电击</button>
     </div>
   </div>
@@ -348,7 +347,7 @@
     <div class="stat-row">
       <span>边缘次数: <b data-bind="edgingCount">0</b></span>
       <span>电击次数: <b data-bind="shockCount">0</b></span>
-      <span>累计刺激: <b data-bind="totalStimulationTime">0</b>s</span>
+      <span>剩余时间: <b data-bind="remainingSec">0:00</b></span>
     </div>
     <ul id="logs"></ul>
   </div>

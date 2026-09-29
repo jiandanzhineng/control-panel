@@ -564,17 +564,148 @@
         render();
       });
     });
+    bindChartDrag();
+  }
+  function bindChartDrag() {
     const chart = document.getElementById('chart');
-    if (chart) {
-      chart.addEventListener('mousedown', startChartDrag);
-      window.addEventListener('mousemove', moveChartDrag);
-      window.addEventListener('mouseup', endChartDrag);
-      chart.addEventListener('touchstart', startChartDrag, { passive: false });
-      window.addEventListener('touchmove', moveChartDrag, { passive: false });
-      window.addEventListener('touchend', endChartDrag);
-      window.addEventListener('touchcancel', endChartDrag);
+    if (!chart) return;
+    chart.addEventListener('mousedown', startChartDrag);
+    window.addEventListener('mousemove', moveChartDrag);
+    window.addEventListener('mouseup', endChartDrag);
+    chart.addEventListener('touchstart', startChartDrag, { passive: false });
+    window.addEventListener('touchmove', moveChartDrag, { passive: false });
+    window.addEventListener('touchend', endChartDrag);
+    window.addEventListener('touchcancel', endChartDrag);
+  }
+  // ---- 托管渲染模式（?runtime=host|remote）：逻辑在宿主 Core 执行，本页面只渲染快照、发送命令 ----
+  const hostBridge = (typeof window !== 'undefined' && window.GameRuntimeBridge) ? window.GameRuntimeBridge : null;
+  const hostUi = {
+    authorized: hostBridge ? hostBridge.mode === 'host' : true,
+    lastPhase: '', startedVoice: false, takeoffVoice: false, lastLogKey: '', startedAtMs: 0,
+  };
+
+  function hostSyncParams(params) {
+    if (!params) return;
+    Object.keys(cfg).forEach((k) => { if (params[k] !== undefined && params[k] !== null) cfg[k] = params[k]; });
+    if (params.voiceEnabled !== undefined) voicePlayer.setEnabled(!!params.voiceEnabled);
+  }
+
+  function hostSetControlsEnabled(enabled) {
+    $('[data-action], [data-adjust]').forEach((el) => { el.disabled = !enabled; });
+  }
+
+  function hostBindActions() {
+    $('[data-action]').forEach((el) => {
+      const name = el.getAttribute('data-action');
+      el.addEventListener('click', () => {
+        if (!hostUi.authorized) return;
+        if (name === 'pause') hostBridge.sendAction(rt.paused ? 'resume' : 'pause').catch(() => {});
+        else if (name === 'addIntensity') hostBridge.sendAction('addIntensity', { delta: 10 }).catch(() => {});
+        else if (name === 'shockOnce') hostBridge.sendAction('shockOnce', {}).catch(() => {});
+      });
+    });
+    $('[data-adjust]').forEach((el) => {
+      el.addEventListener('click', () => {
+        if (!hostUi.authorized) return;
+        hostBridge.sendAction('adjustThreshold', {
+          which: el.getAttribute('data-adjust'),
+          delta: Number(el.getAttribute('data-val')) || 0,
+        }).catch(() => {});
+      });
+    });
+    bindChartDrag();
+  }
+
+  function hostRenderLogs(logs) {
+    const ul = document.getElementById('logs');
+    if (!ul || !Array.isArray(logs)) return;
+    const key = logs.length + ':' + (logs[0] ? String(logs[0].atMs || '') + logs[0].message : '');
+    if (key === hostUi.lastLogKey) return;
+    hostUi.lastLogKey = key;
+    ul.innerHTML = '';
+    logs.slice(0, 20).forEach((entry) => {
+      const li = document.createElement('li');
+      const at = Number(entry && entry.atMs) || 0;
+      li.textContent = (at ? '[' + new Date(at).toLocaleTimeString() + '] ' : '') + String((entry && entry.message) || '');
+      ul.appendChild(li);
+    });
+  }
+
+  function hostVoices(snapshot) {
+    const phase = String(snapshot.phase || '');
+    if (snapshot.running && !hostUi.startedVoice) {
+      hostUi.startedVoice = true;
+      playVoice('edging_start', 'intro', function () { return rt.running; });
+    }
+    if (snapshot.ended) {
+      if (hostUi.lastPhase !== 'ENDED') playVoice('edging_end', 'critical', function () { return true; });
+      hostUi.lastPhase = 'ENDED';
+      return;
+    }
+    if (phase && phase !== hostUi.lastPhase) {
+      const voiceFor = { MIDDLE: 'edging_middle', EDGING: 'edging_peak', SUB_CALM: 'edging_calm', DELAY: 'edging_delay' };
+      const key = voiceFor[phase];
+      if (key) playVoice(key, phase === 'EDGING' ? 'critical' : 'state', function () { return rt.running && hostUi.lastPhase === phase; });
+      hostUi.lastPhase = phase;
+    }
+    const takeoffMs = Math.max(0, Number(cfg.endCalmLock) || 0) * 1000;
+    if (!hostUi.takeoffVoice && takeoffMs > 0 && rt.running && phase === 'SUB_CALM' && rt.endTime && (rt.endTime - Date.now()) <= takeoffMs) {
+      hostUi.takeoffVoice = true;
+      playVoice('edging_takeoff', 'state', function () { return rt.running; });
     }
   }
+
+  function hostOnSnapshot(status, snapshot) {
+    if (!snapshot) {
+      view.statusText = t('连接中断，正在重连');
+      render();
+      return;
+    }
+    if (hostBridge.mode === 'remote') {
+      const authorized = !status || status.authorized !== false;
+      if (authorized !== hostUi.authorized) { hostUi.authorized = authorized; hostSetControlsEnabled(authorized); }
+    }
+    const startedAtMs = Number(snapshot.startedAtMs) || 0;
+    if (startedAtMs !== hostUi.startedAtMs) {
+      hostUi.startedAtMs = startedAtMs;
+      hostUi.lastPhase = ''; hostUi.startedVoice = false; hostUi.takeoffVoice = false;
+    }
+    hostSyncParams(snapshot.params);
+    rt.running = !!snapshot.running;
+    rt.paused = !!snapshot.paused;
+    rt.currentPressure = Number(snapshot.currentPressure) || 0;
+    rt.averagePressure = Number(snapshot.averagePressure) || 0;
+    rt.currentIntensity = Number(snapshot.currentIntensity) || 0;
+    rt.targetIntensity = Number(snapshot.targetIntensity) || 0;
+    rt.midIntensity = Number(snapshot.midIntensity) || 0;
+    rt.endTime = Number(snapshot.endTimeMs) || 0;
+    view.title = t(String(snapshot.title || '气压寸止3阶段升级版'));
+    view.startTime = Number(snapshot.startedAtMs) || 0;
+    view.statusText = snapshot.ended ? t('已结束') : (rt.paused ? t('已暂停') : t(String(snapshot.phaseText || '准备就绪')));
+    view.btnText = rt.paused ? t('继续') : t('暂停');
+    view.currentPressure = rt.currentPressure;
+    view.averagePressure = rt.averagePressure;
+    view.currentIntensity = rt.currentIntensity;
+    view.targetIntensity = rt.targetIntensity;
+    view.midPressure = cfg.midPressure;
+    view.criticalPressure = cfg.criticalPressure;
+    view.edgingCount = Number(snapshot.edgingCount) || 0;
+    view.shockCount = Number(snapshot.shockCount) || 0;
+    view.totalStimulationTime = Number(snapshot.totalStimulationTime) || 0;
+    hostVoices(snapshot);
+    hostRenderLogs(snapshot.logs);
+    render();
+  }
+
+  function hostBoot() {
+    hostBindActions();
+    if (typeof GameI18n !== 'undefined' && GameI18n.apply) GameI18n.apply();
+    if (hostBridge.mode === 'remote') hostSetControlsEnabled(false);
+    render();
+    hostBridge.onSnapshot(hostOnSnapshot);
+    hostBridge.start();
+  }
+
   let loopTimer = null;
   async function boot() {
     bindActions();
@@ -592,6 +723,6 @@
 
   window.__game = { start, loop, end, rt, cfg, view };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => (hostBridge ? hostBoot() : boot()));
+  else (hostBridge ? hostBoot() : boot());
 })();

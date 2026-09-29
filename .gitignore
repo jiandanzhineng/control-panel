@@ -71,3 +71,6 @@ backend/tools/
 .claude/
 .agents/
 agent/
+
+# Claude 工作区
+.worktrees/

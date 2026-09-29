@@ -82,12 +82,20 @@ function addDevice(deviceData) {
   saveDevices();
 }
 
-async function disconnectDeviceConnections(deviceId) {
-  const connections = deviceConnections.listConnectionRecords(deviceId);
+async function disconnectDeviceConnections(deviceId, connectionType = null) {
+  const connections = deviceConnections.listConnectionRecords(deviceId)
+    .filter((connection) => connectionType == null || connection.type === connectionType);
   await Promise.allSettled(connections.map(async (connection) => {
     await connection.adapter.disconnect?.();
     deviceConnections.unregisterConnection(deviceId, connection.type, connection.adapter);
   }));
+  const device = getDeviceById(deviceId);
+  if (device && connections.length) {
+    refreshDeviceRuntimeState(device);
+    device.lastReport = Date.now();
+    saveDevices();
+    emitDeviceListChange('disconnected', deviceId);
+  }
 }
 
 async function removeDevice(deviceId) {
@@ -891,6 +899,7 @@ module.exports = {
   initDeviceList,
   addDevice,
   removeDevice,
+  disconnectDeviceConnections,
   clearAllDevices,
   updateDeviceData,
   markDeviceOffline,

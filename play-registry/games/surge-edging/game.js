@@ -1,8 +1,8 @@
 // 气压突变寸止 — 页面自驱动（DeviceAPI）
 // 参考 pressure-edging-v2 五态状态机，但取消绝对临界压：
-//  - 边缘期由「双窗口比较」突变检测触发：本窗口[-τ,0]最大值 − 前一窗口[-2τ,-τ]平均值 ≥ surgeRiseKpa（默认1kPa）
+//  - 边缘期由「当前值 − 窗口最小值」突变检测触发：当前气压 − 本窗口[-τ,0]最小值 ≥ surgeRiseKpa（默认1kPa）
 //  - 中间压力自适应：初始 50kPa，每次进入边缘期更新为「本次触发峰值 − midOffsetKpa」
-//  - 强度下发：平静期/中期每 sendIntervalMs（默认2000ms）发一次最新设计值；边缘期触发立即发停止命令（归零不受限速）；显示逻辑不变
+//  - 强度下发：平静期/中期每 sendIntervalMs（默认1000ms）发一次最新设计值；边缘期触发立即发停止命令（归零不受限速）；显示逻辑不变
 (function () {
   'use strict';
   const SENSOR = 'sensor', MOTOR = 'motor', PUNISH = 'punish', LOCK = 'lock';
@@ -14,9 +14,9 @@
 
   // 配置（来自 manifest 默认值，启动时被 DeviceAPI.params 覆盖）
   const cfg = {
-    duration: 20, endCalmLock: 60, surgeWindowMs: 500, surgeRiseKpa: 1.0, midOffsetKpa: 1.0,
-    maxMotorIntensity: 50, lowPressureDelay: 5, rampRate: 2, gradualIncrease: 2,
-    randomPercent: 0, minSurgeMs: 100, sendIntervalMs: 2000, maxEdgeSec: 5,
+    duration: 20, endCalmLock: 60, surgeWindowSec: 1.5, surgeRiseKpa: 1.0, midOffsetKpa: 0.8,
+    maxMotorIntensity: 50, lowPressureDelay: 10, gradualIncrease: 2,
+    randomPercent: 0, minSurgeMs: 100, sendIntervalMs: 1000, maxEdgeSec: 10, midDelay: 5,
     midIntensityMin: 5, midIntensityMax: 20, shockVoltage: 20, shockDuration: 3,
   };
 
@@ -25,16 +25,17 @@
     running: false, paused: false, startTime: 0, endTime: 0,
     state: S.INITIAL_CALM, stateTimer: 0, endCalmLocked: false,
     currentPressure: 0, averagePressure: 0, pressureHistory: [],
-    // 突变检测（双窗口：本窗口[-τ,0]最大值 − 前一窗口[-2τ,-τ]平均值）
+    // 突变检测：本窗口[-τ,0]最小值（触发基准）；前一窗口[-2τ,-τ]平均值（释放基准）
     windowSamples: [], rawOn: false, rawSince: 0, surgeActive: false,
     surgeReleased: false, releaseBaseline: null, delayMin: null, lastDelayMin: 0,
-    edgePeak: 0, lastEdgePeak: 0, midPressure: 50,
+    edgePeak: 0, lastEdgePeak: 0, edgeTriggerTs: 0, midPressure: 50,
+    rawPeak: 0, rawPeakTs: 0,
     unRandomIntensity: 0, targetIntensity: 0, currentIntensity: 0,
     midLimits: { dmin: 5, dmax: 20 },
     lastSentStrength: 0, lastSendTs: 0,
     lastUpdateTs: 0, lastIntensityUpdateTs: 0,
     isShocking: false, shockCount: 0, shockTimer: null,
-    edgingCount: 0, edgeStartTs: 0, totalStimulationTime: 0,
+    edgingCount: 0, edgeStartTs: 0, midBelowTs: null, countdownNext: -1, recording: false,
   };
 
   // UI 合并状态
@@ -42,7 +43,7 @@
     title: '气压突变寸止', startTime: 0, statusText: '准备就绪', btnText: '暂停',
     currentPressure: 0, averagePressure: 0, currentIntensity: 0, targetIntensity: 0,
     midPressure: 50, edgePeak: 0, lastEdgePeak: 0,
-    edgingCount: 0, shockCount: 0, totalStimulationTime: 0,
+    edgingCount: 0, shockCount: 0, remainingSec: 0,
   };
 
   const $ = (s) => Array.from(document.querySelectorAll(s));
@@ -200,13 +201,9 @@
         return startEvent(event);
       }
       if (event.kind === 'state') {
-        if (current.event.kind === 'intro' || current.event.kind === 'critical') {
-          queuedState = event;
-          return false;
-        }
-        stopEntry(current);
-        current = null;
-        return startEvent(event);
+        // state 级语音不打断当前播放（含其他 state，如 calm 不打断 delay），排队等其播完
+        queuedState = event;
+        return false;
       }
       return false;
     }
@@ -221,7 +218,8 @@
       enabled = !!nextEnabled;
       if (!enabled) stop();
     }
-    return { play: play, stop: stop, setEnabled: setEnabled };
+    function isPlaying() { return !!current; }
+    return { play: play, stop: stop, setEnabled: setEnabled, isPlaying: isPlaying };
   }
   var voicePlayer = createVoicePlayer('voices');
   function playVoice(key, kind, isValid) {
@@ -234,42 +232,48 @@
   function stopShockDev() { if (DeviceAPI.device(PUNISH).isMapped()) DeviceAPI.device(PUNISH).invoke('shock', 'stop', {}); }
   function setLockOpen(open) { if (DeviceAPI.device(LOCK).isMapped()) DeviceAPI.device(LOCK).invoke('lock', 'setOpen', { open: !!open }); }
 
-  // ---- 突变检测：双窗口比较，不用绝对临界压 ----
-  //  W1 = [-τ, 0]（本窗口）取最大值，W2 = [-2τ, -τ]（前一窗口）取平均值；
-  //  surgeActive = W1max − W2avg ≥ surgeRiseKpa，且连续保持 ≥ minSurgeMs 后触发（上升沿）；
-  //  无滞回（不需要 releaseRatio）：条件消失即释放；进入 DELAY 后不再判定突变。
+  // ---- 突变检测：当前值 − 本窗口最小值，不用绝对临界压 ----
+  //  触发：surgeActive = (当前气压 − 本窗口[-τ,0]最小值) ≥ surgeRiseKpa，且连续保持 ≥ minSurgeMs；
+  //  触发：突变（on）持续 ≥ minSurgeMs 时确认 surgeActive；峰值取该最短持续区间内的
+  //  【压力最大值 rawPeak】（非最后一个采样值），用于中间压更新与绿标定位；
+  //  释放基准 = 触发瞬间的【窗口最小值 w1Min】（与触发判据同基准）；
+  //  边缘期结束：气压回落到释放基准 + 0.2kPa 之下；进入 DELAY 后不再判定突变。
   function updateSurge(now, p) {
-    const winMs = Math.max(50, Number(cfg.surgeWindowMs) || 500);
+    const winMs = Math.max(50, (Number(cfg.surgeWindowSec) || 1.5) * 1000);
     rt.windowSamples.push({ ts: now, p: p });
     const cutoff = now - 2 * winMs;
     while (rt.windowSamples.length && rt.windowSamples[0].ts < cutoff) rt.windowSamples.shift();
     if (rt.state === S.DELAY) return; // 延迟期内不监测突变
     const t0 = now - winMs;
-    let w1Max = -Infinity;
-    let w2Sum = 0, w2Count = 0;
+    let w1Max = -Infinity, w1Min = Infinity;
     for (const s of rt.windowSamples) {
-      if (s.ts > t0) w1Max = Math.max(w1Max, s.p);
-      else { w2Sum += s.p; w2Count += 1; }
+      if (s.ts > t0) {
+        w1Max = Math.max(w1Max, s.p);
+        w1Min = Math.min(w1Min, s.p);
+      }
     }
-    if (w2Count === 0 || w1Max === -Infinity) { rt.rawOn = false; rt.surgeActive = false; rt.surgeReleased = false; return; }
-    const w2Avg = w2Sum / w2Count;
+    if (w1Max === -Infinity || w1Min === Infinity) { rt.rawOn = false; rt.surgeActive = false; rt.surgeReleased = false; return; }
     const rise = Math.max(0.1, Number(cfg.surgeRiseKpa) || 1.0);
-    const on = (w1Max - w2Avg) >= rise;
+    const on = (p - w1Min) >= rise; // 当前值 − 窗口最小值
     if (on) {
-      if (!rt.rawOn) { rt.rawSince = now; rt.edgePeak = w1Max; } // 新一轮突变开始，重置峰值
+      if (!rt.rawOn) { rt.rawSince = now; rt.rawPeak = p; rt.rawPeakTs = now; } // 新一轮突变开始
       rt.rawOn = true;
-      rt.edgePeak = Math.max(rt.edgePeak, w1Max);
+      // 持续跟踪区间最大值（含其时间戳，用于绿标定位）
+      if (p > rt.rawPeak) { rt.rawPeak = p; rt.rawPeakTs = now; }
       if (!rt.surgeActive && (now - rt.rawSince) >= (Number(cfg.minSurgeMs) || 100)) {
         rt.surgeActive = true;
-        rt.releaseBaseline = w2Avg; // 记录触发时（突变前）的前窗口均值，作为释放基准
+        rt.edgePeak = rt.rawPeak; // 取最短持续区间内的最大值（非最后一个采样值）
+        rt.edgeTriggerTs = rt.rawPeakTs; // 绿标定位到区间峰值点
+        rt.releaseBaseline = w1Min; // 记录触发瞬间的窗口最小值，作为释放基准（与触发判据同基准）
       }
     } else {
       rt.rawOn = false;
       rt.surgeActive = false;
+      rt.rawPeak = 0; rt.rawPeakTs = 0; // 突变结束，重置区间峰值
     }
-    // 边缘期结束判据：气压回落到【进入边缘期时】的前窗口平均值 + 0.2kPa 之下。
+    // 边缘期结束判据：气压回落到【触发瞬间的窗口最小值】+ 0.2kPa 之下。
     // 基准在触发时固定（非滑动），因此保持压力不会误释放，只有实际泄压才结束边缘期。
-    rt.surgeReleased = (p < (rt.releaseBaseline == null ? w2Avg : rt.releaseBaseline) + 0.2);
+    rt.surgeReleased = (p < (rt.releaseBaseline == null ? w1Min : rt.releaseBaseline) + 0.2);
   }
 
   function triggerShock(force) {
@@ -299,6 +303,7 @@
 // ---- 状态机 ----
   function enterMid() {
     rt.state = S.MIDDLE;
+    rt.midBelowTs = null; // 重置连续回落计时
     view.statusText = '进入中期刺激';
     addLog('info', '进入中期刺激（P1=' + rt.midPressure.toFixed(1) + '，ΔP=' + cfg.midOffsetKpa + '）');
     playVoice('edging_middle', 'state', function () { return rt.running && rt.state === S.MIDDLE; });
@@ -306,7 +311,7 @@
   function enterEdging() {
     rt.lastEdgePeak = Number(((rt.edgePeak > 0 ? rt.edgePeak : rt.currentPressure)).toFixed(1));
     // 中间值 = max(峰值 − 偏移, 上个延迟期最小值 + 1)；后者优先级更高
-    const peakMid = rt.lastEdgePeak - (Number(cfg.midOffsetKpa) || 1.0);
+    const peakMid = rt.lastEdgePeak - (Number(cfg.midOffsetKpa) || 0.5);
     const delayFloor = (Number(rt.lastDelayMin) || 0) + 1;
     rt.midPressure = Number(Math.max(1, Math.max(peakMid, delayFloor)).toFixed(1));
     rt.edgePeak = 0; // 峰值已记录，重置等待下一轮突变
@@ -353,17 +358,27 @@
       case S.MIDDLE: {
         // 中期强度：P∈[P1,P1+ΔP] 时 d = dmax − (dmax−dmin)·(P−P1)/ΔP；P≥P1+ΔP 时 d = dmin
         const P1 = rt.midPressure;
-        const dP = Math.max(0.01, Number(cfg.midOffsetKpa) || 1.0);
+        const dP = Math.max(0.01, Number(cfg.midOffsetKpa) || 0.5);
         const lim = rt.midLimits || { dmin: 5, dmax: 20 };
         let d;
         if (p >= P1 + dP) d = lim.dmin;
         else d = lim.dmax - (lim.dmax - lim.dmin) * ((p - P1) / dP);
-        rt.targetIntensity = clamp(d, 0, cfg.maxMotorIntensity);
+        // 限制在 [dmin, dmax]：midDelay 内压力回落到 P1 以下时公式会算出 >dmax，必须封顶
+        rt.targetIntensity = clamp(d, lim.dmin, lim.dmax);
         if (surge && rt.edgePeak) { rt.unRandomIntensity = rt.currentIntensity; enterEdging(); break; }
+        // 回落判据：压力【连续】低于中间值 midDelay 秒后才转平静期（回升即重置计时，防语音反复切换）；
+        // 边缘期触发不受影响
+        const midDelayMs = (Number(cfg.midDelay) || 0) * 1000;
         if (p < rt.midPressure) {
-          rt.unRandomIntensity = rt.currentIntensity; rt.state = S.SUB_CALM;
-          view.statusText = '压力回落，进入平静期';
-          playVoice('edging_calm', 'state', function () { return rt.running && rt.state === S.SUB_CALM; });
+          if (rt.midBelowTs == null) rt.midBelowTs = now;
+          if ((now - rt.midBelowTs) > midDelayMs) {
+            rt.midBelowTs = null;
+            rt.unRandomIntensity = rt.currentIntensity; rt.state = S.SUB_CALM;
+            view.statusText = '压力连续回落，进入平静期';
+            playVoice('edging_calm', 'state', function () { return rt.running && rt.state === S.SUB_CALM; });
+          }
+        } else {
+          rt.midBelowTs = null; // 压力回升，重置连续计时
         }
         break;
       }
@@ -405,12 +420,12 @@
     const dtSec = Math.max(0, (now - rt.lastIntensityUpdateTs) / 1000);
     rt.lastIntensityUpdateTs = now;
     const cur = rt.currentIntensity, tgt = rt.targetIntensity;
-    let next = tgt < cur ? tgt : Math.min(cur + Math.max(0, cfg.rampRate) * dtSec, tgt);
+    let next = tgt < cur ? tgt : Math.min(cur + Math.max(0, cfg.gradualIncrease) * dtSec, tgt);
     const rounded = Math.round(next);
-    // 限速合并（latest-wins）：平静期/中期每 sendIntervalMs（默认2000ms，0.5条/s）发一次
-    // 当前最新设计值，速率远低于 MQTT 设备消费速率（≈1.8-2条/s），链路队列恒空、滞后不增长；
+    // 限速合并（latest-wins）：平静期/中期每 sendIntervalMs（默认1000ms，1条/s）发一次
+    // 当前最新设计值，低于 MQTT 设备消费速率，链路不积压；
     // 边缘期触发时 target 归零 → emergencyZero 立即发送停止命令，保证安全。
-    const interval = Math.max(200, Number(cfg.sendIntervalMs) || 2000);
+    const interval = Math.max(200, Number(cfg.sendIntervalMs) || 1000);
     const due = (now - (rt.lastSendTs || 0)) >= interval;
     const emergencyZero = rounded === 0 && rt.lastSentStrength > 0;
     if (!Number.isNaN(rounded) && (due || emergencyZero)) {
@@ -418,13 +433,11 @@
       rt.lastSentStrength = rounded;
       rt.lastSendTs = now;
       rt.currentIntensity = rounded;
-      if (rounded > 0) rt.totalStimulationTime += dtSec;
     } else {
       rt.currentIntensity = next;
     }
     view.currentIntensity = rt.currentIntensity;
     view.targetIntensity = rt.targetIntensity;
-    view.totalStimulationTime = Number(rt.totalStimulationTime.toFixed(1));
   }
 
   // 时间序列图：横轴最近 1 分钟；双 Y 轴（XYY）：左轴压力(蓝实线,自动缩放) + 右轴电机强度(红虚线,0~最大强度) + 边缘标记
@@ -546,12 +559,39 @@
     const now = Date.now();
     if (now >= rt.endTime) { end(); return; }
     calculateStateLogic();
+    // 起飞期倒计时：从剩余秒数起倒序播放单字语音（countdown_0..10，受文件上限）。
+    // 剩余 ≤ n+0.5 秒时播 countdown_n（提前 0.5s）。用 critical 级别到点即播（可打断上一个），
+    // 保证每 1s 一个数字、10→0 完整播完，避免等上一个 mp3 播完导致间隔漂移、末尾数不到 0。
+    if (rt.endCalmLocked) {
+      const remainFrac = (rt.endTime - now) / 1000;
+      if (rt.countdownNext < 0) {
+        rt.countdownNext = Math.min(10, Math.max(0, Math.round(remainFrac)));
+      } else if (rt.countdownNext >= 0 && remainFrac <= rt.countdownNext + 0.5) {
+        const cdN = rt.countdownNext;
+        playVoice('edging_countdown/countdown_' + cdN, 'critical', function () { return rt.running && rt.endCalmLocked; });
+        rt.countdownNext -= 1;
+        addLog('info', '倒计时 ' + cdN + 's');
+      }
+    }
     updateIntensity();
     view.currentPressure = rt.currentPressure;
     view.averagePressure = Number(rt.averagePressure.toFixed(1));
     view.midPressure = rt.midPressure;
     view.edgePeak = rt.edgePeak;
     view.lastEdgePeak = rt.lastEdgePeak;
+    const remSec = Math.max(0, Math.ceil((rt.endTime - now) / 1000));
+    view.remainingSec = Math.floor(remSec / 60) + ':' + String(remSec % 60).padStart(2, '0');
+    // 开发用途：?record=1 时把 时间/气压/强度/阶段 经 DeviceAPI.log 写入后端日志（tools/record-csv.js 转 CSV）
+    if (rt.recording) {
+      try {
+        DeviceAPI.log('info', 'REC|' + JSON.stringify({
+          ts: Date.now(),
+          pressure: Number(rt.currentPressure.toFixed(2)),
+          intensity: Math.round(rt.currentIntensity),
+          stage: STATE_CN[rt.state] || rt.state,
+        }));
+      } catch (_) {}
+    }
     render();
   }
   function start() {
@@ -564,14 +604,17 @@
     rt.midLimits = updateMidLimits();
     rt.windowSamples = []; rt.rawOn = false; rt.rawSince = 0; rt.surgeActive = false;
     rt.surgeReleased = false; rt.releaseBaseline = null; rt.delayMin = null; rt.lastDelayMin = 0;
-    rt.edgePeak = 0; rt.lastEdgePeak = 0; rt.midPressure = 50;
+    rt.edgePeak = 0; rt.lastEdgePeak = 0; rt.midPressure = 50; rt.edgeTriggerTs = 0;
+    rt.rawPeak = 0; rt.rawPeakTs = 0;
     rt.lastSentStrength = 0; rt.lastSendTs = 0;
     rt.pressureHistory = [];
-    rt.edgingCount = 0; rt.edgeStartTs = 0; rt.shockCount = 0; rt.totalStimulationTime = 0;
+    rt.edgingCount = 0; rt.edgeStartTs = 0; rt.shockCount = 0; rt.midBelowTs = null;
+    rt.countdownNext = -1;
     rt.lastUpdateTs = now; rt.lastIntensityUpdateTs = now;
     view.startTime = now; view.statusText = '准备就绪';
     view.midPressure = 50; view.edgePeak = 0; view.lastEdgePeak = 0;
-    view.edgingCount = 0; view.shockCount = 0; view.totalStimulationTime = 0;
+    view.edgingCount = 0; view.shockCount = 0;
+    view.remainingSec = (Number(cfg.duration) || 20) + ':00';
     try {
       if (DeviceAPI.device(SENSOR).isMapped()) DeviceAPI.device(SENSOR).invoke('reporting', 'setReportDelay', { ms: 100 });
       setStrength(0); setLockOpen(false); stopShockDev();
@@ -592,18 +635,16 @@
       const recent = rt.pressureHistory.slice(-60);
       rt.averagePressure = recent.length ? recent.reduce((a, it) => a + (Number(it.pressure) || 0), 0) / recent.length : p;
       if (rt.edgingCount > prevCount && rt.pressureHistory.length) {
-        // 绿点标在本次突变峰值的顶点：回溯最近 2τ 窗口内压力最大处的采样点，而非计数那一刻
-        const winMs = Math.max(50, Number(cfg.surgeWindowMs) || 500);
-        const cutoff = ts - 2 * winMs;
-        let peakIdx = rt.pressureHistory.length - 1;
-        let peakVal = -Infinity;
+        // 绿点标在【触发边缘期的瞬时压力】采样点：用触发时刻 edgeTriggerTs 精确回溯定位
+        const trigTs = rt.edgeTriggerTs;
+        let bestIdx = -1;
+        let bestDiff = Infinity;
         for (let i = rt.pressureHistory.length - 1; i >= 0; i--) {
-          const s = rt.pressureHistory[i];
-          if (s.ts < cutoff) break;
-          const pv = Number(s.pressure) || 0;
-          if (pv >= peakVal) { peakVal = pv; peakIdx = i; }
+          const diff = Math.abs(rt.pressureHistory[i].ts - trigTs);
+          if (diff > bestDiff) break;
+          bestDiff = diff; bestIdx = i;
         }
-        rt.pressureHistory[peakIdx].edgeTrigger = true;
+        if (bestIdx >= 0) rt.pressureHistory[bestIdx].edgeTrigger = true;
       }
       view.currentPressure = p;
       view.averagePressure = Number(rt.averagePressure.toFixed(1));
@@ -614,7 +655,7 @@
       const current = Array.isArray(values) ? values.find((value) => value !== null && value !== undefined) : values;
       if (current !== null && current !== undefined) applyPressure(current);
     }).catch((error) => addLog('warn', '读取当前气压失败: ' + (error && error.message || error)));
-    addLog('info', '气压突变寸止已启动（窗口 ' + cfg.surgeWindowMs + 'ms / 抬升 ' + cfg.surgeRiseKpa + 'kPa）');
+    addLog('info', '气压突变寸止已启动（窗口 ' + cfg.surgeWindowSec + 's / 抬升 ' + cfg.surgeRiseKpa + 'kPa）');
     playVoice('edging_start', 'intro', function () { return rt.running; });
     render();
   }
@@ -630,7 +671,10 @@
     if (loopTimer) { clearInterval(loopTimer); loopTimer = null; }
     view.statusText = '已结束';
     addLog('info', '结束（边缘 ' + rt.edgingCount + ' 次，电击 ' + rt.shockCount + ' 次）');
-    playVoice('edging_end', 'critical', function () { return !rt.running; });
+    // 不 stop 播放器：让倒计时 0 播完；edging_end 延迟 2s 播放防重叠
+    setTimeout(function () {
+      playVoice('edging_end', 'critical', function () { return !rt.running; });
+    }, 2000);
     render();
   }
 
@@ -645,10 +689,6 @@
           if (rt.paused) { setStrength(0); rt.lastSentStrength = 0; }
           else rt.windowSamples = []; // 恢复后清空突变窗口，避免用暂停前的旧基准误判
           addLog('info', rt.paused ? '已暂停' : '已继续');
-          render();
-        } else if (name === 'addIntensity') {
-          rt.targetIntensity = clamp(rt.targetIntensity + 10, 0, cfg.maxMotorIntensity);
-          addLog('info', '手动 +10 强度 → ' + rt.targetIntensity.toFixed(1));
           render();
         } else if (name === 'shockOnce') {
           triggerShock(true);
@@ -665,11 +705,172 @@
     });
   }
 
+  // ---- 托管渲染模式（?runtime=host|remote）：逻辑在宿主 Core 执行，本页面只渲染快照、发送命令 ----
+  const hostBridge = (typeof window !== 'undefined' && window.GameRuntimeBridge) ? window.GameRuntimeBridge : null;
+  const hostUi = {
+    authorized: hostBridge ? hostBridge.mode === 'host' : true,
+    lastPhase: '', startedVoice: false, lastLogKey: '',
+    startedAtMs: 0, lastEdgingCount: 0, countdownNext: -1,
+  };
+
+  function hostSyncParams(params) {
+    if (!params) return;
+    Object.keys(cfg).forEach((k) => { if (params[k] !== undefined && params[k] !== null) cfg[k] = params[k]; });
+    if (params.voiceEnabled !== undefined) voicePlayer.setEnabled(!!params.voiceEnabled);
+  }
+
+  function hostSetControlsEnabled(enabled) {
+    $('[data-action], [data-adjust]').forEach((el) => { el.disabled = !enabled; });
+  }
+
+  function hostBindActions() {
+    $('[data-action]').forEach((el) => {
+      const name = el.getAttribute('data-action');
+      el.addEventListener('click', () => {
+        if (!hostUi.authorized) return;
+        if (name === 'pause') hostBridge.sendAction(rt.paused ? 'resume' : 'pause').catch(() => {});
+        else if (name === 'shockOnce') hostBridge.sendAction('shockOnce', {}).catch(() => {});
+      });
+    });
+    $('[data-adjust]').forEach((el) => {
+      el.addEventListener('click', () => {
+        if (!hostUi.authorized) return;
+        hostBridge.sendAction('adjustMid', { delta: Number(el.getAttribute('data-val')) || 0 }).catch(() => {});
+      });
+    });
+  }
+
+  function hostRenderLogs(logs) {
+    const ul = document.getElementById('logs');
+    if (!ul || !Array.isArray(logs)) return;
+    const key = logs.length + ':' + (logs[0] ? String(logs[0].atMs || '') + logs[0].message : '');
+    if (key !== hostUi.lastLogKey) {
+      hostUi.lastLogKey = key;
+      ul.innerHTML = '';
+      logs.slice(0, 20).forEach((entry) => {
+        const li = document.createElement('li');
+        const at = Number(entry && entry.atMs) || 0;
+        li.textContent = (at ? '[' + new Date(at).toLocaleTimeString() + '] ' : '') + String((entry && entry.message) || '');
+        ul.appendChild(li);
+      });
+    }
+  }
+
+  function hostPushHistory(snapshot) {
+    const ts = Date.now();
+    rt.pressureHistory.push({ ts: ts, pressure: rt.currentPressure, strength: rt.currentIntensity, edgeActive: String(snapshot.phase || '') === 'EDGING', edgeTrigger: false });
+    if (rt.pressureHistory.length > 3600) rt.pressureHistory.shift();
+    const count = Number(snapshot.edgingCount) || 0;
+    if (count > hostUi.lastEdgingCount && rt.pressureHistory.length) {
+      // 绿点标在触发峰值点：按快照 edgeTriggerTs 回溯最近的采样点
+      const trigTs = Number(snapshot.edgeTriggerTs) || ts;
+      let bestIdx = -1; let bestDiff = Infinity;
+      for (let i = rt.pressureHistory.length - 1; i >= 0; i--) {
+        const diff = Math.abs(rt.pressureHistory[i].ts - trigTs);
+        if (diff > bestDiff) break;
+        bestDiff = diff; bestIdx = i;
+      }
+      if (bestIdx >= 0) rt.pressureHistory[bestIdx].edgeTrigger = true;
+    }
+    hostUi.lastEdgingCount = count;
+  }
+
+  function hostVoices(snapshot) {
+    const phase = String(snapshot.phase || '');
+    if (snapshot.running && !hostUi.startedVoice) {
+      hostUi.startedVoice = true;
+      playVoice('edging_start', 'intro', function () { return rt.running; });
+    }
+    if (snapshot.ended) {
+      if (hostUi.lastPhase !== 'ENDED') {
+        // 与原页面一致：不 stop 播放器，edging_end 延迟 2s 播放防与倒计时 0 重叠
+        setTimeout(function () { playVoice('edging_end', 'critical', function () { return !rt.running; }); }, 2000);
+      }
+      hostUi.lastPhase = 'ENDED';
+      return;
+    }
+    if (phase && phase !== hostUi.lastPhase) {
+      const voiceFor = { MIDDLE: 'edging_middle', EDGING: 'edging_peak', SUB_CALM: 'edging_calm', DELAY: 'edging_delay' };
+      const key = voiceFor[phase];
+      if (key) playVoice(key, phase === 'EDGING' ? 'critical' : 'state', function () { return rt.running && hostUi.lastPhase === phase; });
+      hostUi.lastPhase = phase;
+    }
+    // 起飞期倒计时语音（快照 500ms 轮询，按 1s 步进到点即播）
+    if (rt.endCalmLocked && rt.running && !rt.paused) {
+      const remainFrac = (rt.endTime - Date.now()) / 1000;
+      if (hostUi.countdownNext < 0) hostUi.countdownNext = Math.min(10, Math.max(0, Math.round(remainFrac)));
+      else if (hostUi.countdownNext >= 0 && remainFrac <= hostUi.countdownNext + 0.5) {
+        const n = hostUi.countdownNext;
+        playVoice('edging_countdown/countdown_' + n, 'critical', function () { return rt.running && rt.endCalmLocked; });
+        hostUi.countdownNext -= 1;
+      }
+    }
+  }
+
+  function hostOnSnapshot(status, snapshot) {
+    if (!snapshot) {
+      view.statusText = status ? '准备就绪' : '连接中断，正在重连';
+      render();
+      return;
+    }
+    if (hostBridge.mode === 'remote') {
+      const authorized = !status || status.authorized !== false;
+      if (authorized !== hostUi.authorized) { hostUi.authorized = authorized; hostSetControlsEnabled(authorized); }
+    }
+    const startedAtMs = Number(snapshot.startedAtMs) || 0;
+    if (startedAtMs !== hostUi.startedAtMs) {
+      hostUi.startedAtMs = startedAtMs;
+      hostUi.lastPhase = ''; hostUi.startedVoice = false;
+      hostUi.countdownNext = -1; hostUi.lastEdgingCount = 0;
+      rt.pressureHistory = [];
+    }
+    hostSyncParams(snapshot.params);
+    rt.running = !!snapshot.running;
+    rt.paused = !!snapshot.paused;
+    rt.currentPressure = Number(snapshot.currentPressure) || 0;
+    rt.currentIntensity = Number(snapshot.currentIntensity) || 0;
+    rt.targetIntensity = Number(snapshot.targetIntensity) || 0;
+    rt.midPressure = Number(snapshot.midPressure) || rt.midPressure;
+    rt.endTime = Number(snapshot.endTimeMs) || 0;
+    rt.endCalmLocked = !!snapshot.endCalmLocked;
+    view.title = snapshot.title || view.title;
+    view.startTime = startedAtMs;
+    view.statusText = snapshot.ended ? '已结束' : (snapshot.phaseText || '准备就绪');
+    view.btnText = rt.paused ? '继续' : '暂停';
+    view.currentPressure = rt.currentPressure;
+    view.averagePressure = Number(snapshot.averagePressure) || 0;
+    view.currentIntensity = rt.currentIntensity;
+    view.targetIntensity = rt.targetIntensity;
+    view.midPressure = rt.midPressure;
+    view.edgePeak = Number(snapshot.edgePeak) || 0;
+    view.lastEdgePeak = Number(snapshot.lastEdgePeak) || 0;
+    view.edgingCount = Number(snapshot.edgingCount) || 0;
+    view.shockCount = Number(snapshot.shockCount) || 0;
+    if (!rt.paused) {
+      const remMs = rt.endTime ? Math.max(0, rt.endTime - Date.now()) : (Number(cfg.duration) || 20) * 60000;
+      const remSec = Math.max(0, Math.ceil(remMs / 1000));
+      view.remainingSec = Math.floor(remSec / 60) + ':' + String(remSec % 60).padStart(2, '0');
+    }
+    hostPushHistory(snapshot);
+    hostVoices(snapshot);
+    hostRenderLogs(snapshot.logs);
+    render();
+  }
+
+  function hostBoot() {
+    hostBindActions();
+    if (hostBridge.mode === 'remote') hostSetControlsEnabled(false);
+    render();
+    hostBridge.onSnapshot(hostOnSnapshot);
+    hostBridge.start();
+  }
+
   let loopTimer = null;
   async function boot() {
     bindActions();
     render();
     try { await DeviceAPI.ready; } catch (_) {}
+    rt.recording = false; // 记录器默认关闭（发布版；开发时 tools/game-record.js 或手动改为 true）
     const p = DeviceAPI.params || {};
     Object.keys(cfg).forEach((k) => { if (p[k] !== undefined && p[k] !== null) cfg[k] = p[k]; });
     rt.midLimits = updateMidLimits();
@@ -682,6 +883,6 @@
 
   window.__game = { start, loop, end, rt, cfg, view };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => (hostBridge ? hostBoot() : boot()));
+  else (hostBridge ? hostBoot() : boot());
 })(window);

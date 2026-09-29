@@ -20,7 +20,8 @@
       "已结束": "Ended",
       "已暂停": "Paused",
       "运行中": "Running",
-      "继续": "Resume"
+      "继续": "Resume",
+      "连接中断，正在重连": "Connection lost, reconnecting"
     }
   });
 })(typeof window !== 'undefined' ? window : this);

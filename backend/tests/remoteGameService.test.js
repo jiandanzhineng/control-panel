@@ -11,6 +11,7 @@ function topicMatches(pattern, topic) {
 class FakeBroker {
   constructor() {
     this.clients = new Set();
+    this.publishes = [];
   }
 
   connect = (_url, options) => {
@@ -22,6 +23,7 @@ class FakeBroker {
       callback?.(null);
     };
     client.publish = (topic, payload, _options, callback) => {
+      this.publishes.push({ client, topic, payload: JSON.parse(String(payload)) });
       for (const subscriber of this.clients) {
         if (subscriber.subscriptions.some((pattern) => topicMatches(pattern, topic))) {
           queueMicrotask(() => subscriber.emit('message', topic, Buffer.from(payload)));
@@ -70,13 +72,17 @@ function mockHost() {
         active: true,
         running: true,
         gameId: input.gameId,
+        deviceMap: input.deviceMap || {},
         snapshot: { running: true, phase: 'INITIAL_CALM', gameId: input.gameId, params: input.params || {} },
       };
       return api.status;
     }),
     pause: jest.fn(() => api.status),
     resume: jest.fn(() => api.status),
-    stop: jest.fn(() => ({ active: false, running: false, snapshot: { ended: true, phase: 'ENDED' } })),
+    stop: jest.fn(() => {
+      api.status = { active: false, running: false, snapshot: { ended: true, phase: 'ENDED' } };
+      return api.status;
+    }),
     setParams: jest.fn((params) => {
       api.status.snapshot = { ...(api.status.snapshot || {}), params };
       return api.status;
@@ -167,6 +173,23 @@ describe('remote game service', () => {
     ]));
   });
 
+  test('operator publishes under its own credential topic and owner subscribes wildcard', async () => {
+    const { broker, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'game.pause' });
+    const ownerClient = [...broker.clients].find((client) => client.options.clientId === 'client-owner');
+    expect(ownerClient.subscriptions).toContain('rooms/room-1/commands/+');
+    expect(broker.publishes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        topic: 'rooms/room-1/commands/operator',
+        payload: expect.objectContaining({ type: 'game.pause' }),
+      }),
+    ]));
+  });
+
   test('unauthorized game commands return CONTROL_NOT_AUTHORIZED', async () => {
     const { host, owner, operator } = pair();
     await owner.create({ token: 'owner' });
@@ -199,13 +222,65 @@ describe('remote game service', () => {
     expect(host.stop).toHaveBeenCalled();
   });
 
+  test('remote device commands use device service and protect mapped running devices', async () => {
+    const { host, owner, operator } = pair();
+    const device = {
+      id: 'dev-1', name: '气压', type: 'QIYA', connected: true,
+      controlConnection: 'mqtt', capabilities: ['strength'],
+    };
+    host.devices = {
+      listDevicesForApi: jest.fn(() => [device]),
+      getDeviceForApi: jest.fn((id) => (id === device.id ? device : null)),
+      updateDeviceMeta: jest.fn((_id, patch) => ({ ...device, ...patch })),
+      invokeDeviceCapabilityAndWait: jest.fn(async () => ({ ok: true })),
+      stopExecutionDeviceAndWait: jest.fn(async () => ({ ok: true })),
+      disconnectDeviceConnections: jest.fn(async () => true),
+    };
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    expect((await operator.command({
+      type: 'devices.rename', payload: { deviceId: 'dev-1', name: '新名称' },
+    })).ok).toBe(true);
+    expect(host.devices.updateDeviceMeta).toHaveBeenCalledWith('dev-1', { name: '新名称' });
+    await operator.command({
+      type: 'game.start',
+      payload: { gameId: 'surge-edging', deviceMap: { sensor: ['dev-1'] } },
+    });
+    expect(await operator.command({
+      type: 'devices.invoke',
+      payload: { deviceId: 'dev-1', capability: 'strength', action: 'set', input: { value: 30 } },
+    })).toMatchObject({ ok: false, code: 'DEVICE_BUSY' });
+    expect((await operator.command({ type: 'devices.stop', payload: { deviceId: 'dev-1' } })).ok).toBe(true);
+    expect(host.stop).toHaveBeenCalledWith({ reason: 'remote-device-stop' });
+    expect(host.devices.stopExecutionDeviceAndWait).toHaveBeenCalledWith('dev-1');
+    expect((await operator.command({
+      type: 'devices.invoke',
+      payload: { deviceId: 'dev-1', capability: 'strength', action: 'set', input: { value: 30 } },
+    })).ok).toBe(true);
+    expect(host.devices.invokeDeviceCapabilityAndWait).toHaveBeenCalledWith(
+      'dev-1', 'strength', 'set', { value: 30 },
+    );
+    expect((await operator.command({ type: 'devices.disconnect', payload: { deviceId: 'dev-1' } })).ok).toBe(true);
+    expect(host.devices.disconnectDeviceConnections).toHaveBeenCalledWith('dev-1', 'mqtt');
+  });
+
+  test('owner executes a local command and publishes the refreshed snapshots', async () => {
+    const { broker, owner } = pair();
+    await owner.create({ token: 'owner' });
+    const result = await owner.command({ type: 'devices.list' });
+    expect(result).toMatchObject({ ok: true, result: { devices: [expect.objectContaining({ id: 'dev-1' })] } });
+    expect(broker.publishes.filter((item) => item.payload.type === 'client.snapshot').length).toBeGreaterThan(1);
+  });
+
   test('duplicate message ids and stale sessions are ignored', async () => {
     const { broker, host, owner, operator } = pair();
     await owner.create({ token: 'owner' });
     await operator.join({ token: 'operator', joinCode: 'JOIN123' });
     await owner.authorize();
     await flush();
-    const topic = 'rooms/room-1/commands/owner';
+    const topic = 'rooms/room-1/commands/operator';
     const envelope = {
       protocolVersion: 1,
       roomSessionId: 'room-1:0',
@@ -229,7 +304,7 @@ describe('remote game service', () => {
     await operator.join({ token: 'operator', joinCode: 'JOIN123' });
     await owner.authorize();
     await flush();
-    const topic = 'rooms/room-1/commands/owner';
+    const topic = 'rooms/room-1/commands/operator';
     const base = {
       protocolVersion: 1,
       roomSessionId: 'room-1:0',

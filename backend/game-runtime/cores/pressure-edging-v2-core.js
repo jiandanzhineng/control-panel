@@ -292,6 +292,7 @@ class PressureEdgingV2Core {
       currentPressure: round1(rt.currentPressure), averagePressure: round1(rt.averagePressure),
       midPressure: round1(this.cfg.midPressure), criticalPressure: round1(this.cfg.criticalPressure),
       currentIntensity: round1(rt.currentIntensity), targetIntensity: round1(rt.targetIntensity),
+      midIntensity: round1(rt.midIntensity || rt.recordedMidIntensity || 0),
       edgingCount: rt.edgingCount, shockCount: rt.shockCount,
       totalStimulationTime: round1(rt.totalStimulationTime), isShocking: rt.isShocking,
       params: { ...this.cfg }, logs: this.logs.slice(),

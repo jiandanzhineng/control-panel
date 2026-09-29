@@ -1,2 +1,4 @@
 data/*.json
 data/wired-flash-cache/
+data/game-cache/
+data/game-cache-tmp/

@@ -78,7 +78,7 @@ class SurgeEdgingCore {
     this._effects.push({ type: 'device.set-strength', role: 'motor', value: 0 });
     this._effects.push({ type: 'device.lock', role: 'lock', open: false });
     this._effects.push({ type: 'device.shock-stop', role: 'punish' });
-    this._log('info', `气压突变寸止已启动（窗口 ${this.cfg.surgeWindowMs}ms / 抬升 ${this.cfg.surgeRiseKpa}kPa）`, nowMs);
+    this._log('info', `气压突变寸止已启动（窗口 ${this.cfg.surgeWindowSec}s / 抬升 ${this.cfg.surgeRiseKpa}kPa）`, nowMs);
     return this._ok(nowMs);
   }
 
@@ -213,9 +213,10 @@ class SurgeEdgingCore {
       targetIntensity: round1(this.rt.targetIntensity),
       edgingCount: this.rt.edgingCount,
       shockCount: this.rt.shockCount,
-      totalStimulationTime: round1(this.rt.totalStimulationTime),
       edgePeak: round1(this.rt.edgePeak),
       lastEdgePeak: round1(this.rt.lastEdgePeak),
+      edgeTriggerTs: this.rt.edgeTriggerTs || 0,
+      endCalmLocked: !!this.rt.endCalmLocked,
       isShocking: !!this.rt.isShocking,
       params: { ...this.cfg },
       logs: this.rt.logs.map((entry) => ({ ...entry })),
@@ -275,6 +276,10 @@ class SurgeEdgingCore {
       lastDelayMin: 0,
       edgePeak: 0,
       lastEdgePeak: 0,
+      edgeTriggerTs: 0,
+      rawPeak: 0,
+      rawPeakTs: 0,
+      midBelowTs: null,
       midPressure: 50,
       unRandomIntensity: 0,
       targetIntensity: 0,
@@ -289,7 +294,6 @@ class SurgeEdgingCore {
       shockCount: 0,
       edgingCount: 0,
       edgeStartTs: 0,
-      totalStimulationTime: 0,
       logs: [],
     };
   }
@@ -349,8 +353,11 @@ class SurgeEdgingCore {
     this._updateIntensity(nowMs);
   }
 
+  // 突变检测：当前值 − 本窗口[-τ,0]最小值 ≥ surgeRiseKpa，且连续保持 ≥ minSurgeMs；
+  // 峰值取最短持续区间内的压力最大值 rawPeak（含时间戳，用于中间压更新与绿标定位）；
+  // 释放基准 = 触发瞬间的窗口最小值 w1Min；边缘期结束：气压回落到基准 + 0.2kPa 之下。
   _updateSurge(nowMs, pressure) {
-    const winMs = Math.max(50, Number(this.cfg.surgeWindowMs) || 500);
+    const winMs = Math.max(50, (Number(this.cfg.surgeWindowSec) || 1.5) * 1000);
     this.rt.windowSamples.push({ ts: nowMs, p: pressure });
     const cutoff = nowMs - 2 * winMs;
     while (this.rt.windowSamples.length && this.rt.windowSamples[0].ts < cutoff) {
@@ -359,40 +366,45 @@ class SurgeEdgingCore {
     if (this.rt.phase === PHASE.DELAY) return;
     const t0 = nowMs - winMs;
     let w1Max = -Infinity;
-    let w2Sum = 0;
-    let w2Count = 0;
+    let w1Min = Infinity;
     for (const sample of this.rt.windowSamples) {
-      if (sample.ts > t0) w1Max = Math.max(w1Max, sample.p);
-      else {
-        w2Sum += sample.p;
-        w2Count += 1;
+      if (sample.ts > t0) {
+        w1Max = Math.max(w1Max, sample.p);
+        w1Min = Math.min(w1Min, sample.p);
       }
     }
-    if (w2Count === 0 || w1Max === -Infinity) {
+    if (w1Max === -Infinity || w1Min === Infinity) {
       this.rt.rawOn = false;
       this.rt.surgeActive = false;
       this.rt.surgeReleased = false;
       return;
     }
-    const w2Avg = w2Sum / w2Count;
     const rise = Math.max(0.1, Number(this.cfg.surgeRiseKpa) || 1);
-    const on = (w1Max - w2Avg) >= rise;
+    const on = (pressure - w1Min) >= rise;
     if (on) {
       if (!this.rt.rawOn) {
         this.rt.rawSince = nowMs;
-        this.rt.edgePeak = w1Max;
+        this.rt.rawPeak = pressure;
+        this.rt.rawPeakTs = nowMs;
       }
       this.rt.rawOn = true;
-      this.rt.edgePeak = Math.max(this.rt.edgePeak, w1Max);
+      if (pressure > this.rt.rawPeak) {
+        this.rt.rawPeak = pressure;
+        this.rt.rawPeakTs = nowMs;
+      }
       if (!this.rt.surgeActive && (nowMs - this.rt.rawSince) >= (Number(this.cfg.minSurgeMs) || 100)) {
         this.rt.surgeActive = true;
-        this.rt.releaseBaseline = w2Avg;
+        this.rt.edgePeak = this.rt.rawPeak;
+        this.rt.edgeTriggerTs = this.rt.rawPeakTs;
+        this.rt.releaseBaseline = w1Min;
       }
     } else {
       this.rt.rawOn = false;
       this.rt.surgeActive = false;
+      this.rt.rawPeak = 0;
+      this.rt.rawPeakTs = 0;
     }
-    const baseline = this.rt.releaseBaseline == null ? w2Avg : this.rt.releaseBaseline;
+    const baseline = this.rt.releaseBaseline == null ? w1Min : this.rt.releaseBaseline;
     this.rt.surgeReleased = pressure < baseline + 0.2;
   }
 
@@ -442,6 +454,7 @@ class SurgeEdgingCore {
 
   _enterMid(nowMs) {
     this.rt.phase = PHASE.MIDDLE;
+    this.rt.midBelowTs = null; // 重置连续回落计时
     this._log('info', `进入中期刺激（P1=${this.rt.midPressure.toFixed(1)}，ΔP=${this.cfg.midOffsetKpa}）`, nowMs);
   }
 
@@ -494,21 +507,30 @@ class SurgeEdgingCore {
     }
     if (this.rt.phase === PHASE.MIDDLE) {
       const p1 = this.rt.midPressure;
-      const dP = Math.max(0.01, Number(this.cfg.midOffsetKpa) || 1);
+      const dP = Math.max(0.01, Number(this.cfg.midOffsetKpa) || 0.5);
       const lim = this.rt.midLimits || { dmin: 5, dmax: 20 };
       const designed = pressure >= p1 + dP
         ? lim.dmin
         : lim.dmax - (lim.dmax - lim.dmin) * ((pressure - p1) / dP);
-      this.rt.targetIntensity = Math.max(0, Math.min(this.cfg.maxMotorIntensity, designed));
+      // 限制在 [dmin, dmax]：midDelay 内压力回落到 P1 以下时公式会算出 >dmax，必须封顶
+      this.rt.targetIntensity = Math.max(lim.dmin, Math.min(lim.dmax, designed));
       if (surge && this.rt.edgePeak) {
         this.rt.unRandomIntensity = this.rt.currentIntensity;
         this._enterEdging(nowMs);
         return;
       }
+      // 回落判据：压力【连续】低于中间值 midDelay 秒后才转平静期（回升即重置计时）；
+      // 边缘期触发不受影响
       if (pressure < this.rt.midPressure) {
-        this.rt.unRandomIntensity = this.rt.currentIntensity;
-        this.rt.phase = PHASE.SUB_CALM;
-        this._log('info', '压力回落，进入平静期', nowMs);
+        if (this.rt.midBelowTs == null) this.rt.midBelowTs = nowMs;
+        if ((nowMs - this.rt.midBelowTs) > (Number(this.cfg.midDelay) || 0) * 1000) {
+          this.rt.midBelowTs = null;
+          this.rt.unRandomIntensity = this.rt.currentIntensity;
+          this.rt.phase = PHASE.SUB_CALM;
+          this._log('info', '压力连续回落，进入平静期', nowMs);
+        }
+      } else {
+        this.rt.midBelowTs = null;
       }
       return;
     }
@@ -544,9 +566,11 @@ class SurgeEdgingCore {
     this.rt.lastIntensityUpdateTs = nowMs;
     const current = this.rt.currentIntensity;
     const target = this.rt.targetIntensity;
-    const next = target < current ? target : Math.min(current + Math.max(0, this.cfg.rampRate) * dtSec, target);
+    const next = target < current ? target : Math.min(current + Math.max(0, this.cfg.gradualIncrease) * dtSec, target);
     const rounded = Math.round(next);
-    const interval = Math.max(200, Number(this.cfg.sendIntervalMs) || 2000);
+    // 限速合并（latest-wins）：平静期/中期每 sendIntervalMs（默认1000ms）发一次最新设计值；
+    // 边缘期触发时 target 归零 → emergencyZero 立即发送停止命令，保证安全。
+    const interval = Math.max(200, Number(this.cfg.sendIntervalMs) || 1000);
     const due = (nowMs - (this.rt.lastSendTs || 0)) >= interval;
     const emergencyZero = rounded === 0 && this.rt.lastSentStrength > 0;
     if (emergencyZero) {
@@ -559,7 +583,6 @@ class SurgeEdgingCore {
       this.rt.lastSentStrength = rounded;
       this.rt.lastSendTs = nowMs;
       this.rt.currentIntensity = rounded;
-      if (rounded > 0) this.rt.totalStimulationTime += dtSec;
     } else {
       this.rt.currentIntensity = next;
     }

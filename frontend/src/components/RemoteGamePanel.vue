@@ -39,6 +39,16 @@
         <el-button type="danger" plain @click="leave">{{ t('remoteGame.leave') }}</el-button>
       </div>
 
+      <RemoteDevicePanel
+        v-if="status.authorized"
+        :devices="status.devices || []"
+        :authorized="!!status.authorized"
+        :connected="status.connected !== false"
+        :busy="busy"
+        :running="!!status.snapshot?.running"
+        @command="sendDeviceCommand"
+      />
+
       <GameRuntimeView
         v-if="status.role === 'owner' && status.snapshot?.running"
         source="local"
@@ -56,12 +66,6 @@
             </el-select>
           </div>
           <template v-if="selectedGame">
-            <GameRuntimeSurface
-              mode="config"
-              embedded
-              :snapshot="configPreview"
-              :controls="disabledSurfaceControls"
-            />
             <div class="setup-section">
               <h3>{{ t('playConfig.mapping') }}</h3>
               <div v-for="role in selectedGame.devices || []" :key="role.id" class="map-row">
@@ -94,10 +98,14 @@
           :connection="status.connected === false ? 'reconnecting' : 'live'"
           :snapshot="status.snapshot || null"
           :params-schema="selectedGame?.params || []"
-          @action="sendAction"
+          :page-path="operatorPagePath"
           @params="saveParams"
-          @stop="sendAction('stop')"
         />
+        <div v-if="status.snapshot?.running" class="start-row">
+          <el-button type="danger" plain :disabled="status.role === 'operator' && !status.authorized" @click="stopRunningGame">
+            {{ t('remoteGame.stopGame') }}
+          </el-button>
+        </div>
       </template>
     </template>
   </section>
@@ -108,8 +116,10 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { Refresh } from '@element-plus/icons-vue'
 import PlayParamsForm from './PlayParamsForm.vue'
-import GameRuntimeSurface from './GameRuntimeSurface.vue'
+import RemoteDevicePanel from './RemoteDevicePanel.vue'
 import GameRuntimeView from '../views/GameRuntimeView.vue'
+import { stopGameRuntime } from '../api/gameRuntime'
+import { resolveGamePagePath } from '../play/gamePagePath'
 import {
   authorizeRemoteGame,
   createRemoteGame,
@@ -139,26 +149,8 @@ let configuredGameId = ''
 
 const hostGames = computed(() => (status.value.games || []).filter((game) => game.runtimeMode === 'host'))
 const selectedGame = computed(() => hostGames.value.find((game) => game.id === gameId.value))
-const disabledSurfaceControls = { pause: false, resume: false, action: false, stop: false, params: false }
-const configPreview = computed(() => {
-  const game = selectedGame.value
-  if (!game) return null
-  const values = { ...params }
-  return {
-    gameId: game.id,
-    title: game.title || game.id,
-    phase: 'IDLE',
-    phaseText: t('gameRuntime.configPreview'),
-    currentPressure: 0,
-    averagePressure: 0,
-    midPressure: Number(values.midPressure ?? 50),
-    criticalPressure: Number(values.criticalPressure ?? 20),
-    currentIntensity: 0,
-    targetIntensity: 0,
-    params: values,
-    logs: [],
-  }
-})
+const operatorPagePath = ref('')
+let resolvingPageFor = ''
 const visibleParams = computed(() => (selectedGame.value?.params || []).filter((param) => (
   !param.device || (selectedGame.value?.devices || []).find((role) => role.id === param.device)?.required !== false
     || !!deviceMap[param.device]?.length
@@ -288,11 +280,43 @@ async function saveParams(value: Record<string, unknown>) {
   } catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
 }
 
-async function sendAction(name: string, payload?: unknown) {
-  const type = name === 'stop' ? 'game.stop' : name === 'pause' ? 'game.pause' : name === 'resume' ? 'game.resume' : 'game.action'
-  const body = type === 'game.action' ? { action: name, payload } : undefined
-  try { await sendRemoteGameCommand(type, body); error.value = ''; await refresh() }
+async function stopRunningGame() {
+  if (busy.value) return
+  busy.value = true
+  try {
+    if (status.value.role === 'owner') await stopGameRuntime('user_stop')
+    else await sendRemoteGameCommand('game.stop')
+    error.value = ''
+    await refresh()
+  } catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
+  finally { busy.value = false }
+}
+
+// 远程主控侧：游戏页面也在本机 iframe 加载（与设备端同一套原始 UI），需要本机有游戏包
+watch(() => [status.value.role, status.value.snapshot?.gameId, status.value.snapshot?.running], async () => {
+  const id = status.value.snapshot?.gameId || ''
+  if (status.value.role !== 'operator' || !status.value.snapshot?.running || !id) {
+    operatorPagePath.value = ''
+    resolvingPageFor = ''
+    return
+  }
+  if (resolvingPageFor === id && operatorPagePath.value) return
+  resolvingPageFor = id
+  try {
+    operatorPagePath.value = await resolveGamePagePath(id)
+    if (!operatorPagePath.value) error.value = t('gameRuntime.pageUnavailable')
+  } catch (_) {
+    operatorPagePath.value = ''
+    error.value = t('gameRuntime.pageUnavailable')
+  }
+})
+
+async function sendDeviceCommand(type: string, payload: Record<string, unknown>) {
+  if (busy.value) return
+  busy.value = true
+  try { await sendRemoteGameCommand(type, payload); error.value = ''; await refresh() }
   catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
+  finally { busy.value = false }
 }
 
 onMounted(() => {
