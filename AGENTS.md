@@ -1,5 +1,5 @@
 如需更新版本号 请参考 docs/agent/update.md
-临时文件 放到.tmp文件夹中
+临时文件 放到 .tmp 文件夹中（各项目统一用 .tmp，不用 tmp）
 
 另一个仓库在 E:\develop\smart\control_panel_mobile 里面有移动端 账号系统 如果某些东西当前仓库找不到 去那找找
 

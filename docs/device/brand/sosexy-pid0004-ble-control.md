@@ -402,4 +402,4 @@ python sosexy_test_gui.py
 - `suction`：单独写属性 `0007`，对外 0–100，直接下发，不换算。
 - `shock`：写微电流属性 `0003`，对外 0–100，模式写入 `0004`。
 
-设备类型定义在 `backend/devices/registry.js`，报文编码在 `backend/brands/protocols/sosexy.js`。Windows 本机桥接复用 `ycy_bridge` 的 `127.0.0.1:3001/api/send`，Electron Web Bluetooth 使用 EE01/EE02/EE03；两条路径都遵守设备层单控制连接和断开前 `stopAll` 复位。
+设备类型定义在 `backend/devices/registry.js`，报文编码在 `backend/brands/protocols/sosexy.js`。本机蓝牙由后端 noble 直连 EE01/EE02/EE03（不再经 `ycy_bridge` 本机桥），Electron Web Bluetooth 使用 EE01/EE02/EE03；两条路径都遵守设备层单控制连接和断开前 `stopAll` 复位。

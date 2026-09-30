@@ -1,5 +1,7 @@
 # 跨平台本机桥（Native Bridge）方案
 
+> **已被 noble 直连方案取代**：品牌 BLE 统一由后端 `@stoprocent/noble` 直连系统蓝牙，不再经本机桥（WinRT/Rust native bridge）。本文仅作历史参考，见 `docs/draft/ADR-2026-09-30-brand-ble-noble-no-bridge.md`。
+
 > 目标：让 **Windows / macOS / Linux** 的 Electron 客户端都能用「本机桥接（native）」直连役次元(YCY)与郊狼(DG-LAB Coyote)。
 > 选型：**Rust + btleplug + axum**（一个二进制通吃三平台，Windows BLE 走 WinRT 最稳，且可取代现有 macOS Swift 桥）。
 
