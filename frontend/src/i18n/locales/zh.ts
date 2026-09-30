@@ -312,6 +312,7 @@ const zh = {
     title: '启动前配置',
     howTo: '怎么玩',
     mapping: '设备映射',
+    refreshDevices: '刷新设备',
     role: '设备角色',
     mappedDevices: '映射设备',
     deviceStatus: '设备状态',
@@ -972,6 +973,8 @@ const zh = {
     startNow: '立即开始',
     loadingPage: '正在加载游戏界面…',
     pageUnavailable: '游戏界面加载失败，请确认游戏包已安装',
+    emptyHint: '游戏没加载出来？请刷新一下',
+    refresh: '刷新',
   },
   remoteGame: {
     title: '远程游戏',

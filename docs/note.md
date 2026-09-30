@@ -1,5 +1,6 @@
 # 开发测试记录
 
+- 2026-09-30 配置页设备映射卡片头部加「刷新设备」按钮（`refreshDevices`：保留仍有效映射、丢弃离线项、空位自动补第一台在线设备并 saveConfig）；托管运行页空状态加「游戏没加载出来？请刷新一下」提示与刷新按钮（本地重拉状态+重解析页面，远程重建 iframe）。前端 16 测试与构建通过。
 - 2026-09-29 托管游戏回归原始 UI（方向 A）：host 游戏运行页改回各游戏自己的页面。页面带 `?runtime=host|remote` 时进入托管渲染模式（共享桥脚本 `backend/public/game-runtime-bridge.js`）：host 轮询 `/api/game-runtime/status`、命令走 `/api/game-runtime/*`；remote 轮询 `/api/remote-game/status`、命令映射为 `/api/remote-game/command` 白名单。前端 `GameRuntimeView` 只是 iframe 壳（等待按键/重连提示/结束导航/运行中参数面板），页面路径解析器 `frontend/src/play/gamePagePath.ts`（内置游戏走 `/api/games/:id` 的 gamePath，注册表游戏走 `/api/game-cache/install/:id`）。`GameRuntimeSurface`/`gameSurfaces/*` 已删除，配置页不再有「配置预览」。版本：surge-edging 1.4.0（页面源码以线上 1.3.6 为准拉回仓库并加托管适配，core 重写为窗口最小值检测+midDelay）、pressure-edging-v2 2.2.0。验证：后端 596 通过、前端 16 通过、构建通过；无头 Chrome（`--headless=new --virtual-time-budget=6000 --dump-dom`）实测两个页面渲染真实快照、暂停/日志/阶段文字正确，`/api/game-runtime/sensor` 可注入气压触发边缘期。远程双端 MQTT 链路未回归（沿用既有单测覆盖）。移动端 `E:\develop\smart\control_panel_mobile` 有未提交的游戏运行层改动，本轮未同步页面过去。
 - 注意：`PUT /api/dev-access {"enabled":true}` 的状态会**持久化**到后端数据目录，开着它跑后端测试会让 `bridgeAccessGuards`/`browserApiAccess` 两个套件失败（WS 升级被放行）。手测完务必 `{"enabled":false}` 关回。
 - 2026-09-29 俯卧撑游戏：`backend/games/pushup-detection` 与移动端 `assets/games/pushup-detection` 同步；`vibrator` 是共用的电机输出槽，可接 TD01 或 PJ01，奖励与惩罚都使用 `vibratorIntensity`，各自保留时长参数。定向测试：`npm --prefix backend test -- --runInBand pushup-detection-output.test.js`。
@@ -58,6 +59,5 @@
 - 2026-09-16 游戏介绍页入口为 `game-intro.html?id=`（`game-detail.html` 同页保留）。介绍页跟站点深色主题、中英切换，本页可启动/缓存。
 - 2026-09-17 公开 `registry.json` 的社区游戏带 `authorName`（来自投稿署名）。介绍页读该字段；缺署名且非 builtin 才显示未知作者。生产重建：`game-platform rebuild-registry`（加载 `/etc/game-platform/game-platform.env`）。
 
-- 2026-09-23 PC 游戏 UI 重做：frontend/src/views/GameRuntimeView.vue 按原游戏窄容器、卡片、曲线、进度条重现，本地与远程共用；独立远程工作区路由 /remote-game；视觉验证使用 BrowserOS neo，前端 Vite 端口 5174，后端 npm run dev:backend。
-- 2026-09-23 游戏运行 UI 重构：GameRuntimeView 只负责 HostRuntime 轮询、生命周期和命令适配；GameRuntimeSurface 按 gameId 分发游戏自己的渲染组件，本地、远程和配置预览共用同一套游戏表面。surge-edging 曲线保留压力实线、强度虚线、峰值标记和中间压力微调；未做真实硬件输出验证。
+- 2026-09-23 独立远程工作区路由 `/remote-game`；视觉验证使用 BrowserOS neo，前端 Vite 端口 5174，后端 `npm run dev:backend`。（当时的 Vue 重做 UI / `GameRuntimeSurface` 已于 09-29 删除，见首条。）
 - 2026-09-24 PC 双 Electron 实测：A/B 创建、加入、授权、远程启动 pressure-edging-v2、暂停/继续、运行中改参、B 断线后 A 继续、A 停止和设备复位均通过；仅虚拟设备与本机 MQTT，未验证真实硬件。

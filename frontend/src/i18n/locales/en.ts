@@ -312,6 +312,7 @@ const en = {
     title: 'Pre-start setup',
     howTo: 'How to play',
     mapping: 'Device mapping',
+    refreshDevices: 'Refresh devices',
     role: 'Device role',
     mappedDevices: 'Mapped devices',
     deviceStatus: 'Device status',
@@ -972,6 +973,8 @@ const en = {
     startNow: 'Start now',
     loadingPage: 'Loading game UI…',
     pageUnavailable: 'Failed to load the game UI. Make sure the game package is installed.',
+    emptyHint: "Game didn't load? Try refreshing",
+    refresh: 'Refresh',
   },
   remoteGame: {
     title: 'Remote game',

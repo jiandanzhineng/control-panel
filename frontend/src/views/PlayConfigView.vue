@@ -57,6 +57,9 @@
         <div class="card-header">
           <el-icon><Connection /></el-icon>
           <span>{{ t('playConfig.mapping') }}</span>
+          <el-button class="mapping-refresh" size="small" :icon="Refresh" :loading="loadingDevices" @click="refreshDevices">
+            {{ t('playConfig.refreshDevices') }}
+          </el-button>
         </div>
       </template>
       <div v-if="loadingDevices" class="loading-container">
@@ -495,7 +498,8 @@ import {
   DocumentChecked,
   VideoPlay,
   ArrowLeft,
-  Loading
+  Loading,
+  Refresh
 } from '@element-plus/icons-vue';
 
 interface PlayDevice {
@@ -1079,6 +1083,40 @@ async function loadAll() {
   }
 }
 
+// 刷新设备列表：不重载整页，保留仍有效的映射，空位按能力自动补第一台在线设备
+async function refreshDevices() {
+  if (loadingDevices.value) return;
+  loadingDevices.value = true;
+  deviceError.value = '';
+  try {
+    const res = await fetch('/api/devices');
+    const devs = await res.json();
+    if (!res.ok) throw new Error(devs?.message || t('playConfig.loadDevicesFailed'));
+    devices.value = Array.isArray(devs) ? devs : [];
+    for (const rd of requiredDevices.value) {
+      const key = rdKey(rd);
+      if (!key) continue;
+      const capabilities = rdCapabilities(rd);
+      const current = Array.isArray(deviceMapping[key]) ? deviceMapping[key] : [];
+      const valid = current.filter(id => {
+        const dev = getDevice(id);
+        return dev && dev.connected && typeSupportsCapabilities(dev.type, capabilities);
+      });
+      if (valid.length) {
+        deviceMapping[key] = rd.maxDevices === 1 ? valid.slice(0, 1) : valid;
+      } else {
+        const candidate = devices.value.find(d => d.connected && typeSupportsCapabilities(d.type, capabilities));
+        deviceMapping[key] = candidate ? [candidate.id] : [];
+      }
+    }
+    saveConfig();
+  } catch (e: any) {
+    deviceError.value = e?.message || t('playConfig.loadDevicesFailed');
+  } finally {
+    loadingDevices.value = false;
+  }
+}
+
 const blocking = ref<string[]>([]);
 function recomputeBlocking() {
   const items: string[] = [];
@@ -1442,6 +1480,10 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   font-weight: 600;
+}
+
+.mapping-refresh {
+  margin-left: auto;
 }
 
 .carrier-type-tag,

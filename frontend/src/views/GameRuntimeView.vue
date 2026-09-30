@@ -13,7 +13,10 @@
         <div class="frame-wrap">
           <iframe v-if="iframeSrc" :src="iframeSrc" class="game-frame" allow="fullscreen; autoplay"></iframe>
           <div v-else-if="pageResolving" class="page-hint">{{ t('gameRuntime.loadingPage') }}</div>
-          <el-empty v-else class="empty-state" :description="pageError || t('gameRuntime.empty')" />
+          <el-empty v-else class="empty-state" :description="pageError || t('gameRuntime.empty')">
+            <p class="empty-hint">{{ t('gameRuntime.emptyHint') }}</p>
+            <el-button type="primary" @click="retryLoad">{{ t('gameRuntime.refresh') }}</el-button>
+          </el-empty>
         </div>
         <details v-if="schema.length" class="params-panel">
           <summary>{{ t('gameRuntime.params') }}<span>{{ t('gameRuntime.paramsHint') }}</span></summary>
@@ -30,7 +33,10 @@
     <div class="frame-wrap">
       <iframe v-if="iframeSrc" :src="iframeSrc" class="game-frame" allow="fullscreen; autoplay"></iframe>
       <div v-else-if="pageResolving" class="page-hint">{{ t('gameRuntime.loadingPage') }}</div>
-      <el-empty v-else class="empty-state" :description="pageError || t('gameRuntime.empty')" />
+      <el-empty v-else class="empty-state" :description="pageError || t('gameRuntime.empty')">
+        <p class="empty-hint">{{ t('gameRuntime.emptyHint') }}</p>
+        <el-button type="primary" @click="retryLoad">{{ t('gameRuntime.refresh') }}</el-button>
+      </el-empty>
     </div>
     <details v-if="schema.length" class="params-panel">
       <summary>{{ t('gameRuntime.params') }}<span>{{ t('gameRuntime.paramsHint') }}</span></summary>
@@ -40,7 +46,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import PlayCarrierShell from '../components/PlayCarrierShell.vue'
@@ -146,6 +152,20 @@ async function submitParams(value: Record<string, unknown>) {
   applyStatus(await setGameRuntimeParams(value))
 }
 
+// 空状态重试：本地重新拉状态+解析页面路径；远程强制重建 iframe
+async function retryLoad() {
+  pageError.value = ''
+  if (props.source === 'remote') {
+    const cur = pagePath.value
+    pagePath.value = ''
+    await nextTick()
+    pagePath.value = cur
+    return
+  }
+  pagePath.value = ''
+  await poll()
+}
+
 async function stop() {
   if (props.source === 'remote') return
   stopping.value = true
@@ -191,6 +211,7 @@ onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); stopWait?.() })
 .game-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
 .page-hint { padding: 48px 16px; text-align: center; color: #64748b; }
 .empty-state { padding: 48px 16px; }
+.empty-hint { margin: 0 0 12px; color: #64748b; font-size: 13px; }
 .params-panel { flex: 0 0 auto; background: #fff; border-top: 1px solid #e2e8f0; }
 .params-panel summary { display: flex; justify-content: space-between; gap: 12px; padding: 12px 20px; cursor: pointer; font-weight: 600; }
 .params-panel summary span { color: #64748b; font-size: .76rem; font-weight: 400; }
