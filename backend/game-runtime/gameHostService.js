@@ -125,6 +125,7 @@ class GameHostService {
     session.tickTimer = this.setRepeating(() => {
       if (this.session === session) this.tick(this.now());
     }, this.tickMs);
+    this._seedSensor(session);
     this._notify();
     return {
       sessionId: session.sessionId,
@@ -370,14 +371,25 @@ class GameHostService {
     this.logger?.warn?.('GameHost', message);
   }
 
+  // 原版页面启动时会 readValue 读一次当前气压；设备数据只在变化时推送，这里补上首个读数
+  _seedSensor(session) {
+    for (const id of session.deviceMap.sensor || []) {
+      const data = this.devices.getDeviceById?.(id)?.data || {};
+      const pressure = data.pressure ?? data.sphincterPressure;
+      if (pressure == null || !Number.isFinite(Number(pressure))) continue;
+      this.pushSensor({ role: 'sensor', name: 'sphincterPressure', value: Number(pressure) });
+      return;
+    }
+  }
+
   _onDeviceData(event) {
     const session = this.session;
     if (!session || !event) return;
     const sensorIds = new Set(session.deviceMap.sensor || []);
     if (!sensorIds.has(event.deviceId)) return;
+    // 原版 onValue 只在气压值变化时回调；其他字段变化不补发重复样本
     const pressure = event.changes?.pressure?.new
-      ?? event.changes?.sphincterPressure?.new
-      ?? event.nextData?.pressure;
+      ?? event.changes?.sphincterPressure?.new;
     if (pressure == null || !Number.isFinite(Number(pressure))) return;
     this.pushSensor({ role: 'sensor', name: 'sphincterPressure', value: Number(pressure) });
   }

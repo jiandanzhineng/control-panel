@@ -56,14 +56,13 @@ describe('surge-edging core', () => {
     feed(core, 1000, 10);
     const paused = core.pause(1500);
     expect(paused.snapshot.paused).toBe(true);
-    expect(paused.effects).toEqual(expect.arrayContaining([
-      { type: 'device.stop-strength', role: 'motor' },
-      { type: 'device.shock-stop', role: 'punish' },
-    ]));
+    expect(paused.effects).toEqual([{ type: 'device.stop-strength', role: 'motor' }]);
     const resumed = core.resume(4000);
     expect(resumed.ok).toBe(true);
     expect(resumed.snapshot.paused).toBe(false);
-    expect(resumed.snapshot.endTimeMs).toBe(60 * 1000 + 2500);
+    // 原版暂停不顺延结束时间
+    expect(resumed.snapshot.endTimeMs).toBe(60 * 1000);
+    expect(core.action('shockOnce', {}, 4100).ok).toBe(true);
 
     const stopped = core.stop(5000, 'user');
     expect(stopped.snapshot.ended).toBe(true);
@@ -102,9 +101,12 @@ describe('surge-edging core', () => {
     expect(edged.snapshot.phase).toBe('EDGING');
     expect(edged.snapshot.edgingCount).toBe(1);
     expect(edged.effects).toEqual(expect.arrayContaining([
-      { type: 'device.stop-strength', role: 'motor' },
       { type: 'device.shock', role: 'punish', voltage: 20, durationMs: 3000 },
     ]));
+    // 与原版一致：进入边缘期后的下一次计算把强度归零
+    const zeroed = feed(core, 1400, 13.6);
+    expect(zeroed.snapshot.targetIntensity).toBe(0);
+    expect(zeroed.snapshot.currentIntensity).toBe(0);
   });
 
   test('中期回落需连续低于中间压 midDelay 秒才转平静期', () => {

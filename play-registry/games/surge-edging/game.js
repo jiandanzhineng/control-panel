@@ -710,7 +710,7 @@
   const hostUi = {
     authorized: hostBridge ? hostBridge.mode === 'host' : true,
     lastPhase: '', startedVoice: false, lastLogKey: '',
-    startedAtMs: 0, lastEdgingCount: 0, countdownNext: -1,
+    startedAtMs: 0, lastEdgingCount: 0, countdownNext: -1, takeoffVoice: false,
   };
 
   function hostSyncParams(params) {
@@ -789,9 +789,15 @@
       hostUi.lastPhase = 'ENDED';
       return;
     }
+    // 与原页面一致：进入起飞期播 edging_takeoff，被强制切到平静期不再播 edging_calm
+    const takeoffNow = !!snapshot.endCalmLocked && !!snapshot.running;
+    if (takeoffNow && !hostUi.takeoffVoice) {
+      hostUi.takeoffVoice = true;
+      playVoice('edging_takeoff', 'state', function () { return rt.running && rt.endCalmLocked; });
+    } else if (!takeoffNow) hostUi.takeoffVoice = false;
     if (phase && phase !== hostUi.lastPhase) {
       const voiceFor = { MIDDLE: 'edging_middle', EDGING: 'edging_peak', SUB_CALM: 'edging_calm', DELAY: 'edging_delay' };
-      const key = voiceFor[phase];
+      const key = takeoffNow && phase === 'SUB_CALM' ? '' : voiceFor[phase];
       if (key) playVoice(key, phase === 'EDGING' ? 'critical' : 'state', function () { return rt.running && hostUi.lastPhase === phase; });
       hostUi.lastPhase = phase;
     }
@@ -820,7 +826,7 @@
     const startedAtMs = Number(snapshot.startedAtMs) || 0;
     if (startedAtMs !== hostUi.startedAtMs) {
       hostUi.startedAtMs = startedAtMs;
-      hostUi.lastPhase = ''; hostUi.startedVoice = false;
+      hostUi.lastPhase = ''; hostUi.startedVoice = false; hostUi.takeoffVoice = false;
       hostUi.countdownNext = -1; hostUi.lastEdgingCount = 0;
       rt.pressureHistory = [];
     }

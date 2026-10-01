@@ -337,6 +337,7 @@
   function startChartDrag(evt) {
     const cv = document.getElementById('chart');
     if (!cv) return;
+    if (hostBridge && !hostUi.authorized) return;
     const rect = cv.getBoundingClientRect();
     const x = pointClientX(evt) - rect.left;
     const xM = ((Number(cfg.midPressure) - chartXMin) / Math.max(1e-6, chartXMax - chartXMin)) * rect.width;
@@ -360,7 +361,14 @@
   function endChartDrag() {
     if (!chartDrag) return;
     normalizeThresholds();
-    addLog('info', `更新阈值 中间=${cfg.midPressure.toFixed(1)} 临界=${cfg.criticalPressure.toFixed(1)}`);
+    if (hostBridge) {
+      // 托管模式：阈值由宿主 Core 持有，拖动结果提交过去，否则下一帧快照会把它覆盖回去
+      if (hostUi.authorized) {
+        hostBridge.sendAction('setThresholds', {
+          midPressure: cfg.midPressure, criticalPressure: cfg.criticalPressure,
+        }).catch(() => {});
+      }
+    } else addLog('info', `更新阈值 中间=${cfg.midPressure.toFixed(1)} 临界=${cfg.criticalPressure.toFixed(1)}`);
     chartDrag = null;
     render();
   }
@@ -586,7 +594,10 @@
 
   function hostSyncParams(params) {
     if (!params) return;
-    Object.keys(cfg).forEach((k) => { if (params[k] !== undefined && params[k] !== null) cfg[k] = params[k]; });
+    Object.keys(cfg).forEach((k) => {
+      if (chartDrag && (k === 'midPressure' || k === 'criticalPressure')) return;
+      if (params[k] !== undefined && params[k] !== null) cfg[k] = params[k];
+    });
     if (params.voiceEnabled !== undefined) voicePlayer.setEnabled(!!params.voiceEnabled);
   }
 

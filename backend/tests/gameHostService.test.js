@@ -139,6 +139,8 @@ describe('game host runtime', () => {
     host.pushSensor({ value: 13.5, nowMs: 1200 });
     setNow(1300);
     host.pushSensor({ value: 13.5, nowMs: 1300 });
+    setNow(1400);
+    host.pushSensor({ value: 13.6, nowMs: 1400 }); // 与原版一致：进入边缘期的下一次计算才归零
     expect(virtual.calls.some((call) => call.id === 'vb_m1' && call.cmd.capability === 'strength')).toBe(true);
     expect(devices.calls.some((call) => call.id === 'm1' && call.capability === 'strength' && call.action === 'stop')).toBe(true);
     expect(devices.calls.some((call) => call.id === 'm1' && call.capability === 'shock')).toBe(false);
@@ -227,5 +229,15 @@ describe('game host runtime', () => {
     expect(seen.snapshot.gameId).toBe('surge-edging');
     expect(seen.snapshot.running).toBe(true);
     expect(seen.snapshot.params.duration).toBe(10);
+  });
+
+  test('start seeds the current sensor reading like the original page readValue', () => {
+    const devices = fakeDevices([
+      { id: 's1', type: 'QIYA', data: { pressure: 18.4 } },
+      { id: 'm1', type: 'TD01' },
+    ]);
+    const { host } = createHost(devices);
+    host.start({ gameId: 'pressure-edging-v2', deviceMap: { sensor: ['s1'], motor: ['m1'] }, params: { duration: 10 } });
+    expect(host.getStatus().snapshot.currentPressure).toBe(18.4);
   });
 });

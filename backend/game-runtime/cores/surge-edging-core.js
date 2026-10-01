@@ -24,19 +24,11 @@ function round1(value) {
   return Math.round(Number(value) * 10) / 10;
 }
 
-function decimalsOf(step) {
-  const text = String(step);
-  const index = text.indexOf('.');
-  return index < 0 ? 0 : text.length - index - 1;
-}
-
 function normalizeNumber(value, spec) {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
-  const step = spec.step || 1;
-  const stepped = Math.round(n / step) * step;
-  const clamped = Math.min(spec.max, Math.max(spec.min, stepped));
-  return Number(clamped.toFixed(decimalsOf(step)));
+  // 与配置页一致只限制 min/max；原版页面不按步长取整
+  return Math.min(spec.max, Math.max(spec.min, n));
 }
 
 function defaultParams() {
@@ -89,12 +81,9 @@ class SurgeEdgingCore {
     if (this.rt.paused) return this._ok(nowMs);
     this.rt.paused = true;
     this.rt.pauseStartedAt = nowMs;
-    this.rt.currentIntensity = 0;
+    // 原版：只把电机置 0，保留当前强度，不打断正在进行的电击
     this.rt.lastSentStrength = 0;
-    this.rt.isShocking = false;
-    this.rt.shockUntilMs = 0;
     this._effects.push({ type: 'device.stop-strength', role: 'motor' });
-    this._effects.push({ type: 'device.shock-stop', role: 'punish' });
     this._log('info', '已暂停', nowMs);
     return this._ok(nowMs);
   }
@@ -104,18 +93,8 @@ class SurgeEdgingCore {
     if (!Number.isFinite(nowMs)) return this._fail('INVALID_TIME', 'nowMs 必须是有限数字');
     if (!this.rt.running) return this._fail('NOT_RUNNING', '游戏未运行');
     if (!this.rt.paused) return this._fail('NOT_PAUSED', '游戏未暂停');
-    const pausedFor = Math.max(0, nowMs - (this.rt.pauseStartedAt || nowMs));
-    this.rt.lastUpdateTs += pausedFor;
-    this.rt.lastIntensityUpdateTs += pausedFor;
-    this.rt.endTime += pausedFor;
-    if (this.rt.edgeStartTs) this.rt.edgeStartTs += pausedFor;
-    if (this.rt.stateTimer) this.rt.stateTimer += pausedFor;
-    if (this.rt.shockUntilMs) this.rt.shockUntilMs += pausedFor;
+    // 原版：暂停不顺延任何计时（含结束时间），继续时只清空突变窗口
     this.rt.windowSamples = [];
-    this.rt.rawOn = false;
-    this.rt.rawSince = 0;
-    this.rt.surgeActive = false;
-    this.rt.surgeReleased = false;
     this.rt.paused = false;
     this.rt.pauseStartedAt = 0;
     this._log('info', '已继续', nowMs);
@@ -153,7 +132,7 @@ class SurgeEdgingCore {
     this._beginTurn();
     if (!Number.isFinite(nowMs)) return this._fail('INVALID_TIME', 'nowMs 必须是有限数字');
     if (!this.rt.running) return this._fail('NOT_RUNNING', '游戏未运行');
-    if (this.rt.paused && name !== 'adjustMid') return this._fail('PAUSED', '游戏已暂停');
+    if (this.rt.paused && name !== 'adjustMid' && name !== 'shockOnce') return this._fail('PAUSED', '游戏已暂停');
     if (name === 'forceEdge') this._forceEdge(nowMs, payload || {});
     else if (name === 'addIntensity') this._addIntensity(nowMs, payload || {});
     else if (name === 'shockOnce') this._shock(nowMs, true);
@@ -170,11 +149,8 @@ class SurgeEdgingCore {
       event && event.type === 'sensor' && event.name === 'sphincterPressure'
     ));
     if (this.rt.paused) {
-      for (const event of sensorEvents) {
-        const pressure = Number(event.value) || 0;
-        this.rt.currentPressure = pressure;
-        this._pushAverage(pressure);
-      }
+      // 原版：暂停只更新读数，不计入平均压
+      for (const event of sensorEvents) this.rt.currentPressure = Number(event.value) || 0;
       return this._ok(nowMs);
     }
     if (nowMs >= this.rt.endTime) {
@@ -306,12 +282,18 @@ class SurgeEdgingCore {
       if (!Object.prototype.hasOwnProperty.call(input, spec.key)) continue;
       const raw = input[spec.key];
       if (spec.type === 'boolean') {
-        if (typeof raw !== 'boolean') return { error: `${spec.key} 必须是布尔值` };
+        if (typeof raw !== 'boolean') {
+          if (!strict) continue; // 开局时单个非法参数只回落该项默认值，不整体重置
+          return { error: `${spec.key} 必须是布尔值` };
+        }
         values[spec.key] = raw;
         continue;
       }
       const normalized = normalizeNumber(raw, spec);
-      if (normalized == null) return { error: `${spec.key} 不是合法数字` };
+      if (normalized == null) {
+        if (!strict) continue;
+        return { error: `${spec.key} 不是合法数字` };
+      }
       values[spec.key] = normalized;
     }
     return { values: strict ? { ...this.cfg, ...values } : values };
@@ -461,17 +443,13 @@ class SurgeEdgingCore {
   _enterEdging(nowMs) {
     const peak = this.rt.edgePeak > 0 ? this.rt.edgePeak : this.rt.currentPressure;
     this.rt.lastEdgePeak = round1(peak);
-    const peakMid = this.rt.lastEdgePeak - (Number(this.cfg.midOffsetKpa) || 1);
+    const peakMid = this.rt.lastEdgePeak - (Number(this.cfg.midOffsetKpa) || 0.5);
     const delayFloor = (Number(this.rt.lastDelayMin) || 0) + 1;
     this.rt.midPressure = round1(Math.max(1, Math.max(peakMid, delayFloor)));
     this.rt.edgePeak = 0;
     this.rt.phase = PHASE.EDGING;
     this.rt.edgeStartTs = nowMs;
     this.rt.edgingCount += 1;
-    this.rt.targetIntensity = 0;
-    this.rt.currentIntensity = 0;
-    this.rt.lastSentStrength = 0;
-    this._effects.push({ type: 'device.stop-strength', role: 'motor' });
     this._log('info', `进入边缘期 #${this.rt.edgingCount}，触发峰值 ${this.rt.lastEdgePeak}，中间压 → ${this.rt.midPressure}`, nowMs);
     this._shock(nowMs, false);
   }
