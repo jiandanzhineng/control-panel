@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -248,7 +249,28 @@ func (a *App) handleAdminSubmissions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "SUBMISSIONS_FAILED", "could not list submissions")
 		return
 	}
+	a.annotateGameID(r.Context(), submissions)
 	writeJSON(w, http.StatusOK, map[string]any{"submissions": submissions})
+}
+
+// annotateGameID 给待审投稿补上 manifest 里的 game_id 与归属状态，供审核后台显示标记。
+// 只读 ZIP 投稿：源包在私有桶里，读取便宜；Git 投稿要现场克隆，不在这里做。
+func (a *App) annotateGameID(ctx context.Context, submissions []Submission) {
+	for index := range submissions {
+		if submissions[index].Status != "pending" || submissions[index].Kind != "zip" || submissions[index].ZipKey == "" {
+			continue
+		}
+		source, err := a.store.Get(ctx, submissions[index].ZipKey, a.config.MaxUploadBytes)
+		if err != nil {
+			continue
+		}
+		game, err := prepareGameArchive(source, a.config)
+		if err != nil {
+			continue
+		}
+		submissions[index].GameID = game.ID
+		submissions[index].GameIDStatus = a.gameIDStatus(ctx, a.db, submissions[index].UserID, game.ID, game.Version)
+	}
 }
 
 func (a *App) handleAdminSubmissionAction(w http.ResponseWriter, r *http.Request) {
