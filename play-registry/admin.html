@@ -11,12 +11,44 @@
 <main class="platform-page container narrow">
   <header class="platform-head"><p class="eyebrow">MODERATION</p><h1>游戏审核</h1><p>当前审核员：<span id="admin-user">验证中</span></p></header>
   <p id="admin-message" class="platform-message" aria-live="polite"></p>
+  <div class="admin-tabs">
+    <button type="button" class="admin-tab active" data-admin-tab="review">投稿审核</button>
+    <button type="button" class="admin-tab" data-admin-tab="payout">月度分成</button>
+  </div>
+  <div id="tab-review">
   <section class="platform-panel">
     <div class="panel-title"><div><h2>Registry 维护</h2><p>首次切换旧站时只导入一次；日常发布由批准操作自动更新。</p></div></div>
     <div class="platform-actions"><button id="registry-rebuild" type="button" class="btn btn-ghost">重建 registry</button><button id="registry-import" type="button" class="btn btn-ghost">导入旧 registry</button></div>
   </section>
   <section class="platform-panel"><div id="review-list" class="review-list">加载中…</div></section>
   <section class="platform-panel"><div class="panel-title"><div><h2>已发布游戏</h2><p>下架只更新 registry，不删除已发布文件。</p></div></div><div id="release-list" class="review-list">加载中…</div></section>
+  </div>
+  <div id="tab-payout" hidden>
+    <section class="platform-panel">
+      <div class="panel-title"><div>
+        <h2>月度分成</h2>
+        <p>只出报表和记账；实际发放请在商城后台按账号增加奖励金，再回来标记「已发」。</p>
+      </div></div>
+      <form id="payout-form" class="platform-form">
+        <label>月份<input id="payout-month" name="month" type="month" required /></label>
+        <label>奖金池（元）<input id="payout-pool" name="pool" type="number" min="0" step="1" value="0" required /><span>金额与门槛留到正式发钱时再定，这里填本次使用的值。</span></label>
+        <div class="payout-thresholds">
+          <label>最短时长（分钟）<input id="payout-min-duration" name="minDuration" type="number" min="0" step="1" placeholder="默认" /></label>
+          <label>最少设备数<input id="payout-min-devices" name="minDevices" type="number" min="0" step="1" placeholder="默认" /></label>
+          <label>入围有效游玩<input id="payout-min-plays" name="minPlays" type="number" min="0" step="1" placeholder="默认" /></label>
+        </div>
+        <div class="platform-actions">
+          <button id="payout-generate" type="submit" class="btn btn-primary">生成报表</button>
+          <button id="payout-load" type="button" class="btn btn-ghost">查看已有</button>
+          <button id="payout-export" type="button" class="btn btn-ghost">导出 CSV</button>
+        </div>
+      </form>
+    </section>
+    <section class="platform-panel">
+      <div class="panel-title"><div><h2>报表</h2><p>已发放或已跳过的行不会被重新生成覆盖。</p></div></div>
+      <div id="payout-list" class="review-list">先选择月份并生成报表。</div>
+    </section>
+  </div>
 </main>
 <script src="assets/js/platform-config.js"></script>
 <script src="assets/js/admin.js"></script>

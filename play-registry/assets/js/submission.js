@@ -131,8 +131,50 @@
     });
   }
 
+  var payoutStatusNames = { draft: '待发放', paid: '已发放', skipped: '已跳过' };
+
+  function renderPayouts(items) {
+    var list = document.getElementById('payout-list');
+    list.replaceChildren();
+    if (!items.length) {
+      var empty = document.createElement('p');
+      empty.className = 'platform-empty';
+      empty.textContent = '还没有分成记录。管理员生成月度报表后，这里会显示你游戏的有效游玩与金额。';
+      list.appendChild(empty);
+      return;
+    }
+    items.forEach(function (item) {
+      var row = document.createElement('article');
+      row.className = 'submission-row';
+      var title = document.createElement('strong');
+      title.textContent = item.gameId + ' · ' + item.month;
+      var detail = document.createElement('span');
+      detail.className = 'submission-detail';
+      detail.textContent = '有效游玩 ' + item.validPlays + ' 次 · 独立设备 ' + item.uniqueDevices + ' 台 · 时长 '
+        + Number(item.totalMinutes || 0).toFixed(1) + ' 分钟 · ' + item.amountCny + ' 元';
+      var status = document.createElement('span');
+      status.className = 'submission-status status-' + (item.status === 'paid' ? 'published' : 'pending');
+      status.textContent = payoutStatusNames[item.status] || item.status;
+      row.append(title, detail, status);
+      if (item.note) {
+        var note = document.createElement('p');
+        note.className = 'submission-note';
+        note.textContent = '备注：' + item.note;
+        row.appendChild(note);
+      }
+      list.appendChild(row);
+    });
+  }
+
+  function loadPayouts() {
+    return api('/api/payouts/mine').then(function (data) { renderPayouts(data.reports || []); });
+  }
+
   function loadDashboard() {
-    return api('/api/submissions').then(function (data) { renderSubmissions(data.submissions || []); });
+    return Promise.all([
+      api('/api/submissions').then(function (data) { renderSubmissions(data.submissions || []); }),
+      loadPayouts()
+    ]);
   }
 
   function uploadArchive(instruction, file, submissionID) {

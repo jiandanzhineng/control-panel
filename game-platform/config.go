@@ -26,6 +26,44 @@ type Config struct {
 	OSS                 OSSConfig
 	ExistingRegistryURL string
 	SubmissionPrefix    string
+	Payout              PayoutConfig
+}
+
+// PayoutConfig 是创作者月度分成的全部可调参数。奖金池与门槛留到正式发钱时
+// 再定，这里只给占位默认值；生成报表时请求体可以逐项覆盖。
+type PayoutConfig struct {
+	Timezone         string
+	BonusPoolCNY     int64
+	MinDurationMS    int64
+	MinDeviceCount   int
+	MinValidPlays    int
+	ExcludedMACs     []string
+	ExcludedProfiles []string
+	OpenPanel        OpenPanelConfig
+}
+
+// OpenPanelConfig 描述自建 OpenPanel 的读取端点与多组 read client。
+type OpenPanelConfig struct {
+	BaseURL string
+	Clients []OpenPanelClientConfig
+}
+
+// OpenPanelClientConfig 一组 read client；Secret 只能来自环境变量。
+type OpenPanelClientConfig struct {
+	Name         string
+	ProjectID    string
+	ClientID     string
+	ClientSecret string
+	Events       []string
+}
+
+func (c OpenPanelConfig) configured() bool {
+	for _, client := range c.Clients {
+		if client.ClientSecret != "" && client.ProjectID != "" && client.ClientID != "" {
+			return true
+		}
+	}
+	return false
 }
 
 type OSSConfig struct {
@@ -43,7 +81,7 @@ func loadConfig() (Config, error) {
 		DatabasePath:        envOr("GAME_PLATFORM_DATABASE_PATH", "./data/game-platform.db"),
 		StorageDriver:       strings.ToLower(envOr("GAME_PLATFORM_STORAGE_DRIVER", "filesystem")),
 		LocalStorageDir:     envOr("GAME_PLATFORM_LOCAL_STORAGE_DIR", "./data/objects"),
-		PublicSiteOrigins:   csv(envOr("GAME_PLATFORM_PUBLIC_SITE_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000")),
+		PublicSiteOrigins:   csvList(envOr("GAME_PLATFORM_PUBLIC_SITE_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000")),
 		IdentityAPIBaseURL:  strings.TrimRight(strings.TrimSpace(envOr("GAME_PLATFORM_IDENTITY_API_BASE_URL", "http://127.0.0.1:3000")), "/"),
 		IdentityTimeout:     time.Duration(envInt64("GAME_PLATFORM_IDENTITY_TIMEOUT_SECONDS", 10)) * time.Second,
 		MaxUploadBytes:      envInt64("GAME_PLATFORM_MAX_UPLOAD_BYTES", 20*1024*1024),
@@ -53,6 +91,16 @@ func loadConfig() (Config, error) {
 		GitTimeout:          time.Duration(envInt64("GAME_PLATFORM_GIT_TIMEOUT_SECONDS", 45)) * time.Second,
 		ExistingRegistryURL: strings.TrimSpace(os.Getenv("GAME_PLATFORM_EXISTING_REGISTRY_URL")),
 		SubmissionPrefix:    strings.Trim(strings.TrimSpace(envOr("GAME_PLATFORM_SUBMISSION_PREFIX", "submissions")), "/"),
+		Payout: PayoutConfig{
+			Timezone:         envOr("GAME_PLATFORM_PAYOUT_TIMEZONE", "Asia/Shanghai"),
+			BonusPoolCNY:     envInt64("GAME_PLATFORM_PAYOUT_BONUS_POOL_CNY", 0),
+			MinDurationMS:    envInt64("GAME_PLATFORM_PAYOUT_MIN_DURATION_MS", 5*60*1000),
+			MinDeviceCount:   int(envInt64("GAME_PLATFORM_PAYOUT_MIN_DEVICE_COUNT", 1)),
+			MinValidPlays:    int(envInt64("GAME_PLATFORM_PAYOUT_MIN_VALID_PLAYS", 20)),
+			ExcludedMACs:     csvList(os.Getenv("GAME_PLATFORM_PAYOUT_EXCLUDED_MACS")),
+			ExcludedProfiles: csvList(os.Getenv("GAME_PLATFORM_PAYOUT_EXCLUDED_PROFILES")),
+			OpenPanel:        loadOpenPanelConfig(),
+		},
 		OSS: OSSConfig{
 			Endpoint:         strings.TrimSpace(os.Getenv("OSS_ENDPOINT")),
 			Bucket:           strings.TrimSpace(os.Getenv("OSS_BUCKET")),
@@ -87,7 +135,36 @@ func loadConfig() (Config, error) {
 	if c.SubmissionPrefix == "" {
 		return Config{}, fmt.Errorf("GAME_PLATFORM_SUBMISSION_PREFIX cannot be empty")
 	}
+	if _, err := time.LoadLocation(c.Payout.Timezone); err != nil {
+		return Config{}, fmt.Errorf("GAME_PLATFORM_PAYOUT_TIMEZONE must be a valid IANA time zone")
+	}
+	if c.Payout.MinDurationMS < 0 || c.Payout.MinDeviceCount < 0 || c.Payout.MinValidPlays < 0 {
+		return Config{}, fmt.Errorf("payout thresholds cannot be negative")
+	}
 	return c, nil
+}
+
+// loadOpenPanelConfig 读取 OpenPanel 地址与多组 read client。
+// Secret 只允许来自环境变量（GAME_PLATFORM_OPENPANEL_<NAME>_CLIENT_SECRET）。
+func loadOpenPanelConfig() OpenPanelConfig {
+	config := OpenPanelConfig{
+		BaseURL: strings.TrimRight(strings.TrimSpace(envOr("GAME_PLATFORM_OPENPANEL_API_URL", "https://op.shiroha.tech/api")), "/"),
+	}
+	defaults := []OpenPanelClientConfig{
+		{Name: "pc", ProjectID: "", ClientID: "", Events: []string{"game_stop"}},
+		{Name: "mobile", ProjectID: "", ClientID: "", Events: []string{"game_exit"}},
+	}
+	for _, client := range defaults {
+		prefix := "GAME_PLATFORM_OPENPANEL_" + strings.ToUpper(client.Name) + "_"
+		client.ProjectID = envOr(prefix+"PROJECT_ID", client.ProjectID)
+		client.ClientID = envOr(prefix+"CLIENT_ID", client.ClientID)
+		client.ClientSecret = strings.TrimSpace(os.Getenv(prefix + "CLIENT_SECRET"))
+		if events := csvList(os.Getenv(prefix + "EVENTS")); len(events) > 0 {
+			client.Events = events
+		}
+		config.Clients = append(config.Clients, client)
+	}
+	return config
 }
 
 func envOr(name, fallback string) string {
@@ -109,7 +186,7 @@ func envInt64(name string, fallback int64) int64 {
 	return parsed
 }
 
-func csv(value string) []string {
+func csvList(value string) []string {
 	items := strings.Split(value, ",")
 	out := make([]string, 0, len(items))
 	for _, item := range items {

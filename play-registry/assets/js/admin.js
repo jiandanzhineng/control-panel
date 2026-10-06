@@ -134,3 +134,152 @@
     document.getElementById('review-list').textContent = err.message;
   });
 })();
+
+/* 月度分成 tab：生成、查看、导出、逐行标记。 */
+(function () {
+  'use strict';
+  var apiBase = String(window.GamePlatformConfig && window.GamePlatformConfig.apiBase || '').replace(/\/$/, '');
+  var tokenKey = 'game-platform-mobile-token';
+  var list = document.getElementById('payout-list');
+  var message = document.getElementById('admin-message');
+  if (!list || !message) return;
+
+  var monthInput = document.getElementById('payout-month');
+  var poolInput = document.getElementById('payout-pool');
+  var durationInput = document.getElementById('payout-min-duration');
+  var devicesInput = document.getElementById('payout-min-devices');
+  var playsInput = document.getElementById('payout-min-plays');
+  var statusNames = { draft: '待发放', paid: '已发放', skipped: '已跳过' };
+  if (!monthInput.value) monthInput.value = lastMonth();
+
+  function lastMonth() {
+    var now = new Date();
+    var month = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    return month.getFullYear() + '-' + String(month.getMonth() + 1).padStart(2, '0');
+  }
+
+  function token() { return sessionStorage.getItem(tokenKey); }
+
+  function request(path, options) {
+    options = options || {};
+    var headers = Object.assign({}, options.headers || {});
+    if (options.body && typeof options.body === 'string') headers['Content-Type'] = 'application/json';
+    if (token()) headers.Authorization = 'Bearer ' + token();
+    return fetch(apiBase + path, Object.assign({}, options, { headers: headers })).then(function (response) {
+      return response.text().then(function (text) {
+        var data = {};
+        try { data = text ? JSON.parse(text) : {}; } catch (_) {}
+        if (!response.ok) throw new Error((data.error && data.error.message) || ('HTTP ' + response.status));
+        return data;
+      });
+    });
+  }
+
+  function setMessage(text, type) { message.textContent = text || ''; message.className = 'platform-message ' + (type || ''); }
+
+  function numberOrNull(input) {
+    var raw = String(input.value || '').trim();
+    if (!raw) return null;
+    var value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+
+  function monthValue() { return String(monthInput.value || '').trim(); }
+
+  function markRow(month, gameID, status, note) {
+    return request('/api/admin/payouts/' + encodeURIComponent(month) + '/' + encodeURIComponent(gameID) + '/mark', {
+      method: 'POST', body: JSON.stringify({ status: status, note: note })
+    }).then(function () { setMessage('已标记为' + statusNames[status] + '。', 'success'); return load(month); })
+      .catch(function (err) { setMessage(err.message, 'error'); });
+  }
+
+  function render(reports) {
+    list.replaceChildren();
+    if (!reports.length) { list.textContent = '该月份还没有报表行。'; return; }
+    var table = document.createElement('table');
+    table.className = 'payout-table';
+    var head = document.createElement('thead');
+    var headRow = document.createElement('tr');
+    ['游戏 ID', '作者', '作者邮箱', '有效游玩', '独立设备', '时长(分钟)', '金额(元)', '状态', '备注', '操作'].forEach(function (label) {
+      var cell = document.createElement('th'); cell.textContent = label; headRow.appendChild(cell);
+    });
+    head.appendChild(headRow);
+    var body = document.createElement('tbody');
+    reports.forEach(function (report) {
+      var row = document.createElement('tr');
+      [report.gameId, report.authorName, report.authorEmail || report.authorId, String(report.validPlays),
+        String(report.uniqueDevices), Number(report.totalMinutes || 0).toFixed(1), String(report.amountCny),
+        statusNames[report.status] || report.status, report.note || ''
+      ].forEach(function (value) {
+        var cell = document.createElement('td'); cell.textContent = value; row.appendChild(cell);
+      });
+      var note = document.createElement('input');
+      note.type = 'text'; note.placeholder = '备注（如商城账号）'; note.value = report.note || ''; note.maxLength = 500;
+      var noteCell = document.createElement('td'); noteCell.appendChild(note); row.appendChild(noteCell);
+      var actions = document.createElement('td');
+      var paid = document.createElement('button');
+      paid.type = 'button'; paid.className = 'btn btn-primary'; paid.textContent = '标记已发';
+      paid.addEventListener('click', function () { markRow(report.month, report.gameId, 'paid', note.value); });
+      var skipped = document.createElement('button');
+      skipped.type = 'button'; skipped.className = 'btn btn-ghost'; skipped.textContent = '跳过';
+      skipped.addEventListener('click', function () { markRow(report.month, report.gameId, 'skipped', note.value); });
+      actions.append(paid, skipped);
+      row.appendChild(actions);
+      body.appendChild(row);
+    });
+    table.append(head, body);
+    list.appendChild(table);
+  }
+
+  function load(month) {
+    if (!month) { setMessage('请先选择月份。', 'error'); return Promise.resolve(); }
+    return request('/api/admin/payouts/' + encodeURIComponent(month)).then(function (data) {
+      render(data.reports || []);
+      if (data.openpanelConfigured === false) setMessage('服务器还没配置 OpenPanel read client，生成报表会失败。', 'error');
+    }).catch(function (err) { setMessage(err.message, 'error'); });
+  }
+
+  document.getElementById('payout-form').addEventListener('submit', function (event) {
+    event.preventDefault();
+    var month = monthValue();
+    var payload = { bonusPoolCny: numberOrNull(poolInput) || 0 };
+    if (numberOrNull(durationInput) !== null) payload.minDurationMs = numberOrNull(durationInput) * 60000;
+    if (numberOrNull(devicesInput) !== null) payload.minDeviceCount = numberOrNull(devicesInput);
+    if (numberOrNull(playsInput) !== null) payload.minValidPlays = numberOrNull(playsInput);
+    setMessage('正在生成…', '');
+    request('/api/admin/payouts/' + encodeURIComponent(month) + '/generate', { method: 'POST', body: JSON.stringify(payload) })
+      .then(function (data) { render(data.reports || []); setMessage('报表已生成。', 'success'); })
+      .catch(function (err) { setMessage(err.message, 'error'); });
+  });
+
+  document.getElementById('payout-load').addEventListener('click', function () { load(monthValue()); });
+
+  document.getElementById('payout-export').addEventListener('click', function () {
+    var month = monthValue();
+    if (!month || !token()) { setMessage('请先选择月份并登录。', 'error'); return; }
+    fetch(apiBase + '/api/admin/payouts/' + encodeURIComponent(month) + '.csv', { headers: { Authorization: 'Bearer ' + token() } })
+      .then(function (response) {
+        if (!response.ok) throw new Error('导出失败：HTTP ' + response.status);
+        return response.blob();
+      })
+      .then(function (blob) {
+        var link = document.createElement('a');
+        var url = URL.createObjectURL(blob);
+        link.href = url; link.download = 'payouts-' + month + '.csv'; link.click();
+        URL.revokeObjectURL(url);
+      })
+      .catch(function (err) { setMessage(err.message, 'error'); });
+  });
+
+  document.querySelectorAll('[data-admin-tab]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var tab = button.getAttribute('data-admin-tab');
+      document.querySelectorAll('[data-admin-tab]').forEach(function (other) {
+        other.classList.toggle('active', other === button);
+      });
+      document.getElementById('tab-review').hidden = tab !== 'review';
+      document.getElementById('tab-payout').hidden = tab !== 'payout';
+      if (tab === 'payout') load(monthValue());
+    });
+  });
+})();

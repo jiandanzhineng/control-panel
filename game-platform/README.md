@@ -53,6 +53,25 @@ curl -X POST https://game-api.undersilicon.cn/api/admin/registry/import \
 
 导入只用于切换，之后不应再调用。下架或重建 registry 仍通过管理员 API 操作。
 
+## 创作者月度分成（报表与记账）
+
+系统只出报表和记账，发钱仍是人工在商城后台加奖励金。管理员接口：
+
+- `POST /api/admin/payouts/{YYYY-MM}/generate`：拉 OpenPanel 数据 → 过滤去重 → 关联作者 → 按奖金池分配 → 写快照。请求体 `{bonusPoolCny, minDurationMs, minDeviceCount, minValidPlays}` 全部可选，缺省用环境变量里的值。`draft` 行会被重新生成覆盖，`paid` / `skipped` 行不覆盖。
+- `GET /api/admin/payouts/{YYYY-MM}`：报表行 + 作者邮箱 + 账号中心 ID。
+- `GET /api/admin/payouts/{YYYY-MM}.csv`：CSV 导出（带 UTF-8 BOM，Excel 打开中文不乱码）。
+- `POST /api/admin/payouts/{YYYY-MM}/{game_id}/mark`：`{"status":"paid"|"skipped","note":"..."}`，记录操作人与时间。
+- `GET /api/payouts/mine`：作者只读自己的各行。
+
+计入规则：`game_id` 必须有社区 release（`releases.submission_id` 非空）；时长 ≥ `GAME_PLATFORM_PAYOUT_MIN_DURATION_MS`；设备数 ≥ `GAME_PLATFORM_PAYOUT_MIN_DEVICE_COUNT`；去重键是设备 MAC + `game_id` + 自然日（`Asia/Shanghai`，月份边界同）；排除名单里的设备 MAC 和 profile 不计。当月有效游玩不足 `GAME_PLATFORM_PAYOUT_MIN_VALID_PLAYS` 的游戏金额为 0，也不进分配分母。分配公式：`奖金池 × 本游戏有效游玩 / 入围游戏有效游玩总和`，按元向下取整，零头不发。
+
+数据来自 OpenPanel 读取接口（`GET {GAME_PLATFORM_OPENPANEL_API_URL}/export/events`），按 project 分组拉取：
+
+- 请求头 `openpanel-client-id` / `openpanel-client-secret`，必须是 **read 权限** client。
+- 查询参数 `projectId`、`start`、`end`（RFC3339）、`limit`、`offset`，以及一个或多个 `event`（重复参数）。响应形如 `{"data":[{"id","name","createdAt","profileId","properties":{...}}]}`。
+
+Secret 只能来自环境变量，不进仓库和前端。没配置 read client 时 `generate` 返回 `OPENPANEL_NOT_CONFIGURED`。多组 client（PC / mobile）通过 `GAME_PLATFORM_OPENPANEL_PC_*` 与 `GAME_PLATFORM_OPENPANEL_MOBILE_*` 配置，事件名分别为 `game_stop` / `game_exit`；mobile 时长取 `duration_ms`，缺失时回退 `session_duration_ms`。是否计入只由「`game_id` 有社区 release」决定，`source` 不参与过滤（mobile 的 `source` 取值为 `asset` / `remote` / `cached`，其中 `asset` 是官方内置资源，没有社区 release 自然不计）。
+
 ## 本地开发
 
 ```powershell
@@ -64,6 +83,16 @@ go run .
 ```
 
 本地文件存储会提供受同一 API 认证保护的上传代理，仅用于开发；生产 ZIP 直传 OSS，不经过应用服务器。
+
+
+本地跑分成报表时，把 OpenPanel 地址指向假服务器即可：
+
+```powershell
+$env:GAME_PLATFORM_OPENPANEL_API_URL = 'http://127.0.0.1:8790/api'
+$env:GAME_PLATFORM_OPENPANEL_PC_PROJECT_ID = 'local'
+$env:GAME_PLATFORM_OPENPANEL_PC_CLIENT_ID = 'local'
+$env:GAME_PLATFORM_OPENPANEL_PC_CLIENT_SECRET = 'local'
+```
 
 ## 账号迁移
 

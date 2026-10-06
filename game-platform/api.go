@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,6 +26,9 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/registry/rebuild", a.handleAdminRebuildRegistry)
 	mux.HandleFunc("GET /api/admin/releases", a.handleAdminReleases)
 	mux.HandleFunc("POST /api/admin/releases/", a.handleAdminReleaseAction)
+	mux.HandleFunc("GET /api/admin/payouts/", a.handleAdminPayouts)
+	mux.HandleFunc("POST /api/admin/payouts/", a.handleAdminPayoutAction)
+	mux.HandleFunc("GET /api/payouts/mine", a.handleMyPayouts)
 	return a.withCORS(mux)
 }
 
@@ -373,6 +378,217 @@ func (a *App) handleAdminReleaseAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// payoutPathParts 解析 /api/admin/payouts/ 之后的部分：
+// ["2026-09"], ["2026-09", "game-id"], ["2026-09.csv"], ["2026-09", "game-id", "mark"]。
+func payoutPathParts(path string) []string {
+	rest := strings.Trim(strings.TrimPrefix(path, "/api/admin/payouts/"), "/")
+	if rest == "" || strings.Contains(rest, "//") {
+		return nil
+	}
+	parts := strings.Split(rest, "/")
+	for _, part := range parts {
+		if part == "" || part == "." || part == ".." {
+			return nil
+		}
+	}
+	return parts
+}
+
+// handleAdminPayouts 处理报表查询与 CSV 导出。
+func (a *App) handleAdminPayouts(w http.ResponseWriter, r *http.Request) {
+	user, ok := a.requireUser(w, r)
+	if !ok || !requireAdmin(w, user) {
+		return
+	}
+	parts := payoutPathParts(r.URL.Path)
+	if len(parts) != 1 {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+		return
+	}
+	month, csvExport := strings.TrimSuffix(parts[0], ".csv"), strings.HasSuffix(parts[0], ".csv")
+	if _, _, err := payoutMonthRange(month, time.UTC); err != nil {
+		writeError(w, http.StatusBadRequest, "PAYOUT_MONTH_INVALID", "month must use the YYYY-MM format")
+		return
+	}
+	reports, err := a.listPayoutReports(r.Context(), month, "")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "PAYOUT_LIST_FAILED", "could not load payout reports")
+		return
+	}
+	if csvExport {
+		reports, err = a.attachAuthorEmails(r.Context(), reports)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "PAYOUT_LIST_FAILED", "could not load author emails")
+			return
+		}
+		a.writePayoutCSV(w, reports)
+		return
+	}
+	reports, err = a.attachAuthorEmails(r.Context(), reports)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "PAYOUT_LIST_FAILED", "could not load author emails")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"month":   month,
+		"reports": reports,
+		"thresholds": PayoutThresholds{
+			MinDurationMS:  a.config.Payout.MinDurationMS,
+			MinDeviceCount: a.config.Payout.MinDeviceCount,
+			MinValidPlays:  a.config.Payout.MinValidPlays,
+		},
+		"openpanelConfigured": a.openpanel.configured(),
+	})
+}
+
+// handleAdminPayoutAction 处理生成报表与逐行标记。
+func (a *App) handleAdminPayoutAction(w http.ResponseWriter, r *http.Request) {
+	user, ok := a.requireUser(w, r)
+	if !ok || !requireAdmin(w, user) {
+		return
+	}
+	parts := payoutPathParts(r.URL.Path)
+	if len(parts) == 2 && parts[1] == "generate" {
+		a.handleGeneratePayouts(w, r, parts[0])
+		return
+	}
+	if len(parts) == 3 && parts[2] == "mark" {
+		a.handleMarkPayout(w, r, parts[0], parts[1], user)
+		return
+	}
+	writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+}
+
+func (a *App) handleGeneratePayouts(w http.ResponseWriter, r *http.Request, month string) {
+	location, err := time.LoadLocation(a.config.Payout.Timezone)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "PAYOUT_TIMEZONE_INVALID", "payout time zone is invalid")
+		return
+	}
+	if _, _, err := payoutMonthRange(month, location); err != nil {
+		writeError(w, http.StatusBadRequest, "PAYOUT_MONTH_INVALID", "month must use the YYYY-MM format")
+		return
+	}
+	var input struct {
+		BonusPoolCNY   *int64 `json:"bonusPoolCny"`
+		MinDurationMS  *int64 `json:"minDurationMs"`
+		MinDeviceCount *int   `json:"minDeviceCount"`
+		MinValidPlays  *int   `json:"minValidPlays"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	pool := a.config.Payout.BonusPoolCNY
+	if input.BonusPoolCNY != nil {
+		pool = *input.BonusPoolCNY
+	}
+	if pool < 0 || pool > 100000000 {
+		writeError(w, http.StatusBadRequest, "PAYOUT_POOL_INVALID", "bonus pool must be between 0 and 100000000 CNY")
+		return
+	}
+	thresholds := PayoutThresholds{
+		MinDurationMS:  a.config.Payout.MinDurationMS,
+		MinDeviceCount: a.config.Payout.MinDeviceCount,
+		MinValidPlays:  a.config.Payout.MinValidPlays,
+	}
+	if input.MinDurationMS != nil {
+		thresholds.MinDurationMS = *input.MinDurationMS
+	}
+	if input.MinDeviceCount != nil {
+		thresholds.MinDeviceCount = *input.MinDeviceCount
+	}
+	if input.MinValidPlays != nil {
+		thresholds.MinValidPlays = *input.MinValidPlays
+	}
+	if thresholds.MinDurationMS < 0 || thresholds.MinDeviceCount < 0 || thresholds.MinValidPlays < 0 {
+		writeError(w, http.StatusBadRequest, "PAYOUT_THRESHOLD_INVALID", "thresholds cannot be negative")
+		return
+	}
+	if !a.openpanel.configured() {
+		writeError(w, http.StatusServiceUnavailable, "OPENPANEL_NOT_CONFIGURED", "OpenPanel read client is not configured; set GAME_PLATFORM_OPENPANEL_*_CLIENT_SECRET")
+		return
+	}
+	reports, err := a.generatePayoutReports(r.Context(), month, pool, thresholds)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "PAYOUT_GENERATE_FAILED", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"month": month, "reports": reports})
+}
+
+func (a *App) handleMarkPayout(w http.ResponseWriter, r *http.Request, month, gameID string, user User) {
+	if _, _, err := payoutMonthRange(month, time.UTC); err != nil {
+		writeError(w, http.StatusBadRequest, "PAYOUT_MONTH_INVALID", "month must use the YYYY-MM format")
+		return
+	}
+	var input struct {
+		Status string `json:"status"`
+		Note   string `json:"note"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	report, err := a.markPayoutReport(r.Context(), month, gameID, strings.TrimSpace(input.Status), input.Note, user.Email)
+	if err != nil {
+		if errors.Is(err, errPayoutRowMissing) {
+			writeError(w, http.StatusNotFound, "PAYOUT_ROW_NOT_FOUND", "payout row not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "PAYOUT_MARK_FAILED", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"report": report})
+}
+
+// handleMyPayouts 只返回当前账号自己游戏的报表行。
+func (a *App) handleMyPayouts(w http.ResponseWriter, r *http.Request) {
+	user, ok := a.requireUser(w, r)
+	if !ok {
+		return
+	}
+	month := strings.TrimSpace(r.URL.Query().Get("month"))
+	if month != "" {
+		if _, _, err := payoutMonthRange(month, time.UTC); err != nil {
+			writeError(w, http.StatusBadRequest, "PAYOUT_MONTH_INVALID", "month must use the YYYY-MM format")
+			return
+		}
+	}
+	reports, err := a.listPayoutReports(r.Context(), month, user.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "PAYOUT_LIST_FAILED", "could not load payout reports")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reports": reports})
+}
+
+// writePayoutCSV 导出报表。带 UTF-8 BOM，Excel 打开中文不乱码。
+func (a *App) writePayoutCSV(w http.ResponseWriter, reports []PayoutReport) {
+	records := [][]string{{"月份", "游戏 ID", "作者", "作者账号 ID", "作者邮箱", "有效游玩", "独立设备", "总时长(分钟)", "金额(元)", "状态", "标记时间", "操作人", "备注"}}
+	statusNames := map[string]string{"draft": "待发放", "paid": "已发放", "skipped": "已跳过"}
+	for _, report := range reports {
+		markedAt := ""
+		if report.PaidAt > 0 {
+			markedAt = time.Unix(report.PaidAt, 0).In(time.FixedZone("CST", 8*3600)).Format("2006-01-02 15:04")
+		}
+		records = append(records, []string{
+			report.Month, report.GameID, report.AuthorName, report.AuthorID, report.AuthorEmail,
+			strconv.Itoa(report.ValidPlays), strconv.Itoa(report.UniqueDevices),
+			strconv.FormatFloat(report.TotalMinutes, 'f', 1, 64), strconv.FormatInt(report.AmountCNY, 10),
+			statusNames[report.Status], markedAt, report.PaidBy, report.Note,
+		})
+	}
+	var buffer strings.Builder
+	buffer.WriteString("\ufeff")
+	writer := csv.NewWriter(&buffer)
+	_ = writer.WriteAll(records)
+	writer.Flush()
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"payouts.csv\"")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(buffer.String()))
 }
 
 func pathParts(value, prefix string) []string {

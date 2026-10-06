@@ -76,6 +76,23 @@ func migrate(db *sql.DB) error {
 			created_at INTEGER NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_releases_active ON releases(status, game_id)`,
+		`CREATE TABLE IF NOT EXISTS payout_reports (
+			month TEXT NOT NULL,
+			game_id TEXT NOT NULL,
+			author_id TEXT NOT NULL DEFAULT '',
+			author_name TEXT NOT NULL DEFAULT '',
+			valid_plays INTEGER NOT NULL DEFAULT 0,
+			unique_devices INTEGER NOT NULL DEFAULT 0,
+			total_minutes REAL NOT NULL DEFAULT 0,
+			amount_cny INTEGER NOT NULL DEFAULT 0,
+			status TEXT NOT NULL CHECK(status IN ('draft', 'paid', 'skipped')),
+			paid_at INTEGER NOT NULL DEFAULT 0,
+			paid_by TEXT NOT NULL DEFAULT '',
+			note TEXT NOT NULL DEFAULT '',
+			generated_at INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (month, game_id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_payout_reports_author ON payout_reports(author_id, month DESC)`,
 	}
 	for _, statement := range statements {
 		if _, err := db.Exec(statement); err != nil {
