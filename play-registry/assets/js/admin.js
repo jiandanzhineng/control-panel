@@ -1,31 +1,16 @@
 (function () {
   'use strict';
-  var apiBase = String(window.GamePlatformConfig && window.GamePlatformConfig.apiBase || '').replace(/\/$/, '');
-  var tokenKey = 'game-platform-mobile-token';
+  var auth = window.SiteAuth;
   var message = document.getElementById('admin-message');
 
-  function api(path, options) {
-    options = options || {};
-    var headers = Object.assign({}, options.headers || {});
-    if (options.body && typeof options.body === 'string') headers['Content-Type'] = 'application/json';
-    var token = sessionStorage.getItem(tokenKey);
-    if (token) headers.Authorization = 'Bearer ' + token;
-    var request = Object.assign({}, options);
-    request.headers = headers;
-    return fetch(apiBase + path, request).then(function (response) {
-      return response.text().then(function (text) {
-        var data = {};
-        try { data = text ? JSON.parse(text) : {}; } catch (_) {}
-        if (!response.ok) throw new Error((data.error && data.error.message) || ('HTTP ' + response.status));
-        return data;
-      });
-    });
-  }
+  function t(key, vars) { return auth.t(key, vars); }
+
+  function api(path, options) { return auth.api(path, options); }
 
   function downloadArchive(id) {
-    var token = sessionStorage.getItem(tokenKey);
-    if (!token) return Promise.reject(new Error('请先在投稿工作台登录 mobile 账号'));
-    return fetch(apiBase + '/api/admin/submissions/' + encodeURIComponent(id) + '/source', {
+    var token = auth.token();
+    if (!token) return Promise.reject(new Error(t('authErrExpired')));
+    return fetch(auth.apiBase() + '/api/admin/submissions/' + encodeURIComponent(id) + '/source', {
       headers: { Authorization: 'Bearer ' + token }
     }).then(function (response) {
       if (!response.ok) throw new Error('下载 ZIP 源包失败：HTTP ' + response.status);
@@ -145,12 +130,20 @@
       .catch(function (err) { setMessage(err.message, 'error'); });
   });
 
-  api('/api/auth/me').then(function (data) {
-    if (data.user.role !== 'admin') throw new Error('当前账号不是审核管理员');
-    document.getElementById('admin-user').textContent = data.user.email;
+  if (!auth.requireLogin()) return;
+
+  auth.verify().then(function (user) {
+    if (!user) { auth.requireLogin(); return; }
+    if (user.role !== 'admin') {
+      setMessage(t('adminNoPermission'), 'error');
+      document.getElementById('review-list').textContent = t('adminNoPermission');
+      document.getElementById('release-list').textContent = '';
+      return;
+    }
+    document.getElementById('admin-user').textContent = user.email;
     return load();
   }).catch(function (err) {
-    document.getElementById('review-list').textContent = err.message;
+    document.getElementById('review-list').textContent = err && err.message ? err.message : t('authErrServer');
   });
 })();
 
@@ -158,8 +151,7 @@
 /* 月度分成 tab：手工录入发放记录、看社区游戏与作者、指定归属。 */
 (function () {
   'use strict';
-  var apiBase = String(window.GamePlatformConfig && window.GamePlatformConfig.apiBase || '').replace(/\/$/, '');
-  var tokenKey = 'game-platform-mobile-token';
+  var auth = window.SiteAuth;
   var list = document.getElementById('payout-list');
   var message = document.getElementById('admin-message');
   if (!list || !message) return;
@@ -182,22 +174,7 @@
     return month.getFullYear() + '-' + String(month.getMonth() + 1).padStart(2, '0');
   }
 
-  function token() { return sessionStorage.getItem(tokenKey); }
-
-  function request(path, options) {
-    options = options || {};
-    var headers = Object.assign({}, options.headers || {});
-    if (options.body && typeof options.body === 'string') headers['Content-Type'] = 'application/json';
-    if (token()) headers.Authorization = 'Bearer ' + token();
-    return fetch(apiBase + path, Object.assign({}, options, { headers: headers })).then(function (response) {
-      return response.text().then(function (text) {
-        var data = {};
-        try { data = text ? JSON.parse(text) : {}; } catch (_) {}
-        if (!response.ok) throw new Error((data.error && data.error.message) || ('HTTP ' + response.status));
-        return data;
-      });
-    });
-  }
+  function request(path, options) { return auth.api(path, options); }
 
   function setMessage(text, type) { message.textContent = text || ''; message.className = 'platform-message ' + (type || ''); }
 

@@ -2,20 +2,24 @@
 
 `play-registry/` 是部署到 OSS/CDN 的纯静态游戏网站。普通玩家与 Control Panel 只读取公开的 `registry.json`、游戏资源和 ZIP；它们不访问投稿后端。
 
-投稿工作台 `submit.html` 和审核后台 `admin.html` 也是静态页面。它们使用 mobile API 的账号登录，并将 Bearer Token 交给 `game-api.undersilicon.cn` 校验低频投稿与审核操作；没有运行时 SSR。
+投稿工作台 `submit.html`、作者管理 `author.html` 和审核后台 `admin.html` 也是静态页面。它们使用账号中心（mobile API）的账号登录，并将 Bearer Token 交给 `game-api.undersilicon.cn` 校验低频投稿与审核操作；没有运行时 SSR。普通玩家页面（首页、游戏列表、设备控制、文档）在加载时不访问任何 API，只在本地缓存里读取登录态来渲染导航。
 
 ## 目录结构
 
 ```text
 index.html                         游戏网站首页
-submit.html / admin.html           投稿与人工审核静态页面
+login.html                         登录 / 注册 / 找回密码
+submit.html / author.html / admin.html  投稿、作者管理、人工审核静态页面
 assets/css/site.css                网站样式
 assets/js/platform-config.js       API 域名配置
-assets/js/submission.js            mobile 登录、投稿与 OSS 直传逻辑
-assets/js/admin.js                 mobile 会话下的审核操作逻辑
+assets/js/auth.js                  window.SiteAuth：登录态、Bearer 请求、导航账号区
+assets/js/login.js                 登录页三视图逻辑
+assets/js/submission.js            投稿与 OSS 直传逻辑
+assets/js/author.js                作者管理（改署名与说明后提交审核）
+assets/js/admin.js                 审核操作与月度分成逻辑
 docs/                               游戏开发与投稿说明
 scripts/build-registry.js          旧本地/测试用 registry 构建工具
-test/                               静态构建工具测试
+test/                               静态构建工具与 SiteAuth 纯逻辑测试
 ```
 
 正式 `registry.json`、`games/` 和 `packages/` 均由 `../game-platform` 的批准发布操作写入 OSS，不再由 GitHub Actions、PR 或此目录的构建脚本发布。旧构建脚本保留给本地联调和兼容性测试，不能用于生产写入。
@@ -28,7 +32,7 @@ npm test
 npm run serve
 ```
 
-本地联调默认调用游戏平台 `http://127.0.0.1:8787` 和 mobile API `http://127.0.0.1:3000`。生产发布前在 `assets/js/platform-config.js` 同时确认这两个 HTTPS API 域名。登录凭证只存于当前浏览器会话的 `sessionStorage`。
+本地联调默认调用游戏平台 `http://127.0.0.1:8787` 和 mobile API `http://127.0.0.1:3000`。生产发布前在 `assets/js/platform-config.js` 同时确认这两个 HTTPS API 域名。登录凭证只存于当前浏览器：登录页勾选「保持登录」时写 `localStorage`（关标签页仍在），否则写 `sessionStorage`（随会话结束）。
 
 ## 游戏投稿
 

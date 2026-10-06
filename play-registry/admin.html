@@ -3,11 +3,35 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>游戏审核 · 硅基之下游戏库</title>
+<title data-i18n-title="adminTitle">游戏审核 · 硅基之下游戏库</title>
+<meta name="description" content="硅基之下游戏库的投稿审核与月度分成管理后台。" />
+<meta name="robots" content="noindex" />
+<meta name="theme-color" content="#0e0d0c" />
 <link rel="stylesheet" href="assets/css/site.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff5b3a'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='%231a0a04'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
 </head>
 <body>
-<nav class="nav"><div class="nav-inner"><a class="brand" href="index.html"><span class="brand-mark">⚡</span><span>硅基之下游戏库</span></a><div class="nav-links"><a href="submit.html">投稿工作台</a><a href="admin.html" class="nav-cta">审核后台</a></div></div></nav>
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark">⚡</span>
+      <span data-i18n="brand">硅基之下游戏库</span>
+    </a>
+    <div class="nav-links">
+      <a href="games.html" data-i18n="navGames">游戏</a>
+      <a href="control.html" data-i18n="navControl">设备控制</a>
+      <a href="docs/agent-guide.html" data-i18n="navDocs">开发文档</a>
+      <a href="docs/device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
+      <a href="submit.html" data-i18n="navContribute">投稿</a>
+      <a href="admin.html" class="nav-cta" data-i18n="adminLink">审核后台</a>
+      <div class="lang-switch">
+        <button type="button" data-set-locale="zh">中</button>
+        <button type="button" data-set-locale="en">EN</button>
+      </div>
+    </div>
+    <div class="nav-account" data-auth-slot></div>
+  </div>
+</nav>
 <main class="platform-page container narrow">
   <header class="platform-head"><p class="eyebrow">MODERATION</p><h1>游戏审核</h1><p>当前审核员：<span id="admin-user">验证中</span></p></header>
   <p id="admin-message" class="platform-message" aria-live="polite"></p>
@@ -62,7 +86,9 @@
     </section>
   </div>
 </main>
+<script src="assets/js/i18n.js"></script>
 <script src="assets/js/platform-config.js"></script>
+<script src="assets/js/auth.js"></script>
 <script src="assets/js/admin.js"></script>
 </body>
 </html>

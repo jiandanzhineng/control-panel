@@ -1,102 +1,56 @@
+/* play-registry 投稿工作台：登录校验、投稿（ZIP / 公开 Git）、我的投稿与分成。 */
 (function () {
   'use strict';
 
-  var apiBase = String(window.GamePlatformConfig && window.GamePlatformConfig.apiBase || '').replace(/\/$/, '');
-  var identityApiBase = String(window.GamePlatformConfig && window.GamePlatformConfig.identityApiBase || '').replace(/\/$/, '');
-  var tokenKey = 'game-platform-mobile-token';
-  var user = null;
-  var authShell = document.getElementById('auth-shell') || document.getElementById('auth-view');
-  var dashboard = document.getElementById('dashboard');
+  var auth = window.SiteAuth;
+  if (!auth) return;
+
   var message = document.getElementById('platform-message');
+  var dashboard = document.getElementById('dashboard');
   var submissionForm = document.getElementById('submission-form');
   var gitField = document.getElementById('git-field');
   var zipField = document.getElementById('zip-field');
+  var emailSlot = document.getElementById('dash-email');
+  var authorLink = document.getElementById('author-link');
+  var adminLink = document.getElementById('admin-link');
 
-  function api(path, options) {
-    options = options || {};
-    var headers = Object.assign({}, options.headers || {});
-    if (options.body && typeof options.body === 'string') headers['Content-Type'] = 'application/json';
-    var token = sessionStorage.getItem(tokenKey);
-    if (token) headers.Authorization = 'Bearer ' + token;
-    var request = Object.assign({}, options);
-    request.headers = headers;
-    return fetch(apiBase + path, request).then(function (response) {
-      return response.text().then(function (text) {
-        var data = {};
-        try { data = text ? JSON.parse(text) : {}; } catch (_) {}
-        if (!response.ok) {
-          var err = new Error((data.error && data.error.message) || ('HTTP ' + response.status));
-          err.status = response.status;
-          throw err;
-        }
-        return data;
-      });
-    });
-  }
-
-  function identityApi(path, options) {
-    options = options || {};
-    var headers = Object.assign({}, options.headers || {});
-    if (options.body && typeof options.body === 'string') headers['Content-Type'] = 'application/json';
-    var request = Object.assign({}, options);
-    request.headers = headers;
-    return fetch(identityApiBase + path, request).then(function (response) {
-      return response.text().then(function (text) {
-        var data = {};
-        try { data = text ? JSON.parse(text) : {}; } catch (_) {}
-        if (!response.ok) throw new Error((data.error && data.error.message) || ('HTTP ' + response.status));
-        return data;
-      });
-    });
-  }
+  function t(key, vars) { return auth.t(key, vars); }
 
   function setMessage(text, type) {
+    if (!message) return;
     message.textContent = text || '';
     message.className = 'platform-message ' + (type || '');
   }
 
   function setBusy(form, busy) {
-    form.querySelectorAll('button').forEach(function (button) { button.disabled = busy; });
+    Array.prototype.forEach.call(form.querySelectorAll('button'), function (button) { button.disabled = busy; });
   }
 
-  function switchAuth(mode) {
-    document.querySelectorAll('[data-auth-mode]').forEach(function (button) {
-      button.classList.toggle('active', button.getAttribute('data-auth-mode') === mode);
-    });
-    document.getElementById('register-form').hidden = mode !== 'register';
-    document.getElementById('login-form').hidden = mode !== 'login';
+  function statusName(value) {
+    var labels = {
+      draft: t('statusDraft'),
+      pending: t('statusPending'),
+      changes_requested: t('statusChanges'),
+      rejected: t('statusRejected'),
+      published: t('statusPublished')
+    };
+    return labels[value] || value;
   }
 
-  function showDashboard() {
-    authShell.hidden = true;
-    dashboard.hidden = false;
-    document.getElementById('account-name').textContent = user.email;
-    document.getElementById('admin-link').hidden = user.role !== 'admin';
-  }
-
-  function startMobileSession(data) {
-    if (!data.token) throw new Error('mobile 账号服务没有返回登录凭证');
-    sessionStorage.setItem(tokenKey, data.token);
-    return api('/api/auth/me').then(function (result) {
-      user = result.user;
-      showDashboard();
-      return loadDashboard();
-    });
+  function showDashboard(user) {
+    if (dashboard) dashboard.hidden = false;
+    if (emailSlot) emailSlot.textContent = t('dashSignedIn', { email: user.email });
+    if (adminLink) adminLink.hidden = user.role !== 'admin';
+    if (authorLink) authorLink.hidden = false;
   }
 
   function setSubmissionKind() {
-    var kind = submissionForm.querySelector('input[name="kind"]:checked').value;
+    var checked = submissionForm.querySelector('input[name="kind"]:checked');
+    var kind = checked ? checked.value : 'zip';
     gitField.hidden = kind !== 'git';
     zipField.hidden = kind !== 'zip';
     document.getElementById('git-url').required = kind === 'git';
     document.getElementById('zip-file').required = kind === 'zip';
-  }
-
-  function statusName(value) {
-    return {
-      draft: '等待上传', pending: '待审核', changes_requested: '需修改',
-      rejected: '未通过', published: '已发布'
-    }[value] || value;
   }
 
   function renderSubmissions(items) {
@@ -105,7 +59,7 @@
     if (!items.length) {
       var empty = document.createElement('p');
       empty.className = 'platform-empty';
-      empty.textContent = '尚未提交游戏。';
+      empty.textContent = t('mineEmpty');
       list.appendChild(empty);
       return;
     }
@@ -116,7 +70,8 @@
       title.textContent = item.title;
       var detail = document.createElement('span');
       detail.className = 'submission-detail';
-      detail.textContent = (item.kind === 'zip' ? 'ZIP 投稿' : '公开 Git 投稿') + ' · ' + new Date(item.updatedAt * 1000).toLocaleString();
+      detail.textContent = (item.kind === 'zip' ? t('kindZip') : t('kindGit'))
+        + ' · ' + new Date(item.updatedAt * 1000).toLocaleString();
       var status = document.createElement('span');
       status.className = 'submission-status status-' + item.status;
       status.textContent = statusName(item.status);
@@ -124,7 +79,7 @@
       if (item.reviewNote) {
         var note = document.createElement('p');
         note.className = 'submission-note';
-        note.textContent = '审核意见：' + item.reviewNote;
+        note.textContent = t('mineReviewNote', { note: item.reviewNote });
         row.appendChild(note);
       }
       list.appendChild(row);
@@ -137,7 +92,7 @@
     if (!items.length) {
       var empty = document.createElement('p');
       empty.className = 'platform-empty';
-      empty.textContent = '还没有分成记录。平台每月人工统计游玩表现并发放奖励金，发放后这里会显示你游戏各月的金额。';
+      empty.textContent = t('payoutEmpty');
       list.appendChild(empty);
       return;
     }
@@ -149,15 +104,15 @@
       var detail = document.createElement('span');
       detail.className = 'submission-detail';
       var parts = [];
-      if (item.validPlays != null) parts.push('有效游玩 ' + item.validPlays + ' 次');
-      parts.push('发放金额 ' + item.amountCny + ' 元');
-      if (item.paidAt) parts.push('发放时间 ' + new Date(item.paidAt * 1000).toLocaleDateString());
+      if (item.validPlays != null) parts.push(t('payoutPlays', { n: item.validPlays }));
+      parts.push(t('payoutAmount', { n: item.amountCny }));
+      if (item.paidAt) parts.push(t('payoutPaidAt', { date: new Date(item.paidAt * 1000).toLocaleDateString() }));
       detail.textContent = parts.join(' · ');
       row.append(title, detail);
       if (item.note) {
         var note = document.createElement('p');
         note.className = 'submission-note';
-        note.textContent = '备注：' + item.note;
+        note.textContent = t('payoutNote', { note: item.note });
         row.appendChild(note);
       }
       list.appendChild(row);
@@ -165,12 +120,12 @@
   }
 
   function loadPayouts() {
-    return api('/api/payouts/mine').then(function (data) { renderPayouts(data.records || []); });
+    return auth.api('/api/payouts/mine').then(function (data) { renderPayouts(data.records || []); });
   }
 
   function loadDashboard() {
     return Promise.all([
-      api('/api/submissions').then(function (data) { renderSubmissions(data.submissions || []); }),
+      auth.api('/api/submissions').then(function (data) { renderSubmissions(data.submissions || []); }),
       loadPayouts()
     ]);
   }
@@ -181,84 +136,62 @@
       Object.keys(instruction.fields || {}).forEach(function (key) { form.append(key, instruction.fields[key]); });
       form.append('file', file);
       return fetch(instruction.action, { method: 'POST', body: form }).then(function (response) {
-        if (!response.ok) throw new Error('OSS 上传失败：HTTP ' + response.status);
+        if (!response.ok) throw new Error(t('uploadFail', { status: response.status }));
       });
     }
     if (instruction.mode === 'local') {
       var localForm = new FormData();
       localForm.append('file', file);
-      return api('/api/submissions/' + encodeURIComponent(submissionID) + '/local-upload', { method: 'POST', body: localForm });
+      return auth.api('/api/submissions/' + encodeURIComponent(submissionID) + '/local-upload', { method: 'POST', body: localForm });
     }
-    return Promise.reject(new Error('未知上传方式'));
+    return Promise.reject(new Error(t('uploadUnknown')));
   }
 
-  document.querySelectorAll('[data-auth-mode]').forEach(function (button) {
-    button.addEventListener('click', function () { switchAuth(button.getAttribute('data-auth-mode')); });
-  });
-
-  document.getElementById('register-form').addEventListener('submit', function (event) {
-    event.preventDefault();
-    var form = event.currentTarget;
-    setBusy(form, true);
-    identityApi('/auth/register', { method: 'POST', body: JSON.stringify({
-      email: form.email.value, password: form.password.value
-    }) }).then(function (data) {
-      setMessage('账号已创建。', 'success');
-      return startMobileSession(data);
-    }).catch(function (err) { setMessage(err.message, 'error'); }).finally(function () { setBusy(form, false); });
-  });
-
-  document.getElementById('login-form').addEventListener('submit', function (event) {
-    event.preventDefault();
-    var form = event.currentTarget;
-    setBusy(form, true);
-    identityApi('/auth/login', { method: 'POST', body: JSON.stringify({ email: form.email.value, password: form.password.value }) })
-      .then(function (data) { setMessage('已登录。', 'success'); return startMobileSession(data); })
-      .catch(function (err) { setMessage(err.message, 'error'); })
-      .finally(function () { setBusy(form, false); });
-  });
-
-  document.getElementById('logout').addEventListener('click', function () {
-    var token = sessionStorage.getItem(tokenKey);
-    var options = { method: 'POST', headers: token ? { Authorization: 'Bearer ' + token } : {} };
-    identityApi('/auth/logout', options).finally(function () {
-      sessionStorage.removeItem(tokenKey);
-      user = null;
-      dashboard.hidden = true;
-      authShell.hidden = false;
-      setMessage('已退出登录。', '');
+  function bindForm() {
+    Array.prototype.forEach.call(submissionForm.querySelectorAll('input[name="kind"]'), function (input) {
+      input.addEventListener('change', setSubmissionKind);
     });
-  });
+    setSubmissionKind();
 
-  submissionForm.querySelectorAll('input[name="kind"]').forEach(function (input) { input.addEventListener('change', setSubmissionKind); });
-  setSubmissionKind();
+    submissionForm.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var form = event.currentTarget;
+      var kind = form.querySelector('input[name="kind"]:checked').value;
+      var file = document.getElementById('zip-file').files[0];
+      if (kind === 'zip' && !file) return;
+      setBusy(form, true);
+      setMessage(t('submittingMsg'), '');
+      auth.api('/api/submissions', { method: 'POST', body: JSON.stringify({
+        authorName: form.authorName.value,
+        title: form.title.value,
+        description: form.description.value,
+        kind: kind,
+        gitUrl: form.gitUrl.value
+      }) }).then(function (data) {
+        if (kind !== 'zip') return data;
+        return uploadArchive(data.upload, file, data.submission.id).then(function () {
+          return auth.api('/api/submissions/' + encodeURIComponent(data.submission.id) + '/complete', { method: 'POST', body: '{}' });
+        });
+      }).then(function () {
+        form.reset();
+        setSubmissionKind();
+        setMessage(t('submittedMsg'), 'success');
+        return loadDashboard();
+      }).catch(function (err) {
+        setMessage(err && err.message ? err.message : t('authErrServer'), 'error');
+      }).finally(function () { setBusy(form, false); });
+    });
+  }
 
-  submissionForm.addEventListener('submit', function (event) {
-    event.preventDefault();
-    var form = event.currentTarget;
-    var kind = form.querySelector('input[name="kind"]:checked').value;
-    var file = document.getElementById('zip-file').files[0];
-    if (kind === 'zip' && !file) return;
-    setBusy(form, true);
-    setMessage('正在提交…', '');
-    api('/api/submissions', { method: 'POST', body: JSON.stringify({
-      authorName: form.authorName.value, title: form.title.value, description: form.description.value, kind: kind, gitUrl: form.gitUrl.value
-    }) }).then(function (data) {
-      if (kind !== 'zip') return data;
-      return uploadArchive(data.upload, file, data.submission.id).then(function () {
-        return api('/api/submissions/' + encodeURIComponent(data.submission.id) + '/complete', { method: 'POST', body: '{}' });
-      });
-    }).then(function () {
-      form.reset();
-      setSubmissionKind();
-      setMessage('投稿已进入审核队列。', 'success');
-      return loadDashboard();
-    }).catch(function (err) { setMessage(err.message, 'error'); }).finally(function () { setBusy(form, false); });
-  });
+  /* 未登录先跳登录页，回来后用 /api/auth/me 校验；校验失败再跳一次。 */
+  if (!auth.requireLogin()) return;
 
-  api('/api/auth/me').then(function (data) {
-    user = data.user;
-    showDashboard();
+  auth.verify().then(function (user) {
+    if (!user) { auth.requireLogin(); return; }
+    showDashboard(user);
+    bindForm();
     return loadDashboard();
-  }).catch(function () { switchAuth('login'); });
+  }).catch(function (err) {
+    setMessage(err && err.message ? err.message : t('authErrServer'), 'error');
+  });
 })();
