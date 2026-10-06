@@ -5,6 +5,7 @@ const gameService = require('../services/gameService');
 const gameCacheService = require('../services/gameCacheService');
 const bridgeService = require('../services/bridgeService');
 const gameHost = require('../game-runtime/gameHostService');
+const gameCoreResolver = require('../game-runtime/gameCoreResolver');
 const remoteSession = require('../services/remoteSessionService');
 
 // 主控端远程模式下开始一次玩法：被控端登记为一次远程占用（ADR-0004 玩法唯一性）。
@@ -181,6 +182,8 @@ router.post('/stop-current', async (req, res) => {
 
 router.post('/reload', (req, res) => {
   try {
+    // 用户主动重扫：分离式游戏的宿主清单缓存必须一起失效，否则列表要等 TTL 才更新
+    gameCoreResolver.clearCache();
     res.json(gameService.reloadGames());
   } catch (e) {
     sendError(res, 'GAMES_RELOAD_FAILED', e?.message || String(e), 500);
@@ -200,6 +203,8 @@ router.delete('/:id', (req, res) => {
       gameCacheService.deleteGameCaches(game.id);
     }
     gameService.deleteGameById(req.params.id, { removeFile });
+    // 删除/换包后宿主清单缓存同步失效（同 id 换版本要重新编译核心）
+    gameCoreResolver.clearCache();
     res.json({ ok: true });
   } catch (e) {
     sendError(res, 'GAME_DELETE_FAILED', e?.message || String(e), 500);

@@ -24,6 +24,7 @@ const KIND_SUMMARY = {
   'devices.invoke': '操作设备',
   'devices.stop': '停止设备',
   'devices.disconnect': '断开设备',
+  'host-output': '远程玩法输出限幅',
   'operator-output': '停止主控端输出',
   'play.occupy': '开始玩法',
   'play.release': '结束玩法',

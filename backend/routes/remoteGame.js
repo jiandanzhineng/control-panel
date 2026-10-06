@@ -10,6 +10,12 @@ function bearerToken(req) {
   return header.startsWith('Bearer ') ? header.slice(7).trim() : null;
 }
 
+// 画面同步事件（SSE）：与 /api/game-runtime/stream 同一套帧格式
+function writeEvent(res, event) {
+  res.write(`event: ${event.type}\n`);
+  res.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
 function handleError(res, error) {
   if (error instanceof roomApi.RoomApiError) {
     return sendError(res, error.code, error.message, error.status);
@@ -23,6 +29,30 @@ function handleError(res, error) {
 
 router.get('/status', (req, res) => {
   res.json(remoteGame.getStatus());
+});
+
+// 画面同步（SSE）：与 /api/game-runtime/stream 同一套协议，只是状态文档换成
+// /api/remote-game/status 的形状（主控端页面读它渲染）。
+// 进流先给全量 snapshot，之后只给有变化的 patch；页面 rev 断档时重开本流。
+router.get('/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write('retry: 3000\n\n');
+  writeEvent(res, { type: 'snapshot', ...remoteGame.getStateEvent() });
+  const unsubscribe = remoteGame.subscribeState((event) => {
+    try {
+      writeEvent(res, event);
+    } catch (_) {}
+  });
+  const cleanup = () => {
+    try { unsubscribe(); } catch (_) {}
+  };
+  req.on('close', cleanup);
+  req.on('error', cleanup);
 });
 
 router.get('/room', async (req, res) => {

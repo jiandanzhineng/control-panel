@@ -1,10 +1,45 @@
 const express = require('express');
 const gameHost = require('../game-runtime/gameHostService');
+const coreResolver = require('../game-runtime/gameCoreResolver');
 const bridgeService = require('../services/bridgeService');
 const remoteSession = require('../services/remoteSessionService');
 const { sendError } = require('../utils/http');
 
 const router = express.Router();
+
+// 已接入 HostRuntime 的游戏清单：单一解析器（内置 core + 游戏包里的分离式 core）
+function hostGames() {
+  return coreResolver.listHostGames();
+}
+
+// 画面同步（SSE）：先发一份全量 snapshot，之后只发有变化的 patch。
+// 页面在 rev 断档时重开本流（见 docs/architecture/split-game-contract.md）。
+function writeEvent(res, event) {
+  res.write(`event: ${event.type}\n`);
+  res.write(`data: ${JSON.stringify(event)}\n\n`);
+}
+
+router.get('/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write('retry: 3000\n\n');
+  // 进流首帧：无论有没有会话都给全量（无会话时是 { active: false, ... }）
+  writeEvent(res, { type: 'snapshot', ...gameHost.getStateEvent() });
+  const unsubscribe = gameHost.subscribeState((event) => {
+    try {
+      writeEvent(res, event);
+    } catch (_) {}
+  });
+  const cleanup = () => {
+    try { unsubscribe(); } catch (_) {}
+  };
+  req.on('close', cleanup);
+  req.on('error', cleanup);
+});
 
 // 主控端远程模式下本机起 HostRuntime（被控端登记为一次远程占用，ADR-0004 玩法唯一性）。
 // 被控端本地玩法运行中会以 HOST_PLAY_ACTIVE 拒绝 → 启动失败可见（不会顶掉本机玩法）。
@@ -34,13 +69,7 @@ router.get('/status', (req, res) => {
 });
 
 router.get('/games', (req, res) => {
-  const manifests = [
-    require('../game-runtime/cores/surge-edging-manifest'),
-    require('../game-runtime/cores/pressure-edging-v2-manifest'),
-  ];
-  res.json(manifests.map(({ GAME_ID, TITLE, VERSION, PARAMS, DEVICES }) => ({
-    id: GAME_ID, title: TITLE, version: VERSION, runtimeMode: 'host', params: PARAMS, devices: DEVICES,
-  })));
+  res.json(hostGames());
 });
 
 router.post('/start', async (req, res) => {

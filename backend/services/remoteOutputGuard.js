@@ -360,6 +360,61 @@ function sanitizeCapabilityInvoke({ device, capability, action, input, limits } 
   return { ok: true, input: fields.input };
 }
 
+// 宿主核心（分离式游戏 game-core.js）的设备意图 → 能力调用规格。
+// 核心意图的字段名与能力动作的字段名不同（如 set-strength 的 value → strength.set 的 value），
+// 这里只做形状转换，限幅/拒绝/锁存全部复用下面 sanitizeCapabilityInvoke 的同一套规则。
+const HOST_INTENT_ACTIONS = {
+  'device.set-strength': { capability: 'strength', action: 'set', fields: { value: 'value' } },
+  'device.stop-strength': { capability: 'strength', action: 'stop', fields: {} },
+  // durationMs 是宿主的定时停机参数（不进设备报文），声明为容忍字段
+  'device.shock': { capability: 'shock', action: 'start', fields: { voltage: 'voltage' }, extra: ['durationMs'] },
+  'device.shock-stop': { capability: 'shock', action: 'stop', fields: {} },
+  'device.lock': { capability: 'lock', action: 'setOpen', fields: { open: 'open' } },
+  'device.set-report-delay': { capability: 'reporting', action: 'setReportDelay', fields: { ms: 'ms' } },
+  // 结束/复位意图：没有能力调用形状，永远放行（宿主只按映射设备做停机复位）
+  'device.stop-all': { capability: null, action: '', fields: {}, stopAll: true },
+};
+
+/** 该核心意图类型是否有对应的远程规格（未知类型一律拒绝，绝不透传）。 */
+function isKnownHostIntent(type) {
+  return !!ownField(HOST_INTENT_ACTIONS, String(type || ''));
+}
+
+/**
+ * 校验 + 钳制核心发出的一条设备意图（远程会话下的宿主玩法走这里）。
+ * 返回 { ok:true, input, stopAll }（input 为归一化后的能力参数）或 { ok:false, code, message }。
+ */
+function sanitizeHostIntent({ device, effect, limits } = {}) {
+  if (!effect || typeof effect !== 'object' || Array.isArray(effect)) {
+    return reject('远程玩法设备意图格式无效');
+  }
+  const type = String(effect.type || '');
+  const spec = ownField(HOST_INTENT_ACTIONS, type);
+  if (!spec) return reject(`远程玩法不允许的设备意图: ${type || '(空)'}`);
+  if (spec.stopAll) return { ok: true, input: {}, stopAll: true };
+  // 只取规格里声明的字段：其它字段不进入能力参数，绝不透传；
+  // role 是宿主的路由字段，extra 是宿主自己消费的参数（如电击时长 durationMs），
+  // 两者都容忍但不转发给设备。停止意图照旧只放行、不校验字段（与 sanitizeCapabilityInvoke 一致）。
+  const isStop = !spec.capability || spec.action === 'stop';
+  const fieldKeys = new Set([...Object.keys(spec.fields), ...(spec.extra || []), 'role']);
+  if (!isStop) {
+    for (const key of Object.keys(effect)) {
+      if (key !== 'type' && !fieldKeys.has(key)) return reject(`远程玩法不允许的意图字段: ${key}`);
+    }
+  }
+  const input = {};
+  for (const [key, field] of Object.entries(spec.fields)) input[key] = effect[field];
+  const sanitized = sanitizeCapabilityInvoke({
+    device,
+    capability: spec.capability,
+    action: spec.action,
+    input,
+    limits,
+  });
+  if (!sanitized.ok) return sanitized;
+  return { ok: true, input: sanitized.input || {}, stopAll: false };
+}
+
 /** 从设备属性报文里抽出可远程写的字段；非 update 报文与未知字段一律拒绝。 */
 function sanitizeDeviceMessage(type, message, limits) {
   const method = message.method === undefined ? 'update' : String(message.method);
@@ -606,6 +661,9 @@ module.exports = {
   deviceType,
   ownField,
   STOP_ACTIONS,
+  HOST_INTENT_ACTIONS,
+  isKnownHostIntent,
+  sanitizeHostIntent,
   sanitizeCapabilityInvoke,
   sanitizeProjectionMessage,
   isLatchedOutput,

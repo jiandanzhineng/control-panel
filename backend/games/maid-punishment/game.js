@@ -248,6 +248,91 @@
   }
 
   let loopTimer = null;
+  // ---- 托管渲染模式（?runtime=host|remote）：逻辑在宿主 Core 执行，本页面只渲染快照、发送命令 ----
+  // 设备事件由宿主侧（本机后端 / 被控端后端）直接喂给 core，页面不再监听设备。
+  const hostBridge = (typeof window !== 'undefined' && window.GameRuntimeBridge) ? window.GameRuntimeBridge : null;
+  const hostUi = { authorized: hostBridge ? hostBridge.mode === 'host' : true, startedAtMs: -1, lastLogKey: '' };
+
+  function hostSyncParams(params) {
+    if (!params) return;
+    Object.keys(cfg).forEach((k) => { if (params[k] !== undefined && params[k] !== null) cfg[k] = params[k]; });
+  }
+
+  function hostSetControlsEnabled(enabled) {
+    $('[data-action]').forEach((el) => { el.disabled = !enabled; });
+  }
+
+  function hostBindActions() {
+    $('[data-action]').forEach((el) => {
+      const name = el.getAttribute('data-action');
+      el.addEventListener('click', () => {
+        if (!hostUi.authorized) return;
+        if (name === 'pause') hostBridge.sendAction(rt.paused ? 'resume' : 'pause').catch(() => {});
+        else hostBridge.sendAction(name).catch(() => {});
+      });
+    });
+  }
+
+  function hostRenderLogs(logs) {
+    const ul = document.getElementById('logs');
+    if (!ul || !Array.isArray(logs)) return;
+    const key = logs.length + ':' + (logs[0] ? String(logs[0].atMs || '') + logs[0].message : '');
+    if (key === hostUi.lastLogKey) return;
+    hostUi.lastLogKey = key;
+    ul.innerHTML = '';
+    logs.slice(0, 10).forEach((entry) => {
+      const li = document.createElement('li');
+      const at = Number(entry && entry.atMs) || 0;
+      li.textContent = (at ? '[' + new Date(at).toLocaleTimeString() + '] ' : '') + String((entry && entry.level) || 'info') + ' — ' + String((entry && entry.message) || '');
+      ul.appendChild(li);
+    });
+  }
+
+  function hostOnSnapshot(status, snapshot) {
+    if (!snapshot) { view.statusText = t('连接中断，正在重连'); render(); return; }
+    if (hostBridge.mode === 'remote') {
+      const authorized = !status || status.authorized !== false;
+      if (authorized !== hostUi.authorized) { hostUi.authorized = authorized; hostSetControlsEnabled(authorized); }
+    }
+    const startedAtMs = Number(snapshot.startedAtMs) || 0;
+    if (startedAtMs !== hostUi.startedAtMs) { hostUi.startedAtMs = startedAtMs; hostUi.lastLogKey = ''; }
+    hostSyncParams(snapshot.params);
+    rt.paused = !!snapshot.paused;
+    rt.isShocking = !!snapshot.isShocking;
+    rt.shockCount = Number(snapshot.shockCount) || 0;
+    rt.td01Active = !!snapshot.td01Active;
+    rt.td01Intensity = Number(snapshot.td01Intensity) || 0;
+    rt.pressureViolated = !!snapshot.pressureViolated;
+    rt.isLocked = !!snapshot.isLocked;
+    view.running = !!snapshot.running;
+    view.startTime = startedAtMs;
+    view.isLocked = !!snapshot.isLocked;
+    view.lockedText = snapshot.lockedText || '';
+    view.statusText = snapshot.statusText || '-';
+    view.btnText = rt.paused ? t('继续') : t('暂停');
+    view.remainingSec = snapshot.remainingSec == null ? '-' : Number(snapshot.remainingSec);
+    view.button0Pressed = !!snapshot.button0Pressed;
+    view.button1Pressed = !!snapshot.button1Pressed;
+    view.isShocking = rt.isShocking;
+    view.shockCount = rt.shockCount;
+    view.td01Active = rt.td01Active;
+    view.td01Intensity = rt.td01Intensity;
+    view.hasPressure = !!snapshot.hasPressure;
+    view.pressure1 = snapshot.pressure1 == null ? '-' : Number(snapshot.pressure1);
+    view.pressureViolated = rt.pressureViolated;
+    hostRenderLogs(snapshot.logs);
+    render();
+  }
+
+  function hostBoot() {
+    hostBindActions();
+    if (typeof GameI18n !== 'undefined' && GameI18n.apply) GameI18n.apply();
+    if (hostBridge.mode === 'remote') hostSetControlsEnabled(false);
+    render();
+    hostBridge.onSnapshot(hostOnSnapshot);
+    hostBridge.start();
+  }
+
   async function boot() {
     bindActions();
     if (typeof GameI18n !== 'undefined' && GameI18n.apply) GameI18n.apply();
@@ -261,6 +346,6 @@
     loopTimer = setInterval(loop, 500);
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
-  else boot();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => (hostBridge ? hostBoot() : boot()));
+  else (hostBridge ? hostBoot() : boot());
 })();

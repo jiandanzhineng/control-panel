@@ -57,6 +57,7 @@ import { currentLocale } from '../i18n'
 import { localeTag } from '../i18n/locale'
 import { getGameRuntimeStatus, listHostGames, setGameRuntimeParams, startGameRuntime, stopGameRuntime, type GameRuntimeSnapshot } from '../api/gameRuntime'
 import { buildGameRuntimePageSrc, resolveGamePagePath } from '../play/gamePagePath'
+import { createGameStateStream, type GameStateStreamHandle } from '../play/gameStateStreamClient'
 import { controlsEnabled, restoreFromStatus, shouldStopAfterStatusFailure, syncParamsDraft } from '../play/gameRuntimeSession'
 import { friendlyMessage } from '../api/errorMessage'
 
@@ -84,7 +85,7 @@ const stopping = ref(false)
 const pagePath = ref('')
 const pageResolving = ref(false)
 const pageError = ref('')
-let pollTimer: ReturnType<typeof setInterval> | null = null
+let stream: GameStateStreamHandle | null = null
 let stopWait: (() => void) | null = null
 let failures = 0
 let lastParams: Record<string, unknown> = {}
@@ -135,6 +136,7 @@ function applyStatus(status: any) {
   if (status?.running) setActivePlay({ carrierType: 'game', id: gameId || 'surge-edging', title: status.snapshot?.title || gameId || t('gameRuntime.title'), resume: { name: 'game_runtime', query: { id: gameId } } })
 }
 
+// 兜底拉取：SSE 不可用时由状态流客户端调用；也用于「延迟启动」后的立即刷新
 async function poll() {
   try { applyStatus(await getGameRuntimeStatus()) } catch (_) { failures += 1; localConnection.value = 'reconnecting'; if (shouldStopAfterStatusFailure(failures)) await stop() }
 }
@@ -153,7 +155,6 @@ async function beginDeferred() {
     return
   }
   await poll()
-  if (!pollTimer) pollTimer = setInterval(() => { void poll() }, 1000)
 }
 
 async function submitParams(value: Record<string, unknown>) {
@@ -202,10 +203,17 @@ onMounted(async () => {
   await poll(); const games = await listHostGames().catch(() => [])
   const id = String(localSnapshot.value?.gameId || route.query.id || games[0]?.id || '')
   schema.value = games.find((game: any) => game.id === id)?.params || []
-  pollTimer = setInterval(() => { void poll() }, 1000)
+  // 状态走推送（SSE snapshot+patch）；EventSource 不可用时客户端自动回落轮询
+  stream = createGameStateStream({
+    url: '/api/game-runtime/stream',
+    poll: () => getGameRuntimeStatus(),
+    onState: (next) => applyStatus(next),
+    onConnection: (state) => { localConnection.value = state },
+  })
+  stream.start()
 })
 
-onBeforeUnmount(() => { if (pollTimer) clearInterval(pollTimer); stopWait?.() })
+onBeforeUnmount(() => { stream?.stop(); stream = null; stopWait?.() })
 </script>
 
 <style scoped>

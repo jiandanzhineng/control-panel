@@ -1,16 +1,19 @@
 const mqtt = require('mqtt');
 const { randomUUID, randomBytes } = require('crypto');
-const manifests = [
-  require('../game-runtime/cores/surge-edging-manifest'),
-  require('../game-runtime/cores/pressure-edging-v2-manifest'),
-];
+// 已接入 HostRuntime 的游戏清单来自统一解析器（内置 core + 游戏包里的分离式 core）
+const coreResolver = require('../game-runtime/gameCoreResolver');
+const { GameStateStream } = require('../game-runtime/gameStateStream');
+const { apply: applyPatch } = require('../public/game-state-patch');
 const deviceRegistry = require('../devices/registry');
 const playCarrierBus = require('./playCarrierBus');
 
 const PROTOCOL_VERSION = 1;
 const MAX_SEEN_MESSAGE_IDS = 1024;
 const HEARTBEAT_MS = 10000;
-const SNAPSHOT_MS = 500;
+// 旧客户端（移动端）兼容：只认全量 game.snapshot，低频推一份，保证它们不掉队
+const LEGACY_SNAPSHOT_MS = 5000;
+// 画面同步增量：50ms 窗口合并（上限约 20 条/秒），无变化零流量
+const STREAM_WINDOW_MS = 50;
 const COMMAND_TIMEOUT_MS = 8000;
 // 所有 MQTT 操作都必须有上限，否则 ACL 拒绝（broker 135 踢线）会让回调永不触发
 const PUBLISH_TIMEOUT_MS = 8000;
@@ -29,6 +32,8 @@ const COMMANDS = new Set([
   'client.hello',
   'client.ping',
   'client.snapshot.request',
+  // 主控端画面丢包 / 重连后补一次全量 game.snapshot（已授权者才放行，见 _onOwnerCommand）
+  'game.snapshot.request',
   'session.projection-invite.request',
   'session.emergency-stop',
   'client.workspace.set',
@@ -71,14 +76,7 @@ function loadOutputGuard(provided) {
 }
 
 function defaultListGames() {
-  return manifests.map((manifest) => ({
-    id: manifest.GAME_ID,
-    title: manifest.TITLE,
-    version: manifest.VERSION,
-    runtimeMode: 'host',
-    devices: manifest.DEVICES,
-    params: manifest.PARAMS,
-  }));
+  return coreResolver.listHostGames();
 }
 
 class RemoteGameService {
@@ -95,6 +93,8 @@ class RemoteGameService {
     listGames = defaultListGames,
     listDevices = null,
     outputGuard = null,
+    streamWindowMs = STREAM_WINDOW_MS,
+    legacySnapshotMs = LEGACY_SNAPSHOT_MS,
     publishTimeoutMs = PUBLISH_TIMEOUT_MS,
     connectTimeoutMs = CONNECT_TIMEOUT_MS,
     endTimeoutMs = END_TIMEOUT_MS,
@@ -115,6 +115,8 @@ class RemoteGameService {
     this.clearRepeating = clearRepeating;
     this.listGames = listGames;
     this.listDevices = listDevices;
+    this.streamWindowMs = streamWindowMs;
+    this.legacySnapshotMs = legacySnapshotMs;
     this.outputGuard = loadOutputGuard(outputGuard);
     this.publishTimeoutMs = publishTimeoutMs;
     this.connectTimeoutMs = connectTimeoutMs;
@@ -126,6 +128,18 @@ class RemoteGameService {
     this.reconnectBackoffMs = reconnectBackoffMs;
     this.watchdog = this._createWatchdog();
     this.session = null;
+    // 画面增量流有两条，diff 基准必须两端一致：
+    //   stream     —— 本机页面的状态文档（getStatus()），被控端/主控端各自一份，走 SSE
+    //   gameStream —— 房主发给主控端的游戏快照文档（{...snapshot, gameSessionId}），走 MQTT game.patch
+    // 两端的 status 文档结构不同（role/authorized/connected…），不能互相套用 ops。
+    const streamOptions = {
+      windowMs: streamWindowMs,
+      now: this.now,
+      setTimer: this.setTimer,
+      clearTimer: this.clearTimer,
+    };
+    this.stream = new GameStateStream(streamOptions);
+    this.gameStream = new GameStateStream(streamOptions);
     // 编排层（remoteSessionService）订阅的事件出口，避免它去读私有字段。
     this.eventHandlers = new Set();
     // 本机玩法载体（bridge / HostRuntime）事件：本机开始时被控端优先，顶掉主控端页面式游戏
@@ -221,6 +235,11 @@ class RemoteGameService {
     for (const handler of this.eventHandlers) {
       try { handler({ source: 'game', ...event }); } catch (_) {}
     }
+  }
+
+  /** 已接入 HostRuntime 的游戏清单（内置 core + 游戏包分离式 core，单一解析器）。 */
+  hostGames() {
+    return this.listGames().filter((game) => game?.runtimeMode === 'host');
   }
 
   /** 房主在线成员（userId + 在线状态），供编排层等操作方进投影房间。 */
@@ -459,20 +478,22 @@ class RemoteGameService {
         const ended = !!status?.snapshot?.ended || !!status?.ended;
         session.gameSnapshot = status?.snapshot || null;
         if (status?.sessionId) session.gameSessionId = status.sessionId;
+        // 本机页面（SSE）：状态文档进流，50ms 窗口合并，无变化零流量
+        this._updateLocalStream();
         if (!session.connected) return;
-        const nowMs = this.now();
-        // 结束快照必须可靠送达，不能被节流吞掉
-        if (!ended && session.lastPublishAt && nowMs - session.lastPublishAt < 200) return;
-        session.lastPublishAt = nowMs;
-        void this._publishGameSnapshot(session, { force: ended }).catch(() => {});
+        // 主控端：游戏快照文档有变化才发 game.patch
+        this.gameStream.update(this._gameDoc(status));
+        void this._publishGamePatch(session).catch(() => {});
+        if (ended) void this._publishGameSnapshot(session, { force: true }).catch(() => {});
       });
       await this._connect(session);
       session.timers.heartbeat = this.setRepeating(() => {
         void this.api.heartbeat(session.token, session.room.id).catch(() => {});
       }, HEARTBEAT_MS);
+      // 旧客户端（移动端）只认全量 game.snapshot：低频补发，保证兼容
       session.timers.snapshot = this.setRepeating(() => {
         void this._publishGameSnapshot(session).catch(() => {});
-      }, SNAPSHOT_MS);
+      }, this.legacySnapshotMs);
       this._scheduleCredentialRefresh(session);
       void this._refreshMembers(session).then(() => this._publishClientSnapshot(session)).catch(() => {});
       return this.getStatus();
@@ -616,6 +637,7 @@ class RemoteGameService {
       operatorUserId: session.authorizedUserId,
     });
     await this._publishClientSnapshot(session);
+    // 授权后先给一份全量（同时建立 rev 基准），之后才有增量可对齐
     await this._publishGameSnapshot(session, { force: true });
     return this.getStatus();
   }
@@ -666,7 +688,11 @@ class RemoteGameService {
       if (pending) this.clearTimer(pending.timer);
       throw error;
     }
-    return response;
+    const result = await response;
+    // 主控端命令的回执里带回状态（game.start 的 sessionId、快照等）：
+    // 本机页面（SSE）据此更新，不必等下一次轮询。
+    this._updateLocalStream();
+    return result;
   }
 
   async stop({ skipApi = false, reason = 'room-closed' } = {}) {
@@ -681,6 +707,8 @@ class RemoteGameService {
     if (reason !== 'replaced' && reason !== 'backend-shutdown') {
       this._emitEvent({ type: 'ended', reason });
     }
+    // 会话已清空：本机页面的画面流立刻发一份「无会话」全量（界面据此收起）
+    this.stream.reset(this.getStatus());
     this._clearTimers(session);
     session.hostUnsub?.();
     session.hostUnsub = null;
@@ -736,6 +764,8 @@ class RemoteGameService {
       games: [],
       devices: [],
       gameSnapshot: null,
+      // 主控端侧的增量 rev：与房主 game.patch 的 rev 对齐，断档即补全量
+      gameRev: 0,
       // 主控端运行的玩法占用（被控端记录）与被控端下发的占用（主控端记录）
       playOccupancy: null,
       projectionInvite: null,
@@ -1033,7 +1063,15 @@ class RemoteGameService {
       envelope.senderUserId = suffix.slice('commands/'.length);
       await this._onOwnerCommand(session, envelope);
     } else if (session.role === 'operator' && suffix === 'events') {
-      this._onOperatorEvent(session, envelope);
+      try {
+        this._onOperatorEvent(session, envelope);
+        // 事件改变的都是同一份状态文档（授权 / 设备 / 游戏快照 / 占用 / 结束）：
+        // 处理完就进本机页面（SSE）的增量流，无变化时 diff 为空、不发消息。
+        this._updateLocalStream();
+      } catch (error) {
+        // 处理单条事件抛错不能让整条 MQTT 消息回调炸掉（画面流也不能因此停更）
+        this._log(`handle operator event failed (${envelope?.type || 'unknown'}): ${error?.message || error}`);
+      }
     }
   }
 
@@ -1063,6 +1101,8 @@ class RemoteGameService {
     if (session.hostOfflineTimer) return;
     session.waitingForHost = true;
     this._log(`operator waiting for host (grace ${this.hostOfflineGraceMs}ms)`);
+    // 本机页面的画面流：立刻发一份 waitingForHost 全量，页面才能显示「等待房主」
+    this._updateLocalStream();
     session.hostOfflineTimer = this.setTimer(() => {
       session.hostOfflineTimer = null;
       if (this.session !== session) return;
@@ -1080,6 +1120,7 @@ class RemoteGameService {
     if (!session.waitingForHost) return;
     session.waitingForHost = false;
     // 房主回来：重新取一次快照，会话继续
+    this._updateLocalStream();
     void this._publishEnvelope(session, `commands/${session.credential.userId}`, 'client.snapshot.request', {}).catch(() => {});
   }
 
@@ -1094,6 +1135,8 @@ class RemoteGameService {
     session.games = [];
     session.gameSnapshot = null;
     void this._endClient(session, true);
+    // 会话已清空：画面流直接发一份「无会话」全量（订阅者据此收起界面）
+    this.stream.reset(this.getStatus());
   }
 
   async _onOwnerCommand(session, envelope) {
@@ -1148,7 +1191,15 @@ class RemoteGameService {
 
   async _dispatch(type, payload, context = {}) {
     if (type === 'client.hello' || type === 'client.workspace.set') return this.getStatus();
-    if (type === 'client.snapshot.request') return this.getStatus();
+    if (type === 'client.snapshot.request') {
+      await this._resyncOperator(this.session);
+      return this.getStatus();
+    }
+    // 画面补全量：只回一份全量快照，不广播（广播留给低频兼容推送）
+    if (type === 'game.snapshot.request') {
+      await this._publishGameSnapshot(this.session, { force: true });
+      return { ok: true };
+    }
     // 操作方补要投影房间邀请（授权事件与邀请可能乱序/丢包）
     if (type === 'session.projection-invite.request') {
       const session = this.session;
@@ -1182,6 +1233,8 @@ class RemoteGameService {
       // 此时绝不能再调 host.start —— 它会顶掉本机玩法（gameHostService.start 会 stop 现有 session）。
       // 再判一次，本机玩法优先。
       if (this.hasLocalPlay()) throw this._error('HOST_PLAY_ACTIVE', '被控端正在运行本地玩法');
+      // 远程会话：本局核心发出的设备意图与远程手动输出走同一套限幅 + 锁存看门狗
+      try { this.host.setRemoteOutputLogHook?.((entry) => this._onRemoteGameOutput(entry)); } catch (_) {}
       const started = await this.host.start({
         gameId: payload.gameId,
         deviceMap: payload.deviceMap,
@@ -1225,6 +1278,27 @@ class RemoteGameService {
 
   _currentGameSessionId() {
     return this._hostStatus()?.sessionId || null;
+  }
+
+  /**
+   * 被控端运行的核心（分离式游戏）发出的设备意图被钳制/被拒绝：
+   * 复用「远程输出」事件通道写进被控端操作记录（与远程手动输出同一类目）。
+   */
+  _onRemoteGameOutput(entry) {
+    if (!entry) return;
+    this._emitEvent({
+      type: 'operation',
+      kind: 'host-output',
+      outcome: entry.outcome === 'rejected' ? 'rejected' : 'clamped',
+      target: entry.deviceId || null,
+      detail: {
+        code: entry.code || null,
+        message: entry.message || null,
+        requested: entry.requested || null,
+        applied: entry.applied || null,
+        gameId: entry.gameId || null,
+      },
+    });
   }
 
   _applyGameSession(started) {
@@ -1442,8 +1516,34 @@ class RemoteGameService {
       return;
     }
     if (envelope.type === 'game.snapshot') {
-      session.gameSnapshot = envelope.payload || null;
-      if (envelope.payload?.gameSessionId) session.gameSessionId = envelope.payload.gameSessionId;
+      const payload = envelope.payload || null;
+      session.gameSnapshot = payload;
+      // 全量帧同时是 rev 基准：后面的 game.patch 都相对它计算
+      session.gameRev = Number(payload?.rev) || 0;
+      if (payload?.gameSessionId) session.gameSessionId = payload.gameSessionId;
+      return;
+    }
+    // 画面增量：只接受建立在本地 rev 之上的 patch，断档就补全量（不猜、不跳帧）
+    if (envelope.type === 'game.patch') {
+      const payload = envelope.payload || {};
+      const rev = Number(payload.rev);
+      if (!Number.isFinite(rev)) return;
+      if (payload.gameSessionId && payload.gameSessionId !== session.gameSessionId) {
+        this._requestGameSnapshot(session);
+        return;
+      }
+      if (Number(payload.baseRev) !== Number(session.gameRev)) {
+        this._log(`game.patch rev gap (local ${session.gameRev}, base ${payload.baseRev}): requesting full snapshot`);
+        this._requestGameSnapshot(session);
+        return;
+      }
+      const next = applyPatch(session.gameSnapshot, payload.ops);
+      if (next == null) {
+        this._requestGameSnapshot(session);
+        return;
+      }
+      session.gameSnapshot = next;
+      session.gameRev = rev;
       return;
     }
     if (envelope.type === 'session.play-occupancy') {
@@ -1508,6 +1608,8 @@ class RemoteGameService {
   async _publishClientSnapshot(session) {
     if (!session?.client || session.role !== 'owner') return;
     const hostStatus = this._hostStatus();
+    // 本机页面（SSE）：状态文档的增量源就在这一处（授权 / 成员 / 玩法占用 / 掉线都走它）
+    this._updateLocalStream();
     await this._publishEnvelope(session, 'events', 'client.snapshot', {
       authorized: !!session.authorized,
       operatorUserId: session.authorizedUserId || null,
@@ -1525,15 +1627,109 @@ class RemoteGameService {
     const hostStatus = this._hostStatus();
     const snapshot = hostStatus?.snapshot;
     if (!snapshot) return;
-    // 结束快照绝不能被 5Hz 节流丢掉
+    // 结束快照绝不能被低频兼容推送吞掉
     if (!force && session.lastSnapshotKey === this._snapshotKey(snapshot)) return;
     session.lastSnapshotKey = this._snapshotKey(snapshot);
+    // 全量帧同时是 rev 基准：之后发出的 game.patch 都相对它计算
+    this._resetGameStream(session);
     await this._publishEnvelope(session, 'events', 'game.snapshot', {
       ...snapshot,
       gameSessionId: hostStatus?.sessionId || null,
+      // 全量帧带上 rev：主控端据此把后续 game.patch 的 baseRev 对齐
+      rev: this.gameStream.getRev(),
     });
     const logs = Array.isArray(snapshot.logs) ? snapshot.logs.slice(0, 5) : [];
     if (logs.length) await this._publishEnvelope(session, 'events', 'game.log', { logs });
+  }
+
+  // 被控端本机页面订阅的画面流（SSE 用）：与远程增量共用同一套 rev / ops 语义
+  subscribeState(listener) {
+    return this.stream.subscribe(listener);
+  }
+
+  /**
+   * 当前状态文档的 rev 与全量（SSE 进流首帧 / 补全量用）。
+   * 先 flush 待发布的变化：首帧必须与 diff 基准一致，否则随后的 patch
+   * 会把同一批变化再叠一次（本机页面的状态文档同样带数组）。
+   */
+  getStateEvent() {
+    this.stream.flush();
+    return { rev: this.stream.getRev(), state: this.getStatus() };
+  }
+
+  // 本机页面（SSE）：状态文档进增量流（合并窗口、无变化不发）。
+  // 文档必须是 getStatus()（/api/remote-game/status 的形状）——宿主状态是另一种形状，
+  // 绝不能进这条流，否则 diff 会在两种文档之间来回，回放出来的东西四不像。
+  _updateLocalStream() {
+    this.stream.update(this.getStatus());
+  }
+
+  // 主控端侧的完整游戏快照文档：两端用同一份形状做 diff 基准
+  _gameDoc(status) {
+    const hostStatus = status || this._hostStatus() || {};
+    const snapshot = hostStatus.snapshot || null;
+    if (!snapshot) return null;
+    return { ...snapshot, gameSessionId: hostStatus.sessionId || null };
+  }
+
+  // 全量推送前把 rev 归零：低频兼容快照与增量 patch 共用一条 rev 序列，
+  // 旧客户端只认 game.snapshot，新客户端拿到全量后 rev 也对得上。
+  _resetGameStream(session) {
+    const event = this.gameStream.reset(this._gameDoc());
+    session.gameRev = event.rev;
+    return event;
+  }
+
+  // 取当前待发布的增量；没有变化时返回 null（不发消息）
+  _nextGamePatch(session) {
+    const event = this.gameStream.flush();
+    if (!event) return null;
+    session.gameRev = event.rev;
+    return event;
+  }
+
+  // 增量只在被授权操作方在线时才发：与 client.snapshot / 授权下发同一判据，
+  // 没人收时不刷通道（新客户端进房/重连一律先收全量，rev 基准由全量建立）。
+  _hasAuthorizedOperator(session) {
+    if (!session?.authorized || !session.authorizedUserId) return false;
+    const entry = session.operatorsOnline.get(session.authorizedUserId);
+    return !!entry?.online;
+  }
+
+  async _publishGamePatch(session) {
+    if (!session?.client || session.role !== 'owner') return;
+    if (!this._hasAuthorizedOperator(session)) return;
+    const event = this._nextGamePatch(session);
+    if (!event) return;
+    // 还没有基准快照时 flush 出的是全量事件：按全量发，rev 与之后增量同源
+    if (event.type !== 'patch') {
+      const doc = event.snapshot;
+      if (!doc) return;
+      await this._publishEnvelope(session, 'events', 'game.snapshot', { ...doc, rev: event.rev });
+      return;
+    }
+    await this._publishEnvelope(session, 'events', 'game.patch', {
+      rev: event.rev,
+      baseRev: event.baseRev || 0,
+      ops: event.ops || [],
+      gameSessionId: this._hostStatus()?.sessionId || null,
+      sentAtMs: this.now(),
+    });
+  }
+
+  // 补全量：进房 / 重连 / 丢包 / 显式请求 → 全量 game.snapshot 并把 rev 归零
+  async _resyncOperator(session) {
+    if (!session?.client || session.role !== 'owner') return;
+    // 没有已授权的操作方时不必广播全量（授权时 _setAuthorized 会主动补一份）
+    if (!session.authorizedUserId) return;
+    await this._publishGameSnapshot(session, { force: true });
+  }
+
+  // 操作方：rev 断档或坏帧时向房主补一次全量
+  _requestGameSnapshot(session) {
+    if (!session || session.role !== 'operator' || !session.connected) return;
+    void this._publishEnvelope(session, `commands/${session.credential.userId}`, 'game.snapshot.request', {})
+      .catch(() => {});
   }
 
   _snapshotKey(snapshot) {
@@ -1597,6 +1793,10 @@ class RemoteGameService {
     if (!session.client) return Promise.resolve();
     const client = session.client;
     session.client = null;
+    session.connected = false;
+    // 连接断了：本机页面的画面流立刻发一份「已断开」的全量，
+    // 不能等 50ms 合并窗口（也不会再有新的状态变化来触发它）。
+    this.stream.reset(this.getStatus());
     return new Promise((resolve) => {
       let done = false;
       const finish = () => { if (!done) { done = true; resolve(); } };

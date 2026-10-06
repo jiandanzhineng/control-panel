@@ -253,6 +253,55 @@ describe('sanitizeCapabilityInvoke', () => {
   });
 });
 
+describe('sanitizeHostIntent (host game core intents under a remote session)', () => {
+  const run = (effect, device, limits) => guard.sanitizeHostIntent({ device, effect, limits });
+
+  test('maps each core intent onto the capability invoke rules', () => {
+    expect(run({ type: 'device.set-strength', value: 255 }, { type: 'TD01' }))
+      .toEqual({ ok: true, input: { value: 128 }, stopAll: false });
+    expect(run({ type: 'device.shock', voltage: 30, durationMs: 3000 }, { type: 'DIANJI' }))
+      .toEqual({ ok: true, input: { voltage: 20 }, stopAll: false });
+    expect(run({ type: 'device.shock', voltage: 24, durationMs: 3000 }, { type: 'DIANJI' }, { voltage: 30, intensity: 50 }))
+      .toEqual({ ok: true, input: { voltage: 24 }, stopAll: false });
+    expect(run({ type: 'device.lock', open: false }, { type: 'ZIDONGSUO' }))
+      .toEqual({ ok: true, input: { open: 0 }, stopAll: false });
+    expect(run({ type: 'device.set-report-delay', ms: 100 }, { type: 'QIYA' }))
+      .toEqual({ ok: true, input: { ms: 100 }, stopAll: false });
+    expect(run({ type: 'device.stop-all' }, { type: 'DIANJI' })).toEqual({ ok: true, input: {}, stopAll: true });
+  });
+
+  test('stop intents always pass; role and unknown fields never reach the device', () => {
+    expect(run({ type: 'device.stop-strength', role: 'motor' }, { type: 'TD01' }))
+      .toEqual({ ok: true, input: {}, stopAll: false });
+    expect(run({ type: 'device.shock-stop', role: 'punish', bogus: 1 }, { type: 'DIANJI' }))
+      .toEqual({ ok: true, input: {}, stopAll: false });
+  });
+
+  test('rejects unknown intents, mismatched capabilities and bad field values', () => {
+    rejected(run({ type: 'device.detonate' }, { type: 'DIANJI' }));
+    rejected(run({ type: 'device.shock', voltage: 20 }, { type: 'TD01' }));
+    rejected(run({ type: 'device.set-strength', value: 10 }, { type: 'NOPE' }));
+    rejected(run({ type: 'device.lock', open: true }, { type: 'DIANJI' }));
+    rejected(run(null, { type: 'DIANJI' }));
+  });
+
+  test('unknown intent fields are rejected; the host-only durationMs is tolerated but not forwarded', () => {
+    // 未知字段与投影/能力路径同规格：拒绝（防透传）
+    rejected(run({ type: 'device.set-strength', value: 10, tickle: 1 }, { type: 'TD01' }));
+    rejected(run({ type: 'device.shock', voltage: 10, pattern: 'x' }, { type: 'DIANJI' }));
+    // durationMs 由宿主消费（定时停机），不进设备参数
+    expect(run({ type: 'device.shock', voltage: 10, durationMs: 3000 }, { type: 'DIANJI' }))
+      .toEqual({ ok: true, input: { voltage: 10 }, stopAll: false });
+  });
+
+  test('isKnownHostIntent only accepts the mapped intent types', () => {
+    expect(guard.isKnownHostIntent('device.shock')).toBe(true);
+    expect(guard.isKnownHostIntent('device.stop-all')).toBe(true);
+    expect(guard.isKnownHostIntent('device.detonate')).toBe(false);
+    expect(guard.isKnownHostIntent('__proto__')).toBe(false);
+  });
+});
+
 describe('latch detection', () => {
   test('electric outputs latch for 10s', () => {
     expect(isLatchedOutput({

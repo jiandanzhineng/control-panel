@@ -115,7 +115,7 @@
           embedded
           :navigate-on-end="false"
           :authorized="!!status.authorized"
-          :connection="status.connected === false ? 'reconnecting' : 'live'"
+          :connection="connection"
           :snapshot="status.snapshot || null"
           :params-schema="selectedGame?.params || []"
           :page-path="operatorPagePath"
@@ -140,6 +140,7 @@ import RemoteDevicePanel from './RemoteDevicePanel.vue'
 import GameRuntimeView from '../views/GameRuntimeView.vue'
 import { stopGameRuntime } from '../api/gameRuntime'
 import { resolveGamePagePath } from '../play/gamePagePath'
+import { createGameStateStream, type GameStateStreamHandle } from '../play/gameStateStreamClient'
 import {
   authorizeRemoteGame,
   createRemoteGame,
@@ -167,7 +168,9 @@ const gameId = ref(localStorage.getItem('remoteGame:selectedGame') || '')
 const deviceMap = reactive<Record<string, string[]>>({})
 const params = reactive<Record<string, any>>({})
 let timer: ReturnType<typeof setInterval> | null = null
+let stream: GameStateStreamHandle | null = null
 let configuredGameId = ''
+const connection = ref<'live' | 'reconnecting'>('live')
 
 const hostGames = computed(() => (status.value.games || []).filter((game) => game.runtimeMode === 'host'))
 const selectedGame = computed(() => hostGames.value.find((game) => game.id === gameId.value))
@@ -262,13 +265,19 @@ function configureGame(id: string) {
 
 watch(gameId, (id) => { configureGame(id) })
 
+function applyStatus(next: any) {
+  status.value = next || { active: false }
+  if (status.value.snapshot?.running && status.value.snapshot.gameId) gameId.value = status.value.snapshot.gameId
+  if (!hostGames.value.some((game) => game.id === gameId.value)) gameId.value = hostGames.value[0]?.id || ''
+  if (gameId.value && configuredGameId !== gameId.value) configureGame(gameId.value)
+}
+
+// 状态来自 SSE（先全量后增量）；失败由流客户端自己回落轮询，这里只负责兜错
 async function refresh() {
   loading.value = true
   try {
-    status.value = await getRemoteGameStatus()
-    if (status.value.snapshot?.running && status.value.snapshot.gameId) gameId.value = status.value.snapshot.gameId
-    if (!hostGames.value.some((game) => game.id === gameId.value)) gameId.value = hostGames.value[0]?.id || ''
-    if (gameId.value && configuredGameId !== gameId.value) configureGame(gameId.value)
+    applyStatus(await getRemoteGameStatus())
+    error.value = ''
   } catch (e: any) {
     error.value = e?.message || t('remote.loadFailed')
   } finally {
@@ -433,9 +442,20 @@ async function refreshMembers() {
 
 onMounted(() => {
   void refresh().then(() => refreshMembers())
-  timer = setInterval(() => { void refresh() }, 2000)
+  // 状态走推送（SSE snapshot+patch）；EventSource 不可用时自动回落轮询
+  stream = createGameStateStream({
+    url: '/api/remote-game/stream',
+    poll: () => getRemoteGameStatus(),
+    onState: (next) => applyStatus(next),
+    onConnection: (state) => { connection.value = state },
+  })
+  stream.start()
 })
-onUnmounted(() => { if (timer) clearInterval(timer) })
+onUnmounted(() => {
+  stream?.stop()
+  stream = null
+  if (timer) clearInterval(timer)
+})
 </script>
 
 <style scoped>

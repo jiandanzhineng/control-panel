@@ -92,6 +92,8 @@ function mockHost() {
   const listeners = new Set();
   const api = {
     status: { active: false, running: false, snapshot: null },
+    // 宿主（真实 gameHostService）提供：远程游戏服务据此注入核心输出限幅的操作记录钩子
+    setRemoteOutputLogHook: jest.fn(),
     start: jest.fn((input) => {
       api.status = {
         active: true,
@@ -239,6 +241,36 @@ describe('remote game service', () => {
     expect(host.start).not.toHaveBeenCalled();
     expect(await command('pressure-edging-v2', { sensor: ['sensor-1'], motor: ['motor-1'] })).toMatchObject({ ok: true });
     expect(host.start).toHaveBeenCalledWith(expect.objectContaining({ gameId: 'pressure-edging-v2' }));
+  });
+
+  test('remote game start installs the core output guard log hook and reports clamped outputs', async () => {
+    const { host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {}, params: {} } });
+    // 宿主把核心设备意图被钳制/被拒绝的钩子交给远程游戏服务，写进被控端操作记录
+    expect(host.setRemoteOutputLogHook).toHaveBeenCalledWith(expect.any(Function));
+    const events = [];
+    const unsubscribe = owner.onEvent((event) => events.push(event));
+    try {
+      const hook = host.setRemoteOutputLogHook.mock.calls.at(-1)[0];
+      hook({ outcome: 'clamped', deviceId: 'dev-1', gameId: 'surge-edging', effectType: 'device.shock', requested: { voltage: 30 }, applied: { voltage: 20 } });
+      hook({ outcome: 'rejected', deviceId: 'dev-1', gameId: 'surge-edging', effectType: 'device.detonate', code: 'REMOTE_OUTPUT_REJECTED', message: '不允许' });
+    } finally {
+      unsubscribe();
+    }
+    expect(events).toEqual([
+      expect.objectContaining({
+        source: 'game', type: 'operation', kind: 'host-output', outcome: 'clamped', target: 'dev-1',
+        detail: expect.objectContaining({ requested: { voltage: 30 }, applied: { voltage: 20 }, gameId: 'surge-edging' }),
+      }),
+      expect.objectContaining({
+        source: 'game', type: 'operation', kind: 'host-output', outcome: 'rejected',
+        detail: expect.objectContaining({ code: 'REMOTE_OUTPUT_REJECTED' }),
+      }),
+    ]);
   });
 
   test('owner creates a remote-game room and operator receives a snapshot', async () => {
@@ -693,6 +725,146 @@ describe('remote game service', () => {
     const after = broker.publishes.filter((item) => item.payload.type === 'game.snapshot');
     expect(after.length).toBeGreaterThan(before);
     expect(after[after.length - 1].payload.payload.ended).toBe(true);
+  });
+
+  test('game.patch carries only changed fields and stays silent when nothing changes', async () => {
+    const { broker, host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {} } });
+    await flush();
+    const before = broker.publishes.filter((item) => item.payload.type === 'game.patch').length;
+    // 完全相同的快照：不发任何消息
+    host.emitStatus();
+    await flush();
+    expect(broker.publishes.filter((item) => item.payload.type === 'game.patch').length).toBe(before);
+    // 只改一个字段：增量里只有它，baseRev 对得上
+    host.status.snapshot = { ...host.status.snapshot, currentPressure: 12.4 };
+    host.emitStatus();
+    await flush();
+    const patches = broker.publishes.filter((item) => item.payload.type === 'game.patch');
+    expect(patches.length).toBe(before + 1);
+    const payload = patches[patches.length - 1].payload.payload;
+    expect(payload.ops.some((op) => op.path === 'currentPressure')).toBe(true);
+    expect(JSON.stringify(payload.ops)).not.toContain('INITIAL_CALM');
+    expect(payload.rev).toBe(payload.baseRev + 1);
+  });
+
+  test('operator applies patches and asks for a full snapshot on a rev gap', async () => {
+    const { broker, host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {} } });
+    await flush();
+    host.status.snapshot = { ...host.status.snapshot, currentPressure: 7 };
+    host.emitStatus();
+    await flush();
+    // 增量已被主控端应用
+    expect(operator.getStatus().snapshot.currentPressure).toBe(7);
+    // 丢包：直接把一条 baseRev 对不上的 patch 塞给操作方 → 它必须补全量而不是跳帧
+    const before = broker.publishes.filter((item) => item.payload.type === 'game.snapshot.request').length;
+    publish(broker, 'rooms/room-1/events', {
+      protocolVersion: 1,
+      roomSessionId: operator.session.roomSessionId,
+      messageId: 'patch-gap-1',
+      type: 'game.patch',
+      sequence: 999,
+      payload: { rev: 99, baseRev: 42, ops: [{ op: 'set', path: 'currentPressure', value: 999 }] },
+    });
+    await flush();
+    expect(operator.getStatus().snapshot.currentPressure).toBe(7);
+    const requests = broker.publishes.filter((item) => item.payload.type === 'game.snapshot.request');
+    expect(requests.length).toBeGreaterThan(before);
+  });
+
+  test('an explicit game.snapshot.request is whitelisted and answered with a full frame', async () => {
+    const { broker, host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {} } });
+    await flush();
+    const before = broker.publishes.filter((item) => item.payload.type === 'game.snapshot').length;
+    const result = await operator.command({ type: 'game.snapshot.request' });
+    expect(result.ok).toBe(true);
+    await flush();
+    const snaps = broker.publishes.filter((item) => item.payload.type === 'game.snapshot');
+    expect(snaps.length).toBeGreaterThan(before);
+    expect(snaps[snaps.length - 1].payload.payload.running).toBe(true);
+  });
+
+  test('old clients keep receiving a low-rate full game.snapshot', async () => {
+    const { broker, host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {} } });
+    await flush();
+    const before = broker.publishes.filter((item) => item.payload.type === 'game.snapshot').length;
+    host.status.snapshot = { ...host.status.snapshot, currentPressure: 3 };
+    host.emitStatus();
+    await flush();
+    // 5 秒低频兼容推送（不是每次变化都发全量）
+    expect(broker.publishes.filter((item) => item.payload.type === 'game.snapshot').length).toBe(before);
+  });
+
+  test('a malformed game.patch on the events topic does not break later events', async () => {
+    const { broker, host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {} } });
+    await flush();
+    // ops 形状不对：apply 返回 null → 主控端补全量，绝不抛出（抛出会打断事件处理）
+    publish(broker, 'rooms/room-1/events', {
+      protocolVersion: 1,
+      roomSessionId: operator.session.roomSessionId,
+      messageId: 'bad-patch-1',
+      type: 'game.patch',
+      sequence: 500,
+      payload: { rev: 5, baseRev: operator.getStatus().snapshot.rev, ops: [{ op: 'bogus', path: 'x' }] },
+    });
+    await flush();
+    // 后续正常事件仍然被处理（authorization 事件到达后状态仍能更新）
+    publish(broker, 'rooms/room-1/events', {
+      protocolVersion: 1,
+      roomSessionId: operator.session.roomSessionId,
+      messageId: 'auth-after-bad-1',
+      type: 'client.authorization',
+      sequence: 501,
+      payload: { authorized: false, operatorUserId: null },
+    });
+    await flush();
+    expect(operator.getStatus().authorized).toBe(false);
+  });
+
+  test('game.patch is only published while an authorized operator is online', async () => {
+    const { broker, host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {} } });
+    await flush();
+    const before = broker.publishes.filter((item) => item.payload.type === 'game.patch').length;
+    // 授权对象掉线（presence offline）：不再往通道里刷增量
+    const ownerClient = [...broker.clients].find((client) => client.options.clientId === 'client-owner');
+    ownerClient.emit('message', 'rooms/room-1/presence/operator', Buffer.from(JSON.stringify({
+      protocolVersion: 1, roomSessionId: owner.session.roomSessionId, messageId: 'presence-off-1', sequence: 1,
+      type: 'presence', payload: { status: 'offline' },
+    })));
+    await flush();
+    host.status.snapshot = { ...host.status.snapshot, currentPressure: 12.4 };
+    host.emitStatus();
+    await flush();
+    expect(broker.publishes.filter((item) => item.payload.type === 'game.patch').length).toBe(before);
   });
 
   test('kick revokes the member locally and rejects its commands', async () => {

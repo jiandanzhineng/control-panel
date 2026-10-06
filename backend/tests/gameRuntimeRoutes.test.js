@@ -36,6 +36,27 @@ function app() {
   return server;
 }
 
+describe('games reload/delete invalidates the host-game cache', () => {
+  test('POST /reload and DELETE /:id clear the core resolver cache', async () => {
+    const resolver = require('../game-runtime/gameCoreResolver');
+    const spy = jest.spyOn(resolver, 'clearCache');
+    await request(app()).post('/api/games/reload').expect(200);
+    expect(spy).toHaveBeenCalled();
+    spy.mockClear();
+    // 删除不存在的游戏会 404，但仍要在成功路径上失效缓存；这里用存在的 id 走通
+    const gameService = require('../services/gameService');
+    const lookup = jest.spyOn(gameService, 'getGameById').mockReturnValue({
+      id: 'surge-edging', folder: 'surge-edging', gamePath: '/games/surge-edging/index.html',
+    });
+    const remove = jest.spyOn(gameService, 'deleteGameById').mockReturnValue({ ok: true });
+    await request(app()).delete('/api/games/surge-edging').expect(200);
+    expect(spy).toHaveBeenCalled();
+    lookup.mockRestore();
+    remove.mockRestore();
+    spy.mockRestore();
+  });
+});
+
 describe('host game routes', () => {
   test('status exposes the host runtime instead of a permanent idle stub', async () => {
     const res = await request(app()).get('/api/games/status');

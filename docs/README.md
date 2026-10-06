@@ -9,6 +9,7 @@
 3. [插件系统设计](architecture/PLUGIN_SYSTEM.md)
 4. [内置浏览器 DeviceAPI Origin 授权](architecture/browser-deviceapi-origin-grant.md)
 5. [统一游戏运行时方案设计](architecture/game-runtime-unified-design.md)
+6. [分离式游戏标准（game-core 契约）](architecture/split-game-contract.md)
 6. [产品功能说明](requirements/PRD.md)
 7. [后端 API 文档](api/Backend_API.md)
 8. [设备能力说明](device/capabilities.md) / [设备注册表](device/device-registry.md)
@@ -22,7 +23,7 @@
 
 ## 目录说明
 
-- `architecture/`：整体架构、运行模式、前后端/Electron 边界、插件系统、游戏运行时统一方案。
+- `architecture/`：整体架构、运行模式、前后端/Electron 边界、插件系统、游戏运行时统一方案、分离式游戏标准。
 - `adr/`：架构决策记录（Architecture Decision Records），记录不可逆的设计取舍与结论。
 - `api/`：后端 REST/SSE 接口权威说明。
 - `requirements/`：产品功能范围与游戏运行时说明。
@@ -42,6 +43,7 @@
 - [插件系统设计](architecture/PLUGIN_SYSTEM.md)
 - [内置浏览器 DeviceAPI Origin 授权](architecture/browser-deviceapi-origin-grant.md)
 - [统一游戏运行时方案设计](architecture/game-runtime-unified-design.md)
+- [分离式游戏标准（game-core 契约）](architecture/split-game-contract.md)
 
 ### ADR（架构决策记录）
 
