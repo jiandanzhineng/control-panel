@@ -43,6 +43,10 @@ jobs:
           cp -a play-registry/. site/
           rm -rf site/scripts site/test site/node_modules site/games site/packages
           rm -f site/package.json site/package-lock.json site/README.md site/.gitignore site/.gitattributes site/registry.json site/*.log
+          # CDN 对浏览器统一下发 max-age=86400；给站内 CSS/JS 引用加版本号，避免新 HTML 配上浏览器里的旧资源。
+          ver="${GITHUB_SHA::8}"
+          find site -name '*.html' -print0 | xargs -0 sed -i -E "s#((src|href)=\"[^\"]*assets/(css|js)/[^\"?]+\.(css|js))\"#\1?v=${ver}\"#g"
+          grep -c "?v=${ver}" site/index.html
 
       - name: 部署静态站壳到阿里云 OSS
         env:

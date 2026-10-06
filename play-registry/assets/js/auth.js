@@ -42,7 +42,11 @@
 
   function t(key, vars) {
     if (root.SiteI18n && typeof root.SiteI18n.t === 'function') {
-      try { return root.SiteI18n.t(key, vars); } catch (_) {}
+      // 旧版 i18n.js 可能还在浏览器缓存里，查不到键时会原样返回键名，此时退回内置中文。
+      try {
+        var translated = root.SiteI18n.t(key, vars);
+        if (translated !== key || !ZH_FALLBACK[key]) return translated;
+      } catch (_) {}
     }
     var text = ZH_FALLBACK[key] || key;
     if (!vars) return text;
