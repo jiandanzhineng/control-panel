@@ -44,7 +44,12 @@ async function request(path: string, body?: unknown) {
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const data = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(data?.error?.message || '游戏运行请求失败')
+  if (!response.ok) {
+    // 错误码透出给界面：远程模式下被控端会以 HOST_PLAY_ACTIVE 等码拒绝
+    const error: any = new Error(data?.error?.message || '游戏运行请求失败')
+    error.code = data?.error?.code
+    throw error
+  }
   return data
 }
 

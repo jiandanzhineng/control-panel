@@ -26,6 +26,12 @@ export interface RemoteSessionLogEntry {
   detail: Record<string, any> | null
 }
 
+export interface RemotePlayOccupancy {
+  gameId: string
+  gameName?: string | null
+  at?: number
+}
+
 export interface RemoteSessionStatus {
   active: boolean
   role: RemoteSessionRole | null
@@ -40,6 +46,12 @@ export interface RemoteSessionStatus {
   latencyMs: number | null
   lastError: string | null
   log: RemoteSessionLogEntry[]
+  /** 主控端玩法在被控端的登记（仅 owner 有意义） */
+  occupancy?: RemotePlayOccupancy | null
+  /** 主控端本机玩法（由被控端记录） */
+  localPlay?: RemotePlayOccupancy | null
+  /** 主控端玩法是「怎么没的」：host-local-play = 被被控端本地玩法顶替，其余 = 被控端结束/急停 */
+  playEndedReason?: string | null
 }
 
 export const EMPTY_REMOTE_SESSION_STATUS: RemoteSessionStatus = {
@@ -53,4 +65,7 @@ export const EMPTY_REMOTE_SESSION_STATUS: RemoteSessionStatus = {
   latencyMs: null,
   lastError: null,
   log: [],
+  occupancy: null,
+  localPlay: null,
+  playEndedReason: null,
 }

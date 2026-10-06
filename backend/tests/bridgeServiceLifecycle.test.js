@@ -76,6 +76,33 @@ describe('bridgeService lifecycle', () => {
     mockInvokeDeviceCapability.mockClear();
   });
 
+  it('emits play carrier start / exit so remote occupancy follows the local play', () => {
+    const playCarrierBus = require('../services/playCarrierBus');
+    const events = [];
+    const unsubscribe = playCarrierBus.onPlayCarrierChange((event) => events.push(event));
+    try {
+      const bridgeService = require('../services/bridgeService');
+      bridgeService.init({});
+      const server = MockWebSocketServer.instance;
+      const ws = new FakeWs();
+      initSession(server, ws);
+      expect(events).toEqual([{ action: 'start', kind: 'bridge', gameId: null, gameName: null, source: null }]);
+
+      bridgeService.exitCurrent();
+      expect(events[1]).toEqual({ action: 'exit', kind: 'bridge', reason: 'explicit-exit', source: null });
+
+      // 宽限超时（ADR-0005 兜底复位）同样是一次退出
+      events.length = 0;
+      const ws2 = new FakeWs();
+      initSession(server, ws2);
+      ws2.emit('close');
+      jest.advanceTimersByTime(60000);
+      expect(events.map((event) => `${event.action}:${event.reason || ''}`)).toEqual(['start:', 'exit:grace-expired']);
+    } finally {
+      unsubscribe();
+    }
+  });
+
   afterEach(() => {
     jest.useRealTimers();
   });

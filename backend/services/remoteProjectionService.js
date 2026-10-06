@@ -534,11 +534,45 @@ class RemoteProjectionService {
       return;
     }
     // 逐字段钳制：覆盖品牌协议字段，未知字段/命令一律拒绝（审查报告 §2.1）。
+    // 本地玩法运行中（或被顶替后主控端尚未重新登记占用）：只放行停止/归零，
+    // 防止主控端页面式游戏的残余写入继续驱动被控端设备。
     const sanitized = outputGuard.sanitizeProjectionMessage({
       device,
       message: input.message,
       limits: session.limits,
     });
+    // 本地玩法运行中：只放行「确实是停止/归零」的写入；脏字段的停止帧丢弃多余字段后照发，
+    // 其余（含无法解析的报文）一律拒绝，避免把未知写入透传到真实设备。
+    if (this._isPlayOccupied()) {
+      if (!sanitized.ok) {
+        this._emitOperation(userId, input.deviceId, 'rejected', {
+          code: sanitized.code,
+          message: sanitized.message,
+          requested: input.message,
+        });
+        await this._publishWriteResult(session, envelope.messageId, {
+          deviceId: input.deviceId,
+          ok: false,
+          code: sanitized.code,
+          message: sanitized.message,
+        }).catch(() => {});
+        return;
+      }
+      if (outputGuard.isLatchedProjectionMessage({ device, message: sanitized.message }).latched) {
+        this._emitOperation(userId, input.deviceId, 'rejected', {
+          code: 'HOST_PLAY_ACTIVE',
+          message: '被控端正在运行本地玩法',
+          requested: input.message,
+        });
+        await this._publishWriteResult(session, envelope.messageId, {
+          deviceId: input.deviceId,
+          ok: false,
+          code: 'HOST_PLAY_ACTIVE',
+          message: '被控端正在运行本地玩法',
+        }).catch(() => {});
+        return;
+      }
+    }
     if (!sanitized.ok) {
       this._emitOperation(userId, input.deviceId, 'rejected', {
         code: sanitized.code,
@@ -880,6 +914,23 @@ class RemoteProjectionService {
     }
     await this._safeStop(session, 'remote-emergency-stop');
     return this.getStatus();
+  }
+
+  /**
+   * 编排层设置「被控端本地玩法占用」的实时判定源。
+   * 由 remoteSessionService 注入：本地玩法在跑、或顶替后主控端尚未重新登记占用 → true。
+   */
+  setPlayOccupiedSource(source) {
+    this.playOccupiedSource = typeof source === 'function' ? source : null;
+    return { ok: true };
+  }
+
+  /** 当前是否处于「只允许停止/归零」的投影写入状态（未注入判定源时视为不占用）。 */
+  _isPlayOccupied() {
+    try {
+      if (typeof this.playOccupiedSource === 'function') return this.playOccupiedSource() === true;
+    } catch (_) { /* 判定源异常时按不占用，与旧行为一致 */ }
+    return false;
   }
 
   _onLocalDataChange({ deviceId, device, nextData }) {

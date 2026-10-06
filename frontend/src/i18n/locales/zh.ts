@@ -1042,6 +1042,7 @@ const zh = {
       emergencyStop: '急停',
       kick: '踢出',
       disconnect: '断开',
+      occupancy: '{name} 正在运行《{game}》',
     },
     log: {
       empty: '暂无操作',
@@ -1084,6 +1085,18 @@ const zh = {
       revoked: '对方已收回控制权',
       ended: '对方已结束远程',
       offline: '与对方的连接已断开',
+    },
+    play: {
+      ended: '被控端结束了你的玩法，已停止你的游戏',
+      preempted: '被控端开始了本地玩法，已停止你的游戏',
+    },
+    errors: {
+      hostNoResponse: '被控端无响应，请稍后再试',
+      hostPlayActive: '被控端正在运行本地玩法，请稍后再启动',
+      notAuthorized: '未授权远控，请让对方重新授权',
+      expired: '远程控制已过期，请重新连接',
+      playPreempted: '玩法已被被控端顶替',
+      occupancyReleased: '玩法占用已释放',
     },
   },
   electron: {

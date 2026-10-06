@@ -950,6 +950,7 @@ import BrandsPanel from '../components/BrandsPanel.vue'
 import DeviceBatchControl from '../components/DeviceBatchControl.vue'
 import { track } from '../analytics'
 import { listDevices, getDeviceTypes, getDeviceTypeConfigs } from '../api/devices'
+import { friendlyMessage } from '../api/errorMessage'
 
 interface DeviceData { [key: string]: any }
 type TransportType = 'mqtt' | 'serial' | 'ble' | 'remote' | 'brand' | 'brandBle';
@@ -1269,7 +1270,10 @@ async function readJsonResponse(res: Response, fallback: string) {
   let data: any = null;
   try { data = await res.json(); } catch (_) {}
   if (!res.ok || data?.error) {
-    throw new Error(data?.message || data?.error?.message || fallback);
+    // 远程模式下的失败带后端错误码（REMOTE_LOCKED / 投影写入超时等）：给出可读文案
+    const error: any = new Error(data?.message || data?.error?.message || fallback);
+    error.code = data?.error?.code;
+    throw error;
   }
   return data;
 }
@@ -1378,7 +1382,7 @@ async function setControlConnection(device: Device, type: TransportType) {
     await readJsonResponse(res, t('devices.controlFailed'));
     await refreshDevices();
   } catch (error: any) {
-    ElMessage.error(error?.message || t('devices.controlFailed'));
+    ElMessage.error(friendlyMessage(error, (key) => t(key), t('devices.controlFailed')));
   }
 }
 
@@ -1739,8 +1743,7 @@ async function saveChanges() {
         throw error;
       }
     }
-    const ok = await publishMessage(selectedDevice.value.id, updateData);
-    if (!ok) throw new Error(t('devices.publishFailed'));
+    await publishMessage(selectedDevice.value.id, updateData);
     // 更新本地数据与状态
     devices.value = devices.value.map(d => {
       if (d.id === selectedDevice!.value!.id) {
@@ -1755,7 +1758,7 @@ async function saveChanges() {
     cancelEdit();
     ElMessage.success(t('devices.dataUpdated'));
   } catch (e: any) {
-    ElMessage.error(e?.message || t('devices.saveFailed'));
+    ElMessage.error(friendlyMessage(e, (key) => t(key), t('devices.saveFailed')));
   }
 }
 
@@ -1770,7 +1773,12 @@ async function publishMessage(deviceId: string, message: any) {
     body: JSON.stringify({ message })
   });
   const data = await res.json();
-  if (!res.ok || data.error) return false;
+  if (!res.ok || data.error) {
+    // 远程模式下写入失败带错误码（投影超时 / 被控端拒绝）：交给调用方给可读文案
+    const error: any = new Error(data?.error?.message || data?.message || t('devices.publishFailed'));
+    error.code = data?.error?.code;
+    throw error;
+  }
   return true;
 }
 
@@ -1786,10 +1794,14 @@ async function executeOperation(operation: any) {
       method: 'POST'
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || t('devices.opExecFailed'));
+    if (!res.ok || data.error) {
+      const error: any = new Error(data?.error?.message || data?.message || t('devices.opExecFailed'));
+      error.code = data?.error?.code;
+      throw error;
+    }
     ElMessage.success(t('devices.opOk', { name: opName(operation) }));
   } catch (error: any) {
-    ElMessage.error(error?.message || t('devices.opFailed', { name: opName(operation) }));
+    ElMessage.error(friendlyMessage(error, (key) => t(key), t('devices.opFailed', { name: opName(operation) })));
   } finally {
     operationLoading.value[operationKey] = false;
   }
@@ -2106,10 +2118,14 @@ async function executeDeviceOperation(device: Device, operation: any) {
       method: 'POST'
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || t('devices.opExecFailed'));
+    if (!res.ok || data.error) {
+      const error: any = new Error(data?.error?.message || data?.message || t('devices.opExecFailed'));
+      error.code = data?.error?.code;
+      throw error;
+    }
     ElMessage.success(t('devices.opOk', { name: opName(operation) }));
   } catch (error: any) {
-    ElMessage.error(error?.message || t('devices.opFailed', { name: opName(operation) }));
+    ElMessage.error(friendlyMessage(error, (key) => t(key), t('devices.opFailed', { name: opName(operation) })));
   }
 }
 </script>

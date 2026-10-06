@@ -10,6 +10,28 @@ function bearerToken(req) {
   return header.startsWith('Bearer ') ? header.slice(7).trim() : null;
 }
 
+/** 主控端本机玩法占用：登记 / 释放（页面式游戏跑在主控端，被控端登记为一次远程占用）。 */
+router.post('/play/occupy', async (req, res) => {
+  try {
+    res.json(await remoteSession.occupyPlay({
+      gameId: req.body?.gameId,
+      gameName: req.body?.gameName,
+    }));
+  } catch (error) {
+    // 被控端本地玩法运行中：主控端启动必须失败可见（409 HOST_PLAY_ACTIVE）
+    const status = error?.code === 'HOST_PLAY_ACTIVE' ? 409 : 400;
+    sendError(res, error?.code || 'PLAY_OCCUPY_FAILED', error?.message || '玩法占用登记失败', status);
+  }
+});
+
+router.post('/play/release', async (req, res) => {
+  try {
+    res.json(await remoteSession.releasePlay({ gameId: req.body?.gameId }));
+  } catch (error) {
+    sendError(res, error?.code || 'PLAY_RELEASE_FAILED', error?.message || '玩法占用释放失败', 400);
+  }
+});
+
 function handleError(res, error) {
   if (error instanceof roomApi.RoomApiError) {
     return sendError(res, error.code, error.message, error.status);

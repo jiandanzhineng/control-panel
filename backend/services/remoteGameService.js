@@ -5,6 +5,7 @@ const manifests = [
   require('../game-runtime/cores/pressure-edging-v2-manifest'),
 ];
 const deviceRegistry = require('../devices/registry');
+const playCarrierBus = require('./playCarrierBus');
 
 const PROTOCOL_VERSION = 1;
 const MAX_SEEN_MESSAGE_IDS = 1024;
@@ -50,6 +51,8 @@ const COMMANDS = new Set([
   'devices.controlConnection.set',
   'devices.invoke',
   'devices.stop',
+  'play.occupy',
+  'play.release',
 ]);
 
 function parseJson(payload) {
@@ -125,6 +128,86 @@ class RemoteGameService {
     this.session = null;
     // 编排层（remoteSessionService）订阅的事件出口，避免它去读私有字段。
     this.eventHandlers = new Set();
+    // 本机玩法载体（bridge / HostRuntime）事件：本机开始时被控端优先，顶掉主控端页面式游戏
+    this.carrierUnsub = playCarrierBus.onPlayCarrierChange((event) => {
+      try { this._onCarrierEvent(event); } catch (_) {}
+    });
+  }
+
+  /** 本机开始/结束玩法：被控端本地优先（ADR-0004「后启动者顶掉前者并复位」）。 */
+  _onCarrierEvent(event) {
+    const session = this.session;
+    if (!session || !event) return;
+    if (session.role === 'operator') {
+      // 主控端自己的页面式玩法载体退出（显式退出 / 浏览器 origin 退出 / ADR-0005 60 秒宽限超时）：
+      // 占用不能挂在一个已经不在跑的玩法上，向被控端释放。
+      // 'replaced' 除外：那是新玩法顶掉旧玩法，启动路径刚登记过新占用。
+      if (event.action === 'exit' && event.kind === 'bridge' && event.reason !== 'replaced') {
+        void this._releaseOperatorPlayOnCarrierExit();
+      }
+      return;
+    }
+    if (session.role !== 'owner') return;
+    if (event.action === 'start') {
+      // 被控端自己启动的 HostRuntime 游戏不算「本地占用」，它正是主控端起的玩法
+      if (event.kind === 'host' && event.source === 'remote') return;
+      void this._preemptForLocalPlay(event);
+      return;
+    }
+    // 被控端自己的玩法退出：占用解除；主控端起的 HostRuntime 游戏退出则通知主控端停止本地游戏
+    const remoteGame = event.kind === 'host' && event.source === 'remote';
+    void this._onCarrierExit(session, event, remoteGame);
+  }
+
+  /** 本机玩法开始：紧急停主控端输出 + 清除占用 + 通知主控端停掉它的游戏（被控端优先）。 */
+  async _preemptForLocalPlay(event) {
+    const session = this.session;
+    if (!session || !session.playOccupancy) return;
+    const gameId = session.playOccupancy.gameId || null;
+    const gameName = session.playOccupancy.gameName || null;
+    session.playOccupancy = null;
+    // 顶掉即停：主控端的手动输出先停（ADR-0004 顶掉旧玩法时复位设备）
+    await this._stopOperatorOutputs().catch(() => {});
+    this._log(`local ${event.kind} play started: released operator play ${gameId || ''}`.trim());
+    // 被控端操作记录：谁顶掉了谁的玩法
+    this._emitEvent({
+      type: 'operator-output',
+      kind: 'session.play.preempted',
+      outcome: 'ok',
+      detail: { gameId, gameName },
+    });
+    await this._publishPlayOccupancy(session).catch(() => {});
+    // 被控端本地开始了玩法：主控端要停掉它本机运行的页面式游戏
+    await this._publishEnvelope(session, 'events', 'session.play.preempted', {
+      gameId, gameName, reason: 'host-local-play',
+    }).catch(() => {});
+    this._emitEvent({ type: 'play-preempted', gameId, gameName, reason: 'host-local-play' });
+  }
+
+  /** 主控端起的 HostRuntime 玩法在被控端结束：通知主控端停止本地游戏并清占用。 */
+  async _onCarrierExit(session, event, remoteGame) {
+    if (remoteGame) {
+      session.playOccupancy = null;
+      // 被控端本地停止主控端起的玩法：同样按「退出即复位」停主控端手动输出
+      await this._stopOperatorOutputs().catch(() => {});
+      await this._publishPlayOccupancy(session).catch(() => {});
+      await this._publishEnvelope(session, 'events', 'session.play.ended', {
+        reason: event.reason || 'ended', gameId: event.gameId || null,
+      }).catch(() => {});
+      this._emitEvent({ type: 'play-ended', reason: event.reason || 'ended' });
+      return;
+    }
+    // 被控端本机玩法退出：占用只由「本机玩法开始」顶掉，退出不动占用
+    // （启动路径会先发 start 事件清占用；这里若也清，会把刚登记的新占用误清）
+  }
+
+  /** 主控端页面式玩法载体退出：清本地占用并向被控端释放（幂等，失败只影响被控端记录）。 */
+  async _releaseOperatorPlayOnCarrierExit() {
+    const session = this.session;
+    if (!session || session.role !== 'operator' || !session.playOccupancy) return;
+    session.playOccupancy = null;
+    this._emitEvent({ type: 'play-occupancy', occupancy: null });
+    await this.command({ type: 'play.release', payload: {} }).catch(() => {});
   }
 
   /** 编排层订阅事件（member / authorization / game / operator-output / ended）。返回取消订阅函数。 */
@@ -210,9 +293,73 @@ class RemoteGameService {
       this._applyGameSession(null);
       this._emitEvent({ type: 'operator-output', kind: 'game.stop', outcome: 'ok' });
     }
+    // 急停 = 停主控端触发的输出 + 结束主控端启动的玩法：占用一并释放并告知主控端
+    // （页面式游戏跑在主控端，被控端看不到它的载体，只能靠这条事件让它停）
+    if (session.playOccupancy) {
+      session.playOccupancy = null;
+      await this._publishPlayOccupancy(session).catch(() => {});
+      await this._publishEnvelope(session, 'events', 'session.play.ended', { reason: 'remote-emergency-stop' }).catch(() => {});
+    }
     await this._publishClientSnapshot(session).catch(() => {});
     await this._publishGameSnapshot(session, { force: true }).catch(() => {});
     return this.getStatus();
+  }
+
+  // ---------- 玩法占用仲裁（ADR-0004：玩法全局唯一，后启动者顶掉前者） ----------
+
+  /**
+   * 被控端本地是否正在跑玩法（bridge 活跃 session 或本机来源的 HostRuntime）。
+   * 注意：只看「被控端本机」的载体；主控端起在跑的 HostRuntime（source=remote）不算。
+   */
+  hasLocalPlay() {
+    const status = this._hostStatus();
+    if (status?.active && (status.source || 'local') === 'local') return true;
+    try {
+      return (require('./bridgeService').getActiveSessions?.() || []).length > 0;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /**
+   * 主控端开始一次玩法（页面式游戏 / 插件跑在主控端，被控端看不到它的 bridge）。
+   * 被控端本地玩法优先：本地在跑就拒绝（ADR-0004）。
+   * 已在跑同一个玩法时按幂等成功处理（页面关闭 / 断线重连后的重复登记不该被本地玩法误拒）。
+   */
+  async occupyPlay({ gameId, gameName } = {}) {
+    const session = this.session;
+    if (!session || session.role !== 'owner') throw this._error('NOT_OWNER', '只有被控端可以登记玩法占用');
+    const id = String(gameId || '').trim();
+    if (!id) throw this._error('GAME_ID_REQUIRED', '缺少游戏 ID');
+    const current = session.playOccupancy;
+    if (current?.gameId === id) {
+      return { ok: true, gameId: id, gameName: current.gameName || (gameName ? String(gameName) : null), idempotent: true };
+    }
+    if (this.hasLocalPlay()) throw this._error('HOST_PLAY_ACTIVE', '被控端正在运行本地玩法');
+    session.playOccupancy = { gameId: id, gameName: gameName ? String(gameName) : null, at: this.now() };
+    // 主控端重新登记了占用：被控端据此放开投影写入（见 remoteSessionService._isPlayOccupied）
+    await this._publishPlayOccupancy(session).catch(() => {});
+    return { ok: true, gameId: id, gameName: session.playOccupancy.gameName };
+  }
+
+  /** 主控端停止 / 退出玩法：清占用。 */
+  async releasePlay() {
+    const session = this.session;
+    if (!session || session.role !== 'owner') throw this._error('NOT_OWNER', '只有被控端可以释放玩法占用');
+    session.playOccupancy = null;
+    await this._publishPlayOccupancy(session).catch(() => {});
+    return { ok: true };
+  }
+
+  async _publishPlayOccupancy(session) {
+    if (!session?.client || session.role !== 'owner') return;
+    const occupancy = session.playOccupancy ? { ...session.playOccupancy } : null;
+    // 编排层（被控端）据此显示「{peer} 正在运行《X》」
+    this._emitEvent({ type: 'play-occupancy', occupancy });
+    await this._publishEnvelope(session, 'events', 'session.play-occupancy', {
+      occupancy,
+      localPlayActive: this.hasLocalPlay(),
+    });
   }
 
   _createWatchdog() {
@@ -245,6 +392,8 @@ class RemoteGameService {
       hostUserId: session.room.hostUserId || null,
       connected: session.connected,
       authorized,
+      occupancy: session.role === 'owner' ? (session.playOccupancy || null) : null,
+      playOccupancy: session.role === 'operator' ? (session.playOccupancy || null) : null,
       gameSessionId: session.role === 'owner'
         ? hostStatus?.sessionId || null
         : session.gameSessionId || null,
@@ -371,6 +520,13 @@ class RemoteGameService {
   }
 
   async revoke() {
+    const session = this.session;
+    if (session?.role === 'owner' && session.playOccupancy) {
+      // 撤权即结束主控端的玩法：占用不能留给下一个（或没有）被授权的人
+      session.playOccupancy = null;
+      await this._publishPlayOccupancy(session).catch(() => {});
+      await this._publishEnvelope(session, 'events', 'session.play.ended', { reason: 'revoked' }).catch(() => {});
+    }
     return this._setAuthorized(false);
   }
 
@@ -391,6 +547,12 @@ class RemoteGameService {
     session.authorized = false;
     // 服务端还断不掉对方的 MQTT，先停掉它起的手动输出
     await this._stopOperatorOutputs();
+    // 踢出即结束其玩法：占用与被控端记录一起清掉，并告知主控端停掉本机游戏
+    if (session.playOccupancy) {
+      session.playOccupancy = null;
+      await this._publishPlayOccupancy(session).catch(() => {});
+      await this._publishEnvelope(session, 'events', 'session.play.ended', { reason: 'kicked' }).catch(() => {});
+    }
     await this._refreshMembers(session);
     await this._publishClientSnapshot(session);
     return this.getStatus();
@@ -510,6 +672,11 @@ class RemoteGameService {
   async stop({ skipApi = false, reason = 'room-closed' } = {}) {
     const session = this.session;
     if (!session) return this.getStatus();
+    // 主控端退出（断开 / 掉线宽限到期）：先把玩法占用释放给被控端，再拆会话
+    if (session.role === 'operator' && session.playOccupancy) {
+      session.playOccupancy = null;
+      await this.command({ type: 'play.release', payload: {} }).catch(() => {});
+    }
     this.session = null;
     if (reason !== 'replaced' && reason !== 'backend-shutdown') {
       this._emitEvent({ type: 'ended', reason });
@@ -569,6 +736,8 @@ class RemoteGameService {
       games: [],
       devices: [],
       gameSnapshot: null,
+      // 主控端运行的玩法占用（被控端记录）与被控端下发的占用（主控端记录）
+      playOccupancy: null,
       projectionInvite: null,
       timers: { heartbeat: null, snapshot: null, credential: null },
       hostUnsub: null,
@@ -991,6 +1160,9 @@ class RemoteGameService {
     }
     // 延迟测量：回执里带房主时间戳，操作方据此算一次往返
     if (type === 'client.ping') return { now: this.now(), echo: payload?.echo ?? null };
+    // 玩法占用仲裁：主控端开始/停止玩法时登记与释放（被控端本地优先）
+    if (type === 'play.occupy') return this.occupyPlay(payload);
+    if (type === 'play.release') return this.releasePlay();
     // 主控端远程条上的「急停」：只停主控端触发的输出与玩法，会话继续。
     // 调用方（_onOwnerCommand）已校验发送者就是被授权的那个 userId，这里不再重复判权。
     if (type === 'session.emergency-stop') {
@@ -1003,7 +1175,13 @@ class RemoteGameService {
     if (type === 'game.config.set') return this.host.setParams(payload.params || payload);
     if (type === 'game.start') {
       this._validateStart(payload);
+      // 被控端本地玩法优先：本地在跑时拒绝主控端启动（ADR-0004，与页面式游戏的占用登记同一判据）
+      if (this.hasLocalPlay()) throw this._error('HOST_PLAY_ACTIVE', '被控端正在运行本地玩法');
       if (this.beforeHostStart) await this.beforeHostStart();
+      // 竞态兜底：beforeHostStart 的 await 期间被控端可能刚起了本机玩法。
+      // 此时绝不能再调 host.start —— 它会顶掉本机玩法（gameHostService.start 会 stop 现有 session）。
+      // 再判一次，本机玩法优先。
+      if (this.hasLocalPlay()) throw this._error('HOST_PLAY_ACTIVE', '被控端正在运行本地玩法');
       const started = await this.host.start({
         gameId: payload.gameId,
         deviceMap: payload.deviceMap,
@@ -1018,8 +1196,15 @@ class RemoteGameService {
     if (type === 'game.pause') return this.host.pause();
     if (type === 'game.resume') return this.host.resume();
     if (type === 'game.stop') {
+      const session = this.session;
       const result = await this.host.stop({ reason: 'remote-stop' });
       this._applyGameSession(null);
+      // 主控端结束玩法：占用随之释放，并告知主控端停掉本机游戏（页面式游戏不推占用事件）
+      if (session) {
+        session.playOccupancy = null;
+        await this._publishPlayOccupancy(session).catch(() => {});
+        await this._publishEnvelope(session, 'events', 'session.play.ended', { reason: 'remote-stop' }).catch(() => {});
+      }
       return result;
     }
     if (type === 'game.action') return this.host.action(payload.action, payload.payload);
@@ -1259,6 +1444,30 @@ class RemoteGameService {
     if (envelope.type === 'game.snapshot') {
       session.gameSnapshot = envelope.payload || null;
       if (envelope.payload?.gameSessionId) session.gameSessionId = envelope.payload.gameSessionId;
+      return;
+    }
+    if (envelope.type === 'session.play-occupancy') {
+      session.playOccupancy = envelope.payload?.occupancy || null;
+      // 编排层据此清掉主控端本机占用（被控端停止 / 急停时占用会变 null）
+      this._emitEvent({ type: 'play-occupancy', occupancy: session.playOccupancy });
+      return;
+    }
+    if (envelope.type === 'session.play.preempted') {
+      // 被控端本地开始了玩法：主控端停掉本机运行的页面式游戏（remoteSessionService 据此停）
+      this._emitEvent({
+        type: 'play-preempted',
+        gameId: envelope.payload?.gameId || null,
+        gameName: envelope.payload?.gameName || null,
+        reason: envelope.payload?.reason || 'host-local-play',
+      });
+      return;
+    }
+    if (envelope.type === 'session.play.ended') {
+      this._emitEvent({
+        type: 'play-ended',
+        gameId: envelope.payload?.gameId || null,
+        reason: envelope.payload?.reason || 'ended',
+      });
       return;
     }
     if (envelope.type === 'session.revoked') {

@@ -25,6 +25,10 @@ const KIND_SUMMARY = {
   'devices.stop': '停止设备',
   'devices.disconnect': '断开设备',
   'operator-output': '停止主控端输出',
+  'play.occupy': '开始玩法',
+  'play.release': '结束玩法',
+  'session.play.preempted': '被控端本地玩法顶替',
+  'session.play.ended': '玩法已结束',
   'game.start': '启动玩法',
   'game.stop': '停止玩法',
   'game.pause': '暂停玩法',
@@ -53,6 +57,9 @@ class RemoteSessionService {
   } = {}) {
     this.game = game;
     this.projection = projection;
+    // 玩法占用仲裁跨两条链路：把「本机玩法优先」的判定注入投影链路，
+    // 由它在被控端本地玩法运行 / 顶替后主控端未重新登记期间只放行停止/归零写入。
+    try { this.projection.setPlayOccupiedSource?.(() => this._isPlayOccupied()); } catch (_) {}
     this.log = log;
     this.now = now;
     this.setTimer = setTimer;
@@ -102,6 +109,11 @@ class RemoteSessionService {
       authorized: false,
       waitingAuthorize: null,
       lastError: null,
+      // 本机运行中的玩法（主控端起的）：被控端本地开始时紧急停输出并清占用
+      localPlay: null,
+      // 被顶替标记：本机玩法顶掉主控端玩法后为 true，主控端重新登记占用（或停止玩法）才复位。
+      // 期间投影写入只放行停止/归零，关掉主控端页面式游戏的残余写入窗口。
+      playPreempted: false,
       timers: { renew: null, authorize: null, ping: null },
     };
     this.logEntries = [];
@@ -131,6 +143,11 @@ class RemoteSessionService {
       authorized: false,
       waitingAuthorize: null,
       lastError: null,
+      // 主控端本机运行的玩法占用（被控端记录的那份）
+      localPlay: null,
+      // 占用是「怎么没的」：host-local-play = 被被控端本地玩法顶替，其余 = 被控端结束/急停。
+      // 主控端界面据此选提示文案（顶替与「被控端结束了玩法」不是同一句话）。
+      playEndedReason: null,
       timers: { renew: null, authorize: null, ping: null },
     };
     this.logEntries = [];
@@ -208,6 +225,9 @@ class RemoteSessionService {
     const state = this._requireState('NOT_ACTIVE', '当前没有远程会话');
     if (state.role === 'owner') {
       this._logEvent('ok', 'session.emergencyStop', null, null);
+      // 急停即释放玩法占用：主控端本机游戏据此停下并清占用（两条链路一起停）
+      state.remotePlay = null;
+      state.playPreempted = false;
       const results = await Promise.allSettled([
         this.game.emergencyStop(),
         this.projection.emergencyStop(),
@@ -269,6 +289,94 @@ class RemoteSessionService {
     return this.game.command({ type, payload });
   }
 
+  // ---------- 玩法占用（页面式游戏跑在主控端，被控端登记为一次远程占用） ----------
+
+  /**
+   * 主控端开始一次玩法：登记占用。被控端本地有玩法在跑时被拒（HOST_PLAY_ACTIVE），
+   * 调用方（games 路由）据此让启动失败可见。已在运行同一游戏时按幂等成功处理。
+   */
+  async occupyPlay({ gameId, gameName } = {}) {
+    const state = this._requireState('NOT_ACTIVE', '当前没有远程会话');
+    if (state.role !== 'operator') throw this._error('NOT_OPERATOR', '只有主控端可以登记玩法占用');
+    const id = String(gameId || '').trim();
+    if (!id) throw this._error('GAME_ID_REQUIRED', '缺少游戏 ID');
+    const current = state.localPlay;
+    if (current?.gameId === id) return { ok: true, gameId: id, gameName: current.gameName || gameName || null };
+    const result = await this.game.command({ type: 'play.occupy', payload: { gameId: id, gameName } });
+    if (result?.ok === false) {
+      const error = this._error(result.code || 'PLAY_OCCUPY_FAILED', result.message || '玩法占用登记失败');
+      state.lastError = error.message;
+      throw error;
+    }
+    const occupancy = result?.result || { gameId: id, gameName: gameName || null };
+    state.localPlay = { gameId: occupancy.gameId || id, gameName: occupancy.gameName || gameName || null };
+    state.playEndedReason = null;
+    // 被控端记录的那份（界面显示「{peer} 正在运行《X》」用）。
+    // 幂等重复登记时被控端不会重发占用事件，这里保留原有记录，避免界面闪一下空档。
+    if (result?.result?.idempotent !== true || !state.remotePlay) {
+      state.remotePlay = { ...occupancy, gameId: state.localPlay.gameId };
+    }
+    this._logEvent('ok', 'play.occupy', null, { gameId: id });
+    return { ok: true, ...state.localPlay };
+  }
+
+  /** 主控端玩法结束（停止 / 页面关闭）：释放占用；没有占用时静默成功。 */
+  async releasePlay({ gameId } = {}) {
+    const state = this._requireState('NOT_ACTIVE', '当前没有远程会话');
+    if (state.role !== 'operator') throw this._error('NOT_OPERATOR', '只有主控端可以释放玩法占用');
+    const id = String(gameId || '').trim();
+    if (state.localPlay && (!id || state.localPlay.gameId === id)) {
+      state.localPlay = null;
+      state.remotePlay = null;
+      state.playPreempted = false;
+      this._logEvent('ok', 'play.release', null, { gameId: id || null });
+    }
+    const result = await this.game.command({ type: 'play.release', payload: { gameId: id || null } });
+    if (result?.ok === false) {
+      throw this._error(result.code || 'PLAY_RELEASE_FAILED', result.message || '玩法占用释放失败');
+    }
+    return { ok: true };
+  }
+
+  /** 主控端本机是否在跑被控端记录的玩法（前端据此恢复占用状态）。 */
+  localPlay() {
+    return this.state?.localPlay ? { ...this.state.localPlay } : null;
+  }
+
+  /** 被控端本机开始玩法：紧急停主控端输出 + 清占用（被控端优先，ADR-0004）。 */
+  async preemptOperatorPlay(event = {}) {
+    const state = this.state;
+    if (!state || state.role !== 'owner') return null;
+    if (event.source !== 'remote') {
+      state.playPreempted = true;
+      // 被控端本地玩法优先：急停主控端的两条链路输出并结束其玩法（ADR-0004 顶掉即复位）。
+      // 投影链路的锁存输出必须在这里停掉：只靠「挡住后续写入」的话，已经在跑的输出
+      // 要等看门狗到期（最长 60s）才停。
+      await Promise.allSettled([
+        this.game.emergencyStop(),
+        this.projection.emergencyStop(),
+      ]);
+      this._logEvent('ok', 'session.play.preempted', null, { reason: event.reason || 'host-local-play' });
+    }
+    return this.getStatus();
+  }
+
+  /**
+   * 被控端视角：是否处于「本机玩法优先」状态 —— 本机玩法在跑，或顶替后主控端尚未重新登记占用。
+   * 为 true 时投影链路只放行停止/归零写入（关掉顶替窗口期主控端页面式游戏的残余写入）。
+   */
+  _isPlayOccupied() {
+    const state = this.state;
+    if (!state || state.role !== 'owner') return false;
+    try {
+      // 被控端本机玩法在跑（bridge 活跃 / 本机来源的 HostRuntime）：
+      // 主控端只能下发停止/归零（页面式游戏的残余写入被挡下）。
+      if (this.game.hasLocalPlay?.()) return true;
+    } catch (_) { /* 判定失败按未占用，与旧行为一致 */ }
+    // 顶替后主控端尚未重新登记占用：同样只放行停止/归零
+    return state.playPreempted === true;
+  }
+
   // ---------- 事件接线 ----------
 
   _attach() {
@@ -312,6 +420,33 @@ class RemoteSessionService {
       this._recordEvent(event);
       return;
     }
+    if (event.type === 'play-occupancy' && state.role === 'owner') {
+      // 被控端记录的主控端玩法占用：界面据此显示「{peer} 正在运行《X》」
+      state.remotePlay = event.occupancy || null;
+      if (state.remotePlay) state.playPreempted = false;
+      // 占用消失 = 主控端玩法已结束（被控端停止 / 急停）：localPlay 变 null 即界面停本机游戏的信号
+      return;
+    }
+    if (event.type === 'play-occupancy' && state.role === 'operator') {
+      // 被控端回执的占用状态：主控端据此恢复/清掉本机玩法占用（重连补全量也走这里）
+      const next = event.occupancy || null;
+      if (state.localPlay && !next) state.playEndedReason = 'host-stopped';
+      if (next) state.playEndedReason = null;
+      state.localPlay = next;
+      return;
+    }
+    if (event.type === 'play-preempted') {
+      if (state.role === 'owner') {
+        // 被控端本地开始了玩法：停掉本机页面式游戏并复位设备（被控端优先）
+        void this.preemptOperatorPlay({ source: event.source, reason: event.reason });
+      } else {
+        state.localPlay = null;
+        state.playEndedReason = event.reason || 'host-local-play';
+        this._logEvent('rejected', 'session.play.preempted', null, { reason: event.reason || null });
+        // 通知界面停掉本机游戏并弹出「被控端开始了本地玩法，已停止你的游戏」
+      }
+      return;
+    }
     if (event.type === 'ended' && state.role === 'operator') {
       this.lastEnded = { at: this.now(), reason: event.reason || 'ended' };
       this._teardown();
@@ -337,6 +472,11 @@ class RemoteSessionService {
     }
     if (event.type === 'operation' || event.type === 'command') {
       this._recordEvent(event);
+      return;
+    }
+    if (event.type === 'play-ended' && state.role === 'operator') {
+      if (state.localPlay) state.playEndedReason = event.reason || 'ended';
+      state.localPlay = null;
       return;
     }
     if (event.type === 'ended' && state.role === 'operator') {
@@ -600,6 +740,9 @@ class RemoteSessionService {
         peer: null,
         authorized: false,
         links: { game: { connected: false }, projection: { connected: false, roomId: null } },
+        occupancy: null,
+        localPlay: null,
+        playEndedReason: null,
         latencyMs: null,
         lastError: ended?.reason || null,
         log: [...this.logEntries],
@@ -623,6 +766,9 @@ class RemoteSessionService {
           roomId: state.projectionRoomId || projectionStatus?.roomId || null,
         },
       },
+      occupancy: state.role === 'owner' ? (state.remotePlay || null) : null,
+      localPlay: state.role === 'operator' ? (state.localPlay || null) : null,
+      playEndedReason: state.role === 'operator' ? (state.playEndedReason || null) : null,
       latencyMs: state.role === 'operator' ? this._latencyMs : null,
       lastError: state.lastError || null,
       log: [...this.logEntries],

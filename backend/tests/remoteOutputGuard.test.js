@@ -369,3 +369,28 @@ describe('createOutputWatchdog', () => {
     await expect(watchdog.stopAll()).resolves.toMatchObject({ failed: 1 });
   });
 });
+
+describe('isStopProjectionMessage (host local play window)', () => {
+  const stop = (device, message) => guard.isStopProjectionMessage({ device, message });
+
+  test('accepts stop / zero writes as stop commands', () => {
+    expect(stop({ type: 'DIANJI' }, { method: 'update', shock: 0, voltage: 0 })).toBe(true);
+    expect(stop({ type: 'TD01' }, { method: 'update', power: 0 })).toBe(true);
+    expect(stop({ type: 'DGLAB' }, { brand: 'dglab', cmd: 'stopPattern' })).toBe(true);
+    expect(stop({ type: 'DGLAB' }, { brand: 'dglab', cmd: 'stop' })).toBe(true);
+    // 脏字段的停止帧仍然算停止：投影安全层会丢弃多余字段再下发
+    expect(stop({ type: 'ZIDONGSUO' }, { method: 'update', open: 0, bogus: 1 })).toBe(true);
+    // 泵的 scene:'stop' 是停止路径
+    expect(stop({ type: 'YCY_ENEMA' }, { brand: 'ycy', cmd: 'pump', scene: 'stop' })).toBe(true);
+  });
+
+  test('rejects outputs, unknown devices and non-update frames', () => {
+    expect(stop({ type: 'DIANJI' }, { method: 'update', shock: 1 })).toBe(false);
+    expect(stop({ type: 'TD01' }, { method: 'update', power: 30 })).toBe(false);
+    expect(stop({ type: 'DGLAB' }, { brand: 'dglab', cmd: 'setPattern', intensity: 5 })).toBe(false);
+    expect(stop({ type: 'YCY_ENEMA' }, { brand: 'ycy', cmd: 'pump', scene: 'guan' })).toBe(false);
+    expect(stop({ type: 'UNKNOWN' }, { method: 'update', power: 0 })).toBe(false);
+    expect(stop({ type: 'TD01' }, { method: 'report', power: 0 })).toBe(false);
+    expect(stop({ type: 'TD01' }, null)).toBe(false);
+  });
+});

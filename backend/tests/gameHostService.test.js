@@ -1,4 +1,5 @@
 const { GameHostService } = require('../game-runtime/gameHostService');
+const playCarrierBus = require('../services/playCarrierBus');
 
 function fakeDevices(rows) {
   return {
@@ -239,5 +240,40 @@ describe('game host runtime', () => {
     const { host } = createHost(devices);
     host.start({ gameId: 'pressure-edging-v2', deviceMap: { sensor: ['s1'], motor: ['m1'] }, params: { duration: 10 } });
     expect(host.getStatus().snapshot.currentPressure).toBe(18.4);
+  });
+});
+
+describe('play carrier events', () => {
+  const devices = () => fakeDevices([{ id: 'd1', type: 'TD01', nickname: 'd1' }]);
+
+  test('start / stop / natural end emit exactly one carrier event each', () => {
+    const seen = [];
+    const unsubscribe = playCarrierBus.onPlayCarrierChange((event) => seen.push(event));
+    try {
+      const { host } = createHost(devices());
+      host.start({ gameId: 'surge-edging', deviceMap: { estim: ['d1'] }, params: {}, source: 'remote' });
+      host.stop({ reason: 'explicit-exit' });
+      expect(seen).toEqual([
+        { action: 'start', kind: 'host', gameId: 'surge-edging', gameName: null, source: 'remote' },
+        { action: 'exit', kind: 'host', reason: 'explicit-exit', source: 'remote' },
+      ]);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  test('replacing a running game emits exit then start so the occupancy follows the new game', () => {
+    const seen = [];
+    const unsubscribe = playCarrierBus.onPlayCarrierChange((event) => seen.push(event));
+    try {
+      const { host } = createHost(devices());
+      host.start({ gameId: 'surge-edging', deviceMap: { estim: ['d1'] }, params: {}, source: 'local' });
+      host.start({ gameId: 'pressure-edging-v2', deviceMap: { estim: ['d1'] }, params: {}, source: 'remote' });
+      expect(seen.map((event) => `${event.action}:${event.source}`)).toEqual([
+        'start:local', 'exit:local', 'start:remote',
+      ]);
+    } finally {
+      unsubscribe();
+    }
   });
 });

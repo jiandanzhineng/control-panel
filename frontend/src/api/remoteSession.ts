@@ -54,3 +54,6 @@ export const revokeRemoteSession = () => request('/revoke', {}) as Promise<Remot
 export const kickRemoteSession = (userId: string) => request('/kick', { userId }) as Promise<RemoteSessionStatus>
 export const emergencyStopRemoteSession = () => request('/emergency-stop', {}) as Promise<RemoteSessionStatus>
 export const stopRemoteSession = (reason?: string) => request('/stop', { reason }) as Promise<RemoteSessionStatus>
+export const occupyRemotePlay = (gameId: string, gameName?: string) =>
+  request('/play/occupy', { gameId, gameName }) as Promise<{ ok: boolean; gameId: string; gameName?: string }>
+export const releaseRemotePlay = (gameId?: string) => request('/play/release', { gameId }) as Promise<{ ok: boolean }>

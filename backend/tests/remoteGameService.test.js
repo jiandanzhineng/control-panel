@@ -97,6 +97,7 @@ function mockHost() {
         active: true,
         running: true,
         sessionId: 'game-session-1',
+        source: input.source,
         gameId: input.gameId,
         deviceMap: input.deviceMap || {},
         snapshot: { running: true, phase: 'INITIAL_CALM', gameId: input.gameId, params: input.params || {} },
@@ -930,6 +931,308 @@ describe('remote game service', () => {
     const kicked = await operator.command({ type: 'session.emergency-stop', payload: {} });
     expect(kicked).toMatchObject({ ok: false, code: 'CONTROL_NOT_AUTHORIZED' });
     expect(broker.publishes.length).toBeGreaterThan(0);
+    await owner.stop();
+  });
+});
+
+describe('remote game play occupancy', () => {
+  test('operator occupies and releases the play; the host records and broadcasts it', async () => {
+    const { broker, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+
+    const occupied = await operator.command({
+      type: 'play.occupy',
+      payload: { gameId: 'pressure-edging-v2', gameName: '气压寸止' },
+    });
+    expect(occupied).toMatchObject({ ok: true, result: { ok: true, gameId: 'pressure-edging-v2' } });
+    expect(owner.getStatus().occupancy).toMatchObject({
+      gameId: 'pressure-edging-v2', gameName: '气压寸止',
+    });
+    // 占用以 session.play-occupancy 广播，操作方据此恢复状态
+    await flush();
+    expect(operator.getStatus().playOccupancy).toMatchObject({ gameId: 'pressure-edging-v2' });
+
+    const released = await operator.command({ type: 'play.release', payload: { gameId: 'pressure-edging-v2' } });
+    expect(released).toMatchObject({ ok: true });
+    expect(owner.getStatus().occupancy).toBeNull();
+    await flush();
+    expect(operator.getStatus().playOccupancy).toBeNull();
+    await owner.stop();
+  });
+
+  test('occupy is rejected while the host runs a local play (HOST_PLAY_ACTIVE)', async () => {
+    const { host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    // 被控端本机（HostRuntime，source 缺省 local）在跑：主控端启动必须被拒
+    host.status = { active: true, running: true, source: 'local', snapshot: { running: true } };
+
+    const denied = await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging' } });
+    expect(denied).toMatchObject({ ok: false, code: 'HOST_PLAY_ACTIVE' });
+    expect(owner.getStatus().occupancy).toBeNull();
+
+    // 被控端本机 bridge（页面式玩法 / 插件）在跑时同样拒绝
+    host.status = { active: false, running: false, snapshot: null };
+    const bridgeService = require('../services/bridgeService');
+    const spy = jest.spyOn(bridgeService, 'getActiveSessions').mockReturnValue([{ id: 's1' }]);
+    try {
+      const busy = await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging' } });
+      expect(busy).toMatchObject({ ok: false, code: 'HOST_PLAY_ACTIVE' });
+    } finally {
+      spy.mockRestore();
+    }
+    await owner.stop();
+  });
+
+  test('a local play started on the host preempts the operator play and stops its outputs', async () => {
+    const { broker, host, owner, operator } = pair();
+    const device = {
+      id: 'dev-1', name: '刺激器', type: 'TD01', connected: true,
+      controlConnection: 'mqtt', connections: [{ type: 'mqtt' }], capabilities: ['strength'],
+    };
+    host.devices = {
+      listDevicesForApi: jest.fn(() => [device]),
+      getDeviceForApi: jest.fn((id) => (id === device.id ? device : null)),
+      invokeDeviceCapabilityAndWait: jest.fn(async () => ({ ok: true })),
+      stopExecutionDeviceAndWait: jest.fn(async () => ({ ok: true })),
+    };
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging' } });
+    // 主控端页面式游戏留下了一次锁存输出
+    await operator.command({
+      type: 'devices.invoke',
+      payload: { deviceId: 'dev-1', capability: 'strength', action: 'set', input: { value: 30 } },
+    });
+    await flush();
+
+    // 被控端本机开始了一次玩法（bridge init）：紧急停主控端输出 + 清占用 + 通知主控端
+    const playCarrierBus = require('../services/playCarrierBus');
+    playCarrierBus.emitPlayCarrierStart({ kind: 'bridge' });
+    await flush();
+
+    // 顶掉即停：主控端手动输出被停（stopExecutionDeviceAndWait）
+    expect(host.devices.stopExecutionDeviceAndWait).toHaveBeenCalledWith('dev-1');
+    expect(owner.getStatus().occupancy).toBeNull();
+    const preempted = [...broker.publishes].reverse().find(({ payload }) => (
+      payload.type === 'session.play.preempted'
+    ));
+    expect(preempted.payload.payload).toMatchObject({ gameId: 'surge-edging', reason: 'host-local-play' });
+    // 操作方收到后清掉本机占用
+    await flush();
+    expect(operator.getStatus().playOccupancy).toBeNull();
+    await owner.stop();
+  });
+
+  test('a host-run remote game ending notifies the operator and clears occupancy', async () => {
+    const { broker, host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {} } });
+    await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging' } });
+    expect(owner.getStatus().occupancy).toMatchObject({ gameId: 'surge-edging' });
+
+    // 被控端本地停止主控端起的 HostRuntime 游戏（source remote）。
+    // 假 host 不会走真实 gameHostService，这里按它的语义补发载体事件。
+    host.stop({ reason: 'user-stop' });
+    require('../services/playCarrierBus').emitPlayCarrierExit({ kind: 'host', reason: 'user-stop', source: 'remote' });
+    await flush();
+
+    expect(owner.getStatus().occupancy).toBeNull();
+    const ended = [...broker.publishes].reverse().find(({ payload }) => payload.type === 'session.play.ended');
+    expect(ended.payload.payload).toMatchObject({ reason: 'user-stop' });
+    await owner.stop();
+  });
+
+  test('game.start is rejected while the host runs a local play, and stop clears the occupancy', async () => {
+    const { broker, host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    // 被控端本地（bridge）在跑：主控端 HostRuntime 启动同样被拒
+    const bridgeService = require('../services/bridgeService');
+    const spy = jest.spyOn(bridgeService, 'getActiveSessions').mockReturnValue([{ id: 's1' }]);
+    try {
+      const denied = await operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {} } });
+      expect(denied).toMatchObject({ ok: false, code: 'HOST_PLAY_ACTIVE' });
+      expect(host.start).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+
+    await operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {} } });
+    await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging' } });
+    expect(owner.getStatus().occupancy).toBeTruthy();
+
+    await operator.command({ type: 'game.stop', payload: {} });
+    await flush();
+    expect(owner.getStatus().occupancy).toBeNull();
+    // 被控端停止玩法：告知主控端停掉本机游戏（页面式游戏不推占用事件）
+    const ended = [...broker.publishes].reverse().find(({ payload }) => payload.type === 'session.play.ended');
+    expect(ended.payload.payload).toMatchObject({ reason: 'remote-stop' });
+    await owner.stop();
+  });
+
+  test('play occupancy is dropped with the session when the operator leaves', async () => {
+    const { owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging' } });
+    expect(owner.getStatus().occupancy).toBeTruthy();
+
+    await operator.stop({ reason: 'operator-stop' });
+    await flush();
+    // 占用挂在会话上：操作方断开即随之清掉（主机侧同一会话也随后结束）
+    await owner.stop({ reason: 'operator-left' });
+    expect(owner.getStatus().occupancy ?? null).toBeNull();
+  });
+});
+
+describe('remote game play occupancy lifecycle', () => {
+  test('a repeated occupancy for the same game is idempotent even while a local play runs', async () => {
+    const { owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    const first = await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging', gameName: '气压突变寸止' } });
+    expect(first).toMatchObject({ ok: true, result: { ok: true, gameId: 'surge-edging' } });
+    // 同一游戏重复登记（页面刷新 / 断线重连）：即使被控端本地刚好在跑玩法也按幂等成功
+    const bridgeService = require('../services/bridgeService');
+    const spy = jest.spyOn(bridgeService, 'getActiveSessions').mockReturnValue([{ id: 'local' }]);
+    try {
+      const again = await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging' } });
+      expect(again).toMatchObject({ ok: true, result: { ok: true, idempotent: true } });
+      // 换一个游戏则仍被拒
+      const other = await operator.command({ type: 'play.occupy', payload: { gameId: 'pressure-edging-v2' } });
+      expect(other).toMatchObject({ ok: false, code: 'HOST_PLAY_ACTIVE' });
+    } finally {
+      spy.mockRestore();
+    }
+    await owner.stop();
+  });
+
+  test('a local play started while game.start is in flight wins the race (no host.start)', async () => {
+    const broker = new FakeBroker();
+    const api = createApi();
+    const host = mockHost();
+    const timerFns = timers();
+    const games = [{ id: 'surge-edging', runtimeMode: 'host', devices: [], params: [] }];
+    let release = null;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const service = new RemoteGameService({
+      host, api, mqttConnect: broker.connect, listGames: () => games, listDevices: () => [],
+      outputGuard: guardWith(timerFns), ...timerFns,
+      // beforeHostStart 是 await 点：在这里让被控端本地玩法启动，制造竞态
+      beforeHostStart: async () => {
+        await gate;
+        host.status = { active: true, running: true, source: 'local', snapshot: { running: true } };
+      },
+    });
+    const owner = service;
+    const operator = new RemoteGameService({
+      host, api, mqttConnect: broker.connect, listGames: () => games, listDevices: () => [],
+      outputGuard: guardWith(timerFns), ...timerFns,
+    });
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+
+    const denied = operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {} } });
+    await flush();
+    release();
+    expect(await denied).toMatchObject({ ok: false, code: 'HOST_PLAY_ACTIVE' });
+    // 关键：本机玩法没被顶掉（host.start 不会被调用）
+    expect(host.start).not.toHaveBeenCalled();
+    await owner.stop();
+  });
+
+  test('the operator bridge carrier exit releases the occupancy on the host', async () => {
+    const { broker, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    // 主控端页面式玩法退出：显式退出 / 浏览器 origin 退出 / 60 秒宽限超时
+    for (const reason of ['explicit-exit', 'browser-origin-exit', 'grace-expired']) {
+      await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging' } });
+      expect(owner.getStatus().occupancy).toBeTruthy();
+      require('../services/playCarrierBus').emitPlayCarrierExit({ kind: 'bridge', reason });
+      await flush();
+      expect(owner.getStatus().occupancy).toBeNull();
+      expect(operator.getStatus().playOccupancy).toBeNull();
+    }
+    const released = [...broker.publishes].filter(({ payload }) => payload.type === 'play.release');
+    expect(released.length).toBe(3);
+    await owner.stop();
+  });
+
+  test('a replaced carrier exit keeps the occupancy of the play that just started', async () => {
+    const { owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    // 新玩法启动顶掉旧载体：bridge 发 exit('replaced')，此时占用刚登记，不能被误清
+    await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging' } });
+    require('../services/playCarrierBus').emitPlayCarrierExit({ kind: 'bridge', reason: 'replaced' });
+    await flush();
+    expect(owner.getStatus().occupancy).toMatchObject({ gameId: 'surge-edging' });
+    await owner.stop();
+  });
+
+  test('revoking or kicking the operator clears the occupancy and tells it to stop', async () => {
+    const { broker, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging' } });
+    await owner.revoke();
+    await flush();
+    expect(owner.getStatus().occupancy).toBeNull();
+    expect(operator.getStatus().playOccupancy).toBeNull();
+    const revoked = [...broker.publishes].reverse().find(({ payload }) => (
+      payload.type === 'session.play.ended'
+    ));
+    expect(revoked.payload.payload).toMatchObject({ reason: 'revoked' });
+
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging' } });
+    await owner.kick({ userId: 'operator' });
+    await flush();
+    expect(owner.getStatus().occupancy).toBeNull();
+    expect(operator.getStatus().playOccupancy).toBeNull();
+    await owner.stop();
+  });
+
+  test('the operator leaving releases its occupancy before the session is torn down', async () => {
+    const { owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging' } });
+    expect(owner.getStatus().occupancy).toBeTruthy();
+
+    // 主控端退出远程模式：先释放占用（被控端记录随之清掉），再拆会话
+    await operator.stop({ reason: 'operator-stop' });
+    await flush();
+    expect(owner.getStatus().occupancy).toBeNull();
     await owner.stop();
   });
 });

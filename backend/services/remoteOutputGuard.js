@@ -438,6 +438,29 @@ function stopResult() {
   return { latched: false, maxMs: 0 };
 }
 
+/**
+ * 一条投影写入报文是否为「停止/归零」指令（按设备类型套规格判定）。
+ * 被控端本地玩法运行期间（或被顶替后主控端尚未重新登记占用时），
+ * 主控端只能经投影下发停止/归零：其余写入一律拒绝（关掉顶替窗口期的残余写入）。
+ */
+function isStopProjectionMessage({ device, message } = {}) {
+  const type = deviceType(device);
+  if (!type || !ownField(DEVICE_CAPABILITIES, type)) return false;
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return false;
+  if (typeof message.brand === 'string' && message.brand) {
+    const specs = ownField(BRAND_COMMANDS, message.brand);
+    const spec = specs ? ownField(specs, String(message.cmd || '')) : null;
+    if (!spec) return false;
+    if (spec.stop) return true;
+    // 泵的 scene:'stop' 也是停止路径
+    return !!spec.sceneStop && String(message.scene || '') === 'stop';
+  }
+  // 设备属性报文只认 update；report 是上行方向，不算停止
+  const method = message.method === undefined ? 'update' : String(message.method);
+  if (method !== 'update') return false;
+  return deviceMessageLatch(type, message).latched !== true;
+}
+
 /** 设备属性报文是否代表一次锁存输出。 */
 function deviceMessageLatch(type, message) {
   const method = message.method === undefined ? 'update' : String(message.method);
@@ -587,5 +610,6 @@ module.exports = {
   sanitizeProjectionMessage,
   isLatchedOutput,
   isLatchedProjectionMessage,
+  isStopProjectionMessage,
   createOutputWatchdog,
 };

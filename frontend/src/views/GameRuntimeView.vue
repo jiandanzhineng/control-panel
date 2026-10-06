@@ -58,6 +58,7 @@ import { localeTag } from '../i18n/locale'
 import { getGameRuntimeStatus, listHostGames, setGameRuntimeParams, startGameRuntime, stopGameRuntime, type GameRuntimeSnapshot } from '../api/gameRuntime'
 import { buildGameRuntimePageSrc, resolveGamePagePath } from '../play/gamePagePath'
 import { controlsEnabled, restoreFromStatus, shouldStopAfterStatusFailure, syncParamsDraft } from '../play/gameRuntimeSession'
+import { friendlyMessage } from '../api/errorMessage'
 
 const props = withDefaults(defineProps<{
   source?: 'local' | 'remote'
@@ -143,7 +144,15 @@ async function beginDeferred() {
   const id = String(route.query.id || 'surge-edging')
   const deviceMap = JSON.parse(String(route.query.deviceMap || '{}'))
   const params = JSON.parse(String(route.query.params || '{}'))
-  await startGameRuntime({ gameId: id, deviceMap, params }); await poll()
+  try {
+    await startGameRuntime({ gameId: id, deviceMap, params })
+  } catch (error: any) {
+    // 被控端本地玩法在跑（HOST_PLAY_ACTIVE）等：给出可读提示，不进入等待按钮态
+    waiting.value = false
+    pageError.value = friendlyMessage(error, (key) => t(key), t('gameRuntime.emptyHint'))
+    return
+  }
+  await poll()
   if (!pollTimer) pollTimer = setInterval(() => { void poll() }, 1000)
 }
 

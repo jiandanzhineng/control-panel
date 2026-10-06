@@ -7,6 +7,8 @@ const virtualDeviceService = require('./virtualDeviceService');
 const { BRIDGE_INTERNAL_HEADER } = require('../constants/bridgeAccess');
 const externalGameAccessService = require('./externalGameAccessService');
 const browserDeviceGrantService = require('./browserDeviceGrantService');
+// 玩法载体事件（本机开始/退出一次玩法）：远程占用仲裁（remoteGameService）订阅
+const playCarrierBus = require('./playCarrierBus');
 
 let wss = null;
 const sessions = new Map();
@@ -136,6 +138,7 @@ function init(server) {
         activeSession = session;
         pendingDisconnect = null;
         session.send({ id: msg.id, result: { sessionId: session.id, ready: true } });
+        notifyCarrierStart();
         return;
       }
 
@@ -618,6 +621,7 @@ function replaceActiveSession() {
     }
   } catch (_) {}
   removeSession(activeSession);
+  notifyCarrierExit('replaced');
 }
 
 function isSameSessionConfig(session, config) {
@@ -639,6 +643,7 @@ function resetActiveSession(reason) {
     }
   } catch (_) {}
   removeSession(session);
+  notifyCarrierExit(reason || 'exit');
 }
 
 function scheduleGracefulClose(session) {
@@ -649,6 +654,7 @@ function scheduleGracefulClose(session) {
     if (!session.active) return;
     resetSessionDevices(session);
     removeSession(session);
+    notifyCarrierExit('grace-expired');
   }, DISCONNECT_GRACE_MS);
 }
 
@@ -869,6 +875,16 @@ function scheduleShockAutoStop(session, physId, capability, actionName) {
 
 function emitSystemLog(session, level, message, meta) {
   session.send({ event: 'systemLog', level, message, meta: meta || {} });
+}
+
+// 本机（页面式游戏 / 插件）开始与退出玩法：广播给远程占用仲裁。
+// bridge 的 init 就是「本机开始一次玩法」；复位路径（显式退出 / 被顶替 / 宽限超时）即退出。
+function notifyCarrierStart() {
+  playCarrierBus.emitPlayCarrierStart({ kind: 'bridge' });
+}
+
+function notifyCarrierExit(reason) {
+  playCarrierBus.emitPlayCarrierExit({ kind: 'bridge', reason });
 }
 
 function getActiveSessions() {

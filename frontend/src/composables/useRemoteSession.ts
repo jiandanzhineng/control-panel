@@ -150,6 +150,9 @@ export function useRemoteSession() {
     log: computed<RemoteSessionLogEntry[]>(() => state.status.log || []),
     latencyMs: computed(() => state.status.latencyMs),
     joinCode: computed(() => state.status.joinCode),
+    occupancy: computed(() => state.status.occupancy ?? null),
+    localPlay: computed(() => state.status.localPlay ?? null),
+    playEndedReason: computed(() => state.status.playEndedReason ?? null),
     isOperatorRemote,
     isHostControlled,
     start,
@@ -163,5 +166,7 @@ export function useRemoteSession() {
     kick: (userId: string) => run(() => api.kickRemoteSession(userId)),
     emergencyStop: () => run(() => api.emergencyStopRemoteSession()),
     stopSession: (reason?: string) => run(() => api.stopRemoteSession(reason)),
+    occupyPlay: (gameId: string, gameName?: string) => run(() => api.occupyRemotePlay(gameId, gameName)),
+    releasePlay: (gameId?: string) => run(() => api.releaseRemotePlay(gameId)),
   }
 }

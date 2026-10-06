@@ -1042,6 +1042,7 @@ const en = {
       emergencyStop: 'E-stop',
       kick: 'Kick',
       disconnect: 'Disconnect',
+      occupancy: '{name} is running "{game}"',
     },
     log: {
       empty: 'No activity yet',
@@ -1084,6 +1085,18 @@ const en = {
       revoked: 'The other side revoked control',
       ended: 'The other side ended the remote session',
       offline: 'The connection to the other side was lost',
+    },
+    play: {
+      ended: 'The host ended your play, your game was stopped',
+      preempted: 'The host started a local play, your game was stopped',
+    },
+    errors: {
+      hostNoResponse: 'The host is not responding, please try again later',
+      hostPlayActive: 'The host is running a local play, try again later',
+      notAuthorized: 'Not authorized for remote control, ask the host to authorize again',
+      expired: 'Remote control expired, please reconnect',
+      playPreempted: 'The host took over the play',
+      occupancyReleased: 'Play occupancy released',
     },
   },
   electron: {

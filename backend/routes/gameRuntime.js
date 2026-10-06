@@ -1,13 +1,31 @@
 const express = require('express');
 const gameHost = require('../game-runtime/gameHostService');
 const bridgeService = require('../services/bridgeService');
+const remoteSession = require('../services/remoteSessionService');
 const { sendError } = require('../utils/http');
 
 const router = express.Router();
 
+// 主控端远程模式下本机起 HostRuntime（被控端登记为一次远程占用，ADR-0004 玩法唯一性）。
+// 被控端本地玩法运行中会以 HOST_PLAY_ACTIVE 拒绝 → 启动失败可见（不会顶掉本机玩法）。
+async function occupyRemoteHostPlay(body) {
+  if (!remoteSession.isOperatorRemoteMode()) return;
+  const gameId = String(body?.gameId || '').trim();
+  if (!gameId) return;
+  await remoteSession.occupyPlay({ gameId, gameName: body?.title || gameId });
+}
+
+// 本机停止 HostRuntime（主控端 stop / 被控端本机停）：释放主控端登记的占用。
+async function releaseRemoteHostPlay() {
+  if (!remoteSession.isOperatorRemoteMode()) return;
+  if (!remoteSession.localPlay?.()) return;
+  await remoteSession.releasePlay({}).catch(() => {});
+}
+
 function handleError(res, error) {
   const code = error?.code || 'GAME_RUNTIME_ERROR';
-  const status = code === 'NO_SESSION' || code === 'GAME_NOT_HOSTED' ? 400 : 400;
+  // 被控端本地玩法运行中：409，主控端界面据此显示「被控端正在运行本地玩法」
+  const status = code === 'HOST_PLAY_ACTIVE' ? 409 : 400;
   return sendError(res, code, error?.message || '游戏运行失败', status);
 }
 
@@ -28,6 +46,8 @@ router.get('/games', (req, res) => {
 router.post('/start', async (req, res) => {
   try {
     const body = req.body || {};
+    // 主控端远程模式：本机起 HostRuntime 前先在被控端登记占用（被拒则不启动，失败可见）
+    await occupyRemoteHostPlay(body);
     await require('../services/localAppProcessService').stopAll();
     try { bridgeService.exitCurrent(); } catch (_) {}
     res.status(201).json(gameHost.start({
@@ -74,8 +94,9 @@ router.post('/tick', (req, res) => {
   }
 });
 
-router.post('/stop', (req, res) => {
+router.post('/stop', async (req, res) => {
   try {
+    await releaseRemoteHostPlay();
     res.json(gameHost.stop({ reason: req.body?.reason || 'api-stop' }));
   } catch (error) {
     handleError(res, error);

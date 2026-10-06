@@ -79,6 +79,7 @@ import { useRemoteSession } from '../composables/useRemoteSession'
 import { barVisible } from '../remote/remoteSessionState'
 import { peerLabel, formatClock, detailText as detailTextOf } from '../remote/remoteSessionFormat'
 import { endReasonKey, shouldAutoReturn } from '../remote/remoteEnded'
+import { playEndedMessageKey, preemptedLocalPlay, playLabel } from '../remote/remotePlay'
 import { router } from '../router'
 
 const { t } = useI18n()
@@ -101,7 +102,9 @@ const text = computed(() => {
     return ui.value.reconnecting ? `${base} · ${t('remoteSession.bar.reconnecting')}` : base
   }
   const base = t('remoteSession.bar.host', { name })
-  return ui.value.reconnecting ? `${base} · ${t('remoteSession.bar.reconnecting')}` : base
+  const line = ui.value.reconnecting ? `${base} · ${t('remoteSession.bar.reconnecting')}` : base
+  const occupancy = ui.value.isHostControlled ? session.occupancy.value : null
+  return occupancy ? `${line} · ${t('remoteSession.bar.occupancy', { name, game: playLabel(occupancy) })}` : line
 })
 const latencyText = computed(() => {
   const value = session.latencyMs.value
@@ -153,6 +156,29 @@ watch(() => session.endedAt.value, async (at) => {
   }).catch(() => {})
   if (shouldAutoReturn(role, router.currentRoute.value.path)) router.push('/remote')
 })
+
+// 主控端本机玩法被被控端结束（本地玩法顶替 / 被控端停止或急停）：停掉本机游戏并提示，
+// 在游戏页则退回玩法页。提示文案按原因区分（playEndedReason）。
+watch(() => session.localPlay.value, async (next, previous) => {
+  try {
+    const play = preemptedLocalPlay(previous, next)
+    if (!play) return
+    const message = t(playEndedMessageKey(session.playEndedReason.value), { game: playLabel(play) })
+    await ElMessageBox.alert(message, t('remoteSession.end.title'), { type: 'warning' }).catch(() => {})
+    await stopLocalPlay(play.gameId)
+    const path = router.currentRoute.value.path
+    if (path === '/plays/game/current' || path === '/plays/game/runtime') router.push('/plays')
+  } catch (_) { /* 提示失败不影响远程条 */ }
+})
+
+// 停掉主控端本机正在运行的玩法（bridge 或 HostRuntime），并释放占用
+async function stopLocalPlay(gameId?: string) {
+  await fetch('/api/games/stop-current', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ gameId }),
+  }).catch(() => {})
+}
 
 // 主控端授权成功：自动进一次设备页（远程设备就在那里）
 let navigatedForSession = false

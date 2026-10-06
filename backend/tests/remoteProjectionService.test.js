@@ -303,6 +303,72 @@ describe('RemoteProjectionService', () => {
     expect(api.closeRoom).toHaveBeenCalledWith('owner', 'room-1');
   });
 
+  test('clamps capability actions forwarded from the operator bridge onto the owner', async () => {
+    const { ownerDevices, operatorDevices } = await setupAuthorizedPair();
+    // 操作方 bridge 的能力调用（invoke 路径）在投影链路上就是一条设备报文，
+    // 被控端按类型/能力逐字段钳制后再落到真实设备。
+    const write = (message) => operatorDevices.adapters.get('dev-1').send(message).catch(() => {});
+    await write({ method: 'update', voltage: 999, shock: 1 });
+    await flush();
+    expect(ownerDevices.sent).toContainEqual({
+      id: 'dev-1',
+      message: { method: 'update', voltage: 20, shock: 1 },
+    });
+    // 未知字段在投影链路上被拒（bridge 的 invoke 不会产生多余字段，这里只钉住这条边界）
+    await write({ method: 'update', shock: 0, bogus: 1 });
+    await flush();
+    expect(ownerDevices.sent).toHaveLength(1);
+  });
+
+  test('rejects projection writes while a host local play runs, except stop/zero', async () => {
+    const { ownerDevices, operatorDevices, owner } = await setupAuthorizedPair();
+    const write = (message) => operatorDevices.adapters.get('dev-1').send(message).catch(() => {});
+    // 被控端本地玩法在跑：编排层把投影写入收紧成「只允许停止/归零」
+    owner.setPlayOccupiedSource(() => true);
+    await write({ method: 'update', voltage: 20, shock: 1 });
+    await flush();
+    expect(ownerDevices.sent).toHaveLength(0);
+    // 停止/归零永远放行
+    await write({ method: 'update', shock: 0, voltage: 0 });
+    await flush();
+    expect(ownerDevices.sent).toEqual([
+      { id: 'dev-1', message: { method: 'update', shock: 0, voltage: 0 } },
+    ]);
+    // 无法解析成停止帧的写入（未知字段）照样拒绝，不会透传到真实设备
+    const dirty = operatorDevices.adapters.get('dev-1').send({ method: 'update', shock: 0, bogus: 1 });
+    const dirtyAssertion = expect(dirty).rejects.toBeTruthy();
+    await flush();
+    await dirtyAssertion;
+    expect(ownerDevices.sent).toHaveLength(1);
+    // 本地玩法结束、主控端重新登记占用后恢复
+    owner.setPlayOccupiedSource(() => false);
+    await write({ method: 'update', voltage: 20, shock: 1 });
+    await flush();
+    expect(ownerDevices.sent).toHaveLength(2);
+  });
+
+  test('rejects the write with HOST_PLAY_ACTIVE so the operator page sees it fail', async () => {
+    const { owner, operatorDevices } = await setupAuthorizedPair();
+    owner.setPlayOccupiedSource(() => true);
+    const write = operatorDevices.adapters.get('dev-1').send({ method: 'update', shock: 1 });
+    const assertion = expect(write).rejects.toMatchObject({ code: 'HOST_PLAY_ACTIVE' });
+    await flush();
+    await assertion;
+  });
+
+  test('stops a host-local play from the operator bridge (stop frames are never clamped away)', async () => {
+    const { ownerDevices, operatorDevices } = await setupAuthorizedPair({ ownerDeviceType: 'ZIDONGSUO' });
+    const write = (message) => operatorDevices.adapters.get('dev-1').send(message).catch(() => {});
+    // 主控端页面式游戏在被控端留下的锁存输出
+    await write({ method: 'update', open: 0 });
+    await flush();
+    expect(ownerDevices.sent).toContainEqual({ id: 'dev-1', message: { method: 'update', open: 0 } });
+    // 停止永远放行：脏字段被丢弃而不是把停止一起拒掉
+    await write({ method: 'update', open: 1, bogus: 1 });
+    await flush();
+    expect(ownerDevices.sent).toHaveLength(1);
+  });
+
   test('publishes offline before leaving so the owner safely stops devices', async () => {
     const broker = new FakeBroker();
     const api = createRoomApi();

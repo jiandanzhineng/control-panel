@@ -621,3 +621,240 @@ describe('remote session service', () => {
     await otherSession.stop();
   });
 });
+
+describe('remote session play occupancy', () => {
+  test('operator occupies the play through the main room and releases it on stop', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, operatorGame } = ctx;
+    // 占用登记走主房间 RPC：由操作方的 remoteGameService 发出
+    const operatorCommand = jest.spyOn(operatorGame, 'command');
+
+    const occupied = await operatorSession.occupyPlay({ gameId: 'surge-edging', gameName: '气压突变寸止' });
+    expect(occupied).toMatchObject({ ok: true, gameId: 'surge-edging', gameName: '气压突变寸止' });
+    // 占用登记是主房间 RPC，不是本机状态
+    expect(operatorCommand).toHaveBeenCalledWith({
+      type: 'play.occupy',
+      payload: { gameId: 'surge-edging', gameName: '气压突变寸止' },
+    });
+    expect(operatorSession.getStatus().localPlay).toMatchObject({ gameId: 'surge-edging' });
+    expect(ownerSession.getStatus().occupancy).toMatchObject({
+      gameId: 'surge-edging', gameName: '气压突变寸止',
+    });
+
+    // 同一游戏重复登记：幂等，不再发命令
+    operatorCommand.mockClear();
+    await operatorSession.occupyPlay({ gameId: 'surge-edging' });
+    expect(operatorCommand).not.toHaveBeenCalled();
+
+    await operatorSession.releasePlay({ gameId: 'surge-edging' });
+    expect(operatorSession.getStatus().localPlay).toBeNull();
+    expect(ownerSession.getStatus().occupancy).toBeNull();
+
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+
+  test('occupy fails visibly when the host runs a local play', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, ownerGame } = ctx;
+    const bridgeService = require('../services/bridgeService');
+    const spy = jest.spyOn(bridgeService, 'getActiveSessions').mockReturnValue([{ id: 'local-play' }]);
+    try {
+      await expect(operatorSession.occupyPlay({ gameId: 'surge-edging' }))
+        .rejects.toMatchObject({ code: 'HOST_PLAY_ACTIVE' });
+      expect(operatorSession.getStatus().localPlay).toBeNull();
+      expect(ownerSession.getStatus().occupancy).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+
+  test('host preempts the operator play when a local play starts and tells the operator', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, ownerGame } = ctx;
+    const emergencyStop = jest.spyOn(ownerGame, 'emergencyStop');
+    await operatorSession.occupyPlay({ gameId: 'surge-edging', gameName: '气压突变寸止' });
+    expect(ownerSession.getStatus().occupancy).toBeTruthy();
+
+    // 被控端本机开始了一次玩法（bridge init）
+    require('../services/playCarrierBus').emitPlayCarrierStart({ kind: 'bridge' });
+    await flush();
+
+    expect(emergencyStop).toHaveBeenCalled();
+    expect(ownerSession.getStatus().occupancy).toBeNull();
+    expect(operatorSession.getStatus().localPlay).toBeNull();
+    const preempted = ownerSession.getStatus().log.find((row) => row.kind === 'session.play.preempted');
+    expect(preempted).toBeTruthy();
+    expect(operatorSession.getStatus().log.some((row) => row.kind === 'session.play.preempted')).toBe(true);
+
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+
+  test('the host stopping the play clears the occupancy and tells the operator to stop', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, ownerGame } = ctx;
+    await operatorSession.occupyPlay({ gameId: 'surge-edging' });
+    expect(ownerSession.getStatus().occupancy).toBeTruthy();
+
+    // 被控端本地停止主控端起在跑的玩法（game.stop / 急停）：占用清掉，主控端 localPlay 归 null
+    await ownerGame.command({ type: 'play.release', payload: { gameId: 'surge-edging' } });
+    await flush();
+    expect(ownerSession.getStatus().occupancy).toBeNull();
+    expect(operatorSession.getStatus().localPlay).toBeNull();
+
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+
+  test('occupancy is cleared when the operator disconnects', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession } = ctx;
+    await operatorSession.occupyPlay({ gameId: 'surge-edging' });
+    expect(ownerSession.getStatus().occupancy).toBeTruthy();
+
+    // 主控端断开：急停 + 结束会话；占用随会话一起消失（getStatus 的 active=false 分支）
+    await operatorSession.stop({ reason: 'operator-stop' });
+    await flush();
+    await ownerSession.stop({ reason: 'operator-left' });
+    expect(ownerSession.getStatus().occupancy ?? null).toBeNull();
+  });
+});
+
+describe('remote session occupancy emergency paths', () => {
+  test('host preempt stops the projection outputs too, not only the game link', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, projection, ownerGame } = ctx;
+    const projectionStop = jest.spyOn(projection.owner, 'emergencyStop');
+    await operatorSession.occupyPlay({ gameId: 'surge-edging' });
+    require('../services/playCarrierBus').emitPlayCarrierStart({ kind: 'bridge' });
+    await flush();
+    // 投影链路的锁存输出也要立刻停（不能等看门狗到期）
+    expect(projectionStop).toHaveBeenCalled();
+    expect(ownerGame.emergencyStop).toBeDefined();
+    expect(ownerSession.getStatus().occupancy).toBeNull();
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+
+  test('an idempotent re-occupy keeps the host-side record for the operator bar', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession } = ctx;
+    await operatorSession.occupyPlay({ gameId: 'surge-edging', gameName: '气压突变寸止' });
+    expect(ownerSession.getStatus().occupancy).toMatchObject({ gameName: '气压突变寸止' });
+
+    // 页面刷新 / 断线重连后的重复登记：被控端按幂等处理，不会重发占用事件
+    await operatorSession.occupyPlay({ gameId: 'surge-edging' });
+    await flush();
+    expect(ownerSession.getStatus().occupancy).toMatchObject({
+      gameId: 'surge-edging', gameName: '气压突变寸止',
+    });
+    expect(operatorSession.getStatus().localPlay).toMatchObject({ gameId: 'surge-edging' });
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+
+  test('the host emergency stop clears the occupancy so the operator stops its local play', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession } = ctx;
+    await operatorSession.occupyPlay({ gameId: 'surge-edging', gameName: '气压突变寸止' });
+    expect(ownerSession.getStatus().occupancy).toBeTruthy();
+    expect(operatorSession.getStatus().localPlay).toBeTruthy();
+
+    await ownerSession.emergencyStop();
+    await flush();
+
+    expect(ownerSession.getStatus().occupancy).toBeNull();
+    expect(operatorSession.getStatus().localPlay).toBeNull();
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+});
+
+describe('projection write gate (host local play window)', () => {
+  test('the gate is open while no local play runs, and closes while one does', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession } = ctx;
+    // 没有本地玩法、没有主控端占用：投影写入照常
+    expect(ownerSession._isPlayOccupied()).toBe(false);
+    const bridgeService = require('../services/bridgeService');
+    const spy = jest.spyOn(bridgeService, 'getActiveSessions').mockReturnValue([{ id: 'local-play' }]);
+    try {
+      expect(ownerSession._isPlayOccupied()).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+
+  test('a host-run remote game is not treated as a local play', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, host } = ctx;
+    // 被控端 HostRuntime 跑的是主控端起的那局：不算本地占用
+    host.status = { active: true, running: true, source: 'remote', snapshot: { running: true } };
+    expect(ownerSession._isPlayOccupied()).toBe(false);
+    // 被控端自己起的 HostRuntime（source=local）才算本地占用
+    host.status = { active: true, running: true, source: 'local', snapshot: { running: true } };
+    expect(ownerSession._isPlayOccupied()).toBe(true);
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+
+  test('the gate is closed after a preempt until the operator occupies again', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession } = ctx;
+    await operatorSession.occupyPlay({ gameId: 'surge-edging' });
+    expect(ownerSession._isPlayOccupied()).toBe(false);
+
+    require('../services/playCarrierBus').emitPlayCarrierStart({ kind: 'bridge' });
+    await flush();
+    // 顶替后主控端还没重新登记：只允许停止/归零（本地玩法也已退出，靠顶替标记继续挡）
+    const bridgeService = require('../services/bridgeService');
+    const spy = jest.spyOn(bridgeService, 'getActiveSessions').mockReturnValue([]);
+    try {
+      expect(ownerSession._isPlayOccupied()).toBe(true);
+      // 主控端重新登记新占用的那一刻才放开
+      await operatorSession.occupyPlay({ gameId: 'surge-edging' });
+      await flush();
+      expect(ownerSession._isPlayOccupied()).toBe(false);
+      // 主控端停止玩法（占用释放）：残余写入窗口随之关闭
+      await operatorSession.releasePlay({ gameId: 'surge-edging' });
+      await flush();
+      expect(ownerSession._isPlayOccupied()).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+});
+
+describe('play end reason on the operator side', () => {
+  test('a host local play preempt reports host-local-play', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession } = ctx;
+    await operatorSession.occupyPlay({ gameId: 'surge-edging', gameName: '气压突变寸止' });
+    require('../services/playCarrierBus').emitPlayCarrierStart({ kind: 'bridge' });
+    await flush();
+    expect(operatorSession.getStatus().localPlay).toBeNull();
+    expect(operatorSession.getStatus().playEndedReason).toBe('host-local-play');
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+
+  test('the host stopping the play reports host-stopped, not a preempt', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, ownerGame } = ctx;
+    await operatorSession.occupyPlay({ gameId: 'surge-edging', gameName: '气压突变寸止' });
+    // 被控端停止玩法（占用释放）走占用事件，不是顶替事件
+    await ownerGame.command({ type: 'play.release', payload: { gameId: 'surge-edging' } });
+    await flush();
+    expect(operatorSession.getStatus().localPlay).toBeNull();
+    expect(operatorSession.getStatus().playEndedReason).toBe('host-stopped');
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+});

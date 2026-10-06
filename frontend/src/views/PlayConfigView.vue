@@ -486,6 +486,9 @@ import { mappedDeviceCount, mappedDeviceMacs, mappedDeviceTypes, mappedRoles } f
 import { setActivePlay } from '../composables/useActivePlay';
 import { isHostRuntime, requestGameStart } from '../play/launchGame';
 import { listenDeviceButtonPress } from '../composables/useButtonStart';
+import { useRemoteSession } from '../composables/useRemoteSession';
+import { friendlyMessage } from '../api/errorMessage';
+import { needsFrontendOccupy } from '../remote/remotePlay';
 import { currentLocale } from '../i18n';
 import { localeTag } from '../i18n/locale';
 import { localizePlay } from '../i18n/play';
@@ -1238,8 +1241,25 @@ function onCarrierConfirmClosed() {
   if (carrierConfirm.resolve) resolveCarrierConfirm(false);
 }
 
+const remoteSession = useRemoteSession();
 const startBusy = ref(false);
 const startError = ref('');
+
+// 主控端远程模式：玩法跑在本机，被控端要登记一次远程占用；被控端本地玩法运行中会被拒。
+// 只对被控端「看不到载体」的玩法在这里登记（插件、外部代理游戏）；页面式游戏与
+// HostRuntime 由后端的 /api/games/:id/start、/api/game-runtime/start 在启动前登记，
+// 保证「被拒 ⇒ 一定没启动」（失败可见），不依赖前端先失败。
+async function occupyRemotePlayIfNeeded(): Promise<boolean> {
+  if (!remoteSession.isOperatorRemote.value) return true;
+  if (!needsFrontendOccupy(carrierType.value)) return true;
+  try {
+    await remoteSession.occupyPlay(playId.value, title.value);
+    return true;
+  } catch (error: any) {
+    startError.value = friendlyMessage(error, (key) => t(key), t('playConfig.startFailed'));
+    return false;
+  }
+}
 
 async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate') {
   startError.value = '';
@@ -1286,6 +1306,7 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
     saveConfig();
     const installedGamePath = await installRemoteGameIfNeeded();
     await savePlayedGame(installedGamePath);
+    if (!(await occupyRemotePlayIfNeeded())) return;
     const playTitle = title.value;
 
     if (carrierType.value === 'game') {
@@ -1353,7 +1374,12 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(apiErrorMessage(data, t('playConfig.pluginStartFailed')));
+      if (!res.ok) {
+        // 错误码透出：远程模式下被控端本地玩法在跑时会以 HOST_PLAY_ACTIVE 拒绝启动
+        const error: any = new Error(apiErrorMessage(data, t('playConfig.pluginStartFailed')));
+        error.code = data?.error?.code;
+        throw error;
+      }
       trackPlayStart({
         carrier: 'plugin',
         id: playId.value,
@@ -1368,7 +1394,11 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
       router.push({ name: 'plugin_run', params: { id: playId.value } });
     }
   } catch (e: any) {
-    startError.value = e?.message || t('playConfig.startFailed');
+    startError.value = friendlyMessage(e, (key) => t(key), t('playConfig.startFailed'));
+    // 插件启动失败：释放刚登记的占用，避免挂在被控端（页面式/HostRuntime 由后端启动接口负责）
+    if (remoteSession.isOperatorRemote.value && needsFrontendOccupy(carrierType.value)) {
+      await remoteSession.releasePlay(playId.value).catch(() => {});
+    }
   } finally {
     startBusy.value = false;
     pendingStartMode.value = null;

@@ -2,6 +2,8 @@ const { randomUUID } = require('crypto');
 const { SurgeEdgingCore, GAME_ID } = require('./cores/surge-edging-core');
 const { PressureEdgingV2Core, GAME_ID: PRESSURE_V2_ID } = require('./cores/pressure-edging-v2-core');
 const { GameCoreRuntime } = require('./gameCoreRuntime');
+// 玩法载体事件：HostRuntime 起停也通知远程占用仲裁（与 bridgeService 共用一条总线）
+const playCarrierBus = require('../services/playCarrierBus');
 
 const HOST_GAMES = new Set([GAME_ID, PRESSURE_V2_ID]);
 const TICK_MS = 80;
@@ -127,6 +129,7 @@ class GameHostService {
     }, this.tickMs);
     this._seedSensor(session);
     this._notify();
+    playCarrierBus.emitPlayCarrierStart({ kind: 'host', gameId: session.gameId, source: session.source });
     return {
       sessionId: session.sessionId,
       gameId: session.gameId,
@@ -156,6 +159,7 @@ class GameHostService {
     this.endedSnapshot = result.snapshot || session.runtime.snapshot();
     this.session = null;
     this._notify();
+    playCarrierBus.emitPlayCarrierExit({ kind: 'host', reason, source: session.source });
     return this.getStatus();
   }
 
@@ -184,6 +188,7 @@ class GameHostService {
       this._clearTick(session);
       this.endedSnapshot = result.snapshot;
       this.session = null;
+      playCarrierBus.emitPlayCarrierExit({ kind: 'host', reason: 'ended', source: session.source });
     }
     this._notify();
     return this.getStatus();
