@@ -866,4 +866,155 @@ describe('RemoteProjectionService', () => {
     expect(api.leaveRoom).toHaveBeenCalledWith('operator', 'room-1');
     expect(service.getStatus().active).toBe(false);
   });
+
+  // ---- 编排层（remoteSessionService）依赖的新增能力 ----
+
+  test('extendControl only moves the TTL deadline and never resets devices', async () => {
+    const broker = new FakeBroker();
+    const api = createRoomApi();
+    const ownerDevices = new FakeDevices([{
+      id: 'dev-1', name: 'Owner device', type: 'DIANJI', connected: true,
+      connectionType: 'ble', controlConnection: 'ble',
+      connections: [{ type: 'ble', connected: true }], data: {},
+    }]);
+    const owner = new RemoteProjectionService({
+      devices: ownerDevices, api, mqttConnect: broker.connect, ...timers(),
+    });
+    await owner.create({ token: 'owner', controlTtlSec: 3600 });
+    ownerDevices.closed = [];
+    const before = owner.session.controlExpiresAt;
+
+    const result = owner.extendControl({ controlTtlSec: 24 * 60 * 60 });
+
+    expect(result.ok).toBe(true);
+    expect(owner.session.controlTtlSec).toBe(24 * 60 * 60);
+    expect(owner.session.controlExpiresAt).toBeGreaterThan(before);
+    expect(owner.getStatus().expired).toBe(false);
+    // 续期不得复位任何设备、不得重连
+    expect(ownerDevices.closed).toEqual([]);
+    expect(owner.getStatus().connected).toBe(true);
+
+    // 已过期的会话不复活
+    owner.session.controlExpiresAt = Date.now() - 1;
+    owner.session.expired = true;
+    expect(owner.extendControl({ controlTtlSec: 3600 })).toEqual({ ok: false, reason: 'CONTROL_EXPIRED' });
+    await owner.stop();
+  });
+
+  test('hasMember reports joined members, presence and kicked users', async () => {
+    const broker = new FakeBroker();
+    const api = createRoomApi();
+    const owner = new RemoteProjectionService({
+      devices: new FakeDevices(), api, mqttConnect: broker.connect, ...timers(),
+    });
+    await owner.create({ token: 'owner' });
+    expect(owner.hasMember('operator')).toBe(true);
+    expect(owner.hasMember('nobody')).toBe(false);
+    owner.session.kickedUserIds.add('operator');
+    expect(owner.hasMember('operator')).toBe(false);
+    // 成员列表为空时回退到 presence
+    owner.session.members = [];
+    owner.session.kickedUserIds.clear();
+    expect(owner.hasMember('operator')).toBe(false);
+    owner.session.operatorsOnline.set('operator', true);
+    expect(owner.hasMember('operator')).toBe(true);
+    await owner.stop();
+  });
+
+  test('emergencyStop stops operator outputs and keeps the session alive', async () => {
+    const broker = new FakeBroker();
+    const api = createRoomApi();
+    const ownerDevices = new FakeDevices([{
+      id: 'dev-1', name: 'Owner device', type: 'CUNZHI01', connected: true,
+      connectionType: 'ble', controlConnection: 'ble',
+      connections: [{ type: 'ble', connected: true }], data: {},
+    }]);
+    const operatorDevices = new FakeDevices();
+    const owner = new RemoteProjectionService({
+      devices: ownerDevices, api, mqttConnect: broker.connect, ...timers(),
+    });
+    const operator = new RemoteProjectionService({
+      devices: operatorDevices, api, mqttConnect: broker.connect, ...timers(),
+    });
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await flush();
+    await owner.authorize('operator');
+    await flush();
+    await operatorDevices.adapters.get('dev-1').send({ method: 'update', power: 10 });
+    await flush();
+    ownerDevices.closed = [];
+
+    await owner.emergencyStop();
+    await flush();
+
+    expect(ownerDevices.closed).toEqual(['dev-1']);
+    // 会话与授权都保留
+    expect(owner.getStatus()).toMatchObject({ active: true, connected: true, authorized: true });
+    await operator.stop();
+    await owner.stop();
+  });
+
+  test('emits operation events with ok / clamped / rejected outcomes', async () => {
+    const broker = new FakeBroker();
+    const api = createRoomApi();
+    const ownerDevices = new FakeDevices([{
+      id: 'dev-1', name: 'Owner device', type: 'CUNZHI01', connected: true,
+      connectionType: 'ble', controlConnection: 'ble',
+      connections: [{ type: 'ble', connected: true }], data: {},
+    }]);
+    const operatorDevices = new FakeDevices();
+    const owner = new RemoteProjectionService({
+      devices: ownerDevices, api, mqttConnect: broker.connect, ...timers(),
+    });
+    const operator = new RemoteProjectionService({
+      devices: operatorDevices, api, mqttConnect: broker.connect, ...timers(),
+    });
+    const events = [];
+    owner.onEvent((event) => events.push(event));
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await flush();
+    await owner.authorize('operator');
+    await flush();
+
+    // 被钳制：power 240 → 128
+    await operatorDevices.adapters.get('dev-1').send({ method: 'update', power: 240 });
+    await flush();
+    const clamped = events.find((event) => event.type === 'operation' && event.outcome === 'clamped');
+    expect(clamped).toMatchObject({ userId: 'operator', kind: 'projection.write', target: 'dev-1' });
+    expect(clamped.detail.applied.power).toBe(128);
+    expect(clamped.detail.requested.power).toBe(240);
+
+    // 被拒绝：未知字段
+    await expect(operatorDevices.adapters.get('dev-1').send({ method: 'update', nope: 1 }))
+      .rejects.toMatchObject({ code: 'REMOTE_OUTPUT_REJECTED' });
+    await flush();
+    expect(events.some((event) => event.type === 'operation' && event.outcome === 'rejected')).toBe(true);
+
+    // 通过：正常数值
+    await operatorDevices.adapters.get('dev-1').send({ method: 'update', power: 20 });
+    await flush();
+    expect(events.some((event) => event.type === 'operation' && event.outcome === 'ok')).toBe(true);
+
+    await operator.stop();
+    await owner.stop();
+  });
+
+  test('re-emits the peer event on operator reconnect so the session re-joins the room', async () => {
+    const { owner, operator, broker } = await setupAuthorizedPair();
+    const peers = [];
+    operator.onEvent((event) => { if (event.type === 'peer') peers.push(event); });
+    expect(peers.length).toBe(0);
+
+    // MQTT 重连：编排层靠这次 peer 重新确认自己仍在投影房间里
+    await operator._afterConnect(operator.session);
+    await flush();
+    expect(peers.length).toBe(1);
+    expect(peers[0]).toMatchObject({ roomId: 'room-1', hostUserId: 'owner', joinCode: 'JOIN123' });
+    expect(broker.clients.size).toBeGreaterThan(0);
+
+    await operator.stop();
+    await owner.stop();
+  });
 });

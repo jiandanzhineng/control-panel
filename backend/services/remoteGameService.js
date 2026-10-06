@@ -26,7 +26,10 @@ const GAME_SESSION_COMMANDS = new Set(['game.setParams', 'game.pause', 'game.res
 const UNSUPPORTED_DISCONNECT_TYPES = new Set(['mqtt', 'virtual']);
 const COMMANDS = new Set([
   'client.hello',
+  'client.ping',
   'client.snapshot.request',
+  'session.projection-invite.request',
+  'session.emergency-stop',
   'client.workspace.set',
   'games.list',
   'game.meta',
@@ -120,6 +123,96 @@ class RemoteGameService {
     this.reconnectBackoffMs = reconnectBackoffMs;
     this.watchdog = this._createWatchdog();
     this.session = null;
+    // 编排层（remoteSessionService）订阅的事件出口，避免它去读私有字段。
+    this.eventHandlers = new Set();
+  }
+
+  /** 编排层订阅事件（member / authorization / game / operator-output / ended）。返回取消订阅函数。 */
+  onEvent(handler) {
+    if (typeof handler !== 'function') return () => {};
+    this.eventHandlers.add(handler);
+    return () => this.eventHandlers.delete(handler);
+  }
+
+  _emitEvent(event) {
+    for (const handler of this.eventHandlers) {
+      try { handler({ source: 'game', ...event }); } catch (_) {}
+    }
+  }
+
+  /** 房主在线成员（userId + 在线状态），供编排层等操作方进投影房间。 */
+  getMembers() {
+    const session = this.session;
+    if (!session || session.role !== 'owner') return [];
+    const rows = [];
+    const seen = new Set([session.credential.userId]);
+    for (const [userId, entry] of session.operatorsOnline.entries()) {
+      if (seen.has(userId)) continue;
+      seen.add(userId);
+      rows.push({ userId, online: !!entry.online });
+    }
+    for (const member of session.members || []) {
+      if (seen.has(member.userId)) continue;
+      seen.add(member.userId);
+      rows.push({ userId: member.userId, online: false });
+    }
+    return rows;
+  }
+
+  /** 当前授权给哪个 userId（房主视角）；无会话/非房主返回 null。 */
+  getAuthorizedUserId() {
+    const session = this.session;
+    if (!session || session.role !== 'owner') return null;
+    return session.authorizedUserId || null;
+  }
+
+  /** 某个 userId 是否已被移出本房间（编排层据此禁止再自动授权投影）。 */
+  isKicked(userId) {
+    const session = this.session;
+    if (!session || session.role !== 'owner') return false;
+    const target = String(userId || '').trim();
+    return !!target && session.kicked.has(target);
+  }
+
+  /** 编排层用：把投影房间码只下发给被授权的那个 userId（events 通道 + 快照字段）。 */
+  async inviteOperator({ userId, joinCode, projectionRoomId = null } = {}) {
+    const session = this.session;
+    if (!session || session.role !== 'owner') throw this._error('NOT_OWNER', '只有主机可以下发投影房间');
+    const target = String(userId || '').trim();
+    const code = String(joinCode || '').trim();
+    if (!target || !code) throw this._error('INVALID_OPERATOR', '缺少投影房间信息');
+    session.projectionInvite = { joinCode: code, projectionRoomId, forUserId: target };
+    await this._publishEnvelope(session, 'events', 'session.projection-invite', session.projectionInvite);
+    await this._publishClientSnapshot(session);
+    return { ok: true };
+  }
+
+  /** 操作方侧：房主下发的投影房间邀请（只对 forUserId 命中本账号时有效）。 */
+  getProjectionInvite() {
+    const session = this.session;
+    if (!session || session.role !== 'operator') return null;
+    const invite = session.projectionInvite;
+    if (!invite || invite.forUserId !== session.credential.userId) return null;
+    return { ...invite };
+  }
+
+  /** 停掉远程操作方触发的锁存输出并结束其启动的玩法（急停用；不结束会话）。 */
+  async emergencyStop() {
+    const session = this.session;
+    if (!session || session.role !== 'owner') {
+      throw this._error('NOT_OWNER', '只有主机可以急停');
+    }
+    await this._stopOperatorOutputs();
+    const hostStatus = this._hostStatus();
+    const startedByOperator = !!hostStatus?.active && hostStatus?.source === 'remote';
+    if (startedByOperator) {
+      await this.host.stop({ reason: 'remote-emergency-stop' });
+      this._applyGameSession(null);
+      this._emitEvent({ type: 'operator-output', kind: 'game.stop', outcome: 'ok' });
+    }
+    await this._publishClientSnapshot(session).catch(() => {});
+    await this._publishGameSnapshot(session, { force: true }).catch(() => {});
+    return this.getStatus();
   }
 
   _createWatchdog() {
@@ -149,6 +242,7 @@ class RemoteGameService {
       role: session.role,
       roomId: session.room.id,
       joinCode: session.role === 'owner' ? session.room.joinCode : null,
+      hostUserId: session.room.hostUserId || null,
       connected: session.connected,
       authorized,
       gameSessionId: session.role === 'owner'
@@ -350,6 +444,11 @@ class RemoteGameService {
       session.authorizedUserId = null;
     }
     if (!authorized) await this._stopOperatorOutputs();
+    this._emitEvent({
+      type: 'authorization',
+      authorized: !!session.authorized,
+      operatorUserId: session.authorizedUserId || null,
+    });
     await this._publishEnvelope(session, 'events', 'client.authorization', {
       authorized: session.authorized,
       operatorUserId: session.authorizedUserId,
@@ -412,6 +511,9 @@ class RemoteGameService {
     const session = this.session;
     if (!session) return this.getStatus();
     this.session = null;
+    if (reason !== 'replaced' && reason !== 'backend-shutdown') {
+      this._emitEvent({ type: 'ended', reason });
+    }
     this._clearTimers(session);
     session.hostUnsub?.();
     session.hostUnsub = null;
@@ -467,6 +569,7 @@ class RemoteGameService {
       games: [],
       devices: [],
       gameSnapshot: null,
+      projectionInvite: null,
       timers: { heartbeat: null, snapshot: null, credential: null },
       hostUnsub: null,
       responseCache: new Map(),
@@ -770,6 +873,7 @@ class RemoteGameService {
     if (session.role === 'owner') {
       if (!userId || userId === session.credential.userId) return;
       session.operatorsOnline.set(userId, { online, at: this.now() });
+      this._emitEvent({ type: 'member', userId, online });
       if (session.kicked.has(userId)) return;
       if (online) void this._publishClientSnapshot(session).catch(() => {});
       // 授权对象掉线：立刻停掉它起的手动锁存输出，但游戏继续（ADR）
@@ -813,6 +917,7 @@ class RemoteGameService {
   _endOperatorSession(session, reason) {
     if (this.session !== session) return;
     this.session = null;
+    this._emitEvent({ type: 'ended', reason });
     this._clearTimers(session);
     this._failPending(session, this._error('SESSION_REVOKED', '远程会话已结束'));
     session.authorized = false;
@@ -845,9 +950,25 @@ class RemoteGameService {
     try {
       const result = await this._dispatch(type, envelope.payload || {}, { senderUserId });
       await this._respond(session, envelope.messageId, { ok: true, result });
+      this._emitEvent({
+        type: 'command',
+        userId: senderUserId,
+        kind: type,
+        target: envelope.payload?.deviceId || envelope.payload?.gameId || null,
+        outcome: 'ok',
+        detail: null,
+      });
       await this._publishClientSnapshot(session);
       await this._publishGameSnapshot(session);
     } catch (error) {
+      this._emitEvent({
+        type: 'command',
+        userId: senderUserId,
+        kind: type,
+        target: envelope.payload?.deviceId || envelope.payload?.gameId || null,
+        outcome: 'rejected',
+        detail: { code: error?.code || 'COMMAND_FAILED', message: error?.message || '命令执行失败' },
+      });
       await this._respond(session, envelope.messageId, {
         ok: false,
         code: error?.code || 'COMMAND_FAILED',
@@ -859,6 +980,23 @@ class RemoteGameService {
   async _dispatch(type, payload, context = {}) {
     if (type === 'client.hello' || type === 'client.workspace.set') return this.getStatus();
     if (type === 'client.snapshot.request') return this.getStatus();
+    // 操作方补要投影房间邀请（授权事件与邀请可能乱序/丢包）
+    if (type === 'session.projection-invite.request') {
+      const session = this.session;
+      return {
+        invite: session?.authorizedUserId && session.projectionInvite?.forUserId === session.authorizedUserId
+          ? session.projectionInvite
+          : null,
+      };
+    }
+    // 延迟测量：回执里带房主时间戳，操作方据此算一次往返
+    if (type === 'client.ping') return { now: this.now(), echo: payload?.echo ?? null };
+    // 主控端远程条上的「急停」：只停主控端触发的输出与玩法，会话继续。
+    // 调用方（_onOwnerCommand）已校验发送者就是被授权的那个 userId，这里不再重复判权。
+    if (type === 'session.emergency-stop') {
+      this._emitEvent({ type: 'operator-output', kind: 'session.emergency-stop', outcome: 'ok' });
+      return this.emergencyStop();
+    }
     if (type === 'games.list') return { games: this.listGames() };
     if (type === 'game.meta') return { games: this.listGames() };
     if (type === 'game.config.get') return this._hostStatus()?.snapshot?.params || {};
@@ -1077,10 +1215,40 @@ class RemoteGameService {
       session.devices = envelope.payload?.devices || [];
       session.gameSessionId = envelope.payload?.gameSessionId || null;
       session.gameSnapshot = envelope.payload?.snapshot || session.gameSnapshot;
+      // 重连后的快照里带着房主之前下发的投影邀请，操作方据此恢复投影链路
+      const invite = envelope.payload?.projectionInvite;
+      if (invite && invite.forUserId === session.credential.userId) {
+        const isNew = !session.projectionInvite
+          || session.projectionInvite.joinCode !== invite.joinCode;
+        session.projectionInvite = {
+          joinCode: invite.joinCode,
+          projectionRoomId: invite.projectionRoomId || null,
+          forUserId: invite.forUserId,
+        };
+        if (isNew) this._emitEvent({ type: 'projection-invite', ...session.projectionInvite });
+      }
+      return;
+    }
+    if (envelope.type === 'session.projection-invite') {
+      // 只认发给本账号的邀请；别的成员的邀请一律忽略
+      if (envelope.payload?.forUserId === session.credential.userId) {
+        session.projectionInvite = {
+          joinCode: envelope.payload.joinCode,
+          projectionRoomId: envelope.payload.projectionRoomId || null,
+          forUserId: envelope.payload.forUserId,
+        };
+        this._emitEvent({ type: 'projection-invite', ...session.projectionInvite });
+      }
       return;
     }
     if (envelope.type === 'client.authorization') {
       session.authorized = !!envelope.payload?.authorized;
+      // 已授权但邀请还没到（乱序/丢包）：主动补发一次，保证投影链路能起来
+      if (session.authorized && !session.projectionInvite) {
+        void this._publishEnvelope(
+          session, `commands/${session.credential.userId}`, 'session.projection-invite.request', {},
+        ).catch(() => {});
+      }
       if (!session.authorized) {
         session.devices = [];
         session.games = [];
@@ -1139,6 +1307,7 @@ class RemoteGameService {
       snapshot: hostStatus?.snapshot || null,
       gameSessionId: hostStatus?.sessionId || null,
       operatorOnline: [...session.operatorsOnline.values()].some((item) => item.online),
+      projectionInvite: session.projectionInvite || null,
     });
   }
 

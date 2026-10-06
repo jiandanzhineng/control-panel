@@ -1,0 +1,693 @@
+const remoteGameService = require('./remoteGameService');
+const remoteProjectionService = require('./remoteProjectionService');
+const logService = require('./logService');
+
+// 远程会话编排层：同时拉起「远程游戏（主房间）」与「设备投影」两条链路并统一授权。
+// 主房间的房间码是唯一对外给用户的码；投影房间码只经主房间下发给被授权的那个 userId。
+
+// 投影控制 TTL 取上限，并在到期前自动续期（会话可能开很久）。
+const CONTROL_TTL_SEC = 24 * 60 * 60;
+const RENEW_BEFORE_MS = 30 * 60 * 1000;
+const RENEW_CHECK_MS = 5 * 60 * 1000;
+// 房主等操作方进入投影房间后自动授权：轮询间隔与次数上限。
+const AUTHORIZE_RETRY_MS = 3000;
+const AUTHORIZE_MAX_ATTEMPTS = 10;
+const PING_INTERVAL_MS = 5000;
+const LOG_LIMIT = 50;
+// 结束后的一小段时间内 phase 仍报 ended，让界面能弹出「远程已结束」。
+const ENDED_TTL_MS = 60 * 1000;
+
+const KIND_SUMMARY = {
+  'projection.write': '控制设备',
+  'devices.rename': '重命名设备',
+  'devices.controlConnection.set': '切换设备控制连接',
+  'devices.invoke': '操作设备',
+  'devices.stop': '停止设备',
+  'devices.disconnect': '断开设备',
+  'operator-output': '停止主控端输出',
+  'game.start': '启动玩法',
+  'game.stop': '停止玩法',
+  'game.pause': '暂停玩法',
+  'game.resume': '继续玩法',
+  'game.setParams': '调整玩法参数',
+  'game.action': '玩法操作',
+};
+
+class RemoteSessionService {
+  constructor({
+    game = remoteGameService,
+    projection = remoteProjectionService,
+    log = logService,
+    now = () => Date.now(),
+    setTimer = setTimeout,
+    clearTimer = clearTimeout,
+    setRepeating = setInterval,
+    clearRepeating = clearInterval,
+    controlTtlSec = CONTROL_TTL_SEC,
+    renewBeforeMs = RENEW_BEFORE_MS,
+    renewCheckMs = RENEW_CHECK_MS,
+    authorizeRetryMs = AUTHORIZE_RETRY_MS,
+    authorizeMaxAttempts = AUTHORIZE_MAX_ATTEMPTS,
+    pingIntervalMs = PING_INTERVAL_MS,
+    logLimit = LOG_LIMIT,
+  } = {}) {
+    this.game = game;
+    this.projection = projection;
+    this.log = log;
+    this.now = now;
+    this.setTimer = setTimer;
+    this.clearTimer = clearTimer;
+    this.setRepeating = setRepeating;
+    this.clearRepeating = clearRepeating;
+    this.controlTtlSec = controlTtlSec;
+    this.renewBeforeMs = renewBeforeMs;
+    this.renewCheckMs = renewCheckMs;
+    this.authorizeRetryMs = authorizeRetryMs;
+    this.authorizeMaxAttempts = authorizeMaxAttempts;
+    this.pingIntervalMs = pingIntervalMs;
+    this.logLimit = logLimit;
+    this.state = null;
+    this.logEntries = [];
+    this.lastEnded = null;
+    this._unsubscribes = [];
+    this._stopping = false;
+    this._latencyMs = null;
+  }
+
+  // ---------- 被控端 ----------
+
+  /** 被控端开启远程：主房间（唯一对外房间码）+ 投影房间（TTL 取上限，自动续期）。 */
+  async create({ token } = {}) {
+    if (!token) throw this._error('MISSING_TOKEN', '请先登录账号');
+    await this.stop({ reason: 'replaced' }).catch(() => {});
+    const gameStatus = await this.game.create({ token });
+    let projectionStatus = null;
+    try {
+      projectionStatus = await this.projection.create({
+        token,
+        controlTtlSec: this.controlTtlSec,
+      });
+    } catch (error) {
+      await this.game.stop({ reason: 'session-create-failed' }).catch(() => {});
+      throw error;
+    }
+    this.state = {
+      role: 'owner',
+      phase: 'waiting',
+      token,
+      joinCode: gameStatus?.joinCode || null,
+      projectionRoomId: projectionStatus?.roomId || null,
+      projectionJoinCode: projectionStatus?.joinCode || null,
+      peerUserId: null,
+      authorized: false,
+      waitingAuthorize: null,
+      lastError: null,
+      timers: { renew: null, authorize: null, ping: null },
+    };
+    this.logEntries = [];
+    this.lastEnded = null;
+    this._latencyMs = null;
+    this._attach();
+    this._scheduleRenewal(this.state);
+    this._logEvent('ok', 'session.create', null, { joinCode: this.state.joinCode });
+    return this.getStatus();
+  }
+
+  /** 主控端加入：只加入主房间；等被控端授权后自动进入投影房间。 */
+  async join({ token, joinCode } = {}) {
+    if (!token) throw this._error('MISSING_TOKEN', '请先登录账号');
+    const code = String(joinCode || '').trim();
+    if (!code) throw this._error('JOIN_CODE_REQUIRED', '请输入房间码');
+    await this.stop({ reason: 'replaced' }).catch(() => {});
+    const gameStatus = await this.game.join({ token, joinCode: code });
+    this.state = {
+      role: 'operator',
+      phase: 'pending-authorization',
+      token,
+      joinCode: null,
+      projectionRoomId: null,
+      projectionJoinCode: null,
+      peerUserId: gameStatus?.hostUserId || null,
+      authorized: false,
+      waitingAuthorize: null,
+      lastError: null,
+      timers: { renew: null, authorize: null, ping: null },
+    };
+    this.logEntries = [];
+    this.lastEnded = null;
+    this._attach();
+    this._startPing();
+    return this.getStatus();
+  }
+
+  // ---------- 授权 / 撤销 / 踢出 / 结束 ----------
+
+  /** 被控端授权当前成员：主房间授权 + 下发投影房间码（只发给该 userId）+ 自动授权投影。 */
+  async authorize({ userId } = {}) {
+    const state = this._requireState('NOT_OWNER', '只有被控端可以授权');
+    if (state.role !== 'owner') throw this._error('NOT_OWNER', '只有被控端可以授权');
+    // 显式指定授权对象时先校验：已踢出的成员不能再被授权（主房间的 _setAuthorized 也会排除）
+    const requested = String(userId || '').trim();
+    if (requested && this.game.isKicked?.(requested)) {
+      throw this._error('USER_KICKED', '该成员已被移出房间');
+    }
+    await this.game.authorize();
+    const target = this.game.getAuthorizedUserId?.() || requested;
+    if (!target) throw this._error('NO_OPERATOR', '没有可授权的成员');
+    state.peerUserId = target;
+    state.authorized = true;
+    state.phase = 'active';
+    state.waitingAuthorize = { userId: target, attempts: 0 };
+    this._logEvent('ok', 'session.authorize', target, { projectionRoomId: state.projectionRoomId });
+    await this._inviteOperator(state, target);
+    this._scheduleAuthorizeRetry(state);
+    return this.getStatus();
+  }
+
+  /** 撤销授权：两条链路一起撤，回到等待授权。 */
+  async revoke() {
+    const state = this._requireState('NOT_ACTIVE', '当前没有远程会话');
+    if (state.role !== 'owner') throw this._error('NOT_OWNER', '只有被控端可以撤权');
+    this._finishAuthorize(state);
+    state.authorized = false;
+    state.peerUserId = null;
+    state.phase = 'waiting';
+    this._logEvent('ok', 'session.revoke', null, null);
+    await Promise.allSettled([
+      this.game.revoke(),
+      this.projection.revoke({ reason: 'session-revoke' }),
+    ]);
+    return this.getStatus();
+  }
+
+  /** 踢出成员：急停其输出 + 两条链路都移出 + 关闭授权。 */
+  async kick({ userId } = {}) {
+    const state = this._requireState('NOT_ACTIVE', '当前没有远程会话');
+    if (state.role !== 'owner') throw this._error('NOT_OWNER', '只有被控端可以踢出成员');
+    const target = String(userId || state.peerUserId || '').trim();
+    if (!target) throw this._error('USER_ID_REQUIRED', '缺少用户 ID');
+    this._finishAuthorize(state);
+    this._logEvent('ok', 'session.kick', target, null);
+    // 先关授权（急停需要授权态才能下发），再停输出、踢人
+    await this.projection.revoke({ reason: 'kicked' }).catch(() => {});
+    await this.game.revoke().catch(() => {});
+    await this.game.emergencyStop().catch(() => {});
+    await this.projection.emergencyStop().catch(() => {});
+    await Promise.allSettled([
+      this.game.kick({ userId: target }),
+      this.projection.kick(target),
+    ]);
+    state.authorized = false;
+    state.peerUserId = null;
+    state.phase = 'waiting';
+    return this.getStatus();
+  }
+
+  /** 急停：停主控端触发的输出与玩法，会话继续。被控端直接停，主控端发命令请被控端停。 */
+  async emergencyStop() {
+    const state = this._requireState('NOT_ACTIVE', '当前没有远程会话');
+    if (state.role === 'owner') {
+      this._logEvent('ok', 'session.emergencyStop', null, null);
+      const results = await Promise.allSettled([
+        this.game.emergencyStop(),
+        this.projection.emergencyStop(),
+      ]);
+      const failed = results.find((item) => item.status === 'rejected');
+      if (failed) state.lastError = failed.reason?.message || String(failed.reason);
+      return this.getStatus();
+    }
+    this._logEvent('ok', 'session.emergencyStop', null, { remote: true });
+    const result = await this.command({ type: 'session.emergency-stop', payload: {} });
+    if (result?.ok === false) {
+      state.lastError = result.message || result.code || 'REMOTE_EMERGENCY_STOP_FAILED';
+    }
+    return this.getStatus();
+  }
+
+  /** 结束会话：两条链路级联关闭（被控端关房间，主控端退房间）。 */
+  async stop({ reason = 'session-stop' } = {}) {
+    const state = this.state;
+    if (!state || this._stopping) return this.getStatus();
+    this._stopping = true;
+    const role = state.role;
+    this._teardown();
+    try {
+      if (role === 'owner') {
+        await this.game.stop({ reason }).catch(() => {});
+        await this.projection.stop().catch(() => {});
+      } else {
+        await this.projection.stop().catch(() => {});
+        await this.game.stop({ reason }).catch(() => {});
+      }
+    } finally {
+      this._stopping = false;
+    }
+    this.lastEnded = { at: this.now(), reason };
+    this._logEvent('ok', 'session.stop', null, { reason });
+    return this.getStatus();
+  }
+
+  shutdown() {
+    return this.stop({ reason: 'backend-shutdown' });
+  }
+
+  /** 主控端远程模式：设备接口按本会话投影房间过滤。 */
+  isOperatorRemoteMode() {
+    const state = this.state;
+    return !!state && state.role === 'operator'
+      && this._isAuthorized(state, this._safeStatus(this.game))
+      && !!state.projectionRoomId;
+  }
+
+  projectionRoomId() {
+    const state = this.state;
+    return this.isOperatorRemoteMode() ? state.projectionRoomId : null;
+  }
+
+  /** 主控端把设备相关写操作转成主房间语义命令（被控端执行后返回结果）。 */
+  command({ type, payload } = {}) {
+    return this.game.command({ type, payload });
+  }
+
+  // ---------- 事件接线 ----------
+
+  _attach() {
+    this._detach();
+    this._unsubscribes.push(this.game.onEvent((event) => {
+      try { this._onGameEvent(event); } catch (_) {}
+    }));
+    this._unsubscribes.push(this.projection.onEvent((event) => {
+      try { this._onProjectionEvent(event); } catch (_) {}
+    }));
+  }
+
+  _detach() {
+    for (const unsubscribe of this._unsubscribes) {
+      try { unsubscribe(); } catch (_) {}
+    }
+    this._unsubscribes = [];
+  }
+
+  _onGameEvent(event) {
+    const state = this.state;
+    if (!state) return;
+    if (event.type === 'member' && state.role === 'owner') {
+      if (event.online && event.userId && !state.peerUserId) state.peerUserId = event.userId;
+      return;
+    }
+    if (event.type === 'authorization' && state.role === 'owner') {
+      if (!event.authorized) {
+        state.authorized = false;
+        state.peerUserId = null;
+        if (state.phase === 'active') state.phase = 'waiting';
+      }
+      return;
+    }
+    if (event.type === 'projection-invite' && state.role === 'operator') {
+      // 房主下发的投影房间码：主控端自动加入投影房间
+      void this._joinProjectionRoom(state);
+      return;
+    }
+    if (event.type === 'command' || event.type === 'operation' || event.type === 'operator-output') {
+      this._recordEvent(event);
+      return;
+    }
+    if (event.type === 'ended' && state.role === 'operator') {
+      this.lastEnded = { at: this.now(), reason: event.reason || 'ended' };
+      this._teardown();
+      this._logEvent('ok', 'session.ended', null, { reason: event.reason || null });
+    }
+  }
+
+  _onProjectionEvent(event) {
+    const state = this.state;
+    if (!state) return;
+    if (event.type === 'peer' && state.role === 'operator' && event.roomId) {
+      // 操作方自己 join 投影房间时也会收到一次 peer：房间码由主房间邀请决定
+      void this._joinProjectionRoom(state);
+      return;
+    }
+    if (event.type === 'write-result' && state.role === 'operator') {
+      // 投影写入的最终结果：主控端据此把「已发送」更新为已执行/失败。
+      if (event.ok === false) {
+        state.lastError = event.code || 'DEVICE_WRITE_FAILED';
+        this._logEvent('rejected', 'devices.invoke', null, { code: event.code || null });
+      }
+      return;
+    }
+    if (event.type === 'operation' || event.type === 'command') {
+      this._recordEvent(event);
+      return;
+    }
+    if (event.type === 'ended' && state.role === 'operator') {
+      this.lastEnded = { at: this.now(), reason: event.reason || 'ended' };
+      this._teardown();
+      this._logEvent('ok', 'session.ended', null, { reason: event.reason || null });
+    }
+  }
+
+  // ---------- 邀请 / 自动授权 ----------
+
+  /** 主控端收到投影房间邀请后自动加入；房间码只认主房间下发给本账号的那个。 */
+  async _joinProjectionRoom(state) {
+    // join 过程中投影服务会先派发一次 peer 事件：用 in-flight 标记避免递归重入
+    if (this.state !== state || state.joiningProjection) return;
+    const invite = this.game.getProjectionInvite?.();
+    const joinCode = invite?.joinCode || null;
+    // 房间码只来自主房间下发给本账号的邀请；join 后拿到真实 roomId 才能过设备过滤
+    if (!joinCode) return;
+    // 已经在这个房间了：只是补发/重放的邀请，不重复 join
+    if (state.projectionJoinCode === joinCode && state.projectionRoomId) return;
+    state.joiningProjection = true;
+    state.projectionJoinCode = joinCode;
+    try {
+      const status = await this.projection.join({ token: state.token, joinCode });
+      state.projectionRoomId = status?.roomId || invite?.projectionRoomId || null;
+      this._logEvent('ok', 'session.projection-join', null, { roomId: state.projectionRoomId });
+    } catch (error) {
+      state.projectionRoomId = null;
+      state.lastError = error?.message || String(error);
+      this._logEvent('rejected', 'session.projection-join', null, { message: state.lastError });
+    } finally {
+      state.joiningProjection = false;
+    }
+  }
+
+  /** 把投影房间码下发给被授权的那个 userId（主房间 events 通道）。 */
+  async _inviteOperator(state, userId) {
+    if (!state.projectionJoinCode || !userId) return;
+    try {
+      await this.game.inviteOperator({
+        userId,
+        joinCode: state.projectionJoinCode,
+        projectionRoomId: state.projectionRoomId,
+      });
+    } catch (error) {
+      state.lastError = error?.message || String(error);
+      this._logEvent('rejected', 'session.projection-invite', userId, {
+        message: state.lastError,
+      });
+    }
+  }
+
+  /** 操作方进入投影房间后由被控端自动授权；顺序不定，轮询到出现或超次数为止。 */
+  _scheduleAuthorizeRetry(state) {
+    this._clearAuthorizeTimer(state);
+    if (!state.waitingAuthorize) return;
+    const tick = async () => {
+      const current = this.state;
+      if (current !== state || !state.waitingAuthorize) return;
+      if (await this._tryAuthorizeProjection(state)) return;
+      // 轮询在飞行中被 stop()/revoke() 结束：不能再排下一次，否则会留下没人清的定时器
+      if (this.state !== state || !state.waitingAuthorize) return;
+      state.waitingAuthorize.attempts += 1;
+      if (state.waitingAuthorize.attempts >= this.authorizeMaxAttempts) {
+        const userId = state.waitingAuthorize.userId;
+        this._finishAuthorize(state);
+        this._logEvent('rejected', 'session.projection-authorize', userId, {
+          message: '主控端未进入投影房间',
+        });
+        return;
+      }
+      state.timers.authorize = this.setTimer(() => { void tick(); }, this.authorizeRetryMs);
+    };
+    // 先立刻试一次（操作方可能已经在房间里），没赶上再按间隔重试
+    void tick();
+  }
+
+  async _tryAuthorizeProjection(state) {
+    const userId = state.waitingAuthorize?.userId;
+    if (!userId) return true;
+    // 已踢出的成员：绝不能再自动授权（否则「踢出」只是把主房间的授权关掉，投影房间还会被补授权）
+    if (this.game.isKicked?.(userId)) {
+      this._logEvent('rejected', 'session.projection-authorize', userId, {
+        message: '成员已被移出房间',
+      });
+      this._finishAuthorize(state);
+      return true;
+    }
+    if (this.projection.hasMember?.(userId)) {
+      try {
+        await this.projection.authorize(userId);
+      } catch (error) {
+        state.lastError = error?.message || String(error);
+        return false;
+      }
+      // 轮询期间被踢出：授权刚落地也要立刻撤掉，避免「踢出后仍被授权」
+      if (this.game.isKicked?.(userId)) {
+        await this.projection.revoke({ reason: 'kicked-during-authorize' }).catch(() => {});
+        this._logEvent('rejected', 'session.projection-authorize', userId, {
+          message: '成员已被移出房间',
+        });
+        this._finishAuthorize(state);
+        return true;
+      }
+      this._finishAuthorize(state);
+      this._logEvent('ok', 'session.projection-authorize', userId, null);
+      return true;
+    }
+    return false;
+  }
+
+  _clearAuthorizeTimer(state) {
+    if (state?.timers?.authorize) {
+      this.clearTimer(state.timers.authorize);
+      state.timers.authorize = null;
+    }
+  }
+
+  /** 投影自动授权结束（成功或放弃）：停掉重试并清掉待授权对象。 */
+  _finishAuthorize(state) {
+    this._clearAuthorizeTimer(state);
+    if (state) state.waitingAuthorize = null;
+  }
+
+  // ---------- 投影 TTL 续期 / 延迟 ----------
+
+  _scheduleRenewal(state) {
+    if (state.role !== 'owner') return;
+    const tick = async () => {
+      if (this.state !== state) return;
+      if (this._needsRenew()) {
+        try {
+          await this.projection.extendControl({ controlTtlSec: this.controlTtlSec });
+          this._logEvent('ok', 'session.projection-renew', null, null);
+        } catch (error) {
+          state.lastError = error?.message || String(error);
+          this._logEvent('rejected', 'session.projection-renew', null, { message: state.lastError });
+        }
+      }
+      if (this.state === state) {
+        state.timers.renew = this.setTimer(() => { void tick(); }, this.renewCheckMs);
+      }
+    };
+    state.timers.renew = this.setTimer(() => { void tick(); }, this.renewCheckMs);
+  }
+
+  /** 投影控制是否接近到期（到期前 renewBeforeMs 内续期）。 */
+  _needsRenew() {
+    const status = this._safeStatus(this.projection);
+    if (!status?.active || !status.controlExpiresAt) return false;
+    const expiresAt = Date.parse(status.controlExpiresAt);
+    if (!Number.isFinite(expiresAt)) return false;
+    return expiresAt - this.now() <= this.renewBeforeMs;
+  }
+
+  _startPing() {
+    const state = this.state;
+    if (!state || state.role !== 'operator') return;
+    const tick = async () => {
+      if (this.state !== state) return;
+      // 未授权时房主会拒绝命令：不白打流量，等授权后再测延迟
+      if (this._isAuthorized(state, this._safeStatus(this.game))) {
+        const sentAt = this.now();
+        try {
+          const response = await this.game.command({ type: 'client.ping', payload: { echo: sentAt } });
+          if (this.state === state && response?.ok !== false) this._latencyMs = this.now() - sentAt;
+        } catch (_) { /* 延迟测量失败不影响会话 */ }
+      }
+      if (this.state === state) {
+        state.timers.ping = this.setTimer(() => { void tick(); }, this.pingIntervalMs);
+      }
+    };
+    state.timers.ping = this.setTimer(() => { void tick(); }, this.pingIntervalMs);
+  }
+
+  // ---------- 操作记录 ----------
+
+  _recordEvent(event) {
+    const outcome = event.outcome === 'clamped' || event.outcome === 'rejected' ? event.outcome : 'ok';
+    const detail = event.detail || null;
+    // operator-output 是「主控端输出被停」的汇总事件，按它自己的名字记一条
+    const kind = event.type === 'operator-output' ? 'operator-output' : (event.kind || 'unknown');
+    const summary = this._summarize(kind, outcome, event.target, detail);
+    this._pushLog({
+      ts: this.now(),
+      userId: event.userId || null,
+      kind,
+      target: event.target || null,
+      summary,
+      outcome,
+      detail: this._summarizeDetail(kind, detail),
+    });
+  }
+
+  _logEvent(outcome, kind, target, detail) {
+    this._pushLog({
+      ts: this.now(),
+      userId: null,
+      kind,
+      target: target || null,
+      summary: KIND_SUMMARY[kind] || kind,
+      outcome,
+      detail: detail || null,
+    });
+  }
+
+  _summarize(kind, outcome, target, detail) {
+    const base = KIND_SUMMARY[kind] || kind;
+    const applied = detail?.applied;
+    const requested = detail?.requested;
+    if (applied && typeof applied === 'object') {
+      const field = ['voltage', 'power', 'intensity', 'shock', 'value', 'stroke']
+        .find((key) => applied[key] !== undefined);
+      if (field) {
+        const want = requested?.[field];
+        const got = applied[field];
+        return want !== undefined && Number(want) !== Number(got)
+          ? `${base}「${target || ''}」${field} ${want} → 已限制为 ${got}`
+          : `${base}「${target || ''}」${field} ${got}`;
+      }
+      if (applied.brand && applied.cmd) return `${base}「${target || ''}」${applied.brand}.${applied.cmd}`;
+    }
+    if (outcome === 'rejected') {
+      return `${base}「${target || ''}」被拒绝${detail?.message ? `：${detail.message}` : ''}`;
+    }
+    if (kind === 'devices.rename') return `重命名「${target || ''}」`;
+    if (kind === 'devices.controlConnection.set') return `切换「${target || ''}」的控制连接`;
+    if (kind.startsWith('game.')) return `${base}${detail?.gameId ? `《${detail.gameId}》` : ''}`;
+    return target ? `${base}「${target}」` : base;
+  }
+
+  _summarizeDetail(kind, detail) {
+    if (!detail) return null;
+    const out = { kind };
+    if (detail.code) out.code = detail.code;
+    if (detail.message) out.message = detail.message;
+    if (detail.requested) out.requested = detail.requested;
+    if (detail.applied) out.applied = detail.applied;
+    return out;
+  }
+
+  _pushLog(entry) {
+    this.logEntries.push(entry);
+    if (this.logEntries.length > this.logLimit) {
+      this.logEntries.splice(0, this.logEntries.length - this.logLimit);
+    }
+  }
+
+  // ---------- 状态 ----------
+
+  getStatus() {
+    const state = this.state;
+    const ended = this._endedState();
+    if (!state) {
+      return {
+        active: false,
+        role: null,
+        phase: ended ? 'ended' : 'idle',
+        joinCode: null,
+        peer: null,
+        authorized: false,
+        links: { game: { connected: false }, projection: { connected: false, roomId: null } },
+        latencyMs: null,
+        lastError: ended?.reason || null,
+        log: [...this.logEntries],
+      };
+    }
+    const gameStatus = this._safeStatus(this.game);
+    const projectionStatus = this._safeStatus(this.projection);
+    return {
+      active: true,
+      role: state.role,
+      phase: this._phase(state, gameStatus, projectionStatus),
+      joinCode: state.role === 'owner' ? state.joinCode : null,
+      peer: state.peerUserId
+        ? { userId: state.peerUserId, nickname: null }
+        : null,
+      authorized: this._isAuthorized(state, gameStatus),
+      links: {
+        game: { connected: !!gameStatus?.connected },
+        projection: {
+          connected: !!projectionStatus?.connected,
+          roomId: state.projectionRoomId || projectionStatus?.roomId || null,
+        },
+      },
+      latencyMs: state.role === 'operator' ? this._latencyMs : null,
+      lastError: state.lastError || null,
+      log: [...this.logEntries],
+    };
+  }
+
+  /**
+   * 是否已授权。主控端以「主房间已授权」为准（投影房间是随后才起来的，
+   * 不能拿它当授权的判据，否则自动进投影的窗口期会显示成未授权）。
+   */
+  _isAuthorized(state, gameStatus) {
+    if (state.role === 'owner') return !!state.authorized;
+    return !!gameStatus?.authorized;
+  }
+
+  _endedState() {    const ended = this.lastEnded;
+    if (!ended) return null;
+    if (this.now() - ended.at > ENDED_TTL_MS) {
+      this.lastEnded = null;
+      return null;
+    }
+    return ended;
+  }
+
+  _phase(state, gameStatus, projectionStatus) {
+    if (state.role === 'owner') {
+      if (state.authorized && state.phase === 'active') return 'active';
+      if (state.phase === 'pending-authorization') return 'pending-authorization';
+      return 'waiting';
+    }
+    if (!this._isAuthorized(state, gameStatus)) return 'pending-authorization';
+    // 已授权但任一条链路断开（MQTT 重连/房主宽限期）→ 重连中
+    const connected = !!gameStatus?.connected && !!projectionStatus?.connected;
+    return connected ? 'active' : 'reconnecting';
+  }
+
+  _teardown() {
+    const state = this.state;
+    this.state = null;
+    this._detach();
+    if (!state) return;
+    if (state.timers.renew) this.clearTimer(state.timers.renew);
+    if (state.timers.authorize) this.clearTimer(state.timers.authorize);
+    if (state.timers.ping) this.clearTimer(state.timers.ping);
+    state.timers = { renew: null, authorize: null, ping: null };
+  }
+
+  _requireState(code, message) {
+    if (!this.state) throw this._error(code, message);
+    return this.state;
+  }
+
+  _safeStatus(service) {
+    try { return service?.getStatus?.() || null; } catch (_) { return null; }
+  }
+
+  _error(code, message) {
+    const error = new Error(message);
+    error.code = code;
+    return error;
+  }
+}
+
+const remoteSessionService = new RemoteSessionService();
+
+module.exports = remoteSessionService;
+module.exports.RemoteSessionService = RemoteSessionService;
+module.exports.CONTROL_TTL_SEC = CONTROL_TTL_SEC;

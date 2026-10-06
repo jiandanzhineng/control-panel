@@ -779,4 +779,157 @@ describe('remote game service', () => {
       expect(envelope.senderConnectionEpoch).not.toContain('client-owner');
     }
   });
+
+  // ---- 编排层（remoteSessionService）依赖的新增能力 ----
+
+  test('inviteOperator delivers the projection room code only to the authorized member', async () => {
+    const { broker, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+
+    await owner.inviteOperator({ userId: 'operator', joinCode: 'PCODE', projectionRoomId: 'room-proj' });
+    await flush();
+
+    expect(operator.getProjectionInvite()).toEqual({
+      joinCode: 'PCODE', projectionRoomId: 'room-proj', forUserId: 'operator',
+    });
+    // 房主自己不是操作方，拿不到邀请
+    expect(owner.getProjectionInvite()).toBeNull();
+    // 邀请也进了快照，重连的操作方能恢复
+    const snapshot = broker.publishes
+      .filter((item) => item.payload.type === 'client.snapshot')
+      .pop();
+    expect(snapshot.payload.payload.projectionInvite).toMatchObject({ joinCode: 'PCODE' });
+    await owner.stop();
+  });
+
+  test('operator only accepts the invite addressed to its own userId', async () => {
+    const { owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await owner.inviteOperator({ userId: 'someone-else', joinCode: 'OTHER' });
+    await flush();
+    expect(operator.getProjectionInvite()).toBeNull();
+    await owner.stop();
+  });
+
+  test('recovered snapshot invite re-emits so a reconnected operator rejoins the projection room', async () => {
+    const { owner, operator } = pair();
+    const invites = [];
+    operator.onEvent((event) => { if (event.type === 'projection-invite') invites.push(event); });
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await owner.inviteOperator({ userId: 'operator', joinCode: 'PCODE', projectionRoomId: 'room-proj' });
+    await flush();
+    expect(invites).toHaveLength(1);
+
+    // 邀请事件丢了（操作方没拿到）：房主重推快照时，快照里的同一份邀请要能再次触发自动进房
+    operator.session.projectionInvite = null;
+    await owner._publishClientSnapshot(owner.session);
+    await flush();
+    expect(invites.length).toBeGreaterThanOrEqual(2);
+    expect(invites[invites.length - 1]).toMatchObject({ joinCode: 'PCODE', forUserId: 'operator' });
+    await owner.stop();
+  });
+
+  test('client.ping returns the host clock for latency measurement', async () => {
+    const { owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    const result = await operator.command({ type: 'client.ping', payload: { echo: 1 } });
+    expect(result).toMatchObject({ ok: true, result: { echo: 1 } });
+    expect(typeof result.result.now).toBe('number');
+    await owner.stop();
+  });
+
+  test('emergencyStop stops operator outputs and a remote game but keeps the session', async () => {
+    const { host, owner, operator } = pair();
+    const device = {
+      id: 'dev-1', name: '刺激器', type: 'TD01', connected: true,
+      controlConnection: 'mqtt', connections: [{ type: 'mqtt' }], capabilities: ['strength'],
+    };
+    host.devices = {
+      listDevicesForApi: jest.fn(() => [device]),
+      getDeviceForApi: jest.fn((id) => (id === device.id ? device : null)),
+      invokeDeviceCapabilityAndWait: jest.fn(async () => ({ ok: true })),
+      stopExecutionDeviceAndWait: jest.fn(async () => ({ ok: true })),
+    };
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {} } });
+    // 测试用的假 host 不记录来源，这里按真实 gameHostService 的语义补上
+    host.status.source = 'remote';
+    await operator.command({
+      type: 'devices.invoke',
+      payload: { deviceId: 'dev-1', capability: 'strength', action: 'set', input: { value: 30 } },
+    });
+
+    await owner.emergencyStop();
+    await flush();
+
+    expect(host.devices.stopExecutionDeviceAndWait).toHaveBeenCalledWith('dev-1');
+    expect(host.stop).toHaveBeenCalledWith({ reason: 'remote-emergency-stop' });
+    // 会话与授权都保留
+    expect(owner.getStatus()).toMatchObject({ active: true, authorized: true });
+    expect(operator.getStatus().authorized).toBe(true);
+    await owner.stop();
+  });
+
+  test('emergencyStop keeps a locally started game running', async () => {
+    const { host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await host.start({ gameId: 'surge-edging', source: 'local' });
+
+    await owner.emergencyStop();
+    expect(host.stop).not.toHaveBeenCalled();
+    await owner.stop();
+  });
+
+  test('emergency stop and ping stay behind the authorization check', async () => {
+    const { broker, host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await flush();
+    await host.start({ gameId: 'surge-edging', source: 'remote' });
+
+    // 未授权：急停被主房间挡下，绝不落到被控端执行
+    const denied = await operator.command({ type: 'session.emergency-stop', payload: {} });
+    expect(denied).toMatchObject({ ok: false, code: 'CONTROL_NOT_AUTHORIZED' });
+    expect(host.stop).not.toHaveBeenCalled();
+    // 连延迟测量也要授权后才可用（否则同房间任何成员都能刷房主）
+    const pingDenied = await operator.command({ type: 'client.ping', payload: { echo: 1 } });
+    expect(pingDenied).toMatchObject({ ok: false, code: 'CONTROL_NOT_AUTHORIZED' });
+
+    // 授权后急停放行（需确实有一局由操作方启动的玩法，急停才需要停它）
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {} } });
+    // 测试用的假 host 不记录来源，这里按真实 gameHostService 的语义补上
+    host.status.source = 'remote';
+    await flush();
+    const allowed = await operator.command({ type: 'session.emergency-stop', payload: {} });
+    expect(allowed.ok).toBe(true);
+    expect(host.stop).toHaveBeenCalledWith({ reason: 'remote-emergency-stop' });
+
+    // 已被踢出的成员：急停立刻被拒（服务端还没断它的 MQTT）
+    await owner.kick({ userId: 'operator' });
+    await flush();
+    const kicked = await operator.command({ type: 'session.emergency-stop', payload: {} });
+    expect(kicked).toMatchObject({ ok: false, code: 'CONTROL_NOT_AUTHORIZED' });
+    expect(broker.publishes.length).toBeGreaterThan(0);
+    await owner.stop();
+  });
 });

@@ -42,30 +42,65 @@
             <template #title>{{ t('nav.plays') }}</template>
           </el-menu-item>
 
-          <el-menu-item index="/browser">
-            <el-icon><Compass /></el-icon>
-            <template #title>{{ t('nav.browser') }}</template>
+          <el-menu-item index="/remote">
+            <el-icon><Link /></el-icon>
+            <template #title>{{ t('nav.remote') }}</template>
           </el-menu-item>
 
-          <el-menu-item index="/network">
-            <el-icon><Connection /></el-icon>
-            <template #title>{{ t('nav.network') }}</template>
-          </el-menu-item>
+          <el-tooltip
+            :disabled="!isMenuLocked('/browser')"
+            :content="t('remoteSession.lock.menu')"
+            placement="right"
+          >
+            <el-menu-item index="/browser" :disabled="isMenuLocked('/browser')" :class="{ 'menu-locked': isMenuLocked('/browser') }">
+              <el-icon><Compass /></el-icon>
+              <template #title>{{ t('nav.browser') }}</template>
+            </el-menu-item>
+          </el-tooltip>
 
-          <el-menu-item index="/account">
-            <el-icon><User /></el-icon>
-            <template #title>{{ t('nav.account') }}</template>
-          </el-menu-item>
+          <el-tooltip
+            :disabled="!isMenuLocked('/network')"
+            :content="t('remoteSession.lock.menu')"
+            placement="right"
+          >
+            <el-menu-item index="/network" :disabled="isMenuLocked('/network')" :class="{ 'menu-locked': isMenuLocked('/network') }">
+              <el-icon><Connection /></el-icon>
+              <template #title>{{ t('nav.network') }}</template>
+            </el-menu-item>
+          </el-tooltip>
 
-          <el-menu-item index="/settings">
-            <el-icon><Setting /></el-icon>
-            <template #title>{{ t('nav.settings') }}</template>
-          </el-menu-item>
-          
-          <el-menu-item index="/logs">
-            <el-icon><Document /></el-icon>
-            <template #title>{{ t('nav.logs') }}</template>
-          </el-menu-item>
+          <el-tooltip
+            :disabled="!isMenuLocked('/account')"
+            :content="t('remoteSession.lock.menu')"
+            placement="right"
+          >
+            <el-menu-item index="/account" :disabled="isMenuLocked('/account')" :class="{ 'menu-locked': isMenuLocked('/account') }">
+              <el-icon><User /></el-icon>
+              <template #title>{{ t('nav.account') }}</template>
+            </el-menu-item>
+          </el-tooltip>
+
+          <el-tooltip
+            :disabled="!isMenuLocked('/settings')"
+            :content="t('remoteSession.lock.menu')"
+            placement="right"
+          >
+            <el-menu-item index="/settings" :disabled="isMenuLocked('/settings')" :class="{ 'menu-locked': isMenuLocked('/settings') }">
+              <el-icon><Setting /></el-icon>
+              <template #title>{{ t('nav.settings') }}</template>
+            </el-menu-item>
+          </el-tooltip>
+
+          <el-tooltip
+            :disabled="!isMenuLocked('/logs')"
+            :content="t('remoteSession.lock.menu')"
+            placement="right"
+          >
+            <el-menu-item index="/logs" :disabled="isMenuLocked('/logs')" :class="{ 'menu-locked': isMenuLocked('/logs') }">
+              <el-icon><Document /></el-icon>
+              <template #title>{{ t('nav.logs') }}</template>
+            </el-menu-item>
+          </el-tooltip>
         </el-menu>
 
         <!-- 左下角：客服入口 + 主题切换 -->
@@ -80,9 +115,10 @@
 
       <!-- 主内容区域 -->
       <div class="main-container" :style="isMobile ? { marginLeft: 0 } : { marginLeft: isCollapsed ? '64px' : '200px', width: 'calc(100% - ' + (isCollapsed ? '64px' : '200px') + ')' }">
+        <!-- 远程会话条：两端共用，挂在顶栏之上，沉浸页也可见 -->
+        <RemoteSessionBar />
         <!-- 顶部工具栏：沉浸式页面（如在线游戏 webview）隐藏面包屑，避免与载体自带工具栏叠成多层 -->
-        <div v-if="!hideHeader" class="main-header">
-          <div class="header-content">
+        <div v-if="!hideHeader" class="main-header">          <div class="header-content">
             <!-- 移动端菜单按钮 -->
             <el-button 
               v-if="isMobile"
@@ -119,18 +155,25 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass, User, Service, Setting } from '@element-plus/icons-vue'
+import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass, User, Service, Setting, Link } from '@element-plus/icons-vue'
 import { useAuth } from './composables/useAuth'
 import { useTheme } from './composables/useTheme'
 import { clearActivePlay } from './composables/useActivePlay'
 import { router } from './router'
 import ThemeSwitch from './components/ThemeSwitch.vue'
+import RemoteSessionBar from './components/RemoteSessionBar.vue'
 import { useLocale } from './i18n/useLocale'
+import { useRemoteSession } from './composables/useRemoteSession'
+import { isMenuItemLocked } from './remote/remoteLock'
 
 const { t } = useI18n()
 const { checkSession } = useAuth()
 const { init: initTheme, dispose: disposeTheme } = useTheme()
 const { elementLocale, initFromDesktop } = useLocale()
+const remoteSession = useRemoteSession()
+
+// 主控端远程模式下：浏览器/网络/账号/设置/日志置灰（客服入口保持可用）
+const isMenuLocked = (path: string) => isMenuItemLocked(path, remoteSession.isOperatorRemote.value)
 
 const route = useRoute()
 const isCollapsed = ref(false)
@@ -315,6 +358,15 @@ html, body {
   border-radius: 2px;
   background-color: var(--accent);
 }
+
+/* 远程模式下置灰的菜单项：整行半透明 + 禁用光标（覆盖 EP 默认 .25） */
+.sidebar-menu .el-menu-item.menu-locked,
+.sidebar-menu .el-menu-item.menu-locked:hover {
+  opacity: 0.38;
+  cursor: not-allowed;
+  background: none;
+}
+.sidebar-menu .el-menu-item.menu-locked::before { display: none; }
 
 /* 折叠时菜单项去掉水平边距，保持图标居中 */
 .sidebar-collapsed .sidebar-menu .el-menu-item {

@@ -927,13 +927,12 @@
       </el-tab-pane>
 
       <el-tab-pane :label="t('devices.remote')" name="remote">
-        <RemoteProjectionPanel />
-        <div class="remote-game-entry">
-          <div>
-            <strong>{{ t('remoteGame.title') }}</strong>
-            <span>{{ t('remoteGame.desc') }}</span>
+        <div class="remote-entry">
+          <div class="remote-entry__text">
+            <strong>{{ t('remoteSession.title') }}</strong>
+            <span>{{ t('remoteSession.entryDesc') }}</span>
           </div>
-          <el-button type="primary" plain @click="router.push('/remote-game')">{{ t('remoteGame.openWorkspace') }}</el-button>
+          <el-button type="primary" plain @click="router.push('/remote')">{{ t('remoteSession.entryOpen') }}</el-button>
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -947,7 +946,6 @@ import { ElMessageBox, ElMessage } from 'element-plus'
 import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Link, Loading, SetUp, Tools, Operation } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
-import RemoteProjectionPanel from '../components/RemoteProjectionPanel.vue'
 import BrandsPanel from '../components/BrandsPanel.vue'
 import DeviceBatchControl from '../components/DeviceBatchControl.vue'
 import { track } from '../analytics'
@@ -2117,21 +2115,22 @@ async function executeDeviceOperation(device: Device, operation: any) {
 </script>
 
 <style scoped>
-.remote-game-entry {
+.remote-entry {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 16px;
+  margin-top: 4px;
   padding: 14px 16px;
-  border: 1px solid #dbe4ef;
-  border-radius: 14px;
-  background: #f8fbff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
 }
-.remote-game-entry div { display: grid; gap: 3px; }
-.remote-game-entry span { color: var(--el-text-color-secondary); font-size: 13px; }
+.remote-entry__text { display: grid; gap: 3px; }
+.remote-entry__text strong { color: var(--text-primary); }
+.remote-entry__text span { color: var(--text-muted); font-size: 13px; }
 @media (max-width: 640px) {
-  .remote-game-entry { align-items: stretch; flex-direction: column; }
+  .remote-entry { align-items: stretch; flex-direction: column; }
 }
 .devices-page {
   padding: 20px;

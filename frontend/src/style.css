@@ -39,6 +39,7 @@ html[data-theme='dark'] {
 
   --scrollbar-thumb: #333339;
   --scrollbar-thumb-hover: #44444b;
+  --remote-host-bg: rgba(245, 165, 36, 0.12);
   --mask-color: rgba(0, 0, 0, 0.65);
   --overlay-color: rgba(0, 0, 0, 0.7);
   --glass-bg: rgba(27, 27, 31, 0.55);
@@ -118,6 +119,7 @@ html[data-theme='light'] {
 
   --scrollbar-thumb: #c9cdd4;
   --scrollbar-thumb-hover: #aab0ba;
+  --remote-host-bg: rgba(245, 165, 36, 0.16);
   --mask-color: rgba(15, 17, 20, 0.5);
   --overlay-color: rgba(15, 17, 20, 0.5);
   --glass-bg: rgba(255, 255, 255, 0.6);

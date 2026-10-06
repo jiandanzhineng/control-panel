@@ -67,6 +67,8 @@ class RemoteProjectionService {
     this.setRepeating = setRepeating;
     this.clearRepeating = clearRepeating;
     this.session = null;
+    // 编排层（remoteSessionService）订阅的事件出口，避免它去读私有字段。
+    this.eventHandlers = new Set();
 
     // 锁存输出看门狗：远程写入登记，到点自动停机（审查报告 §3.3）。
     this.watchdog = createOutputWatchdog({
@@ -77,6 +79,19 @@ class RemoteProjectionService {
     this.devices.onDeviceDataChange?.((event) => this._onLocalDataChange(event));
     this.devices.onDeviceRawMessage?.((event) => this._onLocalRawMessage(event));
     this.devices.onDeviceListChange?.(() => this._onLocalDeviceListChange());
+  }
+
+  /** 编排层订阅事件（operation / phase / peer / write-result）。返回取消订阅函数。 */
+  onEvent(handler) {
+    if (typeof handler !== 'function') return () => {};
+    this.eventHandlers.add(handler);
+    return () => this.eventHandlers.delete(handler);
+  }
+
+  _emitEvent(event) {
+    for (const handler of this.eventHandlers) {
+      try { handler({ source: 'projection', ...event }); } catch (_) {}
+    }
   }
 
   getStatus() {
@@ -321,9 +336,20 @@ class RemoteProjectionService {
       if (session.authorizedUserId && session.operatorsOnline.get(session.authorizedUserId)) {
         await this._publishDeviceList(session).catch(() => {});
       }
-    } else if (session.authorizedUserId === session.credential.userId) {
-      // 仅已授权操作方在重连后重新请求清单；未授权时等房主授权再推。
-      await this._publishEnvelope(session, `commands/${session.credential.userId}`, 'projection.device-list.request', {});
+    } else {
+      // 编排层（主控端）据此确认自己仍在投影房间里；重连（MQTT 掉线/换凭据）时
+      // 也要重发一次，否则会话侧以为链路还在、实际已经不在了。
+      this._emitEvent({
+        type: 'peer',
+        role: 'operator',
+        joinCode: session.room.joinCode || null,
+        roomId: session.room.id,
+        hostUserId: session.room.hostUserId || null,
+      });
+      if (session.authorizedUserId === session.credential.userId) {
+        // 仅已授权操作方在重连后重新请求清单；未授权时等房主授权再推。
+        await this._publishEnvelope(session, `commands/${session.credential.userId}`, 'projection.device-list.request', {});
+      }
     }
   }
 
@@ -452,6 +478,10 @@ class RemoteProjectionService {
     }
     // 授权绑定 userId：未授权/已被移出的成员拿不到设备清单，也不能写。
     if (session.authorizedUserId !== userId || session.kickedUserIds.has(userId)) {
+      this._emitOperation(userId, envelope.payload?.deviceId, 'rejected', {
+        code: 'CONTROL_NOT_AUTHORIZED',
+        message: '房主未授权本账号控制设备',
+      });
       // 未授权/已被移出的成员：不发设备清单、不写设备，只回一条拒绝结果。
       await this._publishWriteResult(session, envelope.messageId, {
         ok: false,
@@ -464,6 +494,10 @@ class RemoteProjectionService {
       if (this._expireOwnerSession(session, 'control-ttl-expired-on-write')) {
         void this._publishEnvelope(session, 'events', 'projection.expired', {}).catch(() => {});
       }
+      this._emitOperation(userId, envelope.payload?.deviceId, 'rejected', {
+        code: 'CONTROL_EXPIRED',
+        message: '远程控制已过期',
+      });
       await this._publishWriteResult(session, envelope.messageId, {
         ok: false,
         code: 'CONTROL_EXPIRED',
@@ -474,6 +508,10 @@ class RemoteProjectionService {
     const input = envelope.payload;
     if (!input || typeof input !== 'object' || typeof input.deviceId !== 'string'
         || !input.message || typeof input.message !== 'object' || Array.isArray(input.message)) {
+      this._emitOperation(userId, input?.deviceId, 'rejected', {
+        code: 'INVALID_WRITE',
+        message: '远程控制指令格式无效',
+      });
       await this._publishWriteResult(session, envelope.messageId, {
         ok: false,
         code: 'INVALID_WRITE',
@@ -483,6 +521,10 @@ class RemoteProjectionService {
     }
     const device = this.devices.getDeviceForApi?.(input.deviceId);
     if (!device || !this._hasLocalConnection(device)) {
+      this._emitOperation(userId, input.deviceId, 'rejected', {
+        code: 'DEVICE_OFFLINE',
+        message: '共享设备已离线',
+      });
       await this._publishWriteResult(session, envelope.messageId, {
         deviceId: input.deviceId,
         ok: false,
@@ -498,6 +540,11 @@ class RemoteProjectionService {
       limits: session.limits,
     });
     if (!sanitized.ok) {
+      this._emitOperation(userId, input.deviceId, 'rejected', {
+        code: sanitized.code,
+        message: sanitized.message,
+        requested: input.message,
+      });
       await this._publishWriteResult(session, envelope.messageId, {
         deviceId: input.deviceId,
         ok: false,
@@ -514,12 +561,23 @@ class RemoteProjectionService {
         await Promise.resolve(this.devices.publishDeviceMessage(input.deviceId, message));
       }
       this._trackOperatorOutput(session, userId, input.deviceId, device, message);
+      this._emitOperation(
+        userId,
+        input.deviceId,
+        this._isClamped(input.message, message) ? 'clamped' : 'ok',
+        { requested: input.message, applied: message },
+      );
       await this._publishWriteResult(session, envelope.messageId, {
         deviceId: input.deviceId,
         ok: true,
       });
     } catch (error) {
       session.lastError = error?.message || String(error);
+      this._emitOperation(userId, input.deviceId, 'rejected', {
+        code: error?.code || 'DEVICE_WRITE_FAILED',
+        message: error?.message || String(error),
+        requested: input.message,
+      });
       await this._publishWriteResult(session, envelope.messageId, {
         deviceId: input.deviceId,
         ok: false,
@@ -528,6 +586,28 @@ class RemoteProjectionService {
       }).catch(() => {});
     }
   }
+
+  /** 归一化后的报文与原始报文是否不同（安全层钳制过）。 */
+  _isClamped(requested, applied) {
+    try {
+      return JSON.stringify(requested) !== JSON.stringify(applied);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /** 操作记录事件：编排层据此写被控端操作日志。 */
+  _emitOperation(userId, deviceId, outcome, detail = {}) {
+    this._emitEvent({
+      type: 'operation',
+      userId: userId || null,
+      kind: 'projection.write',
+      target: deviceId || null,
+      outcome,
+      detail,
+    });
+  }
+
 
   /** 记录「哪个操作方写了哪台设备」，供撤权/掉线时只停它写过的设备。 */
   _trackOperatorOutput(session, userId, deviceId, device, message) {
@@ -726,8 +806,13 @@ class RemoteProjectionService {
     if (!pending) return;
     session.pendingWrites.delete(requestId);
     this.clearTimer(pending.timer);
-    if (error) pending.reject(error);
-    else pending.resolve({ ok: true });
+    if (error) {
+      this._emitEvent({ type: 'write-result', requestId, ok: false, code: error.code || null });
+      pending.reject(error);
+    } else {
+      this._emitEvent({ type: 'write-result', requestId, ok: true });
+      pending.resolve({ ok: true });
+    }
   }
 
   _failPendingWrites(session, error) {
@@ -750,6 +835,51 @@ class RemoteProjectionService {
   _hasActiveOperator(session) {
     if (!session.authorizedUserId) return false;
     return session.operatorsOnline.get(session.authorizedUserId) === true;
+  }
+
+  /** 编排层用：某个 userId 是否已在这个投影房间里（成员列表或 presence）。 */
+  hasMember(userId) {
+    const session = this.session;
+    if (!session || session.role !== 'owner') return false;
+    const target = String(userId || '').trim();
+    if (!target) return false;
+    if (session.kickedUserIds.has(target)) return false;
+    const member = session.members.find((item) => item.userId === target);
+    if (member && (!member.status || member.status === 'joined')) return true;
+    return session.operatorsOnline.get(target) === true;
+  }
+
+  /**
+   * 续期远程控制 TTL：只延长截止时间，不动已授权成员、不复位设备、不重连。
+   * 返回是否真的改过（已过期或已结束的会话不复活）。
+   */
+  extendControl({ controlTtlSec } = {}) {
+    const session = this.session;
+    if (!session || session.role !== 'owner' || session.expired || this.now() >= session.controlExpiresAt) {
+      return { ok: false, reason: 'CONTROL_EXPIRED' };
+    }
+    const ttl = normalizePositiveInt(controlTtlSec, session.controlTtlSec, 60, 24 * 60 * 60);
+    session.controlTtlSec = ttl;
+    session.controlExpiresAt = this.now() + ttl * 1000;
+    if (session.timers.ttl) this.clearTimer(session.timers.ttl);
+    session.timers.ttl = this.setTimer(() => {
+      if (this.session !== session) return;
+      if (this._expireOwnerSession(session, 'control-ttl-expired')) {
+        void this._publishEnvelope(session, 'events', 'projection.expired', {}).catch(() => {});
+      }
+    }, safeTimerDelay(session.controlExpiresAt - this.now()));
+    this._emitEvent({ type: 'control-extended', controlExpiresAt: session.controlExpiresAt });
+    return { ok: true, controlTtlSec: ttl, controlExpiresAt: session.controlExpiresAt };
+  }
+
+  /** 编排层急停：停掉远程操作方写过的设备，会话继续（不撤权、不结束房间）。 */
+  async emergencyStop() {
+    const session = this.session;
+    if (!session || session.role !== 'owner') {
+      throw this._error('NOT_OWNER', '只有房主可以急停');
+    }
+    await this._safeStop(session, 'remote-emergency-stop');
+    return this.getStatus();
   }
 
   _onLocalDataChange({ deviceId, device, nextData }) {

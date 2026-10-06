@@ -19,6 +19,8 @@ const externalGameAccessService = require('./services/externalGameAccessService'
 const serialConnectionService = require('./services/serialConnectionService');
 const remoteProjectionService = require('./services/remoteProjectionService');
 const remoteGameService = require('./services/remoteGameService');
+const remoteSessionService = require('./services/remoteSessionService');
+const { remoteSessionFilter } = require('./middleware/remoteSessionFilter');
 const gameHostService = require('./game-runtime/gameHostService');
 
 const app = express();
@@ -143,6 +145,7 @@ function shutdownBackend(reason = 'backend-shutdown', {
   backendShutdownPromise = (async () => {
     await deviceWatchdogService.shutdown(reason);
     await localAppProcessService.stopAll().catch(() => ({ ok: false }));
+    await remoteSessionService.shutdown();
     await remoteGameService.shutdown();
     await gameHostService.shutdown();
     await remoteProjectionService.shutdown();
@@ -187,6 +190,8 @@ app.use('/games/cache', express.static(gameCacheService.getCacheRoot()));
 app.use('/games', express.static(gameService.getGameRoot()));
 
 // Routes
+// 主控端远程模式过滤：设备接口只返回本会话投影来的设备、本机专属接口 423（不在远程模式时直接放行）
+app.use('/api', remoteSessionFilter);
 app.use('/api/mqtt', require('./routes/mqtt'));
 app.use('/api/network', require('./routes/network'));
 app.use('/api/mdns', require('./routes/mdns'));
@@ -211,6 +216,7 @@ app.use('/api/voice', require('./routes/voice'));
 app.use('/api/remote-projection', loopbackOnly, require('./routes/remoteProjection'));
 app.use('/api/game-runtime', require('./routes/gameRuntime'));
 app.use('/api/remote-game', loopbackOnly, require('./routes/remoteGame'));
+app.use('/api/remote-session', loopbackOnly, require('./routes/remoteSession'));
 app.use('/api/dev-access', require('./routes/devAccess'));
 app.use('/api/brands', require('./routes/brands'));
 
