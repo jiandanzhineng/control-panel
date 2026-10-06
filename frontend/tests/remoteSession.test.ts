@@ -155,11 +155,12 @@ test('peer label falls back to the last six id characters', () => {
   assert.equal(peerLabel(null), '')
 })
 
-test('join codes keep their case: only whitespace and dashes are stripped', () => {
+test('join codes keep their case: only whitespace is stripped', () => {
   assert.equal(normalizeJoinCode('QeiNOINXU18'), 'QeiNOINXU18')
   assert.equal(normalizeJoinCode(' QeiN OINX U18 '), 'QeiNOINXU18')
   assert.equal(normalizeJoinCode('4MGYgg7d_k0'), '4MGYgg7d_k0')
-  assert.equal(normalizeJoinCode('AB-CD-EF'), 'ABCDEF')
+  // 房间码可能含 `-` / `_`：一个字符都不能动
+  assert.equal(normalizeJoinCode('x_ny6g-l7uk'), 'x_ny6g-l7uk')
   assert.equal(normalizeJoinCode(null), '')
 })
 
