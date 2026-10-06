@@ -60,6 +60,7 @@ func migrate(db *sql.DB) error {
 			review_note TEXT NOT NULL DEFAULT '',
 			reviewed_by TEXT REFERENCES identities(id),
 			release_id TEXT NOT NULL DEFAULT '',
+			author_is_admin INTEGER NOT NULL DEFAULT 0,
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL
 		)`,
@@ -98,6 +99,16 @@ func migrate(db *sql.DB) error {
 		if _, err := db.Exec(statement); err != nil {
 			return err
 		}
+	}
+	// 旧库补列：发布事务里要按「投稿时是否为管理员」判归属，所以随投稿一起落库。
+	var hasAuthorIsAdmin int
+	err := db.QueryRow(`SELECT 1 FROM pragma_table_info('submissions') WHERE name = 'author_is_admin'`).Scan(&hasAuthorIsAdmin)
+	if errors.Is(err, sql.ErrNoRows) {
+		if _, err := db.Exec(`ALTER TABLE submissions ADD COLUMN author_is_admin INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
 	}
 	return nil
 }
@@ -185,7 +196,7 @@ func scanSubmission(scanner interface{ Scan(...any) error }) (Submission, error)
 	err := scanner.Scan(
 		&submission.ID, &submission.UserID, &submission.AuthorName, &submission.Title, &submission.Description,
 		&submission.Kind, &submission.GitURL, &submission.ZipKey, &submission.Status, &submission.ReviewNote,
-		&reviewedBy, &submission.ReleaseID, &submission.CreatedAt, &submission.UpdatedAt,
+		&reviewedBy, &submission.ReleaseID, &submission.AuthorIsAdmin, &submission.CreatedAt, &submission.UpdatedAt,
 	)
 	if err != nil {
 		return Submission{}, err
@@ -198,7 +209,7 @@ func scanSubmission(scanner interface{ Scan(...any) error }) (Submission, error)
 
 const submissionSelect = `SELECT s.id, s.author_id, s.author_name, s.title, s.description,
 	s.kind, s.git_url, s.zip_key, s.status, s.review_note,
-	COALESCE(reviewer.email, ''), s.release_id, s.created_at, s.updated_at
+	COALESCE(reviewer.email, ''), s.release_id, s.author_is_admin, s.created_at, s.updated_at
 	FROM submissions s
 	LEFT JOIN identities reviewer ON reviewer.id = s.reviewed_by`
 

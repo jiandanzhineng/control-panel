@@ -408,6 +408,11 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 .submission-row { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
 .submission-row strong { color: var(--text); min-width: 0; }
 .submission-detail, .review-meta, .submission-note { font-size: 13px; color: var(--text-dim); }
+.review-meta .id-status { margin-left: 8px; font-size: 12px; vertical-align: middle; }
+.id-status-new { color: var(--accent); border-color: rgba(0, 224, 208, 0.35); }
+.id-status-own { color: var(--success); border-color: rgba(56, 214, 138, 0.4); }
+.id-status-official { color: var(--text-soft); }
+.id-status-conflict { color: var(--danger); border-color: rgba(255, 92, 122, 0.4); background: rgba(255, 92, 122, 0.08); }
 .submission-note { grid-column: 1 / -1; color: var(--text-soft); }
 .submission-status { grid-row: span 2; align-self: center; padding: 3px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 12px; white-space: nowrap; }
 .status-pending { color: var(--warn); border-color: rgba(255,181,71,.4); }

@@ -47,6 +47,21 @@
     element.addEventListener('click', handler); return element;
   }
 
+  var idStatusLabels = {
+    new: '新游戏',
+    own: '更新（原作者）',
+    official: '官方 ID',
+    conflict: 'ID 冲突'
+  };
+
+  function idBadge(item) {
+    if (!item.gameId || !idStatusLabels[item.gameIdStatus]) return null;
+    var badge = document.createElement('span');
+    badge.className = 'badge id-status id-status-' + item.gameIdStatus;
+    badge.textContent = idStatusLabels[item.gameIdStatus] + ' · ' + item.gameId;
+    return badge;
+  }
+
   function action(id, action, body) {
     return api('/api/admin/submissions/' + encodeURIComponent(id) + '/' + action, { method: 'POST', body: JSON.stringify(body || {}) })
       .then(function () { setMessage('操作已完成。', 'success'); return load(); })
@@ -76,8 +91,11 @@
       }
       var note = document.createElement('textarea'); note.placeholder = '退回或拒绝时填写审核意见'; note.rows = 3;
       var actions = document.createElement('div'); actions.className = 'platform-actions';
+      var badge = idBadge(item);
+      if (badge) meta.appendChild(badge);
       actions.append(
         button('批准发布', function () {
+          if (item.gameIdStatus === 'conflict') { setMessage('该投稿不能直接发布：游戏 ID 属于其他作者，或版本号没有提高。请先退回或拒绝。', 'error'); return; }
           if (window.confirm('确认发布？平台会同步生成游戏资源、ZIP 和 registry。')) action(item.id, 'publish');
         }, 'btn-primary'),
         button('退回修改', function () { action(item.id, 'review', { status: 'changes_requested', note: note.value }); }),

@@ -57,18 +57,16 @@ func (a *App) publishSubmission(ctx context.Context, submission Submission, revi
 	a.publishMu.Lock()
 	defer a.publishMu.Unlock()
 
-	var source []byte
-	var err error
-	if submission.Kind == "zip" {
-		source, err = a.store.Get(ctx, submission.ZipKey, a.config.MaxUploadBytes)
-	} else {
-		source, err = a.downloadGitArchive(ctx, submission.GitURL)
-	}
+	source, err := a.submissionArchive(ctx, submission)
 	if err != nil {
 		return RegistryEntry{}, err
 	}
 	game, err := prepareGameArchive(source, a.config)
 	if err != nil {
+		return RegistryEntry{}, err
+	}
+	// 提前校验：早点告诉审核员这次发布注定会被拒，省掉下面已发布文件的无用写入。
+	if _, err := a.checkGameIDOwnership(ctx, a.db, submission.UserID, submission.AuthorIsAdmin, game.ID, game.Version); err != nil {
 		return RegistryEntry{}, err
 	}
 	hashPrefix := game.PackageHash[:8]
@@ -117,6 +115,10 @@ func (a *App) publishSubmission(ctx context.Context, submission Submission, revi
 		return RegistryEntry{}, err
 	}
 	defer transaction.Rollback()
+	// 归属校验必须在同一事务里再跑一次：投稿进入待审后归属可能已变，并发发布也不能绕过。
+	if _, err := a.checkGameIDOwnership(ctx, transaction, submission.UserID, submission.AuthorIsAdmin, entry.ID, entry.Version); err != nil {
+		return RegistryEntry{}, err
+	}
 	if _, err := transaction.ExecContext(ctx, `UPDATE releases SET status = 'superseded' WHERE game_id = ? AND status = 'active'`, entry.ID); err != nil {
 		return RegistryEntry{}, err
 	}
