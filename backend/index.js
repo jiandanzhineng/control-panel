@@ -14,6 +14,7 @@ const gameCacheService = require('./services/gameCacheService');
 const localAppProcessService = require('./services/localAppProcessService');
 const { BRIDGE_INTERNAL_HEADER } = require('./constants/bridgeAccess');
 const { browserApiCors } = require('./middleware/browserApiAccess');
+const { loopbackOnly } = require('./middleware/loopbackOnly');
 const externalGameAccessService = require('./services/externalGameAccessService');
 const serialConnectionService = require('./services/serialConnectionService');
 const remoteProjectionService = require('./services/remoteProjectionService');
@@ -206,9 +207,10 @@ app.use('/api/test', require('./routes/test'));
 app.use('/api/virtual-devices', require('./routes/virtualDevices'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/voice', require('./routes/voice'));
-app.use('/api/remote-projection', require('./routes/remoteProjection'));
+// 远控接口只服务本机（审查报告 §2.4 的纵深防御；后端本身也已只绑回环）。
+app.use('/api/remote-projection', loopbackOnly, require('./routes/remoteProjection'));
 app.use('/api/game-runtime', require('./routes/gameRuntime'));
-app.use('/api/remote-game', require('./routes/remoteGame'));
+app.use('/api/remote-game', loopbackOnly, require('./routes/remoteGame'));
 app.use('/api/dev-access', require('./routes/devAccess'));
 app.use('/api/brands', require('./routes/brands'));
 
@@ -233,8 +235,11 @@ server.on('close', () => {
 
 if (require.main === module) {
   logService.cleanOldLogs();
-  server.listen(PORT, () => {
-    logger.info(`Backend server running at http://localhost:${PORT}`);
+  // 只绑回环：局域网/公网不能直达未鉴权的 /api 与 /bridge（审查报告 §2.4）。
+  // 需要局域网访问时显式设 BACKEND_HOST=0.0.0.0。
+  const HOST = process.env.BACKEND_HOST || '127.0.0.1';
+  server.listen(PORT, HOST, () => {
+    logger.info(`Backend server running at http://${HOST}:${PORT}`);
   });
 }
 

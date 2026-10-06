@@ -1,13 +1,16 @@
 const mqtt = require('mqtt');
-const { randomUUID } = require('crypto');
+const { randomUUID, randomBytes } = require('crypto');
 const deviceService = require('./deviceService');
 const roomApi = require('./roomApiService');
 const logService = require('./logService');
+const outputGuard = require('./remoteOutputGuard');
+const { createOutputWatchdog } = outputGuard;
 
 const PROTOCOL_VERSION = 1;
 const DEFAULT_TTL_SEC = 3600;
-const DEFAULT_LIMITS = Object.freeze({ voltage: 20, power: 128 });
+const DEFAULT_LIMITS = outputGuard.DEFAULT_REMOTE_LIMITS;
 const HEARTBEAT_MS = 10000;
+const MEMBERS_REFRESH_MS = 30000;
 const CREDENTIAL_REFRESH_EARLY_MS = 2 * 60 * 1000;
 const MAX_SEEN_MESSAGE_IDS = 1024;
 const WRITE_ACK_TIMEOUT_MS = 8000;
@@ -18,11 +21,22 @@ function normalizePositiveInt(value, fallback, min, max) {
   return Math.min(max, Math.max(min, Math.round(parsed)));
 }
 
+// 持有方上限：字段与默认值由 remoteOutputGuard 统一（含 intensity 品牌刻度）。
 function normalizeLimits(input = {}) {
-  return {
-    voltage: normalizePositiveInt(input.voltage, DEFAULT_LIMITS.voltage, 0, 100),
-    power: normalizePositiveInt(input.power, DEFAULT_LIMITS.power, 0, 255),
-  };
+  return outputGuard.normalizeLimits(input);
+}
+
+function newConnectionEpoch() {
+  return `epoch_${randomBytes(9).toString('base64url')}`;
+}
+
+// setTimeout 超过 2^31-1 ms 会被压成 1ms 立即触发（凭据过期时间远时会出现）。
+// 所有长延时都夹到 [1s, 24h]。
+const MAX_TIMER_DELAY_MS = 24 * 60 * 60 * 1000;
+function safeTimerDelay(ms) {
+  const value = Number(ms);
+  if (!Number.isFinite(value)) return MAX_TIMER_DELAY_MS;
+  return Math.min(MAX_TIMER_DELAY_MS, Math.max(1000, Math.round(value)));
 }
 
 function parseJson(payload) {
@@ -54,6 +68,12 @@ class RemoteProjectionService {
     this.clearRepeating = clearRepeating;
     this.session = null;
 
+    // 锁存输出看门狗：远程写入登记，到点自动停机（审查报告 §3.3）。
+    this.watchdog = createOutputWatchdog({
+      stopDevice: (deviceId) => this._stopRemoteOutput(deviceId),
+      setTimer,
+      clearTimer,
+    });
     this.devices.onDeviceDataChange?.((event) => this._onLocalDataChange(event));
     this.devices.onDeviceRawMessage?.((event) => this._onLocalRawMessage(event));
     this.devices.onDeviceListChange?.(() => this._onLocalDeviceListChange());
@@ -81,9 +101,32 @@ class RemoteProjectionService {
       operatorCount: session.role === 'owner'
         ? [...session.operatorsOnline.values()].filter(Boolean).length
         : undefined,
+      // 授权只认显式指定的 userId（默认无授权，审查报告 §2.3）。
+      authorizedUserId: session.role === 'owner' ? session.authorizedUserId : null,
+      authorized: session.role === 'owner'
+        ? !!session.authorizedUserId
+        : session.authorizedUserId === session.credential.userId,
+      // 仅房主可见：在线成员 + 授权状态 + 最近一次房间成员拉取错误。
+      members: session.role === 'owner' ? this._memberList(session) : undefined,
       lastError: session.lastError,
       apiBaseUrl: this.api.getBaseUrl?.() || null,
     };
+  }
+
+  _memberList(session) {
+    const known = new Map(session.members.map((member) => [member.userId, member]));
+    for (const [userId, online] of session.operatorsOnline) {
+      if (!known.has(userId)) {
+        known.set(userId, { userId, online, authorized: false });
+      }
+    }
+    return [...known.values()]
+      .filter((member) => member.userId !== session.credential.userId)
+      .map((member) => ({
+        ...member,
+        online: member.online === true || session.operatorsOnline.get(member.userId) === true,
+        authorized: member.userId === session.authorizedUserId,
+      }));
   }
 
   async create({ token, controlTtlSec = DEFAULT_TTL_SEC, limits, capacity = 8 } = {}) {
@@ -104,6 +147,7 @@ class RemoteProjectionService {
       this.session = session;
       await this._connect(session);
       this._startOwnerTimers(session);
+      await this._refreshMembers(session);
       return this.getStatus();
     } catch (error) {
       this.session = null;
@@ -132,6 +176,7 @@ class RemoteProjectionService {
       });
       this.session = session;
       await this._connect(session);
+      // 操作方默认无授权：不发设备清单请求，等房主显式授权（房主授权后主动推清单）。
       return this.getStatus();
     } catch (error) {
       this.session = null;
@@ -187,8 +232,17 @@ class RemoteProjectionService {
       seenMessageIds: new Set(),
       remoteDeviceIds: new Set(),
       operatorsOnline: new Map(),
+      // 授权绑定具体 userId：新加入的操作方默认未授权（审查报告 §2.3）。
+      authorizedUserId: null,
+      members: [],
+      kickedUserIds: new Set(),
+      // userId → 它写过的设备集合，用于按人停机（审查报告 §4.1）。
+      operatorOutputs: new Map(),
       pendingWrites: new Map(),
-      timers: { ttl: null, heartbeat: null, credential: null },
+      // 每次连接一个随机代次，绝不外泄 MQTT clientId（审查报告 §4.3）。
+      connectionEpoch: newConnectionEpoch(),
+      refreshing: false,
+      timers: { ttl: null, heartbeat: null, credential: null, members: null },
     };
   }
 
@@ -221,6 +275,10 @@ class RemoteProjectionService {
       client.on('close', () => {
         session.connected = false;
         if (this.session !== session) return;
+        if (session.refreshing) {
+          // 主动换凭据导致的断开不算异常：不清设备、不急停（审查报告 §3.2）。
+          return;
+        }
         if (session.role === 'owner') {
           void this._safeStop(session, 'mqtt-disconnected');
         } else {
@@ -236,10 +294,11 @@ class RemoteProjectionService {
           }
         }, (error) => {
           session.lastError = error?.message || String(error);
-          if (!settled) {
-            settled = true;
-            reject(error);
-          }
+          // 已 settle 后（首连成功、后续换凭据重连）失败不能抛出去：
+          // 外层 Promise 没人接，会变成 unhandledRejection。
+          if (settled) return;
+          settled = true;
+          reject(error);
         });
       });
     });
@@ -256,14 +315,38 @@ class RemoteProjectionService {
     session.connected = true;
     session.lastError = null;
     this._scheduleCredentialRefresh(session);
-    if (session.role === 'operator') {
+    if (session.role === 'owner') {
+      await this._refreshMembers(session);
+      // 重连后若已有授权操作方在线，立刻恢复推送设备清单。
+      if (session.authorizedUserId && session.operatorsOnline.get(session.authorizedUserId)) {
+        await this._publishDeviceList(session).catch(() => {});
+      }
+    } else if (session.authorizedUserId === session.credential.userId) {
+      // 仅已授权操作方在重连后重新请求清单；未授权时等房主授权再推。
       await this._publishEnvelope(session, `commands/${session.credential.userId}`, 'projection.device-list.request', {});
     }
   }
 
   _subscribe(session, topics) {
     return new Promise((resolve, reject) => {
-      session.client.subscribe(topics, { qos: 1 }, (error) => error ? reject(error) : resolve());
+      const client = session.client;
+      if (!client) return reject(this._error('ROOM_DISCONNECTED', '房间连接不可用'));
+      // ACL 拒绝订阅时 broker 会直接断线，回调永不触发；close 也要让 Promise 结算
+      let settled = false;
+      const done = (error) => {
+        if (settled) return;
+        settled = true;
+        try { client.removeListener?.('close', onClose); } catch (_) {}
+        if (error) reject(error);
+        else resolve();
+      };
+      const onClose = () => done(this._error('ROOM_DISCONNECTED', '房间连接不可用'));
+      client.once?.('close', onClose);
+      try {
+        client.subscribe(topics, { qos: 1 }, done);
+      } catch (error) {
+        done(error);
+      }
     });
   }
 
@@ -282,7 +365,7 @@ class RemoteProjectionService {
       roomSessionId: session.roomSessionId,
       messageId,
       type,
-      senderConnectionEpoch: session.credential.clientId,
+      senderConnectionEpoch: session.connectionEpoch,
       sequence,
       timestamp: new Date(this.now()).toISOString(),
       payload,
@@ -342,9 +425,14 @@ class RemoteProjectionService {
       if (!userId || userId === session.credential.userId) return;
       session.operatorsOnline.set(userId, online);
       if (online) {
-        void this._publishDeviceList(session).catch(() => {});
-      } else if (![...session.operatorsOnline.values()].some(Boolean)) {
-        void this._safeStop(session, 'all-operators-offline');
+        // 只有被授权的操作方上线才推设备清单（审查报告 §4.3：无授权方不收任何状态）。
+        if (session.authorizedUserId === userId) {
+          void this._publishDeviceList(session).catch(() => {});
+        }
+        void this._refreshMembers(session).catch(() => {});
+      } else if (session.authorizedUserId === userId) {
+        // 被授权者离线：立即停掉它写过的输出，不等全离线判定（审查报告 §3.3）。
+        void this._stopOperatorOutputs(session, userId, 'operator-offline');
       }
     } else if (userId === session.room.hostUserId && !online) {
       this._removeRemoteDevices(session);
@@ -354,10 +442,22 @@ class RemoteProjectionService {
   async _onOwnerCommand(session, userId, envelope) {
     if (!userId) return;
     if (envelope.type === 'projection.device-list.request') {
-      void this._publishDeviceList(session).catch(() => {});
+      if (session.authorizedUserId === userId) {
+        void this._publishDeviceList(session).catch(() => {});
+      }
       return;
     }
     if (envelope.type !== 'projection.write') {
+      return;
+    }
+    // 授权绑定 userId：未授权/已被移出的成员拿不到设备清单，也不能写。
+    if (session.authorizedUserId !== userId || session.kickedUserIds.has(userId)) {
+      // 未授权/已被移出的成员：不发设备清单、不写设备，只回一条拒绝结果。
+      await this._publishWriteResult(session, envelope.messageId, {
+        ok: false,
+        code: 'CONTROL_NOT_AUTHORIZED',
+        message: '房主未授权本账号控制设备',
+      }).catch(() => {});
       return;
     }
     if (session.expired || this.now() >= session.controlExpiresAt) {
@@ -391,13 +491,29 @@ class RemoteProjectionService {
       }).catch(() => {});
       return;
     }
-    const message = this._clampMessage(input.message, session.limits);
+    // 逐字段钳制：覆盖品牌协议字段，未知字段/命令一律拒绝（审查报告 §2.1）。
+    const sanitized = outputGuard.sanitizeProjectionMessage({
+      device,
+      message: input.message,
+      limits: session.limits,
+    });
+    if (!sanitized.ok) {
+      await this._publishWriteResult(session, envelope.messageId, {
+        deviceId: input.deviceId,
+        ok: false,
+        code: sanitized.code,
+        message: sanitized.message,
+      }).catch(() => {});
+      return;
+    }
+    const message = sanitized.message;
     try {
       if (typeof this.devices.sendDeviceMessageAndWait === 'function') {
         await this.devices.sendDeviceMessageAndWait(input.deviceId, message);
       } else {
         await Promise.resolve(this.devices.publishDeviceMessage(input.deviceId, message));
       }
+      this._trackOperatorOutput(session, userId, input.deviceId, device, message);
       await this._publishWriteResult(session, envelope.messageId, {
         deviceId: input.deviceId,
         ok: true,
@@ -411,6 +527,49 @@ class RemoteProjectionService {
         message: error?.message || String(error),
       }).catch(() => {});
     }
+  }
+
+  /** 记录「哪个操作方写了哪台设备」，供撤权/掉线时只停它写过的设备。 */
+  _trackOperatorOutput(session, userId, deviceId, device, message) {
+    if (!session.operatorOutputs.has(userId)) session.operatorOutputs.set(userId, new Set());
+    session.operatorOutputs.get(userId).add(deviceId);
+    const latch = outputGuard.isLatchedProjectionMessage({ device, message });
+    if (latch.latched) this.watchdog.arm(deviceId, latch.maxMs);
+    else this.watchdog.clear(deviceId);
+  }
+
+  /** 撤权/移出后告诉操作方：没有设备，且本账号已不再被授权。 */
+  _publishRevokedDeviceList(session) {
+    return this._publishEnvelope(session, 'events', 'projection.device-list', {
+      devices: [],
+      limits: session.limits,
+      controlTtlSec: session.controlTtlSec,
+      controlExpiresAt: new Date(session.controlExpiresAt).toISOString(),
+      authorizedFor: null,
+    }).catch(() => {});
+  }
+
+  /** 停掉某个操作方写过的设备（撤权 / 掉线 / 被移出房间）。 */
+  async _stopOperatorOutputs(session, userId, reason) {
+    const deviceIds = new Set(session.operatorOutputs.get(userId) || []);
+    session.operatorOutputs.delete(userId);
+    for (const [otherId, ids] of session.operatorOutputs) {
+      for (const deviceId of ids) deviceIds.add(deviceId);
+    }
+    for (const deviceId of deviceIds) {
+      this.watchdog.clear(deviceId);
+    }
+    await Promise.all([...deviceIds].map((deviceId) => this._stopRemoteOutput(deviceId)));
+    if (deviceIds.size) {
+      logService.info('RemoteProjection', `operator outputs stopped: ${reason} (${deviceIds.size})`);
+    }
+  }
+
+  /** 单台设备的兜底停机（watchdog 到点 / 操作方掉线）。 */
+  async _stopRemoteOutput(deviceId) {
+    try {
+      await Promise.resolve(this.devices.invokeDeviceClose?.(deviceId));
+    } catch (_) { /* 设备可能已离线，忽略 */ }
   }
 
   _publishWriteResult(session, requestId, result) {
@@ -464,6 +623,15 @@ class RemoteProjectionService {
       this._removeRemoteDevices(session);
       return;
     }
+    // 收到设备清单即按房主给的对象判定授权：authorizedFor 命中本账号才授权；
+    // 老房主（无该字段）回退到「清单非空即已授权」，保持与移动端兼容。
+    if (typeof payload.authorizedFor === 'string') {
+      session.authorizedUserId = payload.authorizedFor === session.credential.userId
+        ? session.credential.userId
+        : null;
+    } else {
+      session.authorizedUserId = payload.devices.length > 0 ? session.credential.userId : null;
+    }
     const nextIds = new Set();
     for (const item of payload.devices) {
       if (!item || typeof item.deviceId !== 'string' || typeof item.deviceType !== 'string') continue;
@@ -497,6 +665,9 @@ class RemoteProjectionService {
       limits: session.limits,
       controlTtlSec: session.controlTtlSec,
       controlExpiresAt: new Date(session.controlExpiresAt).toISOString(),
+      // 显式授权标记：操作方据此判断自己是否被授权（空设备清单不等于未授权）。
+      // 老客户端（移动端）忽略未知字段，兼容。
+      authorizedFor: session.authorizedUserId || null,
     });
   }
 
@@ -519,19 +690,6 @@ class RemoteProjectionService {
   _hasLocalConnection(device) {
     return Array.isArray(device.connections)
       && device.connections.some((connection) => connection.type !== 'remote' && connection.connected !== false);
-  }
-
-  _clampMessage(message, limits) {
-    const output = { ...message };
-    if (output.shock && !Object.prototype.hasOwnProperty.call(output, 'voltage')) {
-      output.voltage = 0;
-    }
-    for (const [key, maximum] of Object.entries(limits)) {
-      if (!Object.prototype.hasOwnProperty.call(output, key)) continue;
-      const value = Number(output[key]);
-      output[key] = Number.isFinite(value) ? Math.min(maximum, Math.max(0, value)) : 0;
-    }
-    return output;
   }
 
   _sendRemoteWrite(session, deviceId, message) {
@@ -581,14 +739,23 @@ class RemoteProjectionService {
   _onLocalDeviceListChange() {
     const session = this.session;
     if (!session || session.role !== 'owner' || !session.connected || session.expired) return;
+    // 无已授权且在线的操作方时不推设备清单（审查报告 §4.3）。
+    if (!this._hasActiveOperator(session)) return;
     void this._publishDeviceList(session).catch((error) => {
       session.lastError = error?.message || String(error);
     });
   }
 
+  /** 远端设备状态/原始报文只推给已授权且在线的操作方（审查报告 §4.3）。 */
+  _hasActiveOperator(session) {
+    if (!session.authorizedUserId) return false;
+    return session.operatorsOnline.get(session.authorizedUserId) === true;
+  }
+
   _onLocalDataChange({ deviceId, device, nextData }) {
     const session = this.session;
-    if (!session || session.role !== 'owner' || !this._hasLocalConnection(this.devices.getDeviceForApi?.(deviceId) || device)) return;
+    if (!session || session.role !== 'owner' || !this._hasActiveOperator(session)) return;
+    if (!this._hasLocalConnection(this.devices.getDeviceForApi?.(deviceId) || device)) return;
     void this._publishEnvelope(session, 'events', 'projection.device-state', {
       deviceId,
       data: nextData || device?.data || {},
@@ -597,7 +764,8 @@ class RemoteProjectionService {
 
   _onLocalRawMessage({ deviceId, payload }) {
     const session = this.session;
-    if (!session || session.role !== 'owner' || payload?.method === 'report' || payload?.method === 'update') return;
+    if (!session || session.role !== 'owner' || !this._hasActiveOperator(session)) return;
+    if (payload?.method === 'report' || payload?.method === 'update') return;
     const device = this.devices.getDeviceForApi?.(deviceId);
     if (!device || !this._hasLocalConnection(device)) return;
     void this._publishEnvelope(session, 'events', 'projection.device-message', {
@@ -607,7 +775,8 @@ class RemoteProjectionService {
   }
 
   _startOwnerTimers(session) {
-    const delay = Math.max(0, session.controlExpiresAt - this.now());
+    // TTL 可能到 24h，超过 setTimeout 的 2^31-1 上限会被压成 1ms 立即触发。
+    const delay = safeTimerDelay(session.controlExpiresAt - this.now());
     session.timers.ttl = this.setTimer(() => {
       if (this.session !== session) return;
       if (this._expireOwnerSession(session, 'control-ttl-expired')) {
@@ -616,51 +785,182 @@ class RemoteProjectionService {
     }, delay);
     session.timers.heartbeat = this.setRepeating(() => {
       if (this.session !== session) return;
-      void this.api.heartbeat(session.token, session.room.id).catch((error) => {
-        session.lastError = error?.message || String(error);
+      // 偶发超时不打扰用户：连续失败 3 次才报错，成功即清零
+      void this.api.heartbeat(session.token, session.room.id).then(() => {
+        session.heartbeatFailures = 0;
+      }, (error) => {
+        session.heartbeatFailures = (session.heartbeatFailures || 0) + 1;
+        if (session.heartbeatFailures >= 3) session.lastError = error?.message || String(error);
       });
-      void this._publishDeviceList(session).catch(() => {});
+      // 无人在线时不推设备清单（审查报告 §4.3）。
+      if (this._hasActiveOperator(session)) {
+        void this._publishDeviceList(session).catch(() => {});
+      }
     }, HEARTBEAT_MS);
+    // 周期性拉成员列表，撤权/被踢能被及时察觉（服务端踢线未接线，本地兜底）。
+    session.timers.members = this.setRepeating(() => {
+      if (this.session !== session) return;
+      void this._refreshMembers(session).catch(() => {});
+    }, MEMBERS_REFRESH_MS);
+  }
+
+  /** 拉取房间成员，识别「被移出房间」的已授权操作方并立刻撤权 + 停机。 */
+  async _refreshMembers(session) {
+    if (this.session !== session || session.role !== 'owner' || !session.token) return;
+    let room = null;
+    try {
+      room = await this.api.getRoom(session.token, session.room.id);
+    } catch (error) {
+      session.lastError = error?.message || String(error);
+      return;
+    }
+    if (this.session !== session || !room || !Array.isArray(room.members)) return;
+    session.members = room.members
+      .filter((member) => member && typeof member.userId === 'string' && member.userId !== session.credential.userId)
+      .map((member) => ({
+        userId: member.userId,
+        role: member.role || 'player',
+        status: member.status || 'joined',
+      }));
+    const authorized = session.authorizedUserId;
+    if (!authorized) return;
+    const member = session.members.find((item) => item.userId === authorized);
+    const gone = !member || (member.status && member.status !== 'joined');
+    if (gone) {
+      await this.revoke({ reason: 'operator-left-room' });
+    }
   }
 
   _scheduleCredentialRefresh(session) {
     if (session.timers.credential) this.clearTimer(session.timers.credential);
     const expiresAt = Date.parse(session.credential.expiresAt);
     if (!Number.isFinite(expiresAt)) return;
-    const delay = Math.max(1000, expiresAt - this.now() - CREDENTIAL_REFRESH_EARLY_MS);
+    const delay = safeTimerDelay(expiresAt - this.now() - CREDENTIAL_REFRESH_EARLY_MS);
     session.timers.credential = this.setTimer(() => {
       void this._refreshCredential(session);
     }, delay);
   }
 
+  /**
+   * 换凭据重连。关键：session.refreshing 置位期间 close 走「主动重建」分支，
+   * 不触发 _safeStop —— 否则每次刷新都会复位设备、把自动锁开一次（审查报告 §3.2）。
+   */
   async _refreshCredential(session) {
-    if (this.session !== session || !session.client) return;
+    if (this.session !== session || !session.client || session.refreshing) return;
     try {
       const credential = await this.api.getMqttCredential(
         session.token,
         session.room.id,
         session.credential.clientId,
       );
+      if (this.session !== session || !session.client) return;
       session.credential = credential;
-      Object.assign(session.client.options, {
-        username: credential.username,
-        password: credential.password,
-        clientId: credential.clientId,
-      });
-      session.client.reconnect();
+      // mqtt.js 的 options 是只读 getter，重连用新 client 的 options，无需原地改
+      session.refreshing = true;
+      try {
+        await this._endClient(session);
+        // stop()/leave 可能在 end() 等待期间把会话结束掉：不能再建连接（僵尸重连）
+        if (this.session !== session) return;
+        await this._connect(session);
+      } finally {
+        session.refreshing = false;
+      }
       this._scheduleCredentialRefresh(session);
     } catch (error) {
+      session.refreshing = false;
       session.lastError = error?.message || String(error);
       session.timers.credential = this.setTimer(() => this._refreshCredential(session), 30000);
     }
   }
 
+  /** 授权一个具体 userId（房主操作）。未授权方拿不到设备清单，写也被拒。 */
+  async authorize(userId) {
+    const session = this.session;
+    if (!session || session.role !== 'owner') {
+      throw this._error('NOT_OWNER', '只有房主可以授权');
+    }
+    const target = String(userId || '').trim();
+    if (!target || target === session.credential.userId) {
+      throw this._error('INVALID_OPERATOR', '请选择要授权的成员');
+    }
+    const member = session.members.find((item) => item.userId === target);
+    // 已拉取到成员列表时以列表为准；列表为空（拉取失败/尚未拉到）回退到 presence。
+    const knownJoined = member && (!member.status || member.status === 'joined');
+    const onlineByPresence = session.operatorsOnline.get(target) === true
+      && !session.kickedUserIds.has(target);
+    if (session.members.length > 0 ? !knownJoined : !onlineByPresence) {
+      throw this._error('OPERATOR_NOT_IN_ROOM', '该成员不在房间里');
+    }
+    if (session.authorizedUserId && session.authorizedUserId !== target) {
+      // 换人授权：先撤旧、停旧操作方写过的设备，再授权新成员。
+      await this.revoke({ reason: 'authorized-operator-changed' });
+    }
+    session.authorizedUserId = target;
+    if (session.operatorsOnline.get(target) !== true) {
+      await this._refreshMembers(session);
+    }
+    await this._publishDeviceList(session).catch(() => {});
+    return this.getStatus();
+  }
+
+  /** 撤销授权并立刻停掉被撤权操作方写过的设备。 */
+  async revoke({ reason = 'revoked' } = {}) {
+    const session = this.session;
+    if (!session || session.role !== 'owner') {
+      throw this._error('NOT_OWNER', '只有房主可以撤权');
+    }
+    const userId = session.authorizedUserId;
+    session.authorizedUserId = null;
+    if (userId) {
+      await this._stopOperatorOutputs(session, userId, reason);
+    }
+    // 撤权后操作方不应再看到任何设备。
+    await this._publishRevokedDeviceList(session);
+    return this.getStatus();
+  }
+
+  /** 把成员移出房间：服务端踢人 + 本地立即拒绝（服务端踢线未接线）。 */
+  async kick(userId) {
+    const session = this.session;
+    if (!session || session.role !== 'owner') {
+      throw this._error('NOT_OWNER', '只有房主可以移出成员');
+    }
+    const target = String(userId || '').trim();
+    if (!target || target === session.credential.userId) {
+      throw this._error('INVALID_OPERATOR', '请选择要移出的成员');
+    }
+    if (session.authorizedUserId === target) {
+      session.authorizedUserId = null;
+      await this._stopOperatorOutputs(session, target, 'kicked');
+      await this._publishRevokedDeviceList(session);
+    }
+    session.kickedUserIds.add(target);
+    session.members = session.members.filter((member) => member.userId !== target);
+    try {
+      await this.api.kickMember(session.token, session.room.id, target);
+    } catch (error) {
+      session.lastError = error?.message || String(error);
+      throw error;
+    }
+    return this.getStatus();
+  }
+
+  /**
+   * 兜底停机：只复位远程操作方写过的设备（watchdog 登记过 / operatorOutputs 记录过），
+   * 不再无条件复位本机全部设备（审查报告 §4.1）。
+   */
   async _safeStop(session, reason) {
     if (session.role !== 'owner') return;
-    for (const device of this._ownerDevices()) {
-      try { this.devices.invokeDeviceClose(device.id); } catch (_) {}
+    const deviceIds = new Set(this.watchdog.touched());
+    for (const ids of session.operatorOutputs.values()) {
+      for (const id of ids) deviceIds.add(id);
     }
-    logService.info('RemoteProjection', `safe stop: ${reason}`);
+    for (const deviceId of deviceIds) {
+      this.watchdog.clear(deviceId);
+    }
+    session.operatorOutputs.clear();
+    await Promise.all([...deviceIds].map((deviceId) => this._stopRemoteOutput(deviceId)));
+    logService.info('RemoteProjection', `safe stop: ${reason} (${deviceIds.size})`);
   }
 
   _expireOwnerSession(session, reason) {
@@ -680,8 +980,9 @@ class RemoteProjectionService {
   _clearTimers(session) {
     if (session.timers.ttl) this.clearTimer(session.timers.ttl);
     if (session.timers.credential) this.clearTimer(session.timers.credential);
+    if (session.timers.members) this.clearRepeating(session.timers.members);
     if (session.timers.heartbeat) this.clearRepeating(session.timers.heartbeat);
-    session.timers = { ttl: null, heartbeat: null, credential: null };
+    session.timers = { ttl: null, heartbeat: null, credential: null, members: null };
   }
 
   _endClient(session, force = false) {

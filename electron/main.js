@@ -921,7 +921,8 @@ function startFrontendServer(callback) {
   });
   
   const FRONTEND_PORT = 5277;
-  frontendServer = frontendApp.listen(FRONTEND_PORT, () => {
+  // 只绑回环：本机面板/后端不对外提供任何服务（审查报告 §2.4）。
+  frontendServer = frontendApp.listen(FRONTEND_PORT, '127.0.0.1', () => {
     process.env.FRONTEND_URL = `http://127.0.0.1:${FRONTEND_PORT}`;
     console.log(`[electron] frontend server started: ${process.env.FRONTEND_URL}`);
     callback();
@@ -957,7 +958,8 @@ function startBackendThenWindow() {
     // 必须 listen 后端导出的 server（已挂 /bridge WS），不能对 app 重新 listen——
     // 否则会新建一个不带 WS 的 server，插件 bridge 握手 404。回退到 app 仅为兼容旧导出。
     const backendServer = backendApp.server || backendApp;
-    server = backendServer.listen(BACKEND_PORT, () => {
+    // 只绑回环：局域网不能直达未鉴权的 /api（审查报告 §2.4）。
+    server = backendServer.listen(BACKEND_PORT, '127.0.0.1', () => {
       process.env.BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
       console.log(`[electron] backend started: ${process.env.BACKEND_URL}`);
       

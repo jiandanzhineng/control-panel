@@ -6,13 +6,16 @@ const path = require('path');
 const BRIDGE_PATH = path.join(__dirname, '..', 'public', 'game-runtime-bridge.js');
 const code = fs.readFileSync(BRIDGE_PATH, 'utf8');
 
-function loadBridge(search) {
+function loadBridge(search, statusBody) {
   const calls = [];
   const listeners = [];
   const windowObj = {};
   const fetchMock = jest.fn(async (url, opts) => {
     calls.push({ url, body: opts && opts.body ? JSON.parse(opts.body) : null });
-    return { ok: true, json: async () => ({ active: true, authorized: true, snapshot: { running: true, gameId: 'surge-edging' } }) };
+    return {
+      ok: true,
+      json: async () => statusBody || { active: true, authorized: true, snapshot: { running: true, gameId: 'surge-edging' } },
+    };
   });
   const timerIds = [];
   const fakeSetInterval = (fn, ms) => { timerIds.push({ fn, ms }); return timerIds.length; };
@@ -61,9 +64,48 @@ describe('game-runtime-bridge', () => {
     await bridge.setParams({ duration: 30 });
     await bridge.stop();
     const posts = calls.filter((c) => c.body);
-    expect(posts[0]).toEqual({ url: '/api/remote-game/command', body: { type: 'game.pause' } });
+    expect(posts[0]).toEqual({ url: '/api/remote-game/command', body: { type: 'game.pause', payload: {} } });
     expect(posts[1]).toEqual({ url: '/api/remote-game/command', body: { type: 'game.action', payload: { action: 'shockOnce', payload: {} } } });
     expect(posts[2]).toEqual({ url: '/api/remote-game/command', body: { type: 'game.setParams', payload: { params: { duration: 30 } } } });
-    expect(posts[3]).toEqual({ url: '/api/remote-game/command', body: { type: 'game.stop' } });
+    expect(posts[3]).toEqual({ url: '/api/remote-game/command', body: { type: 'game.stop', payload: {} } });
+  });
+
+  test('remote 模式：带上 status 里的 gameSessionId，防止旧局命令误停新局', async () => {
+    const { bridge, calls } = loadBridge('?runtime=remote', {
+      active: true, authorized: true, gameSessionId: 'game-session-7',
+      snapshot: { running: true, gameId: 'surge-edging' },
+    });
+    bridge.start();
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    await bridge.sendAction('pause');
+    await bridge.sendAction('shockOnce', {});
+    await bridge.setParams({ duration: 30 });
+    await bridge.stop();
+    const posts = calls.filter((c) => c.body);
+    expect(posts[0].body).toEqual({ type: 'game.pause', payload: { gameSessionId: 'game-session-7' } });
+    expect(posts[1].body).toEqual({
+      type: 'game.action',
+      payload: { action: 'shockOnce', payload: {}, gameSessionId: 'game-session-7' },
+    });
+    expect(posts[2].body).toEqual({
+      type: 'game.setParams',
+      payload: { params: { duration: 30 }, gameSessionId: 'game-session-7' },
+    });
+    expect(posts[3].body).toEqual({ type: 'game.stop', payload: { gameSessionId: 'game-session-7' } });
+  });
+
+  test('host 模式不带 gameSessionId（保持本机行为不变）', async () => {
+    const { bridge, calls } = loadBridge('?runtime=host', {
+      active: true, running: true, sessionId: 'host-session-1', snapshot: { running: true, gameId: 'surge-edging' },
+    });
+    bridge.start();
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    await bridge.sendAction('pause');
+    await bridge.setParams({ duration: 30 });
+    await bridge.stop('user_stop');
+    const posts = calls.filter((c) => c.body);
+    expect(posts[0].body).toEqual({ action: 'pause', payload: {} });
+    expect(posts[1].body).toEqual({ params: { duration: 30 } });
+    expect(posts[2].body).toEqual({ reason: 'user_stop' });
   });
 });

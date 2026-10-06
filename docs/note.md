@@ -1,5 +1,7 @@
 # 开发测试记录
 
+- 2026-10-06 远控加固（分支 fix/remote-control-hardening）：修复 10 分钟断线/离开卡死/残留房间挂死/断开谎报/首次启动无界面；新增 `backend/services/remoteOutputGuard.js`（逐字段限幅、未知拒绝、电刺激 10s/电机 60s 看门狗）、授权绑定 userId + 踢人、gameSessionId（不带则兼容放行）、5277/5278 只绑回环 + 远控路由 loopbackOnly、gameProxy 白名单、第三方 iframe sandbox。生产房间服务+EMQX 双端实测 13/13 通过，报告 `docs/test/remote-control-e2e-2026-10-06.md`（含截图），harness 在 `.tmp/remote-regression-1006/`。未做：服务端 joinCode 过期/踢线接线、四路写入统一仲裁、手机端适配。
+
 - 2026-10-06 远控回归（生产房间服务 api.undersilicon.cn + 生产 EMQX，双隔离 Electron，仅虚拟设备，脚本在 `.tmp/remote-regression-1006/`）：单局全链路通过（建房/加入/授权/选游戏/启动/原始 UI 渲染/暂停继续/改参/电击/forceEdge/停止复位/设备管理白名单/投影写与限幅）。失败：① 远程游戏 10 分钟凭据到期必断且无刷新（`Bad User Name or Password`）；② 操作方 `stop()` 向 `events` 发 `session.revoked` 被 ACL 拒→broker 135 踢线→publish 回调不返回，`leave`/二次 `join` 永久挂起、按钮无限 loading；③ 房主 presence 为 retained offline 的房间，`join` 静默挂死；④ `devices.disconnect` 返回成功但虚拟设备仍在线；⑤ 首次远程启动 surge-edging 时 B 请求 `/api/games/surge-edging` 404 不出 iframe，刷新恢复。9-30 审查报告各项均未修复；远程仅支持 surge-edging/pressure-edging-v2；手机端未实现远程游戏协议。后端 599/600、前端测试全过。
 
 - 2026-10-01 托管核心对齐原版逻辑（ADR 草稿 host-runtime-keeps-game-logic）：pressure-edging-v2 2.2.1 恢复临界气压游戏内无上限、曲线拖动经新动作 `setThresholds` 提交宿主、+10 只抬本帧目标、原版强度下发/取整/刺激时长累计；surge-edging 1.4.1 以线上 1.3.6 页面为原版（f84b03e 的算法同步不回退）。两者：参数只限 min/max 不按步长取整、暂停不顺延结束时间也不打断电击、暂停中可电击；宿主开局读一次传感器当前气压，只在气压变化时推样本。仅 iframe 运行的游戏未受大改影响。验证：后端 600（599 过 1 跳过）、前端 16；隔离后端 `PORT=5391 BACKEND_DATA_DIR=.tmp/...` + 虚拟设备 + `PUT /api/dev-access {enabled:true}`，无头 Chrome CDP（需请求头 `x-control-panel-bridge-internal: 1` 才能加载桥脚本）实测拖曲线 20→23.7 宿主同步。

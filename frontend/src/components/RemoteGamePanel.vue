@@ -39,6 +39,21 @@
         <el-button type="danger" plain @click="leave">{{ t('remoteGame.leave') }}</el-button>
       </div>
 
+      <!-- 授权对象：授权绑定到具体 userId，房主必须看得见对方是谁 -->
+      <div v-if="status.role === 'owner' && operatorRows.length" class="operators">
+        <div class="operators-head">{{ t('remoteGame.members') }}</div>
+        <div v-for="row in operatorRows" :key="row.userId" class="operator-row">
+          <span class="operator-id">{{ row.displayName }}</span>
+          <el-tag size="small" :type="row.online ? 'success' : 'info'">
+            {{ row.online ? t('remoteGame.online') : t('remoteGame.offline') }}
+          </el-tag>
+          <el-tag v-if="row.authorized" size="small" type="warning">{{ t('remoteGame.authorized') }}</el-tag>
+          <el-button size="small" type="danger" plain :loading="busy" @click="kick(row.userId)">
+            {{ t('remoteGame.kick') }}
+          </el-button>
+        </div>
+      </div>
+
       <RemoteDevicePanel
         v-if="status.authorized"
         :devices="status.devices || []"
@@ -46,6 +61,11 @@
         :connected="status.connected !== false"
         :busy="busy"
         :running="!!status.snapshot?.running"
+        :members="memberRows"
+        :authorized-user-id="status.role === 'owner' ? (status.operatorUserId || null) : null"
+        @authorize="authorizeMember"
+        @revoke="revokeMember"
+        @kick="kick"
         @command="sendDeviceCommand"
       />
 
@@ -123,8 +143,10 @@ import { resolveGamePagePath } from '../play/gamePagePath'
 import {
   authorizeRemoteGame,
   createRemoteGame,
+  getRemoteGameRoom,
   getRemoteGameStatus,
   joinRemoteGame,
+  kickRemoteGameMember,
   revokeRemoteGame,
   sendRemoteGameCommand,
   stopRemoteGame,
@@ -151,6 +173,23 @@ const hostGames = computed(() => (status.value.games || []).filter((game) => gam
 const selectedGame = computed(() => hostGames.value.find((game) => game.id === gameId.value))
 const operatorPagePath = ref('')
 let resolvingPageFor = ''
+let pagePathFor = ''
+
+// 房主侧操作方列表：userId + 房间成员里的显示名 + 授权状态
+const memberNames = computed<Record<string, string>>(() => {
+  const rows: Record<string, string> = {}
+  for (const member of status.value.members || []) {
+    const name = (member as any).displayName || (member as any).name || (member as any).nickname
+    if (member?.userId && name) rows[member.userId] = String(name)
+  }
+  return rows
+})
+const operatorRows = computed(() => (status.value.operators || []).map((row) => ({
+  ...row,
+  displayName: memberNames.value[row.userId] || row.userId,
+})))
+// RemoteDevicePanel 的成员/授权区（房主用；操作方看不到别人的 userId）
+const memberRows = computed(() => (status.value.role === 'owner' ? operatorRows.value : []))
 const visibleParams = computed(() => (selectedGame.value?.params || []).filter((param) => (
   !param.device || (selectedGame.value?.devices || []).find((role) => role.id === param.device)?.required !== false
     || !!deviceMap[param.device]?.length
@@ -250,13 +289,54 @@ async function join() {
 }
 
 async function toggleAuth() {
+  busy.value = true
   try { status.value = status.value.authorized ? await revokeRemoteGame() : await authorizeRemoteGame(); error.value = '' }
   catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
+  finally { busy.value = false }
+}
+
+async function kick(userId: string) {
+  if (busy.value) return
+  busy.value = true
+  try {
+    status.value = await kickRemoteGameMember(userId)
+    error.value = ''
+    await refresh()
+  } catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
+  finally { busy.value = false }
+}
+
+// 按成员授权：房间容量是 2，同一时刻只有一个非房主成员，服务端 authorize()
+// 绑定到该成员；这里再核对一次绑定对象，避免万一授权给别人。
+async function authorizeMember(userId: string) {
+  if (busy.value) return
+  busy.value = true
+  try {
+    const next = await authorizeRemoteGame()
+    status.value = next
+    if (next.operatorUserId && next.operatorUserId !== userId) {
+      error.value = t('remoteGame.authorizeFailed')
+    } else {
+      error.value = ''
+    }
+    await refresh()
+  } catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
+  finally { busy.value = false }
+}
+
+async function revokeMember() {
+  if (busy.value) return
+  busy.value = true
+  try { status.value = await revokeRemoteGame(); error.value = '' }
+  catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
+  finally { busy.value = false }
 }
 
 async function leave() {
+  busy.value = true
   try { status.value = await stopRemoteGame(); error.value = '' }
   catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
+  finally { busy.value = false }
 }
 
 async function startGame() {
@@ -273,7 +353,9 @@ async function startGame() {
 
 async function saveParams(value: Record<string, unknown>) {
   try {
-    if (status.value.snapshot?.running) await sendRemoteGameCommand('game.setParams', { params: value })
+    if (status.value.snapshot?.running) {
+      await sendRemoteGameCommand('game.setParams', { params: value, gameSessionId: status.value.gameSessionId || undefined })
+    }
     Object.assign(params, value)
     error.value = ''
     await refresh()
@@ -285,30 +367,51 @@ async function stopRunningGame() {
   busy.value = true
   try {
     if (status.value.role === 'owner') await stopGameRuntime('user_stop')
-    else await sendRemoteGameCommand('game.stop')
+    else await sendRemoteGameCommand('game.stop', { gameSessionId: status.value.gameSessionId || undefined })
     error.value = ''
     await refresh()
   } catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }
   finally { busy.value = false }
 }
 
-// 远程主控侧：游戏页面也在本机 iframe 加载（与设备端同一套原始 UI），需要本机有游戏包
-watch(() => [status.value.role, status.value.snapshot?.gameId, status.value.snapshot?.running], async () => {
+// 远程主控侧：游戏页面也在本机 iframe 加载（与设备端同一套原始 UI），需要本机有游戏包。
+// 注册表游戏首次要下载安装，可能几秒；同一 gameId 只允许一个解析在飞（否则并发安装会互相覆盖），
+// 失败时自动重试再报错（F5：首次启动不出 iframe）。
+async function ensureOperatorPage(id: string) {
+  if (!id) return
+  if (resolvingPageFor === id) return
+  if (operatorPagePath.value && pagePathFor === id) return
+  resolvingPageFor = id
+  let attempt = 0
+  while (attempt < 3) {
+    attempt += 1
+    try {
+      const path = await resolveGamePagePath(id)
+      if (path) {
+        operatorPagePath.value = path
+        pagePathFor = id
+        error.value = ''
+        resolvingPageFor = ''
+        return
+      }
+    } catch (_) { /* 继续重试 */ }
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 800 * attempt))
+  }
+  operatorPagePath.value = ''
+  pagePathFor = ''
+  resolvingPageFor = ''
+  error.value = t('gameRuntime.pageUnavailable')
+}
+
+watch(() => [status.value.role, status.value.snapshot?.gameId, status.value.snapshot?.running], () => {
   const id = status.value.snapshot?.gameId || ''
   if (status.value.role !== 'operator' || !status.value.snapshot?.running || !id) {
     operatorPagePath.value = ''
     resolvingPageFor = ''
+    pagePathFor = ''
     return
   }
-  if (resolvingPageFor === id && operatorPagePath.value) return
-  resolvingPageFor = id
-  try {
-    operatorPagePath.value = await resolveGamePagePath(id)
-    if (!operatorPagePath.value) error.value = t('gameRuntime.pageUnavailable')
-  } catch (_) {
-    operatorPagePath.value = ''
-    error.value = t('gameRuntime.pageUnavailable')
-  }
+  void ensureOperatorPage(id)
 })
 
 async function sendDeviceCommand(type: string, payload: Record<string, unknown>) {
@@ -319,8 +422,17 @@ async function sendDeviceCommand(type: string, payload: Record<string, unknown>)
   finally { busy.value = false }
 }
 
+// 房主打开时拉一次房间成员，用于显示操作方身份
+async function refreshMembers() {
+  if (status.value.role !== 'owner') return
+  try {
+    const room = await getRemoteGameRoom()
+    if (Array.isArray(room?.members)) status.value.members = room.members
+  } catch (_) { /* 成员信息是增强项，失败不报错 */ }
+}
+
 onMounted(() => {
-  void refresh()
+  void refresh().then(() => refreshMembers())
   timer = setInterval(() => { void refresh() }, 2000)
 })
 onUnmounted(() => { if (timer) clearInterval(timer) })
@@ -340,6 +452,10 @@ onUnmounted(() => { if (timer) clearInterval(timer) })
 .session { padding: 10px 12px; border: 1px solid #dbe4ef; border-radius: 12px; background: rgba(255,255,255,.78); }
 .join .el-input { flex: 1; min-width: 180px; }
 .setup { display: grid; gap: 16px; }
+.operators { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid #dbe4ef; border-radius: 12px; background: rgba(255,255,255,.78); }
+.operators-head { color: #64748b; font-size: 12px; letter-spacing: .04em; }
+.operator-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.operator-id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #0f172a; }
 .setup-section { border-top: 1px solid var(--el-border-color-lighter); padding-top: 12px; }
 .setup-section h3 { margin: 0 0 10px; font-size: 15px; }
 .game-select { width: min(100%, 360px); }

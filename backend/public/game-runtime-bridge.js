@@ -64,8 +64,18 @@
   function sendAction(name, payload) {
     if (mode === 'host') return post('/api/game-runtime/action', { action: name, payload: payload || {} });
     var type = REMOTE_COMMANDS[name] || 'game.action';
-    var body = type === 'game.action' ? { type: type, payload: { action: name, payload: payload || {} } } : { type: type };
+    var body = type === 'game.action'
+      ? { type: type, payload: withGameSession({ action: name, payload: payload || {} }) }
+      : { type: type, payload: withGameSession({}) };
     return post('/api/remote-game/command', body);
+  }
+
+  // 游戏控制命令必须带上当前 gameSessionId，宿主据此拒绝旧局命令
+  function withGameSession(payload) {
+    var out = payload || {};
+    var sessionId = lastStatus && lastStatus.gameSessionId;
+    if (sessionId) out.gameSessionId = sessionId;
+    return out;
   }
 
   window.GameRuntimeBridge = {
@@ -78,11 +88,11 @@
     sendAction: sendAction,
     setParams: function (params) {
       if (mode === 'host') return post('/api/game-runtime/params', { params: params || {} });
-      return post('/api/remote-game/command', { type: 'game.setParams', payload: { params: params || {} } });
+      return post('/api/remote-game/command', { type: 'game.setParams', payload: withGameSession({ params: params || {} }) });
     },
     stop: function (reason) {
       if (mode === 'host') return post('/api/game-runtime/stop', { reason: reason || 'user_stop' });
-      return post('/api/remote-game/command', { type: 'game.stop' });
+      return post('/api/remote-game/command', { type: 'game.stop', payload: withGameSession({}) });
     },
     start: function () {
       if (timer) return;

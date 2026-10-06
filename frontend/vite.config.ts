@@ -10,7 +10,9 @@ const BRIDGE_INTERNAL_HEADER = 'x-control-panel-bridge-internal'
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => {
-  const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://localhost:3000'
+  // 后端默认只绑 127.0.0.1（审查报告 §2.4），代理目标固定用回环 IP，
+  // 避免 localhost 解析到 ::1 时连不上。
+  const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:3000'
 
   return {
     base: command === 'build' ? './' : '/',

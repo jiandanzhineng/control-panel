@@ -2,6 +2,9 @@
 // 1) 内置/已保存游戏直接读 /api/games/<id> 的 gamePath
 // 2) 注册表游戏确保已安装到本地缓存（/api/game-cache/install），返回 localGamePath
 // 找不到返回空串，由调用方显示错误。
+//
+// 注意：注册表游戏的 /api/games/<id> 会返回 404，必须回落到 /api/game-cache/install。
+// 首次安装要下载+校验游戏包（秒级），调用方要允许等待与重试。
 export async function resolveGamePagePath(gameId: string): Promise<string> {
   const id = String(gameId || '').trim();
   if (!id) return '';
@@ -20,7 +23,9 @@ export async function resolveGamePagePath(gameId: string): Promise<string> {
       body: '{}',
     });
     const data = await res.json().catch(() => ({}));
-    if (res.ok && data?.localGamePath) return String(data.localGamePath);
+    // 安装接口可能返回 localGamePath 或 gamePath（已缓存/刚安装两种分支）
+    const installed = String(data?.localGamePath || data?.gamePath || '');
+    if (res.ok && installed.startsWith('/games/')) return installed;
   } catch (_) { /* 忽略 */ }
   return '';
 }

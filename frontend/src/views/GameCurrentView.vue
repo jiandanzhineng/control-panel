@@ -4,6 +4,7 @@
       v-if="iframeSrc"
       :src="iframeSrc"
       class="game-frame"
+      :sandbox="iframeSandbox"
       allow="fullscreen; autoplay; gyroscope; accelerometer; microphone"
       allowfullscreen
     ></iframe>
@@ -38,6 +39,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { trackPlayEnd } from '../playAnalytics';
 import { clearActivePlay } from '../composables/useActivePlay';
 import { listenDeviceButtonPress } from '../composables/useButtonStart';
+import { iframeSandboxFor } from '../play/gameIframeSandbox';
 import PlayCarrierShell from '../components/PlayCarrierShell.vue';
 
 const { t } = useI18n();
@@ -52,6 +54,10 @@ let stopped = false;
 let stopWait: null | (() => void) = null;
 
 const stoppable = computed(() => !!iframeSrc.value || waitingForButton.value);
+
+// 第三方（经 /games/proxy 代理的外部网页）游戏跑在独立 origin 里，读不到面板
+// localStorage 的账号 token（审查报告 §2.4）。第一方游戏不加 sandbox，行为不变。
+const iframeSandbox = computed(() => iframeSandboxFor(iframeSrc.value));
 
 function buildSrc(): string {
   const q = route.query;

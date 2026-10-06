@@ -2,6 +2,32 @@
   <details class="remote-devices">
     <summary>{{ t('devices.list') }} · {{ devices.length }}</summary>
     <p class="hint">{{ text('控制设备所在端的设备', 'Manage devices on the host') }}</p>
+
+    <!-- 授权绑定到具体账号：新成员默认无权限。仅在宿主面板传入 members 时渲染。 -->
+    <div v-if="members.length" class="member-block">
+      <p class="hint">
+        {{ authorizedUserId
+          ? text(`已授权 ${authorizedUserId} 控制设备`, `Authorized: ${authorizedUserId}`)
+          : text('等待房主授权后才能控制设备', 'Waiting for the host to authorize this account') }}
+      </p>
+      <div v-for="member in members" :key="member.userId" class="member-row">
+        <strong>{{ member.userId }}</strong>
+        <el-tag :type="member.online ? 'success' : 'info'" size="small" effect="plain">
+          {{ member.online ? text('在线', 'Online') : text('离线', 'Offline') }}
+        </el-tag>
+        <el-tag v-if="member.authorized" type="warning" size="small">{{ text('已授权', 'Authorized') }}</el-tag>
+        <el-button v-if="!member.authorized" type="primary" size="small" :disabled="disabled" @click="emit('authorize', member.userId)">
+          {{ text('授权控制', 'Authorize') }}
+        </el-button>
+        <el-button v-else size="small" :disabled="disabled" @click="emit('revoke')">
+          {{ text('撤销授权', 'Revoke') }}
+        </el-button>
+        <el-button type="danger" plain size="small" :disabled="disabled" @click="emit('kick', member.userId)">
+          {{ text('移出房间', 'Remove') }}
+        </el-button>
+      </div>
+    </div>
+
     <div v-for="device in devices" :key="device.id" class="device-row">
       <div class="device-heading">
         <strong>{{ device.name || device.id }}</strong>
@@ -34,12 +60,21 @@ const props = defineProps<{
   connected: boolean
   busy: boolean
   running: boolean
+  members?: Array<{ userId: string; online?: boolean; authorized?: boolean }>
+  authorizedUserId?: string | null
 }>()
-const emit = defineEmits<{ command: [type: string, payload: Record<string, unknown>] }>()
+const emit = defineEmits<{
+  command: [type: string, payload: Record<string, unknown>]
+  authorize: [userId: string]
+  revoke: []
+  kick: [userId: string]
+}>()
 const { t, locale } = useI18n()
 const text = (zh: string, en: string) => locale.value.startsWith('zh') ? zh : en
 const names = reactive<Record<string, string>>({})
 const strengths = reactive<Record<string, number>>({})
+const members = computed(() => props.members || [])
+const authorizedUserId = computed(() => props.authorizedUserId || null)
 const disabled = computed(() => !props.authorized || !props.connected || props.busy)
 function send(type: string, payload: Record<string, unknown>) { if (!disabled.value) emit('command', type, payload) }
 </script>
@@ -49,6 +84,8 @@ function send(type: string, payload: Record<string, unknown>) { if (!disabled.va
 summary { cursor: pointer; font-weight: 600; }
 .hint { color: var(--el-text-color-secondary); font-size: 13px; }
 .device-row { padding: 12px 0; border-top: 1px solid var(--el-border-color-lighter); }
+.member-block { padding: 10px 0; border-top: 1px solid var(--el-border-color-lighter); }
+.member-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; }
 .device-heading, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
 .actions .el-input { width: 200px; }
 .strength-row { display: flex; align-items: center; gap: 16px; }

@@ -86,6 +86,20 @@ function closeRoom(token, roomId) {
   return request(`/rooms/${encodeURIComponent(roomId)}/close`, { method: 'POST', token });
 }
 
+// 读取房间详情（成员列表含 userId/role/status）。房主与成员都可调用。
+function getRoom(token, roomId) {
+  return request(`/rooms/${encodeURIComponent(roomId)}`, { token });
+}
+
+// 房主把成员移出房间（服务端 204）。服务端踢线尚未接线，
+// 调用方必须同时在本地拒绝该 userId（见 remoteProjectionService）。
+function kickMember(token, roomId, userId) {
+  return request(`/rooms/${encodeURIComponent(roomId)}/members/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+    token,
+  });
+}
+
 module.exports = {
   RoomApiError,
   getBaseUrl: () => ROOM_API_URL,
@@ -96,4 +110,6 @@ module.exports = {
   getMqttCredential,
   leaveRoom,
   closeRoom,
+  getRoom,
+  kickMember,
 };

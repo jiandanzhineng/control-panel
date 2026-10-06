@@ -38,3 +38,21 @@ test('resolveGamePagePath returns empty when nothing resolves', async () => {
   assert.equal(await resolveGamePagePath('nope'), '')
   assert.equal(await resolveGamePagePath(''), '')
 })
+
+test('resolveGamePagePath accepts gamePath from the install response', async () => {
+  globalThis.fetch = async (url) => {
+    if (String(url).startsWith('/api/game-cache/install/')) {
+      return { ok: true, json: async () => ({ gamePath: '/games/cache/surge-edging/1.3.6/index.html' }) }
+    }
+    return { ok: false, json: async () => ({}) }
+  }
+  assert.equal(
+    await resolveGamePagePath('surge-edging'),
+    '/games/cache/surge-edging/1.3.6/index.html',
+  )
+})
+
+test('resolveGamePagePath ignores a non-/games/ path from the install response', async () => {
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({ localGamePath: 'http://evil.test/index.html' }) })
+  assert.equal(await resolveGamePagePath('surge-edging'), '')
+})

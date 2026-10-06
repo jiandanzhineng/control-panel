@@ -15,12 +15,30 @@ function handleError(res, error) {
     return sendError(res, error.code, error.message, error.status);
   }
   const code = error?.code || 'REMOTE_GAME_ERROR';
-  const status = code === 'CONTROL_NOT_AUTHORIZED' ? 403 : 400;
+  const status = code === 'CONTROL_NOT_AUTHORIZED'
+    ? 403
+    : (code === 'STALE_GAME_SESSION' || code === 'GAME_SESSION_MISMATCH' ? 409 : 400);
   return sendError(res, code, error?.message || '远程游戏操作失败', status);
 }
 
 router.get('/status', (req, res) => {
   res.json(remoteGame.getStatus());
+});
+
+router.get('/room', async (req, res) => {
+  try {
+    res.json({ members: await remoteGame.getRoom() });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post('/kick', async (req, res) => {
+  try {
+    res.json(await remoteGame.kick({ userId: req.body?.userId }));
+  } catch (error) {
+    handleError(res, error);
+  }
 });
 
 router.post('/create', async (req, res) => {
