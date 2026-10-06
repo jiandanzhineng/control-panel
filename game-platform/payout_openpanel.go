@@ -258,6 +258,12 @@ func eventTime(props map[string]any, fallback string) time.Time {
 	if parsed, err := time.Parse(time.RFC3339, fallback); err == nil {
 		return parsed
 	}
+	// ClickHouse 风格的时间串不带时区，按 UTC 解析。
+	for _, layout := range []string{"2006-01-02 15:04:05.999999999", "2006-01-02T15:04:05.999999999"} {
+		if parsed, err := time.ParseInLocation(layout, fallback, time.UTC); err == nil {
+			return parsed
+		}
+	}
 	if parsed, err := strconv.ParseInt(fallback, 10, 64); err == nil && parsed > 0 {
 		if parsed > 1e12 {
 			return time.UnixMilli(parsed)

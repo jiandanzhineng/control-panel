@@ -220,23 +220,32 @@ func toSet(values []string) map[string]bool {
 }
 
 // authorOfGame 把 game_id 关联到作者：releases → submissions → identities。
-// 只有有社区投稿的 release（submission_id 非空）才参与分成。
+// 与 game_id 归属规则一致：按发布顺序第一条 release 决定归属；第一条是官方 release
+// （submission_id 为空）的 id 不参与分成。含已下架 release，月中下架的游戏当月仍可结算。
 func (a *App) authorOfGame(ctx context.Context) (map[string]PayoutReport, error) {
-	rows, err := a.db.QueryContext(ctx, `SELECT r.game_id, COALESCE(s.author_id, ''), COALESCE(s.author_name, ''), COALESCE(i.email, '')
+	rows, err := a.db.QueryContext(ctx, `SELECT r.game_id, COALESCE(r.submission_id, ''), COALESCE(s.author_id, ''), COALESCE(s.author_name, ''), COALESCE(i.email, '')
 		FROM releases r
 		LEFT JOIN submissions s ON s.id = r.submission_id
 		LEFT JOIN identities i ON i.id = s.author_id
-		WHERE r.status = 'active' AND r.submission_id IS NOT NULL AND r.submission_id <> ''`)
+		ORDER BY r.created_at ASC, r.rowid ASC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	out := map[string]PayoutReport{}
+	decided := map[string]bool{}
 	for rows.Next() {
-		var gameID string
+		var gameID, submissionID string
 		var author PayoutReport
-		if err := rows.Scan(&gameID, &author.AuthorID, &author.AuthorName, &author.AuthorEmail); err != nil {
+		if err := rows.Scan(&gameID, &submissionID, &author.AuthorID, &author.AuthorName, &author.AuthorEmail); err != nil {
 			return nil, err
+		}
+		if decided[gameID] {
+			continue
+		}
+		decided[gameID] = true
+		if submissionID == "" {
+			continue
 		}
 		author.GameID = gameID
 		out[gameID] = author
