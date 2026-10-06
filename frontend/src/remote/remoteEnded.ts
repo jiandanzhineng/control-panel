@@ -16,6 +16,9 @@ export function endReasonKey(reason: string | null | undefined): string {
     case 'session-stop':
     case 'room-closed':
     case 'session-ended':
+    // 被控端主动结束会话（remoteSessionService.stop）会把同一个 reason 透传过来，
+    // 它本质上就是「对方已结束远程」，不能落到 default 的「连接已断开」。
+    case 'session-stop-by-host':
       return 'ended'
     // 本端自己断开 / 被新会话顶替：用户刚点的按钮，不再弹提示也不跳页
     case 'operator-stop':

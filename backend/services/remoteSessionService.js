@@ -195,7 +195,21 @@ class RemoteSessionService {
       this.game.revoke(),
       this.projection.revoke({ reason: 'session-revoke' }),
     ]);
+    // 撤权后操作方设备表必须立刻回到只有本机设备。投影侧的「空清单」是 MQTT 广播，
+    // 房主离线/丢包时操作方收不到，这里由编排层轮询兜底一次。
+    await this._pruneOperatorProjection();
     return this.getStatus();
+  }
+
+  /**
+   * 主控端本地兜底：把本机设备表里属于本会话投影房间的 remote 设备摘掉。
+   * 撤销授权、房主结束会话时投影层的收尾消息可能收不到（房主已离线或只关了自己的房间），
+   * 编排层用「本机已注册的 remote 连接」核对一次，保证设备列表立刻回本机。
+   */
+  async _pruneOperatorProjection() {
+    const projection = this.projection;
+    if (typeof projection.pruneRemoteDevices !== 'function') return;
+    try { await projection.pruneRemoteDevices('session-revoke'); } catch (_) {}
   }
 
   /** 踢出成员：急停其输出 + 两条链路都移出 + 关闭授权。 */
@@ -254,7 +268,7 @@ class RemoteSessionService {
     this._teardown();
     try {
       if (role === 'owner') {
-        await this.game.stop({ reason }).catch(() => {});
+        await this.game.stop({ reason: 'session-stop-by-host' }).catch(() => {});
         await this.projection.stop().catch(() => {});
       } else {
         await this.projection.stop().catch(() => {});
@@ -263,6 +277,10 @@ class RemoteSessionService {
     } finally {
       this._stopping = false;
     }
+    // 主房间的 session.revoked 是「对方结束远程」的唯一通知：投影链路不会自己给
+    // 操作方发投影层 ended（房主只关掉自己那侧房间）。主控端要自己把投影链路
+    // 与设备表收干净，否则被控端的设备会一直留在本机设备列表里。
+    if (role === 'operator') await this._teardownOperatorLinks();
     this.lastEnded = { at: this.now(), reason };
     this._logEvent('ok', 'session.stop', null, { reason });
     return this.getStatus();
@@ -452,12 +470,26 @@ class RemoteSessionService {
       this.lastEnded = { at: this.now(), reason: event.reason || 'ended' };
       this._teardown();
       this._logEvent('ok', 'session.ended', null, { reason: event.reason || null });
+      // 被控端只关掉自己那侧房间（stop/踢出/离线）：主控端的投影链路与设备表要自己收掉
+      void this._teardownOperatorLinks();
     }
   }
 
   _onProjectionEvent(event) {
     const state = this.state;
-    if (!state) return;
+    // 会话已经结束（被控端 stop/revoke/kick 或投影链路自行结束）：投影侧的收尾事件
+    // 不能再被忽略。被控端 stop() 已把 state 置空，而操作方只剩这条通知来拆掉
+    // 本机还挂着的投影链路（否则远端设备会一直留在本机设备表里）。
+    if (!state) {
+      if (this._stopping) return;
+      if (event.type === 'ended') {
+        this.lastEnded = { at: this.now(), reason: event.reason || 'ended' };
+        this._logEvent('ok', 'session.ended', null, { reason: event.reason || null });
+        // 投影链路自己结束了（房主关掉他那侧房间）：主控端把链路与设备表收干净
+        void this._teardownOperatorLinks();
+      }
+      return;
+    }
     if (event.type === 'peer' && state.role === 'operator' && event.roomId) {
       // 操作方自己 join 投影房间时也会收到一次 peer：房间码由主房间邀请决定
       void this._joinProjectionRoom(state);
@@ -484,6 +516,26 @@ class RemoteSessionService {
       this.lastEnded = { at: this.now(), reason: event.reason || 'ended' };
       this._teardown();
       this._logEvent('ok', 'session.ended', null, { reason: event.reason || null });
+      // 被控端只关掉自己那侧房间：主控端的投影链路与设备表要自己收掉
+      void this._teardownOperatorLinks();
+    }
+  }
+
+  /** 主控端收尾：投影链路 + 本机设备表里的投影设备。
+   * 会话已结束时（state 为空）投影服务自身可能仍连着，必须显式停掉。
+   * 关闭过程会重新派发投影层事件，用 _stopping 挡住重入。
+   */
+  async _teardownOperatorLinks() {
+    if (this._stopping) return;
+    this._stopping = true;
+    try {
+      const projection = this._safeStatus(this.projection);
+      if (projection?.active || projection?.connected) {
+        await this.projection.stop().catch(() => {});
+      }
+      await this._pruneOperatorProjection();
+    } finally {
+      this._stopping = false;
     }
   }
 

@@ -227,6 +227,33 @@ class RemoteProjectionService {
     return this.stop({ skipApi: true });
   }
 
+  /**
+   * 主控端兜底：把本机设备表里属于本会话投影房间的 remote 设备摘掉。
+   *
+   * 正常路径是「收到空设备清单 → _applyDeviceList 解除 remote 连接」；房主离线、
+   * 只关掉自己那侧房间（被控端 stop/踢出）或撤权清单丢失时这一步不会发生，
+   * 远端设备就会一直挂在主控端设备表里。编排层在会话收尾时调这里核对一次。
+   */
+  async pruneRemoteDevices(reason = 'projection-prune') {
+    const session = this.session;
+    if (session) {
+      this._removeRemoteDevices(session);
+      return { active: true, removed: 0 };
+    }
+    // 会话对象已不在：按设备表里遗留的 remote 连接判定（本机只可能有一条投影链路）
+    const list = this.devices.listDevicesForApi?.() || [];
+    let removed = 0;
+    for (const device of list) {
+      const connections = device.connections || [];
+      if (!connections.some((connection) => connection?.type === 'remote')) continue;
+      try {
+        if (this.devices.disconnectTransportDevice(device.id, 'remote')) removed += 1;
+      } catch (_) {}
+    }
+    if (removed) logService.info(`[projection] pruned ${removed} leftover remote devices (${reason})`);
+    return { active: false, removed };
+  }
+
   _newSession({ role, token, room, credential, controlTtlSec, limits }) {
     const startedAt = this.now();
     return {

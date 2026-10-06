@@ -516,6 +516,29 @@ describe('remote session service', () => {
     await operatorGame.stop();
   });
 
+  test('host stop tells the operator it was the host who ended the session', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, operatorGame } = ctx;
+    await ownerSession.stop();
+    await flush();
+    // 「对方已结束远程」而不是「与对方的连接已断开」：reason 由编排层给出
+    expect(operatorSession.getStatus().lastError).toBe('session-stop-by-host');
+    await operatorSession.stop();
+    await operatorGame.stop();
+  });
+
+  test('operator tears down a leftover projection link when the host closes the session', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, projection, operatorGame } = ctx;
+    await ownerSession.stop();
+    await flush();
+    // 房主只关掉自己那侧房间：主控端必须自己把投影链路收掉
+    expect(projection.operator.stop).toHaveBeenCalled();
+    expect(operatorSession.getStatus().links.projection.connected).toBe(false);
+    await operatorSession.stop();
+    await operatorGame.stop();
+  });
+
   test('revoking while the projection authorize poll is pending clears the retry timer', async () => {
     const ctx = setup();
     const { ownerSession, operatorSession, projection, clock } = ctx;
