@@ -33,7 +33,7 @@ curl http://127.0.0.1:8787/healthz
 - Method：`POST`
 - Allowed Header：`Content-Type`
 - Max Age：600 秒
-- 生命周期：`submissions/` 下未完成投稿在 7 天后删除
+- 生命周期：`submissions/` 下未完成投稿在 180 天（6 个月）后删除（2026-10-06 由 7 天改为 180 天，规则 ID `expire-unreviewed-submissions`）
 
 `OSS_BUCKET` 的 `registry.json` 使用 `no-cache` 或较短缓存；`games/`、`packages/` 使用长缓存。服务的发布顺序是先写不可变游戏文件与 ZIP，最后写 registry。
 

@@ -24,7 +24,7 @@
 
 - 玩法统计（2026-09-09）：走 OpenPanel 看板 `https://op.shiroha.tech`，事件 `game_start`/`game_stop`（及插件对应事件）。属性含 version、source、device_types、device_macs、roles、duration_ms、end_reason。无 heartbeat，无登录态。上报 `https://op.shiroha.tech/api/track`。
 - 游戏平台生产 API（2026-09-05）：`https://game-api.undersilicon.cn` 部署在 `47.242.37.88`，systemd 服务 `game-platform` 仅监听 `127.0.0.1:8787`。程序 `/opt/game-platform/current/game-platform`，配置 `/etc/game-platform/game-platform.env`，SQLite `/var/lib/game-platform/game-platform.db`，Nginx `/etc/nginx/conf.d/game-api.undersilicon.cn.conf`。日志用 `journalctl -u game-platform`。
-- 游戏平台 OSS：公开 bucket `ezs-games`；待审 bucket `ezs-game-submissions` 为 private，只允许 `https://game.undersilicon.cn` POST，`submissions/` 7 天清理。ESA 站点 `undersilicon.cn` 的既有 API/admin 缓存规则已补 `no_cache`，全局 CORS 规则排除 `game-api.undersilicon.cn`，由源站返回精确 Origin。
+- 游戏平台 OSS：公开 bucket `ezs-games`；待审 bucket `ezs-game-submissions` 为 private，只允许 `https://game.undersilicon.cn` POST，`submissions/` 180 天（6 个月）清理，2026-10-06 由 7 天改为 180 天（曾因此丢掉 2 条待审投稿的源包）。ESA 站点 `undersilicon.cn` 的既有 API/admin 缓存规则已补 `no_cache`，全局 CORS 规则排除 `game-api.undersilicon.cn`，由源站返回精确 Origin。
 - 2026-09-05 生产验证：mobile `/me` 返回 `isAdmin: true`，game API 映射为 `admin`；ZIP 创建、OSS 直传、归档校验、待审、退回、批准发布和下架均通过。Electron 生产构建经 CDP 验证从 `/games/cache/` 运行已发布包，QA 页面进入 `ready`，无控制台或资源加载错误。
 - 游戏平台首次投产必须在发布新游戏前调用一次 `/api/admin/registry/import`。生产 `GAME_PLATFORM_EXISTING_REGISTRY_URL` 使用仍保留旧 8 个版本的 `https://game.undersilicon.com/registry.json`；2026-09-05 已完成导入并在 QA 下架后恢复原 8 个游戏。恢复前的环境文件和 SQLite 备份保留在服务器，后缀为 `.bak.20260905-registry-restore`。
 - ESA 缓存规则 `506125495674880` 仅匹配 `game.undersilicon.cn/registry.json`，浏览器与边缘均 `no_cache`、`bypass_all`；玩法页面和不可变游戏资源继续使用自动缓存。默认 registry 已验证为 `DYNAMIC`。
