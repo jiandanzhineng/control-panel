@@ -80,6 +80,8 @@ func writePayoutError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "PAYOUT_RECORD_NOT_FOUND", "找不到这条发放记录")
 	case errors.Is(err, errGameOwnerEmailMissing):
 		writeError(w, http.StatusBadRequest, "GAME_OWNER_EMAIL_UNKNOWN", "该邮箱尚未登录过投稿平台，请让作者先用这个邮箱登录一次")
+	case errors.Is(err, errGameOwnerGone):
+		writeError(w, http.StatusNotFound, "GAME_OWNER_NOT_FOUND", "该游戏没有手工指定的归属")
 	default:
 		writeError(w, http.StatusInternalServerError, "PAYOUT_FAILED", err.Error())
 	}
@@ -175,18 +177,16 @@ func (a *App) listCommunityGames(ctx context.Context) ([]communityGame, error) {
 			states[gameID] = state
 			order = append(order, gameID)
 		}
-		// 后面的 release 更新（created_at 升序），最后一条即当前版本。
-		state.Version = version
-		state.Status = status
+		// 标题、版本取当前 active release；没有 active（全部下架）时取最后一条并标记已下架。
 		if status == "active" {
-			state.hasActive = true
+			state.Version, state.Status, state.hasActive = version, status, true
+			state.Title = entryTitle(entryJSON, state.Title)
+		} else if !state.hasActive {
+			state.Version, state.Status = version, status
+			state.Title = entryTitle(entryJSON, state.Title)
 		}
 		if authorID != "" {
 			state.AuthorID, state.AuthorName = authorID, authorName
-			var entry RegistryEntry
-			if err := json.Unmarshal([]byte(entryJSON), &entry); err == nil {
-				state.Title = entry.Title
-			}
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -223,6 +223,15 @@ func (a *App) listCommunityGames(ctx context.Context) ([]communityGame, error) {
 	return out, nil
 }
 
+// entryTitle 读 release 的 entry_json 取标题；读不出或为空时沿用 fallback。
+func entryTitle(entryJSON, fallback string) string {
+	var entry RegistryEntry
+	if err := json.Unmarshal([]byte(entryJSON), &entry); err != nil || strings.TrimSpace(entry.Title) == "" {
+		return fallback
+	}
+	return entry.Title
+}
+
 // handleAdminGameOwners 列出管理员手工指定的归属。
 func (a *App) handleAdminGameOwners(w http.ResponseWriter, r *http.Request) {
 	user, ok := a.requireUser(w, r)
@@ -235,6 +244,30 @@ func (a *App) handleAdminGameOwners(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"owners": owners})
+}
+
+// handleAdminGameOwnerAction 处理撤销归属：POST /api/admin/game-owners/{gameId}/delete。
+// 与发放记录的删除路由同一风格。
+func (a *App) handleAdminGameOwnerAction(w http.ResponseWriter, r *http.Request) {
+	user, ok := a.requireUser(w, r)
+	if !ok || !requireAdmin(w, user) {
+		return
+	}
+	parts := pathParts(r.URL.Path, "/api/admin/game-owners/")
+	if len(parts) != 2 || parts[1] != "delete" {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+		return
+	}
+	gameID := strings.TrimSpace(parts[0])
+	if gameID == "" {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "not found")
+		return
+	}
+	if err := a.removeGameOwner(r.Context(), gameID); err != nil {
+		writePayoutError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // handleAdminSetGameOwner 指定某个 game_id 的归属作者：gameId + 作者邮箱 + 署名。

@@ -31,6 +31,7 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("GET /api/admin/community-games", a.handleAdminCommunityGames)
 	mux.HandleFunc("GET /api/admin/game-owners", a.handleAdminGameOwners)
 	mux.HandleFunc("POST /api/admin/game-owners", a.handleAdminSetGameOwner)
+	mux.HandleFunc("POST /api/admin/game-owners/", a.handleAdminGameOwnerAction)
 	mux.HandleFunc("GET /api/payouts/mine", a.handleMyPayouts)
 	return a.withCORS(mux)
 }

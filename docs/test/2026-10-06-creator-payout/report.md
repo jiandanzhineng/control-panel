@@ -3,7 +3,7 @@
 - 日期：2026-10-06
 - 验收分支：`docs/creator-payout`（worktree `E:\develop\control-panel\.tmp\creator-payout`，HEAD `3e5fbbf`）
 - 验收人：独立验收（非开发者，发现问题只记录、不改业务代码）
-- 结论：**11 个步骤全部通过**，发现 1 个中等问题 + 3 个低风险/信息项，见第 3 节
+- 结论：**11 个步骤全部通过**，发现 1 个中等问题 + 3 个低风险/信息项，见第 3 节；4 个问题已修复并复测通过，见第 5 节
 
 ## 0. 测试环境与说明
 
@@ -213,7 +213,7 @@
 
 | 项目 | 命令 | 结果 |
 | --- | --- | --- |
-| game-platform | `go test ./... -count=1` | `ok github.com/jiandanzhineng/control-panel/game-platform 7.526s`，29 个 Test 全通过 |
+| game-platform | `go test ./... -count=1` | `ok github.com/jiandanzhineng/control-panel/game-platform 7.526s`，29 个 Test 全通过（修复后为 32 个，见第 5.5 节） |
 | play-registry | `npm test` | `tests 29 / pass 29 / fail 0` |
 | 手机端 | `flutter test test/core/analytics/analytics_test.dart` | 6 个用例全通过 |
 
@@ -237,7 +237,9 @@ game-platform 测试覆盖了本次改动的关键点：归属优先级（`game_
 
 ## 3. 发现的问题与风险
 
-### 3.1（中）前台展示的「作者」与拿分成的作者会不一致
+> 2026-10-06 已修复 3.1 / 3.2 / 3.3 / 3.4-界面项，复测见第 5 节。
+
+### 3.1（中）前台展示的「作者」与拿分成的作者会不一致 —— 已修复（见第 5 节）
 
 - **现象**：`accept-game-a` 由管理员代发 1.4.0 之后，玩法站列表和 `registry.json` 显示 **作者: Platform Team**（管理员那次投稿的署名），而分成归属仍然是原作者 `Smoke Author` / `author@example.com`。玩家看到的作者名会随「最后一次是谁发布的」变化，和真正收钱的人不是同一个。
 - **复现**：`GET /api/admin/community-games` 返回 `accept-game-a → authorName: Smoke Author`（正确）；而 `registry.json` / `games.html` 卡片显示 `authorName: Platform Team`。
@@ -247,13 +249,13 @@ game-platform 测试覆盖了本次改动的关键点：归属优先级（`game_
 - **影响**：玩家侧署名错乱；作者会看到自己的游戏挂着别人的名字，容易引发申诉。分成金额本身没算错。
 - **建议**（供开发参考，本次未改）：发布时若该 `game_id` 已有归属作者，`entry.AuthorName` 取归属作者的署名，而不是当次投稿署名。
 
-### 3.2（低）「归属指定」只能新增/覆盖，没有撤销入口
+### 3.2（低）「归属指定」只能新增/覆盖，没有撤销入口 —— 已修复（见第 5 节）
 
 - `game_owners` 一旦指定，审核后台只有「指定归属」表单和列表，**没有删除按钮**；接口也只有 `POST /api/admin/game-owners`，没有删除路由（`game-platform/api.go:32-33`、`play-registry/admin.html:54-61`）。
 - 影响：指定错了只能改库；把某个 ID 从"官方保留"误改成"社区游戏"之后无法还原。
 - 建议：补一个删除/撤销入口。
 
-### 3.3（低）社区游戏列表的版本/标题取「最后一条 release」，含已下架
+### 3.3（低）社区游戏列表的版本/标题取「最后一条 release」，含已下架 —— 已修复（见第 5 节）
 
 - `game-platform/payout_handlers.go` 的 `listCommunityGames` 按 `created_at` 升序遍历所有 release（含 `revoked`），最后一条决定 `Version`；`Title` 只在作者非空时更新，逻辑比较隐晦。
 - 影响：一个 game_id 若最新版本已下架，后台「月度分成」下拉里显示的版本号是已下架的版本；金额录入本身按 game_id 不受影响，但管理员看版本号可能误判。
@@ -262,9 +264,129 @@ game-platform 测试覆盖了本次改动的关键点：归属优先级（`game_
 
 - `/api/payouts/mine` 返回的 `authorEmail` 为空（`attachAuthorEmails` 只在管理端列表填充），前端没用这个字段，展示正常。
 - 分成归属固定给「最早的社区 release 作者」：若某 game_id 历史上由 A 首发、之后一直由 B 更新，钱默认给 A，除非管理员在「归属指定」里改。这是设计选择，但运营需要知道，否则会发错人。
+- 审核后台「月度分成」tab 的「发放记录」表格横向溢出卡片（备注、操作列跑出卡片外，见步骤 6 的截图）—— 已修复（见第 5 节问题 4），社区游戏表格同样处理。
 
 ## 4. 结论
 
 - 核心链路（投稿 → 审核 → 发布 → 归属判定 → 分成录入 → 作者可见 → 商城发钱）在本地**完整跑通**，11 个步骤全部通过，未发现阻断性问题。
 - 三条 game_id 归属规则（官方保留 / 他人占用 / 版本必须递增）在 API 和审核后台两侧表现一致，且发布事务内有二次校验兜底（并发场景实测被拦住）。
-- 主要待修项是 3.1 的**署名与分成归属不一致**，属于玩家/作者可见的体验问题，不影响金额计算。
+- 主要待修项是 3.1 的**署名与分成归属不一致**，属于玩家/作者可见的体验问题，不影响金额计算。该问题连同 3.2、3.3 与表格溢出，已在 2026-10-06 修复并复测通过（见第 5 节）。
+
+## 5. 修复后复测
+
+- 复测日期：2026-10-06
+- 复测环境：与第 0 节一致（game-platform `127.0.0.1:8787` + 假身份 `127.0.0.1:8791` + 玩法站静态副本 `127.0.0.1:8080`），数据目录 `.tmp/cp-payout/data`，仍是本地环境，未连生产。
+- 代码改动：`game-platform/`（`publisher.go`、`ownership.go`、`payout.go`、`payout_handlers.go`、`api.go`）与 `play-registry/`（`assets/js/admin.js`、`assets/css/site.css`、`admin.html`）。
+
+### 5.1（问题 3.1）前台署名改为跟归属走
+
+**修复内容**
+
+- `game-platform/publisher.go`：发布事务里的归属校验结果（`checkGameIDOwnership`，内部复用 `ownership.go` 的 `loadGameIDOwnership`）现在会用来决定署名——只有当**本次投稿人就是该 game_id 的归属人**时才用本次投稿署名；否则（管理员代发、或归属已被指定给别人）改用归属人的署名（`game_owners` 指定优先，其次最早社区 release 的作者署名）。官方保留 ID 由管理员发布时归属作者为空，仍按原行为使用本次投稿署名。没有新增第二套判定。
+- 因此管理员代发后，`registry.json` / 玩法站显示的仍是原作者署名；被指定归属的游戏显示指定署名。
+
+**复测操作与结果**
+
+1. 作者 `mobile-author`（署名 Smoke Author）投稿并发布 `accept-game-a 1.0.0`。
+2. 管理员（署名 Platform Team）代发 `accept-game-a 1.1.0` → 发布接口返回的 `entry.authorName` = `Smoke Author`（修复前为 `Platform Team`），`registry.json` 同步为 `Smoke Author`。
+3. 作者本人更新 `accept-game-a 1.2.0`，署名填 `Smoke Author 本人改名` → 生效；`1.3.0` 再改回 `Smoke Author`。
+4. 玩法站列表（`games.html`）卡片署名：`accept-game-a` → 「作者: Smoke Author」，`surge-edging` → 「作者: DK」（归属指定给 DK 后管理员代发 1.4.0，署名仍为 DK）。
+
+**证据**：玩法站列表署名
+
+![玩法站列表署名](screenshots/r1-p1-games-list-author.jpg)
+
+### 5.2（问题 3.2）归属指定可以撤销
+
+**修复内容**
+
+- 新增接口 `POST /api/admin/game-owners/{gameId}/delete`（`game-platform/api.go` 路由 + `payout_handlers.go` 的 `handleAdminGameOwnerAction`），风格与 `POST /api/admin/payouts/{id}/delete` 一致；删除逻辑在 `ownership.go` 的 `removeGameOwner`，没有指定归属时返回 404 `该游戏没有手工指定的归属`。
+- 审核后台「归属指定」列表加「操作」列与「撤销」按钮：点击后就地变成「撤销后按原判定？确认撤销 / 取消」，页面内实现，未使用 `window.confirm`。确认后归属回落到原判定。
+
+**复测操作与结果**
+
+1. `surge-edging` 指定归属给 DK / `author2@example.com`，列表出现该行与「撤销」按钮。
+2. 点「撤销」→ 就地出现「撤销后按原判定？确认撤销 / 取消」二次确认。
+3. 点「确认撤销」→ 提示「归属已撤销，该游戏回到原来的归属判定。」，列表回到「还没有手工指定的归属。」
+4. 撤销后 `surge-edging` 归属回落：`/api/admin/community-games` 里作者变成 `Platform Team`（`mobile-admin`）——因为它的 release 全部是官方导入 + 管理员发布，原判定即官方保留；同时 `registry.json` 里该游戏仍是 `authorName: DK`（上一次以 DK 署名发布的内容没有被改写）。
+
+**证据**：
+
+![归属列表的撤销按钮](screenshots/r1-p2-owner-revoke-button.jpg)
+
+![撤销的二次确认](screenshots/r1-p2-owner-revoke-confirm.jpg)
+
+![撤销后的归属列表](screenshots/r1-p2-owner-list-after-revoke.jpg)
+
+### 5.3（问题 3.3）社区游戏列表取当前 active release
+
+**修复内容**
+
+- `game-platform/payout_handlers.go` 的 `listCommunityGames`：版本与标题改为取**当前 active release**；没有 active（全部下架）时才取最后一条 release，并把状态显示为「已下架」。标题解析抽成 `entryTitle` 小函数，不再受「作者非空」条件影响。
+
+**复测操作与结果**
+
+- `accept-game-a`：1.0.0 → 1.1.0 → 1.2.0 → 1.3.0，中间无下架 → 列表显示 `v1.3.0 / 已上线`（当前 active）。
+- `retest-revoked`：发布 1.0.0 后下架 → 列表显示 `v1.0.0 / 已下架`（取最后一条并标记已下架）。
+- 页面「社区游戏与作者」表格与下拉均按 active 版本展示。
+
+**证据**：
+
+![社区游戏列表（active 版本）](screenshots/r1-p3-community-games-1366.jpg)
+
+### 5.4（问题 4）发放记录 / 社区游戏表格不再溢出卡片
+
+**修复内容**
+
+- `play-registry/assets/js/admin.js`：新增 `tableBox()`，给所有 `.payout-table` 外面套一层 `.table-scroll` 容器（发放记录、社区游戏与作者、归属指定三张表都走同一个 `table()` 构建函数）；备注列加 `payout-note-cell` 类，让它换行而不是把表格撑宽。
+- `play-registry/assets/css/site.css`：`.table-scroll { width: 100%; max-width: 100%; overflow-x: auto; }`；`.payout-table td.payout-note-cell { white-space: normal; overflow-wrap: anywhere; min-width: 140px; max-width: 260px; }`；窄屏（≤820px）给表格一个 `min-width: 640px`，让内容在容器内横向滚动。顺带给 `.platform-form` 的 `label/input/select` 加 `min-width: 0`，表单字段在手机宽度也不再顶出卡片。
+
+**复测操作与结果**
+
+- 1366px 宽（桌面）：`document.scrollingElement.scrollWidth` = 1366 = 视口宽，页面上**没有任何元素** `getBoundingClientRect().right` 超出视口；发放记录表格自身宽 1049px，在 763px 的滚动容器内（`overflow-x: auto`），卡片宽 811px 不再被撑破，备注与「操作」列都在卡片内可见。
+- 400px 宽（手机）：页面 `scrollWidth` = 385 ≤ 400，同样没有元素溢出视口；表格在 307px 的滚动容器里横向滚动，备注列换行显示，卡片本身宽度 343px 未被撑破。
+- 社区游戏与作者表格同样处理，两种宽度下都在卡片内。
+
+**证据**：
+
+![发放记录 1366px](screenshots/r1-p4-records-1366.jpg)
+
+![发放记录 400px](screenshots/r1-p4-records-400.jpg)
+
+![社区游戏表格 400px](screenshots/r1-p4-community-games-400.jpg)
+
+### 5.5 修复后的自动化测试
+
+| 项目 | 命令 | 结果 |
+| --- | --- | --- |
+| game-platform | `gofmt -l . && go vet ./... && go test ./... -count=1` | `gofmt -l` 无输出，`go vet` 无告警，`ok ... 8.230s`，**32 个 Test 全通过**（修复前 29 个） |
+| play-registry | `npm test` | `tests 29 / pass 29 / fail 0`（用例数不变） |
+| play-registry | `npm run build` | `registry.json: 8 games`，构建成功 |
+
+新增的 3 个用例覆盖本次修复：
+
+- `TestPublishKeepsOwnerAuthorName`：管理员代发不改署名；归属指定后管理员代发显示指定署名；作者本人更新可改署名；官方保留 ID 由管理员发布保持原行为。
+- `TestRemoveGameOwnerRestoresOriginalOwnership`：撤销后导入游戏回到「官方保留」、社区游戏回到「最早社区 release 作者」；重复撤销返回 `errGameOwnerGone`。
+- `TestCommunityGamesUseActiveRelease`：有 active 时版本/标题取 active；全部下架时取最后一条并标记 `revoked`。
+
+`TestAdminGameOwnerRoutes` 也补了撤销路由的权限与幂等断言（非管理员 403、删除成功、重复删除 404、列表清空）。
+
+
+### 5.6 最终复核补充（协调者）
+
+复核 5.4 截图时发现发放记录每行被撑到约 230px 高。原因有两个：
+
+- 最后一列 `td` 被设成 `display: flex`，单元格不再按表格布局排版。
+- 备注列用了 `overflow-wrap: anywhere`，在表格里会把这一列的最小宽度压到一个字。
+
+已改 `play-registry/assets/css/site.css`：
+
+- 操作列恢复为普通单元格，`white-space: nowrap`，按钮之间用 margin 留间距。
+- 备注列改为 `overflow-wrap: break-word`。
+- 表格滚动容器加 `color-scheme: dark`，横向滚动条跟随深色主题。
+
+复测：两条带长备注的记录，行高 102px（来自备注折成三行，不再逐字换行）；滚动容器的 `color-scheme` 为 `dark`。
+
+![修复后的发放记录行高](screenshots/r2-records-row-height.jpg)
+
+截图中滚动条仍是改 `color-scheme` 之前的白色；之后 neo 截图接口持续超时，改后的效果只用页面实测值确认，没有补拍。

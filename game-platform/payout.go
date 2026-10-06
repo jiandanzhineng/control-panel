@@ -235,3 +235,6 @@ func (a *App) setGameOwner(ctx context.Context, gameID, email, authorName, opera
 
 // errGameOwnerEmailMissing 表示指定归属时给的邮箱还没有在投稿平台登录过。
 var errGameOwnerEmailMissing = errors.New("该邮箱尚未登录过投稿平台")
+
+// errGameOwnerGone 表示要撤销的归属指定不存在。
+var errGameOwnerGone = errors.New("该游戏没有手工指定的归属")

@@ -368,6 +368,48 @@ func TestAdminCommunityGamesList(t *testing.T) {
 	}
 }
 
+// TestCommunityGamesUseActiveRelease 覆盖社区游戏列表的版本/标题取当前 active release；
+// 没有 active（全部下架）时取最后一条并标记已下架。
+func TestCommunityGamesUseActiveRelease(t *testing.T) {
+	app, handler, author, admin := payoutRoutesFixture(t)
+	ctx := context.Background()
+	publishTestGame(t, app, author, admin, "game-a", "1.0.0")
+	publishTestGame(t, app, author, admin, "game-a", "1.1.0")
+	if err := app.revokeRelease(ctx, "game-a"); err != nil {
+		t.Fatal(err)
+	}
+	// 下架之后又发了一版：版本/标题取这一版，状态是已上线。
+	if _, err := publishZip(t, app, author, admin, "game-a", "2.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	// 全部下架的游戏：取最后一条 release，状态显示已下架。
+	publishTestGame(t, app, author, admin, "game-b", "1.0.0")
+	if err := app.revokeRelease(ctx, "game-b"); err != nil {
+		t.Fatal(err)
+	}
+
+	response := payoutCall(handler, http.MethodGet, "/api/admin/community-games", "admin-token", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("community games = %d, body=%s", response.Code, response.Body.String())
+	}
+	var listed struct {
+		Games []communityGame `json:"games"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]communityGame{}
+	for _, game := range listed.Games {
+		got[game.GameID] = game
+	}
+	if got["game-a"].Version != "2.0.0" || got["game-a"].Status != "active" || got["game-a"].Title != "Test Game" {
+		t.Fatalf("active release was not used: %#v", got["game-a"])
+	}
+	if got["game-b"].Version != "1.0.0" || got["game-b"].Status != "revoked" {
+		t.Fatalf("revoked game should show its last release: %#v", got["game-b"])
+	}
+}
+
 func TestAdminGameOwnerRoutes(t *testing.T) {
 	_, handler, author, _ := payoutRoutesFixture(t)
 	response := payoutCall(handler, http.MethodPost, "/api/admin/game-owners", "admin-token", `{"gameId":"imported-game","email":"author@example.com","authorName":"DK"}`)
@@ -396,6 +438,19 @@ func TestAdminGameOwnerRoutes(t *testing.T) {
 	}
 	if response := payoutCall(handler, http.MethodGet, "/api/admin/game-owners", "author-token", ""); response.Code != http.StatusForbidden {
 		t.Fatalf("author list owners = %d", response.Code)
+	}
+	// 撤销归属：风格与发放记录的删除一致。
+	if response := payoutCall(handler, http.MethodPost, "/api/admin/game-owners/imported-game/delete", "author-token", `{}`); response.Code != http.StatusForbidden {
+		t.Fatalf("author revoke owner = %d", response.Code)
+	}
+	if response := payoutCall(handler, http.MethodPost, "/api/admin/game-owners/imported-game/delete", "admin-token", `{}`); response.Code != http.StatusOK {
+		t.Fatalf("revoke owner = %d, body=%s", response.Code, response.Body.String())
+	}
+	if response := payoutCall(handler, http.MethodPost, "/api/admin/game-owners/imported-game/delete", "admin-token", `{}`); response.Code != http.StatusNotFound {
+		t.Fatalf("second revoke owner = %d", response.Code)
+	}
+	if response := payoutCall(handler, http.MethodGet, "/api/admin/game-owners", "admin-token", ""); response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"owners":[]`) {
+		t.Fatalf("owners after revoke = %d, body=%s", response.Code, response.Body.String())
 	}
 }
 

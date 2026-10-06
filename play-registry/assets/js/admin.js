@@ -201,15 +201,30 @@
 
   function setMessage(text, type) { message.textContent = text || ''; message.className = 'platform-message ' + (type || ''); }
 
+  function button(text, handler, style) {
+    var element = document.createElement('button');
+    element.type = 'button'; element.className = 'btn ' + (style || 'btn-ghost'); element.textContent = text;
+    element.addEventListener('click', handler); return element;
+  }
+
   function formatTime(unix) {
     if (!unix) return '—';
     return new Date(unix * 1000).toLocaleString();
   }
 
-  function cell(row, text) {
+  function cell(row, text, className) {
     var td = document.createElement('td');
     td.textContent = text;
+    if (className) td.className = className;
     row.appendChild(td);
+  }
+
+  // 表格外面套一层横向滚动容器：窄屏（笔记本、手机）不再把卡片撑破。
+  function tableBox(built) {
+    var wrap = document.createElement('div');
+    wrap.className = 'table-scroll';
+    wrap.appendChild(built.element);
+    return wrap;
   }
 
   function table(headers) {
@@ -246,7 +261,7 @@
       cell(row, game.status === 'active' ? '已上线' : '已下架');
       built.body.appendChild(row);
     });
-    gamesBox.appendChild(built.element);
+    gamesBox.appendChild(tableBox(built));
     // 下拉只放还在线上的游戏，已下架的一般不需要再发钱。
     var previous = gameSelect.value;
     gameSelect.replaceChildren();
@@ -264,13 +279,35 @@
     if (previous) gameSelect.value = previous;
   }
 
+  // 撤销归属：点「撤销」先就地变成「确认撤销 / 取消」，不用 window.confirm。
+  function revokeOwner(owner, actions) {
+    actions.replaceChildren();
+    var hint = document.createElement('span');
+    hint.className = 'owner-confirm-hint';
+    hint.textContent = '撤销后按原判定？';
+    var confirmButton = button('确认撤销', function () {
+      request('/api/admin/game-owners/' + encodeURIComponent(owner.gameId) + '/delete', { method: 'POST', body: '{}' })
+        .then(function () {
+          setMessage('归属已撤销，该游戏回到原来的归属判定。', 'success');
+          return Promise.all([loadOwners(), loadGames()]);
+        })
+        .catch(function (err) { setMessage(err.message, 'error'); });
+    }, 'btn-primary');
+    var cancelButton = button('取消', function () { renderOwnerActions(owner, actions); });
+    actions.append(hint, confirmButton, cancelButton);
+  }
+
+  function renderOwnerActions(owner, actions) {
+    actions.replaceChildren(button('撤销', function () { revokeOwner(owner, actions); }));
+  }
+
   function renderOwners(owners) {
     ownerList.replaceChildren();
     if (!owners.length) {
       ownerList.textContent = '还没有手工指定的归属。';
       return;
     }
-    var built = table(['游戏 ID', '作者', '作者邮箱', '操作人', '指定时间']);
+    var built = table(['游戏 ID', '作者', '作者邮箱', '操作人', '指定时间', '操作']);
     owners.forEach(function (owner) {
       var row = document.createElement('tr');
       cell(row, owner.gameId);
@@ -278,9 +315,12 @@
       cell(row, owner.email || '—');
       cell(row, owner.setBy || '—');
       cell(row, formatTime(owner.setAt));
+      var actions = document.createElement('td');
+      renderOwnerActions(owner, actions);
+      row.appendChild(actions);
       built.body.appendChild(row);
     });
-    ownerList.appendChild(built.element);
+    ownerList.appendChild(tableBox(built));
   }
 
   function renderRecords(records) {
@@ -300,7 +340,7 @@
       cell(row, String(record.amountCny));
       cell(row, formatTime(record.paidAt));
       cell(row, record.paidBy || '—');
-      cell(row, record.note || '');
+      cell(row, record.note || '', 'payout-note-cell');
       var actions = document.createElement('td');
       var remove = document.createElement('button');
       remove.type = 'button';
@@ -316,7 +356,7 @@
       row.appendChild(actions);
       built.body.appendChild(row);
     });
-    list.appendChild(built.element);
+    list.appendChild(tableBox(built));
   }
 
   function loadGames() {

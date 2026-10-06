@@ -102,10 +102,6 @@ func (a *App) publishSubmission(ctx context.Context, submission Submission, revi
 		PackageSize:    int64(len(game.Package)),
 		Cacheable:      true,
 	}
-	entryJSON, err := json.Marshal(entry)
-	if err != nil {
-		return RegistryEntry{}, err
-	}
 	releaseID, err := randomID("rel_")
 	if err != nil {
 		return RegistryEntry{}, err
@@ -116,7 +112,17 @@ func (a *App) publishSubmission(ctx context.Context, submission Submission, revi
 	}
 	defer transaction.Rollback()
 	// 归属校验必须在同一事务里再跑一次：投稿进入待审后归属可能已变，并发发布也不能绕过。
-	if _, err := a.checkGameIDOwnership(ctx, transaction, submission.UserID, submission.AuthorIsAdmin, entry.ID, entry.Version); err != nil {
+	ownership, err := a.checkGameIDOwnership(ctx, transaction, submission.UserID, submission.AuthorIsAdmin, entry.ID, entry.Version)
+	if err != nil {
+		return RegistryEntry{}, err
+	}
+	// 前台署名跟归属走：非归属人（管理员代发、或归属被指定给别人）发布时，玩家站显示归属人的署名，
+	// 不用这次投稿的署名，否则署名会随「最后一次是谁发布的」变化。官方保留 ID 由管理员发布时保持原行为。
+	if submission.UserID != ownership.OwnerAuthorID && ownership.OwnerAuthorID != "" && ownership.OwnerAuthorName != "" {
+		entry.AuthorName = ownership.OwnerAuthorName
+	}
+	entryJSON, err := json.Marshal(entry)
+	if err != nil {
 		return RegistryEntry{}, err
 	}
 	if _, err := transaction.ExecContext(ctx, `UPDATE releases SET status = 'superseded' WHERE game_id = ? AND status = 'active'`, entry.ID); err != nil {

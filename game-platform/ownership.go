@@ -136,6 +136,26 @@ func (a *App) listAssignedOwners(ctx context.Context) ([]assignedOwner, error) {
 	return out, rows.Err()
 }
 
+// removeGameOwner 撤销某个 game_id 的手工指定归属：删掉 game_owners 那一行，
+// 归属回落到「最早的社区 release 作者 > 官方保留」的原判定。没有指定时返回 errGameOwnerGone。
+func (a *App) removeGameOwner(ctx context.Context, gameID string) error {
+	if strings.TrimSpace(gameID) == "" {
+		return errors.New("game id is required")
+	}
+	result, err := a.db.ExecContext(ctx, `DELETE FROM game_owners WHERE game_id = ?`, gameID)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed == 0 {
+		return errGameOwnerGone
+	}
+	return nil
+}
+
 // gameOwner 返回某个 game_id 的归属作者（含邮箱）；没有归属作者时 AuthorID 为空。
 // 与发布校验共用同一份判定，避免两处规则漂移。
 func (a *App) gameOwner(ctx context.Context, q queryer, gameID string) (assignedOwner, error) {
