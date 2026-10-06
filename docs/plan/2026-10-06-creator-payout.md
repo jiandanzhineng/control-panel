@@ -21,7 +21,9 @@
 - PC 埋点（develop `frontend/src/playAnalytics.ts`）：`game_start` / `game_stop` 已带 `game_id`、`version`、`source`、`device_macs`、`device_count`、`duration_ms`、`end_reason`。
 - Shop 后台可按账号增减奖励金并记备注（Shop ADR-0011）。
 
-## 默认取值（上线前可调）
+## 参数（全部可配置，正式发钱时再定）
+
+奖金池金额、有效游玩门槛等数值留到首次正式发钱时再定（用户 2026-10-06 决定）。代码里全部做成配置项，下表仅为占位默认值。
 
 | 项 | 默认 |
 | --- | --- |
