@@ -99,7 +99,7 @@
 - 会话：`client.hello {platform, protocolVersion, features[]}`（双方据 `features` 降级，手机端可只实现子集）、`client.snapshot.request`。
 - 设备：`devices.list`、`devices.rename`、`devices.controlConnection.set`、`devices.invoke`、`devices.operate`、`devices.stop`、`devices.monitor.subscribe/unsubscribe`。
 - 游戏：`games.list`、`game.meta`、`game.config.get/set`、`game.start/stop/...`（HostRuntime 已有）。
-- 推送（被控端→主控端）：`client.snapshot`、`devices.snapshot`（变更即推，去重）、`devices.monitor`（节流 ≥100ms）、`session.log`、`session.revoked`。
+- 推送（被控端→主控端）：`client.snapshot`、`devices.snapshot`（变更即推，去重）、`devices.patch`、`game.patch`（有变化才推增量）、`devices.monitor`（节流 ≥100ms）、`session.log`、`session.revoked`。
 
 PC 专属的 REST 形状只存在于主控端本机的转译层，被控端只认语义命令。将来手机做被控端只需实现同一命令集；手机做主控端直接发命令即可。
 
@@ -122,9 +122,9 @@ PC 专属的 REST 形状只存在于主控端本机的转译层，被控端只�
 
 | 数据 | 方式 | 频率 |
 |---|---|---|
-| 设备列表与状态 | 被控端监听 `onDeviceListChange` / `onDeviceDataChange`，推 `devices.snapshot`（整表，内容去重） | 变化时，最快 250ms 一次 |
+| 设备列表与状态 | 被控端监听 `onDeviceListChange` / `onDeviceDataChange`，有变化推增量 `devices.patch`，进房/重连补全量 `devices.snapshot` | 事件驱动，50ms 窗口合并 |
 | 监视曲线 | 订阅制 `devices.monitor`，仅在主控端打开监视时推 | 节流 100ms |
-| 游戏状态 | HostRuntime 已有 `game.snapshot` | 500ms |
+| 游戏状态 | 有变化才推增量 `game.patch`，进房/重连/丢包时补一份全量 `game.snapshot` | 事件驱动，同一 50ms 窗口内合并；无变化零流量 |
 | 延迟 | `client.ping/pong` | 5s |
 
 
@@ -145,7 +145,13 @@ PC 专属的 REST 形状只存在于主控端本机的转译层，被控端只�
 - 本机游玩与远程游玩走同一套代码：本机时逻辑在本机后端跑、画面在本机；远程时逻辑在被控端后端跑，两端画面订阅同一份快照。
 - 逻辑文件随游戏包从游戏库安装，不再写死在客户端里（现在三阶段寸止两个版本的逻辑写死在 `backend/game-runtime/cores/`，需迁出）。代码**不会**从主控端发往被控端，两端各用自己安装的同一游戏包；连接时比对 `gameVersion`，不一致提示旧的一端从游戏库更新。
 - **安全靠上架审核，不做运行隔离**（用户 2026-10-06 决定）：只有官方游戏库中审核通过的游戏能以分离式运行，逻辑文件以普通 JS 在被控端后端加载；第三方代理游戏一律按页面式运行。设备输出仍经现有安全上限与锁存看门狗——这是输出层保护，不是代码隔离。
-- 快照同步从现在的 500ms 提到 10–20 次/秒，只发变化部分；主控端按钮先显示「已发送」，收到被控端确认后更新。
+- **画面同步：有变化才发，只发变化部分**（取代现在的 500ms 定时全量推送）：
+  - 被控端每次 `step` 后把新快照与上一份比对，有差异才发 `game.patch {rev, baseRev, ops}`，`ops` 只含变化的字段路径与新值；没有变化不发任何消息。
+  - 合并：同一 50ms 窗口内的多次变化合并成一条，避免压力这类高频数据刷爆通道（上限约 20 条/秒）。
+  - 补全量：主控端进房、重连，或发现 `baseRev` 对不上（丢包、乱序）时，请求一次全量 `game.snapshot`，之后继续收增量。
+  - 曲线类数据（如压力采样）不逐点推送，而是随增量批量附带最近的采样点，主控端自行绘制。
+  - 主控端按钮先显示「已发送」，收到被控端确认后更新。
+  - 同一机制用于设备状态 `devices.snapshot`（§4.4），两处共用一套比对与补全量代码。
 - 按需逐个改造：先排出「一触发就要立即输出」的游戏清单，只改这些；未改造的照常以页面式运行，游戏卡片标「远程时有延迟」。
 
 生命周期：
@@ -178,7 +184,7 @@ PC 专属的 REST 形状只存在于主控端本机的转译层，被控端只�
 | 2 被控端可见与可控 | 被控端远程条、操作记录（`session.log`）、急停、踢出；主控端触发输出表 | 单测覆盖急停只停主控端的输出；UI 截图 |
 | 3 设备远控 | 设备命令集、被控端执行、`devices.snapshot` 推送、监视订阅；主控端转译表、preload 切换、SSE 重放、路由守卫、侧栏置灰、主控端远程条 | 转译表覆盖测试（扫描开放页面用到的 `/api` 调用，未入表即失败）；双实例下设备页增改查控全通 |
 | 4 游戏远控 | 游戏库/配置/启动走命令；页面式游戏在远程模式下自动使用映射设备；被控端远程占用仲裁；HostRuntime 接入远程模式 | 页面式游戏在主控端运行、被控端的虚拟设备收到受限输出；占用冲突、掉线停止各一条用例 |
-| 5 分离式游戏标准 | 逻辑文件随游戏包安装（迁出现有两个 core）；快照提速与增量；排出快速响应游戏清单并改造首个 | 本机与远程同一套代码；首个改造游戏在两端画面一致、触发到输出不经网络 |
+| 5 分离式游戏标准 | 逻辑文件随游戏包安装（迁出现有两个 core）；画面同步改为事件驱动增量（含补全量）；排出快速响应游戏清单并改造首个 | 本机与远程同一套代码；首个改造游戏在两端画面一致、触发到输出不经网络 |
 | 6 端到端验收 | 生产 room API + EMQX，两个隔离实例 + 虚拟设备，含掉线、踢出、冲突、长跑 | 测试报告内嵌步骤截图，写入 `docs/test/`；`npm run check` 全绿 |
 
 只用虚拟设备测试；手机端不改动。
