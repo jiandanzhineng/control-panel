@@ -9,7 +9,7 @@ import {
 } from '../src/remote/remoteSessionState.ts'
 import { isMenuItemLocked, isRouteLocked } from '../src/remote/remoteLock.ts'
 import { endReasonKey, isLivePhase, shouldAutoReturn, shouldFireEnded } from '../src/remote/remoteEnded.ts'
-import { detailText, formatClock, peerLabel } from '../src/remote/remoteSessionFormat.ts'
+import { detailText, formatClock, normalizeJoinCode, peerLabel } from '../src/remote/remoteSessionFormat.ts'
 import { EMPTY_REMOTE_SESSION_STATUS, type RemoteSessionStatus } from '../src/remote/remoteSessionTypes.ts'
 
 function status(patch: Partial<RemoteSessionStatus> = {}): RemoteSessionStatus {
@@ -153,6 +153,14 @@ test('peer label falls back to the last six id characters', () => {
   assert.equal(peerLabel({ userId: 'abcdef123456', nickname: null }), '123456')
   assert.equal(peerLabel({ userId: 'abc', nickname: '  ' }), 'abc')
   assert.equal(peerLabel(null), '')
+})
+
+test('join codes keep their case: only whitespace and dashes are stripped', () => {
+  assert.equal(normalizeJoinCode('QeiNOINXU18'), 'QeiNOINXU18')
+  assert.equal(normalizeJoinCode(' QeiN OINX U18 '), 'QeiNOINXU18')
+  assert.equal(normalizeJoinCode('4MGYgg7d_k0'), '4MGYgg7d_k0')
+  assert.equal(normalizeJoinCode('AB-CD-EF'), 'ABCDEF')
+  assert.equal(normalizeJoinCode(null), '')
 })
 
 test('clock and detail formatting', () => {

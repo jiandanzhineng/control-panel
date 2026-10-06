@@ -147,7 +147,7 @@ import { CopyDocument } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { useRemoteSession } from '../composables/useRemoteSession'
 import { useAuth } from '../composables/useAuth'
-import { peerLabel, formatClock, detailText as detailTextOf } from '../remote/remoteSessionFormat'
+import { peerLabel, formatClock, detailText as detailTextOf, normalizeJoinCode } from '../remote/remoteSessionFormat'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -171,7 +171,7 @@ const hostSideActive = computed(() => ui.value.isHostControlled || (ui.value.isO
 const operatorSideActive = computed(() => ui.value.isOperator)
 
 function normalizeCode(value: string) {
-  joinCodeInput.value = String(value || '').toUpperCase().replace(/\s+/g, '')
+  joinCodeInput.value = normalizeJoinCode(value)
 }
 
 function fail(e: any) {
@@ -183,7 +183,7 @@ async function onCreate() {
 }
 
 async function onJoin() {
-  const code = joinCodeInput.value.trim().toUpperCase()
+  const code = normalizeJoinCode(joinCodeInput.value)
   if (!code) return
   try { await session.join(code) } catch (e: any) { fail(e) }
 }

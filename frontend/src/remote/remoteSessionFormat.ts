@@ -26,3 +26,14 @@ export function detailText(entry: RemoteSessionLogEntry | null | undefined): str
   const message = String(detail.message || detail.code || '')
   return message
 }
+
+/**
+ * 房间码归一化：只去掉空白与连字符，**不改大小写**。
+ * 房间码由房间服务生成、区分大小写（例如 `QeiNOINXU18`），
+ * 之前的 `toUpperCase()` 会把正确粘贴的码改成永远匹配不上的大写串，
+ * 表现为「加入」静默失败（服务端 404 房间不存在）。
+ */
+export function normalizeJoinCode(value: unknown): string {
+  return String(value ?? '').replace(/[\s-]+/g, '')
+}
+
