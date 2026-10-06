@@ -413,6 +413,7 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 .id-status-own { color: var(--success); border-color: rgba(56, 214, 138, 0.4); }
 .id-status-official { color: var(--text-soft); }
 .id-status-conflict { color: var(--danger); border-color: rgba(255, 92, 122, 0.4); background: rgba(255, 92, 122, 0.08); }
+.id-status-admin { color: var(--accent); border-color: rgba(0, 224, 208, 0.35); }
 .submission-note { grid-column: 1 / -1; color: var(--text-soft); }
 .submission-status { grid-row: span 2; align-self: center; padding: 3px 8px; border: 1px solid var(--border); border-radius: 5px; font-size: 12px; white-space: nowrap; }
 .status-pending { color: var(--warn); border-color: rgba(255,181,71,.4); }
@@ -735,12 +736,11 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 .admin-tab { appearance: none; border: 0; border-radius: 6px; background: transparent; color: var(--text-soft); padding: 8px 16px; font: inherit; font-size: 14px; cursor: pointer; }
 .admin-tab:hover { color: var(--text); }
 .admin-tab.active { background: var(--bg-card); color: var(--text); border: 1px solid var(--border-glow); }
-.payout-thresholds { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; }
 .payout-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .payout-table th, .payout-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
 .payout-table th { color: var(--text-dim); font-weight: 500; }
 .payout-table td { color: var(--text-soft); }
-.payout-table input { width: 100%; min-width: 120px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); font: inherit; }
+.payout-table input, .payout-table select { width: 100%; min-width: 120px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); color: var(--text); font: inherit; }
 .payout-table td:last-child { display: flex; gap: 6px; }
 .payout-table td:last-child .btn { padding: 5px 10px; font-size: 12px; }
 @media (max-width: 820px) { .payout-table { display: block; overflow-x: auto; } }

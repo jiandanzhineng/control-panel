@@ -14,7 +14,6 @@ type App struct {
 	db        *sql.DB
 	store     ObjectStore
 	identity  *identityClient
-	openpanel *openPanelClient
 	publishMu sync.Mutex
 }
 
@@ -33,8 +32,7 @@ func newApp(config Config) (*App, error) {
 		db.Close()
 		return nil, err
 	}
-	openpanel := newOpenPanelClient(config.Payout.OpenPanel, config.IdentityTimeout)
-	return &App{config: config, db: db, store: store, identity: identity, openpanel: openpanel}, nil
+	return &App{config: config, db: db, store: store, identity: identity}, nil
 }
 
 func (a *App) close() error { return a.db.Close() }

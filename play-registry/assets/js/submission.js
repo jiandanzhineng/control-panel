@@ -131,15 +131,13 @@
     });
   }
 
-  var payoutStatusNames = { draft: '待发放', paid: '已发放', skipped: '已跳过' };
-
   function renderPayouts(items) {
     var list = document.getElementById('payout-list');
     list.replaceChildren();
     if (!items.length) {
       var empty = document.createElement('p');
       empty.className = 'platform-empty';
-      empty.textContent = '还没有分成记录。管理员生成月度报表后，这里会显示你游戏的有效游玩与金额。';
+      empty.textContent = '还没有分成记录。平台每月人工统计游玩表现并发放奖励金，发放后这里会显示你游戏各月的金额。';
       list.appendChild(empty);
       return;
     }
@@ -150,12 +148,12 @@
       title.textContent = item.gameId + ' · ' + item.month;
       var detail = document.createElement('span');
       detail.className = 'submission-detail';
-      detail.textContent = '有效游玩 ' + item.validPlays + ' 次 · 独立设备 ' + item.uniqueDevices + ' 台 · 时长 '
-        + Number(item.totalMinutes || 0).toFixed(1) + ' 分钟 · ' + item.amountCny + ' 元';
-      var status = document.createElement('span');
-      status.className = 'submission-status status-' + (item.status === 'paid' ? 'published' : 'pending');
-      status.textContent = payoutStatusNames[item.status] || item.status;
-      row.append(title, detail, status);
+      var parts = [];
+      if (item.validPlays != null) parts.push('有效游玩 ' + item.validPlays + ' 次');
+      parts.push('发放金额 ' + item.amountCny + ' 元');
+      if (item.paidAt) parts.push('发放时间 ' + new Date(item.paidAt * 1000).toLocaleDateString());
+      detail.textContent = parts.join(' · ');
+      row.append(title, detail);
       if (item.note) {
         var note = document.createElement('p');
         note.className = 'submission-note';
@@ -167,7 +165,7 @@
   }
 
   function loadPayouts() {
-    return api('/api/payouts/mine').then(function (data) { renderPayouts(data.reports || []); });
+    return api('/api/payouts/mine').then(function (data) { renderPayouts(data.records || []); });
   }
 
   function loadDashboard() {

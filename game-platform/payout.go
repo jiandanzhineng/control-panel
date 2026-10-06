@@ -4,273 +4,71 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"sort"
 	"strings"
 	"time"
 )
 
-// PayoutReport 是 payout_reports 的一行，即某月某游戏的快照。
-type PayoutReport struct {
-	Month         string  `json:"month"`
-	GameID        string  `json:"gameId"`
-	AuthorID      string  `json:"authorId"`
-	AuthorName    string  `json:"authorName"`
-	AuthorEmail   string  `json:"authorEmail"`
-	ValidPlays    int     `json:"validPlays"`
-	UniqueDevices int     `json:"uniqueDevices"`
-	TotalMinutes  float64 `json:"totalMinutes"`
-	AmountCNY     int64   `json:"amountCny"`
-	Status        string  `json:"status"`
-	PaidAt        int64   `json:"paidAt"`
-	PaidBy        string  `json:"paidBy"`
-	Note          string  `json:"note"`
-	GeneratedAt   int64   `json:"generatedAt"`
+// PayoutRecord 是 payout_reports 的一行，即「管理员手工录入的一条发放记录」。
+// 数据来源是管理员在 OpenPanel 看板手工统计 + 商城后台手工发奖励金的结果，
+// 投稿平台不拉 OpenPanel，也不参与算钱。
+type PayoutRecord struct {
+	ID          int64  `json:"id"`
+	Month       string `json:"month"`
+	GameID      string `json:"gameId"`
+	AuthorID    string `json:"authorId"`
+	AuthorName  string `json:"authorName"`
+	AuthorEmail string `json:"authorEmail"`
+	// ValidPlays 是管理员手填的参考数据，可以不填。
+	ValidPlays *int   `json:"validPlays"`
+	AmountCNY  int64  `json:"amountCny"`
+	Note       string `json:"note"`
+	PaidAt     int64  `json:"paidAt"`
+	PaidBy     string `json:"paidBy"`
+	CreatedAt  int64  `json:"createdAt"`
 }
 
-// PayoutThresholds 是生成报表时可逐项覆盖的入围参数。
-type PayoutThresholds struct {
-	MinDurationMS  int64 `json:"minDurationMs"`
-	MinDeviceCount int   `json:"minDeviceCount"`
-	MinValidPlays  int   `json:"minValidPlays"`
+var (
+	errInvalidPayoutMonth = errors.New("month must use the YYYY-MM format")
+	errPayoutGameMissing  = errors.New("game_id has no community author")
+	errPayoutDuplicate    = errors.New("this game already has a payout record for the month")
+	errPayoutAmount       = errors.New("amount must be greater than zero")
+	errPayoutNoteTooLong  = errors.New("note is too long")
+	errPayoutRecordGone   = errors.New("payout record not found")
+)
+
+// payoutMonthPattern 校验 YYYY-MM；只做格式与月份范围检查，不涉及时区。
+func validPayoutMonth(month string) bool {
+	if len(month) != 7 || month[4] != '-' {
+		return false
+	}
+	_, err := time.Parse("2006-01", month)
+	return err == nil
 }
 
-// payoutAggregate 是过滤去重后的单游戏统计。
-type payoutAggregate struct {
-	ValidPlays    int
-	UniqueDevices int
-	TotalMS       int64
-	devices       map[string]bool
-}
-
-// addDevices 累计独立设备数。
-func (a *payoutAggregate) addDevices(macs []string) {
-	if a.devices == nil {
-		a.devices = map[string]bool{}
-	}
-	for _, mac := range macs {
-		a.devices[mac] = true
-	}
-	a.UniqueDevices = len(a.devices)
-}
-
-var errInvalidPayoutMonth = errors.New("month must use the YYYY-MM format")
-
-// payoutMonthRange 返回该自然月按配置时区计算的 [start, end)。
-func payoutMonthRange(month string, location *time.Location) (time.Time, time.Time, error) {
-	parsed, err := time.ParseInLocation("2006-01", month, location)
-	if err != nil || len(month) != 7 {
-		return time.Time{}, time.Time{}, errInvalidPayoutMonth
-	}
-	return parsed, parsed.AddDate(0, 1, 0), nil
-}
-
-// aggregatePayoutEvents 过滤并去重游玩事件。
-// 去重键是「设备 MAC + game_id + 自然日」：同一天里只要该设备已经算过，
-// 后续任何包含这台设备的游玩都不再计入。
-func aggregatePayoutEvents(events []payoutEvent, location *time.Location, thresholds PayoutThresholds, excludedMACs, excludedProfiles map[string]bool) map[string]*payoutAggregate {
-	ordered := make([]payoutEvent, len(events))
-	copy(ordered, events)
-	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].OccurredAt.Before(ordered[j].OccurredAt) })
-
-	seen := map[string]bool{}
-	out := map[string]*payoutAggregate{}
-	for _, event := range ordered {
-		if event.GameID == "" || event.DurationMS < thresholds.MinDurationMS {
-			continue
-		}
-		if event.OccurredAt.IsZero() {
-			continue
-		}
-		if excludedProfiles[strings.ToLower(event.ProfileID)] {
-			continue
-		}
-		macs := []string{}
-		for _, mac := range event.DeviceMACs {
-			if mac != "" && !excludedMACs[mac] {
-				macs = append(macs, mac)
-			}
-		}
-		if len(macs) < thresholds.MinDeviceCount || len(macs) == 0 {
-			continue
-		}
-		dayKey := event.GameID + "|" + event.OccurredAt.In(location).Format("2006-01-02")
-		duplicate := false
-		for _, mac := range macs {
-			if seen[dayKey+"|"+mac] {
-				duplicate = true
-				break
-			}
-		}
-		if duplicate {
-			continue
-		}
-		for _, mac := range macs {
-			seen[dayKey+"|"+mac] = true
-		}
-		entry := out[event.GameID]
-		if entry == nil {
-			entry = &payoutAggregate{}
-			out[event.GameID] = entry
-		}
-		entry.ValidPlays++
-		entry.TotalMS += event.DurationMS
-		entry.addDevices(macs)
-	}
-	return out
-}
-
-// splitPool 按「奖金池 × 本游戏有效游玩 / 入围游戏有效游玩总和」分配，按元向下取整。
-// 有效游玩不足 minValidPlays 的游戏不参与分配，金额为 0，也不计入分母。
-func splitPool(pool int64, aggregates map[string]*payoutAggregate, minValidPlays int) map[string]int64 {
-	out := map[string]int64{}
-	total := 0
-	for _, entry := range aggregates {
-		if entry.ValidPlays >= minValidPlays {
-			total += entry.ValidPlays
-		}
-	}
-	for gameID, entry := range aggregates {
-		if pool <= 0 || total <= 0 || entry.ValidPlays < minValidPlays {
-			out[gameID] = 0
-			continue
-		}
-		out[gameID] = pool * int64(entry.ValidPlays) / int64(total)
-	}
-	return out
-}
-
-// generatePayoutReports 拉取 OpenPanel 数据、过滤去重、关联作者、按公式分配并写快照。
-// draft 行会被重新生成覆盖，paid / skipped 行保持原样。
-func (a *App) generatePayoutReports(ctx context.Context, month string, pool int64, thresholds PayoutThresholds) ([]PayoutReport, error) {
-	location, err := time.LoadLocation(a.config.Payout.Timezone)
-	if err != nil {
-		return nil, err
-	}
-	start, end, err := payoutMonthRange(month, location)
-	if err != nil {
-		return nil, err
-	}
-	events, err := a.openpanel.events(ctx, start, end)
-	if err != nil {
-		return nil, err
-	}
-	aggregates := aggregatePayoutEvents(events, location, thresholds,
-		toSet(a.config.Payout.ExcludedMACs), toSet(a.config.Payout.ExcludedProfiles))
-	authors, err := a.authorOfGame(ctx)
-	if err != nil {
-		return nil, err
-	}
-	// 只有存在社区 release 的 game_id 才参与分成，官方游戏不能稀释奖金池。
-	eligible := map[string]*payoutAggregate{}
-	for gameID, entry := range aggregates {
-		if _, ok := authors[gameID]; ok {
-			eligible[gameID] = entry
-		}
-	}
-	amounts := splitPool(pool, eligible, thresholds.MinValidPlays)
-
-	transaction, err := a.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer transaction.Rollback()
-	if _, err := transaction.ExecContext(ctx, `DELETE FROM payout_reports WHERE month = ? AND status = 'draft'`, month); err != nil {
-		return nil, err
-	}
-	generatedAt := nowUnix()
-	gameIDs := make([]string, 0, len(aggregates))
-	for gameID := range aggregates {
-		gameIDs = append(gameIDs, gameID)
-	}
-	sort.Strings(gameIDs)
-	for _, gameID := range gameIDs {
-		author, ok := authors[gameID]
-		if !ok {
-			continue
-		}
-		entry := aggregates[gameID]
-		if _, err := transaction.ExecContext(ctx, `INSERT INTO payout_reports
-			(month, game_id, author_id, author_name, valid_plays, unique_devices, total_minutes, amount_cny, status, paid_at, paid_by, note, generated_at)
-			VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'draft', 0, '', '', ?)
-			ON CONFLICT(month, game_id) DO NOTHING`,
-			month, gameID, author.AuthorID, author.AuthorName, entry.ValidPlays, entry.UniqueDevices,
-			float64(entry.TotalMS)/60000.0, amounts[gameID], generatedAt); err != nil {
-			return nil, err
-		}
-	}
-	if err := transaction.Commit(); err != nil {
-		return nil, err
-	}
-	reports, err := a.listPayoutReports(ctx, month, "")
-	if err != nil {
-		return nil, err
-	}
-	return a.attachAuthorEmails(ctx, reports)
-}
-
-func toSet(values []string) map[string]bool {
-	out := map[string]bool{}
-	for _, value := range values {
-		value = strings.ToLower(strings.TrimSpace(value))
-		if value != "" {
-			out[value] = true
-		}
-	}
-	return out
-}
-
-// authorOfGame 把 game_id 关联到作者：releases → submissions → identities。
-// 与 game_id 归属规则一致：按发布顺序第一条 release 决定归属；第一条是官方 release
-// （submission_id 为空）的 id 不参与分成。含已下架 release，月中下架的游戏当月仍可结算。
-func (a *App) authorOfGame(ctx context.Context) (map[string]PayoutReport, error) {
-	rows, err := a.db.QueryContext(ctx, `SELECT r.game_id, COALESCE(r.submission_id, ''), COALESCE(s.author_id, ''), COALESCE(s.author_name, ''), COALESCE(i.email, '')
-		FROM releases r
-		LEFT JOIN submissions s ON s.id = r.submission_id
-		LEFT JOIN identities i ON i.id = s.author_id
-		ORDER BY r.created_at ASC, r.rowid ASC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]PayoutReport{}
-	decided := map[string]bool{}
-	for rows.Next() {
-		var gameID, submissionID string
-		var author PayoutReport
-		if err := rows.Scan(&gameID, &submissionID, &author.AuthorID, &author.AuthorName, &author.AuthorEmail); err != nil {
-			return nil, err
-		}
-		if decided[gameID] {
-			continue
-		}
-		decided[gameID] = true
-		if submissionID == "" {
-			continue
-		}
-		author.GameID = gameID
-		out[gameID] = author
-	}
-	return out, rows.Err()
-}
-
-var errPayoutRowLocked = errors.New("paid or skipped rows are not regenerated")
-
-func scanPayoutReport(scanner interface{ Scan(...any) error }) (PayoutReport, error) {
-	var report PayoutReport
-	err := scanner.Scan(
-		&report.Month, &report.GameID, &report.AuthorID, &report.AuthorName,
-		&report.ValidPlays, &report.UniqueDevices, &report.TotalMinutes, &report.AmountCNY,
-		&report.Status, &report.PaidAt, &report.PaidBy, &report.Note, &report.GeneratedAt,
-	)
-	return report, err
-}
-
-const payoutSelect = `SELECT p.month, p.game_id, p.author_id, p.author_name, p.valid_plays, p.unique_devices,
-	p.total_minutes, p.amount_cny, p.status, p.paid_at, p.paid_by, p.note, p.generated_at
+const payoutSelect = `SELECT p.id, p.month, p.game_id, p.author_id, p.author_name, p.valid_plays,
+	p.amount_cny, p.note, p.paid_at, p.paid_by, p.created_at
 	FROM payout_reports p`
 
-// listPayoutReports 按月份列出报表；authorID 非空时只返回该作者的游戏。
-func (a *App) listPayoutReports(ctx context.Context, month, authorID string) ([]PayoutReport, error) {
+func scanPayoutRecord(scanner interface{ Scan(...any) error }) (PayoutRecord, error) {
+	var record PayoutRecord
+	var validPlays sql.NullInt64
+	err := scanner.Scan(
+		&record.ID, &record.Month, &record.GameID, &record.AuthorID, &record.AuthorName,
+		&validPlays, &record.AmountCNY, &record.Note, &record.PaidAt, &record.PaidBy, &record.CreatedAt,
+	)
+	if err != nil {
+		return PayoutRecord{}, err
+	}
+	if validPlays.Valid {
+		value := int(validPlays.Int64)
+		record.ValidPlays = &value
+	}
+	return record, nil
+}
+
+// listPayoutRecords 列出发放记录；month 为空时返回全部，按月份倒序。
+// authorID 非空时只返回该作者的记录（作者端「我的分成」）。
+func (a *App) listPayoutRecords(ctx context.Context, month, authorID string) ([]PayoutRecord, error) {
 	query := payoutSelect
 	args := []any{}
 	conditions := []string{}
@@ -285,27 +83,31 @@ func (a *App) listPayoutReports(ctx context.Context, month, authorID string) ([]
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
 	}
-	query += " ORDER BY p.month DESC, p.amount_cny DESC, p.game_id ASC"
+	query += " ORDER BY p.month DESC, p.game_id ASC"
 	rows, err := a.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []PayoutReport{}
+	out := []PayoutRecord{}
 	for rows.Next() {
-		report, err := scanPayoutReport(rows)
+		record, err := scanPayoutRecord(rows)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, report)
+		out = append(out, record)
 	}
 	return out, rows.Err()
 }
 
-// attachAuthorEmails 补上作者邮箱，供管理员去商城定位账号。
-func (a *App) attachAuthorEmails(ctx context.Context, reports []PayoutReport) ([]PayoutReport, error) {
-	if len(reports) == 0 {
-		return reports, nil
+func (a *App) payoutRecordByID(ctx context.Context, id int64) (PayoutRecord, error) {
+	return scanPayoutRecord(a.db.QueryRowContext(ctx, payoutSelect+` WHERE p.id = ?`, id))
+}
+
+// attachAuthorEmails 补上作者邮箱与账号中心 ID，供管理员去商城后台定位账号。
+func (a *App) attachAuthorEmails(ctx context.Context, records []PayoutRecord) ([]PayoutRecord, error) {
+	if len(records) == 0 {
+		return records, nil
 	}
 	rows, err := a.db.QueryContext(ctx, `SELECT id, email FROM identities`)
 	if err != nil {
@@ -323,54 +125,113 @@ func (a *App) attachAuthorEmails(ctx context.Context, reports []PayoutReport) ([
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	for index := range reports {
-		reports[index].AuthorEmail = emails[reports[index].AuthorID]
+	for index := range records {
+		records[index].AuthorEmail = emails[records[index].AuthorID]
 	}
-	return reports, nil
+	return records, nil
 }
 
-func (a *App) payoutReportRow(ctx context.Context, month, gameID string) (PayoutReport, error) {
-	return scanPayoutReport(a.db.QueryRowContext(ctx, payoutSelect+` WHERE p.month = ? AND p.game_id = ?`, month, gameID))
-}
-
-func (a *App) deletePayoutDraft(ctx context.Context, month, gameID string) error {
-	_, err := a.db.ExecContext(ctx, `DELETE FROM payout_reports WHERE month = ? AND game_id = ? AND status = 'draft'`, month, gameID)
-	return err
-}
-
-var errPayoutRowMissing = errors.New("payout row not found")
-
-// markPayoutReport 把一行标成 paid / skipped，并记录操作人与时间。
-func (a *App) markPayoutReport(ctx context.Context, month, gameID, status, note, operator string) (PayoutReport, error) {
-	if status != "paid" && status != "skipped" {
-		return PayoutReport{}, errors.New("status must be paid or skipped")
+// createPayoutRecord 录入一条发放记录。作者按 game_id 归属自动带出；没有归属作者
+// 的 game_id（官方游戏或尚未指定归属）会被拒绝。
+func (a *App) createPayoutRecord(ctx context.Context, month, gameID string, amountCNY int64, validPlays *int, note, operator string) (PayoutRecord, error) {
+	if !validPayoutMonth(month) {
+		return PayoutRecord{}, errInvalidPayoutMonth
+	}
+	if amountCNY <= 0 {
+		return PayoutRecord{}, errPayoutAmount
 	}
 	note = strings.TrimSpace(note)
 	if len(note) > 500 {
-		return PayoutReport{}, errors.New("note is too long")
+		return PayoutRecord{}, errPayoutNoteTooLong
 	}
-	paidAt := int64(0)
-	if status == "paid" {
-		paidAt = nowUnix()
-	}
-	result, err := a.db.ExecContext(ctx, `UPDATE payout_reports SET status = ?, note = ?, paid_at = ?, paid_by = ?
-		WHERE month = ? AND game_id = ?`, status, note, paidAt, operator, month, gameID)
+	owner, err := a.gameOwner(ctx, a.db, gameID)
 	if err != nil {
-		return PayoutReport{}, err
+		return PayoutRecord{}, err
+	}
+	if owner.AuthorID == "" {
+		return PayoutRecord{}, errPayoutGameMissing
+	}
+	var plays any
+	if validPlays != nil {
+		if *validPlays < 0 {
+			return PayoutRecord{}, errors.New("valid plays cannot be negative")
+		}
+		plays = *validPlays
+	}
+	now := nowUnix()
+	result, err := a.db.ExecContext(ctx, `INSERT INTO payout_reports
+		(month, game_id, author_id, author_name, valid_plays, amount_cny, note, paid_at, paid_by, created_at)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		month, gameID, owner.AuthorID, owner.AuthorName, plays, amountCNY, note, now, operator, now)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			return PayoutRecord{}, errPayoutDuplicate
+		}
+		return PayoutRecord{}, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return PayoutRecord{}, err
+	}
+	record, err := a.payoutRecordByID(ctx, id)
+	if err != nil {
+		return PayoutRecord{}, err
+	}
+	withEmail, err := a.attachAuthorEmails(ctx, []PayoutRecord{record})
+	if err != nil {
+		return PayoutRecord{}, err
+	}
+	return withEmail[0], nil
+}
+
+// deletePayoutRecord 删除录错的发放记录。
+func (a *App) deletePayoutRecord(ctx context.Context, id int64) error {
+	result, err := a.db.ExecContext(ctx, `DELETE FROM payout_reports WHERE id = ?`, id)
+	if err != nil {
+		return err
 	}
 	changed, err := result.RowsAffected()
 	if err != nil {
-		return PayoutReport{}, err
+		return err
 	}
 	if changed == 0 {
-		return PayoutReport{}, errPayoutRowMissing
+		return errPayoutRecordGone
 	}
-	report, err := a.payoutReportRow(ctx, month, gameID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return PayoutReport{}, errPayoutRowMissing
-		}
-		return PayoutReport{}, err
-	}
-	return report, nil
+	return nil
 }
+
+// setGameOwner 指定 game_id 的归属作者。作者邮箱必须已经存在于 identities
+// （即该账号至少登录过一次投稿平台），否则无法定位到账号中心的用户 ID。
+func (a *App) setGameOwner(ctx context.Context, gameID, email, authorName, operator string) (assignedOwner, error) {
+	if gameID == "" {
+		return assignedOwner{}, errors.New("game id is required")
+	}
+	authorName = strings.TrimSpace(authorName)
+	if authorName == "" || len(authorName) > 40 {
+		return assignedOwner{}, errors.New("author name must be 1-40 characters")
+	}
+	email = normalizeEmail(email)
+	if !strings.Contains(email, "@") {
+		return assignedOwner{}, errGameOwnerEmailMissing
+	}
+	var authorID string
+	err := a.db.QueryRowContext(ctx, `SELECT id FROM identities WHERE email = ?`, email).Scan(&authorID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return assignedOwner{}, errGameOwnerEmailMissing
+	}
+	if err != nil {
+		return assignedOwner{}, err
+	}
+	now := nowUnix()
+	if _, err := a.db.ExecContext(ctx, `INSERT INTO game_owners(game_id, author_id, author_name, set_by, set_at)
+		VALUES(?, ?, ?, ?, ?)
+		ON CONFLICT(game_id) DO UPDATE SET author_id = excluded.author_id, author_name = excluded.author_name,
+			set_by = excluded.set_by, set_at = excluded.set_at`,
+		gameID, authorID, authorName, operator, now); err != nil {
+		return assignedOwner{}, err
+	}
+	return assignedOwner{GameID: gameID, AuthorID: authorID, AuthorName: authorName, Email: email, SetBy: operator, SetAt: now}, nil
+}
+
+// errGameOwnerEmailMissing 表示指定归属时给的邮箱还没有在投稿平台登录过。
+var errGameOwnerEmailMissing = errors.New("该邮箱尚未登录过投稿平台")

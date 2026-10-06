@@ -17,3 +17,4 @@
 | [2026-08-07-remote-device-projection.md](2026-08-07-remote-device-projection.md) | **远程设备投影**：持有方设备经 MQTT 投影为操作方 `remote` 设备连接 | 设计稿（文内状态） |
 | [2026-08-09-wired-flash-update.md](2026-08-09-wired-flash-update.md) | **插线固件更新**：esptool-js + serialport 串口整片烧录 | 未标注 |
 | [2026-09-23-remote-game-client-control.md](2026-09-23-remote-game-client-control.md) | **远程游戏与客户端级远控**：A 执行、B 远控，客户端级远控范围 | 宏观方案，JS 运行层待原型验证 |
+| [2026-10-06-creator-payout.md](2026-10-06-creator-payout.md) | **社区游戏创作者分成**：管理员每月手工在 OpenPanel 统计、在商城发奖励金、回投稿平台录入发放记录；含 game_id 归属与归属指定 | 实施中（运营步骤见 [guides/creator-payout-guide.md](../guides/creator-payout-guide.md)） |

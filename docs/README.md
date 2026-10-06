@@ -18,7 +18,8 @@
 12. [游戏 TESTING.md 编写指南](guides/GAME_TESTING.md)
 13. [Windows Electron 启动指南](guides/Windows_通过_Electron_启动指南.md) / [Electron 调试速查](guides/ELECTRON_DEBUG.md)
 14. [构建打包指南](guides/Build_Package_Guide.md)
-15. [架构决策记录 (ADR)](adr/)
+15. [创作者月度分成运营指南（管理员）](guides/creator-payout-guide.md)
+16. [架构决策记录 (ADR)](adr/)
 
 ## 目录说明
 
@@ -27,7 +28,7 @@
 - `api/`：后端 REST/SSE 接口权威说明。
 - `requirements/`：产品功能范围与游戏运行时说明。
 - `integration/`：MQTT Broker、EMQX、MQTT 客户端、mDNS、网络地址枚举。
-- `guides/`：运行、测试、Electron 启动与调试、打包操作。
+- `guides/`：运行、测试、Electron 启动与调试、打包操作、运营流程。
 - `device/`：设备能力、设备注册表、能力调用约定。
 - `plan/`：尚未落地的设计方案（待实现）。
 - `agent/`：自动化开发代理使用的流程说明。`agent/update.md` 被根目录 `AGENTS.md` 引用，移动前必须同步更新引用。
@@ -80,6 +81,7 @@
 - [后端运行与测试指引](guides/BACKEND_IMPLEMENTATION.md)
 - [游戏 TESTING.md 编写指南](guides/GAME_TESTING.md)
 - [构建打包指南](guides/Build_Package_Guide.md)
+- [创作者月度分成运营指南（管理员）](guides/creator-payout-guide.md)
 - [Windows Electron 启动指南](guides/Windows_通过_Electron_启动指南.md)
 - [Electron 调试速查](guides/ELECTRON_DEBUG.md)
 

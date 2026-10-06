@@ -27,26 +27,38 @@
     <section class="platform-panel">
       <div class="panel-title"><div>
         <h2>月度分成</h2>
-        <p>只出报表和记账；实际发放请在商城后台按账号增加奖励金，再回来标记「已发」。</p>
+        <p>分三步：① 在 OpenPanel 看板按月统计各社区游戏的游玩表现；② 到商城后台按作者账号发放奖励金；③ 回到这里把发放记录录进来。录入后作者会在投稿工作台「我的分成」看到。</p>
       </div></div>
       <form id="payout-form" class="platform-form">
         <label>月份<input id="payout-month" name="month" type="month" required /></label>
-        <label>奖金池（元）<input id="payout-pool" name="pool" type="number" min="0" step="1" value="0" required /><span>金额与门槛留到正式发钱时再定，这里填本次使用的值。</span></label>
-        <div class="payout-thresholds">
-          <label>最短时长（分钟）<input id="payout-min-duration" name="minDuration" type="number" min="0" step="1" placeholder="默认" /></label>
-          <label>最少设备数<input id="payout-min-devices" name="minDevices" type="number" min="0" step="1" placeholder="默认" /></label>
-          <label>入围有效游玩<input id="payout-min-plays" name="minPlays" type="number" min="0" step="1" placeholder="默认" /></label>
-        </div>
+        <label>游戏<select id="payout-game" name="gameId" required><option value="">加载中…</option></select></label>
+        <label>有效游玩（选填）<input id="payout-plays" name="validPlays" type="number" min="0" step="1" placeholder="OpenPanel 手抄的参考数据" /></label>
+        <label>金额（元）<input id="payout-amount" name="amount" type="number" min="1" step="1" required /></label>
+        <label>备注（选填）<input id="payout-note" name="note" type="text" maxlength="500" placeholder="如商城账号、发放批次" /></label>
         <div class="platform-actions">
-          <button id="payout-generate" type="submit" class="btn btn-primary">生成报表</button>
-          <button id="payout-load" type="button" class="btn btn-ghost">查看已有</button>
-          <button id="payout-export" type="button" class="btn btn-ghost">导出 CSV</button>
+          <button id="payout-create" type="submit" class="btn btn-primary">录入发放记录</button>
+          <button id="payout-load" type="button" class="btn btn-ghost">查看该月记录</button>
+          <button id="payout-load-all" type="button" class="btn btn-ghost">查看全部</button>
         </div>
       </form>
     </section>
     <section class="platform-panel">
-      <div class="panel-title"><div><h2>报表</h2><p>已发放或已跳过的行不会被重新生成覆盖。</p></div></div>
-      <div id="payout-list" class="review-list">先选择月份并生成报表。</div>
+      <div class="panel-title"><div><h2>社区游戏与作者</h2><p>只有社区游戏能录入分成；官方内置玩法不在列表里。作者邮箱和账号中心 ID 用来去商城后台查人发钱。</p></div></div>
+      <div id="payout-games" class="review-list">加载中…</div>
+    </section>
+    <section class="platform-panel">
+      <div class="panel-title"><div><h2>发放记录</h2><p>录错了直接删除，改完再重新录入。</p></div></div>
+      <div id="payout-list" class="review-list">先选择月份或查看全部。</div>
+    </section>
+    <section class="platform-panel">
+      <div class="panel-title"><div><h2>归属指定</h2><p>用于导入时没有投稿记录、实际是社区作者的游戏（例如线上 surge-edging）。指定后该游戏视为社区游戏：可录入分成，作者本人也能升版更新。</p></div></div>
+      <form id="owner-form" class="platform-form">
+        <label>游戏 ID<input id="owner-game" name="gameId" type="text" placeholder="如 surge-edging" required /></label>
+        <label>作者邮箱<input id="owner-email" name="email" type="email" placeholder="须已登录过投稿平台" required /></label>
+        <label>署名<input id="owner-name" name="authorName" type="text" maxlength="40" placeholder="如 DK" required /></label>
+        <div class="platform-actions"><button id="owner-set" type="submit" class="btn btn-primary">指定归属</button></div>
+      </form>
+      <div id="owner-list" class="review-list">加载中…</div>
     </section>
   </div>
 </main>

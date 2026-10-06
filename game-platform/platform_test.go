@@ -184,6 +184,54 @@ func TestAdminCanUpdateOfficialGameID(t *testing.T) {
 	}
 }
 
+func TestAdminCanUpdateCommunityGameWithoutTakingOwnership(t *testing.T) {
+	config := testConfig(t.TempDir())
+	app, err := newApp(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.close()
+	ctx := context.Background()
+	author := testIdentity(t, app, "mobile-author", "author@example.com", "author")
+	admin := testIdentity(t, app, "mobile-admin", "admin@example.com", "admin")
+	// 线上 surge-edging 的情况：社区作者的游戏，团队仓库继续维护新版。
+	if _, err := publishZip(t, app, author, admin, "surge-edging", "1.4.1"); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := publishZip(t, app, admin, admin, "surge-edging", "1.5.0")
+	if err != nil {
+		t.Fatalf("admin could not update a community game: %v", err)
+	}
+	if entry.ID != "surge-edging" || entry.Version != "1.5.0" {
+		t.Fatalf("unexpected entry: %#v", entry)
+	}
+	// 归属仍是原作者，管理员发布不改变归属。
+	ownership, err := loadGameIDOwnership(ctx, app.db, "surge-edging")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ownership.OwnerAuthorID != author.ID || ownership.Official {
+		t.Fatalf("ownership changed after an admin update: %#v", ownership)
+	}
+	// 版本仍须严格升高。
+	if _, err := publishZip(t, app, admin, admin, "surge-edging", "1.5.0"); err == nil || !strings.Contains(err.Error(), "版本号") {
+		t.Fatalf("same version error = %v, want 版本号", err)
+	}
+	// 原作者升版照常，且审核后台对管理员投稿标记为 admin。
+	if _, err := publishZip(t, app, author, admin, "surge-edging", "1.6.0"); err != nil {
+		t.Fatalf("owner could not continue updating: %v", err)
+	}
+	if status := app.gameIDStatus(ctx, app.db, admin.ID, true, "surge-edging", "1.7.0"); status != gameIDStatusAdmin {
+		t.Fatalf("admin status = %q, want %q", status, gameIDStatusAdmin)
+	}
+	if status := app.gameIDStatus(ctx, app.db, admin.ID, true, "surge-edging", "1.5.0"); status != gameIDStatusConflict {
+		t.Fatalf("stale admin status = %q, want %q", status, gameIDStatusConflict)
+	}
+	if status := app.gameIDStatus(ctx, app.db, author.ID, false, "surge-edging", "1.7.0"); status != gameIDStatusOwn {
+		t.Fatalf("owner status = %q, want %q", status, gameIDStatusOwn)
+	}
+}
+
 func TestAuthorCanUpdateOwnGameWithHigherVersion(t *testing.T) {
 	config := testConfig(t.TempDir())
 	app, err := newApp(config)
@@ -688,5 +736,67 @@ func TestLegacyPlatformAccountsMigrateWithoutPasswordHashes(t *testing.T) {
 	}
 	if submission.UserID != "mobile-author" {
 		t.Fatalf("legacy submission owner = %q, want mobile-author", submission.UserID)
+	}
+}
+
+// TestMigrateDropsLegacyPayoutReportsTable 旧结构的 payout_reports（有 status /
+// generated_at、主键 (month, game_id)）从未上线生产，迁移时应直接删掉重建，
+// 且不影响其他数据。
+func TestMigrateDropsLegacyPayoutReportsTable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "game-platform.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := []string{
+		`CREATE TABLE payout_reports (
+			month TEXT NOT NULL,
+			game_id TEXT NOT NULL,
+			author_id TEXT NOT NULL DEFAULT '',
+			author_name TEXT NOT NULL DEFAULT '',
+			valid_plays INTEGER NOT NULL DEFAULT 0,
+			unique_devices INTEGER NOT NULL DEFAULT 0,
+			total_minutes REAL NOT NULL DEFAULT 0,
+			amount_cny INTEGER NOT NULL DEFAULT 0,
+			status TEXT NOT NULL,
+			paid_at INTEGER NOT NULL DEFAULT 0,
+			paid_by TEXT NOT NULL DEFAULT '',
+			note TEXT NOT NULL DEFAULT '',
+			generated_at INTEGER NOT NULL DEFAULT 0,
+			PRIMARY KEY (month, game_id)
+		)`,
+		`INSERT INTO payout_reports(month, game_id, status) VALUES('2026-09', 'game-a', 'draft')`,
+	}
+	for _, statement := range legacy {
+		if _, err := db.Exec(statement); err != nil {
+			db.Close()
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	app, err := newApp(testConfig(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer app.close()
+	var hasID, hasStatus int
+	if err := app.db.QueryRow(`SELECT 1 FROM pragma_table_info('payout_reports') WHERE name = 'id'`).Scan(&hasID); err != nil {
+		t.Fatalf("rebuilt payout_reports is missing the id column: %v", err)
+	}
+	err = app.db.QueryRow(`SELECT 1 FROM pragma_table_info('payout_reports') WHERE name = 'status'`).Scan(&hasStatus)
+	if err == nil {
+		t.Fatal("legacy status column survived the migration")
+	}
+	// 老行不会迁移过来，新表是空的。
+	records, err := app.listPayoutRecords(context.Background(), "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 0 {
+		t.Fatalf("legacy rows must not survive: %#v", records)
 	}
 }
