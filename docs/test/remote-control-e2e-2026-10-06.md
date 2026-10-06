@@ -31,19 +31,173 @@
 
 | # | 步骤 | 预期 | 实际 | 结果 | 截图 |
 |---|---|---|---|---|---|
-| 1 | A 建房 → B 用房间码 UI 加入 → A 看成员身份 → B 默认未授权 | A 成员列表显示 B 的 userId + 在线 + 移出房间；B 只有「未授权 / 等待主机授权后才能控制」，无设备列表 | A 面板 `房间成员 01M48H86972NG7W24Q2KTDSA9R 在线 移出房间`；B 面板 `未授权 … 等待主机授权后才能控制`，`devices.length=0`、无 iframe | 通过 | [a-01](remote-control-e2e-2026-10-06/a-01-join-wait.jpg) / [b-01](remote-control-e2e-2026-10-06/b-01-join-wait.jpg) |
-| 2 | A 授权 → B 拿到设备+游戏 → 选 `pressure-edging-v2` → 配置 → 启动 → B iframe 渲染原始 UI（`?runtime=remote`） | 授权后 B 设备 7 台、游戏 2 个；启动后 iframe `src=/games/pressure-edging-v2/index.html?runtime=remote…`，页面自身 UI 渲染 | 授权后 `devices=7, games=[surge-edging, pressure-edging-v2]`；启动后 iframe 渲染「气压寸止3阶段升级版 … 暂停 / +10 强度 / ⚡ 电击 / 中间压力 / 临界压力 / 寸止:1 电击:1」 | 通过 | [a-02](remote-control-e2e-2026-10-06/a-02-authorized.jpg) [b-02](remote-control-e2e-2026-10-06/b-02-authorized.jpg) / [a-03](remote-control-e2e-2026-10-06/a-03-game-running.jpg) [b-03](remote-control-e2e-2026-10-06/b-03-game-running.jpg) |
-| 3 | 暂停/继续 → 运行中改参 → shockOnce → +10 → forceEdge → 停止（设备复位） | 两端快照一致；停止后 TD01/电击/锁复位 | `paused true→false`；`criticalPressure 20→20.2`；日志 `已暂停 / 已继续 / 手动 +10 强度 → 10.0 / 触发电击 20V 3s / 过载！边缘寸止中`；`forceEdge` 200 且 `edgingCount 1→2`；`game.stop` 后 `ended=true reason=remote-stop`，`td01.power=0`、`dianji{voltage:0,shock:0}`、`lock.open=0` | 通过 | [a-04](remote-control-e2e-2026-10-06/a-04-paused.jpg) [b-04](remote-control-e2e-2026-10-06/b-04-paused.jpg) / [a-05](remote-control-e2e-2026-10-06/a-05-shock.jpg) [b-05](remote-control-e2e-2026-10-06/b-05-shock.jpg) |
-| 4 | F5：删掉 B 本地 `surge-edging` 缓存后**首次**启动注册表游戏 | iframe 渲染且**不刷新页面** | `DELETE /api/game-cache/surge-edging/1.3.6` → `installed=false`；启动后 `POST /api/game-cache/install/surge-edging -> 200 (123ms)`，**1027ms** 后 iframe 出现，`window.__reloadCount=0`；`/api/games/surge-edging` 404 后正确回落到 install（无报错提示） | 通过 | [a-06](remote-control-e2e-2026-10-06/a-06-surge-first.jpg) / [b-06](remote-control-e2e-2026-10-06/b-06-surge-first.jpg) |
-| 5 | 手动输出：DIANJI 999V 钳到 20 + 10s 看门狗；TD01 999 钳到 128 + 60s 看门狗；未知字段拒绝；stop 永远放行 | 钳制生效、到点自动停机、未知字段 400、stop 带脏字段也通过 | DIANJI：`{"voltage":20,"shock":1}`，第 10.0s 自动 `{"shock":0,"voltage":0}`；TD01：`{"power":128}`，~60s 后自动 `{"power":0}`（实测 66.8s 采样窗口内已归零）；`bogus` → `400 REMOTE_OUTPUT_REJECTED 远程控制不允许设置字段: bogus`；`stop + bogus` → 200 且 `power=0` | 通过 | [b-07](remote-control-e2e-2026-10-06/b-07-manual-clamped.jpg) [b-08](remote-control-e2e-2026-10-06/b-08-shock-watchdog.jpg) |
-| 6 | B 有手动输出时 A 撤权 | 输出立即停；B 命令返回 `CONTROL_NOT_AUTHORIZED`；**运行中的游戏继续跑** | SOSEXY 写 200 → 实发 `value=128`；撤权后实发 `stopAll`（输出停）；B 再发命令 `403 CONTROL_NOT_AUTHORIZED 未授权远控`；`A.snapshot.running=true`、`B.snapshot.running=true` 游戏未中断 | 通过（发现 1 处状态不一致，见 §4.1） | [a-09](remote-control-e2e-2026-10-06/a-09-manual-output-active.jpg) [b-09](remote-control-e2e-2026-10-06/b-09-manual-output-active.jpg) / [a-10](remote-control-e2e-2026-10-06/a-10-revoked.jpg) [b-10](remote-control-e2e-2026-10-06/b-10-revoked.jpg) |
-| 7 | F2：B 点「离开房间」→ 迅速返回且按钮不卡 → 同码重入 | 按钮不卡死；重入成功（需重新授权） | 点击后 **1541ms** 回到未连接视图，`stuckLoading=false`（轮询期间从未出现 loading）；同码重入 **533ms** 成功，`active=true auth=true devices=7` | 通过 | [b-11](remote-control-e2e-2026-10-06/b-11-rejoined.jpg) |
-| 8 | 踢人：A 点「移出房间」 | B 的命令本地被拒 | `POST /api/remote-game/kick` → A `members[].status=kicked`、`operators=[]`、`authorized=false`；B `devices=0`；B 命令 `403 CONTROL_NOT_AUTHORIZED 已被移出房间`；B 仍 `connected=true`（已知取舍：服务端不断 MQTT，等 JWT 过期） | 通过（发现 1 处状态不一致，见 §4.1） | [a-12](remote-control-e2e-2026-10-06/a-12-kicked.jpg) [b-12](remote-control-e2e-2026-10-06/b-12-kicked.jpg) |
-| 9 | F3：硬杀 A 后端（房主 retained offline），B 在房间内 | 不挂死；显示等待房主；A 重启后 60s 宽限内恢复或干净报错 | 杀进程后 B：6s/15s/30s 采样均 `active=true connected=true waitingForHost=true`，**HTTP 响应 ~2ms 无挂死**；第 60s `host offline grace expired: tearing down operator session`，B 干净回到未连接视图；A 重启后 `GET /api/remote-game/status` 200（不自动恢复旧房，属预期） | 通过 | [b-14](remote-control-e2e-2026-10-06/b-14-after-host-crash.jpg) |
-| 10 | F1 长跑：已授权 + 游戏运行 ≥13 分钟；投影房并发 ≥9 分钟 | ~10 分钟凭据刷新不断线；B 快照持续；刷新不触发安全停机/设备复位；锁**不得**打开 | **远程游戏**：46 次采样 / 901s 全程 `connected=true`、45/45 `running=true`、**0 次错误、0 次 ended**；三次 `credential refreshed and reconnected`（12:57:11 / 13:05:12，另 12:49:10 一次）期间 `gameSessionId` 始终为 `793b671c-…` 未变；`lock.open` 全程 `0`，锁设备**零命令**（刷新未触发安全停机/复位）。**投影房**：31 次采样 / 601s 全程 `active=true authorized=true expired=false devices=7` | 通过 | [a-16](remote-control-e2e-2026-10-06/a-16-longrun-10min.jpg) [b-16](remote-control-e2e-2026-10-06/b-16-longrun-10min.jpg) [a-18](remote-control-e2e-2026-10-06/a-18-longrun2.jpg) [b-18](remote-control-e2e-2026-10-06/b-18-longrun2.jpg) |
-| 11 | 投影：未授权操作方无设备清单 → 授权后有 → 写限幅 → 锁存看门狗 | 未授权看不到设备、写入被拒；授权后 7 台；超限钳制；10s 后自动停 | 未授权：B `devices=0`，写 5 条全部 `CONTROL_NOT_AUTHORIZED`；授权后 B `devices=7`、`authorizedFor=<B userId>`；写入实测 `voltage 999→20`、`power 999→128`、`dglab intensity 999→50`、`ticks -1→100`、未知字段/未知品牌 `REMOTE_OUTPUT_REJECTED`；电击帧 6065ms 发出、**16079ms 收到自动停机帧**（10s 锁存） | 通过 | [a-17](remote-control-e2e-2026-10-06/a-17-projection.jpg) [b-17](remote-control-e2e-2026-10-06/b-17-projection.jpg) |
+| 1 | A 建房 → B 用房间码 UI 加入 → A 看成员身份 → B 默认未授权 | A 成员列表显示 B 的 userId + 在线 + 移出房间；B 只有「未授权 / 等待主机授权后才能控制」，无设备列表 | A 面板 `房间成员 01M48H86972NG7W24Q2KTDSA9R 在线 移出房间`；B 面板 `未授权 … 等待主机授权后才能控制`，`devices.length=0`、无 iframe | 通过 | 见 §2.1 步骤 1 |
+| 2 | A 授权 → B 拿到设备+游戏 → 选 `pressure-edging-v2` → 配置 → 启动 → B iframe 渲染原始 UI（`?runtime=remote`） | 授权后 B 设备 7 台、游戏 2 个；启动后 iframe `src=/games/pressure-edging-v2/index.html?runtime=remote…`，页面自身 UI 渲染 | 授权后 `devices=7, games=[surge-edging, pressure-edging-v2]`；启动后 iframe 渲染「气压寸止3阶段升级版 … 暂停 / +10 强度 / ⚡ 电击 / 中间压力 / 临界压力 / 寸止:1 电击:1」 | 通过 | 见 §2.1 步骤 2 |
+| 3 | 暂停/继续 → 运行中改参 → shockOnce → +10 → forceEdge → 停止（设备复位） | 两端快照一致；停止后 TD01/电击/锁复位 | `paused true→false`；`criticalPressure 20→20.2`；日志 `已暂停 / 已继续 / 手动 +10 强度 → 10.0 / 触发电击 20V 3s / 过载！边缘寸止中`；`forceEdge` 200 且 `edgingCount 1→2`；`game.stop` 后 `ended=true reason=remote-stop`，`td01.power=0`、`dianji{voltage:0,shock:0}`、`lock.open=0` | 通过 | 见 §2.1 步骤 3 |
+| 4 | F5：删掉 B 本地 `surge-edging` 缓存后**首次**启动注册表游戏 | iframe 渲染且**不刷新页面** | `DELETE /api/game-cache/surge-edging/1.3.6` → `installed=false`；启动后 `POST /api/game-cache/install/surge-edging -> 200 (123ms)`，**1027ms** 后 iframe 出现，`window.__reloadCount=0`；`/api/games/surge-edging` 404 后正确回落到 install（无报错提示） | 通过 | 见 §2.1 步骤 4 |
+| 5 | 手动输出：DIANJI 999V 钳到 20 + 10s 看门狗；TD01 999 钳到 128 + 60s 看门狗；未知字段拒绝；stop 永远放行 | 钳制生效、到点自动停机、未知字段 400、stop 带脏字段也通过 | DIANJI：`{"voltage":20,"shock":1}`，第 10.0s 自动 `{"shock":0,"voltage":0}`；TD01：`{"power":128}`，~60s 后自动 `{"power":0}`（实测 66.8s 采样窗口内已归零）；`bogus` → `400 REMOTE_OUTPUT_REJECTED 远程控制不允许设置字段: bogus`；`stop + bogus` → 200 且 `power=0` | 通过 | 见 §2.1 步骤 5 |
+| 6 | B 有手动输出时 A 撤权 | 输出立即停；B 命令返回 `CONTROL_NOT_AUTHORIZED`；**运行中的游戏继续跑** | SOSEXY 写 200 → 实发 `value=128`；撤权后实发 `stopAll`（输出停）；B 再发命令 `403 CONTROL_NOT_AUTHORIZED 未授权远控`；`A.snapshot.running=true`、`B.snapshot.running=true` 游戏未中断 | 通过（发现 1 处状态不一致，见 §4.1） | 见 §2.1 步骤 6 |
+| 7 | F2：B 点「离开房间」→ 迅速返回且按钮不卡 → 同码重入 | 按钮不卡死；重入成功（需重新授权） | 点击后 **1541ms** 回到未连接视图，`stuckLoading=false`（轮询期间从未出现 loading）；同码重入 **533ms** 成功，`active=true auth=true devices=7` | 通过 | 见 §2.1 步骤 7 |
+| 8 | 踢人：A 点「移出房间」 | B 的命令本地被拒 | `POST /api/remote-game/kick` → A `members[].status=kicked`、`operators=[]`、`authorized=false`；B `devices=0`；B 命令 `403 CONTROL_NOT_AUTHORIZED 已被移出房间`；B 仍 `connected=true`（已知取舍：服务端不断 MQTT，等 JWT 过期） | 通过（发现 1 处状态不一致，见 §4.1） | 见 §2.1 步骤 8 |
+| 9 | F3：硬杀 A 后端（房主 retained offline），B 在房间内 | 不挂死；显示等待房主；A 重启后 60s 宽限内恢复或干净报错 | 杀进程后 B：6s/15s/30s 采样均 `active=true connected=true waitingForHost=true`，**HTTP 响应 ~2ms 无挂死**；第 60s `host offline grace expired: tearing down operator session`，B 干净回到未连接视图；A 重启后 `GET /api/remote-game/status` 200（不自动恢复旧房，属预期） | 通过 | 见 §2.1 步骤 9 |
+| 10 | F1 长跑：已授权 + 游戏运行 ≥13 分钟；投影房并发 ≥9 分钟 | ~10 分钟凭据刷新不断线；B 快照持续；刷新不触发安全停机/设备复位；锁**不得**打开 | **远程游戏**：46 次采样 / 901s 全程 `connected=true`、45/45 `running=true`、**0 次错误、0 次 ended**；三次 `credential refreshed and reconnected`（12:57:11 / 13:05:12，另 12:49:10 一次）期间 `gameSessionId` 始终为 `793b671c-…` 未变；`lock.open` 全程 `0`，锁设备**零命令**（刷新未触发安全停机/复位）。**投影房**：31 次采样 / 601s 全程 `active=true authorized=true expired=false devices=7` | 通过 | 见 §2.1 步骤 10 |
+| 11 | 投影：未授权操作方无设备清单 → 授权后有 → 写限幅 → 锁存看门狗 | 未授权看不到设备、写入被拒；授权后 7 台；超限钳制；10s 后自动停 | 未授权：B `devices=0`，写 5 条全部 `CONTROL_NOT_AUTHORIZED`；授权后 B `devices=7`、`authorizedFor=<B userId>`；写入实测 `voltage 999→20`、`power 999→128`、`dglab intensity 999→50`、`ticks -1→100`、未知字段/未知品牌 `REMOTE_OUTPUT_REJECTED`；电击帧 6065ms 发出、**16079ms 收到自动停机帧**（10s 锁存） | 通过 | 见 §2.1 步骤 11 |
 | 12 | 暴露面：LAN IP 访问隔离后端端口 / 打包等价端口；非白名单代理 host | LAN → 拒绝；127.0.0.1 → 可用；第三方 host → 403 | `netstat`：5301-5304 全部 `127.0.0.1` LISTENING（无 `0.0.0.0`）；`192.168.5.38` / `100.64.0.1`(Tailscale) / `172.31.240.1` 访问 5301-5304 全部拒绝（curl `000`）；`127.0.0.1` 200。另起 `BACKEND_HOST=0.0.0.0 PORT=5399` 复测：LAN 访问远控路由 `403 REMOTE_LOCAL_ONLY`，回环 200。代理 `/games/proxy/https/evil.example.com/x.js` → `403 Proxy host not allowed`；白名单 `game.undersilicon.cn` → 200 且 `x-frame-options`/`csp` 被剥；回环 host → 200 | 通过 | 见 §3.4（无 UI，网络证据） |
 | 13 | 两端窗口控制台错误 | 无新增错误 | 见 §3.5 | 通过（有 1 条需留意） | — |
+
+---
+
+### 2.1 步骤截图
+
+#### 步骤 1：A 建房 → B 用房间码 UI 加入 → A 看成员身份 → B 默认未授权
+
+![A 被控端 · 01-join-wait](remote-control-e2e-2026-10-06/a-01-join-wait.jpg)
+
+*A 被控端 · 01-join-wait*
+
+![B 主控端 · 01-join-wait](remote-control-e2e-2026-10-06/b-01-join-wait.jpg)
+
+*B 主控端 · 01-join-wait*
+
+#### 步骤 2：A 授权 → B 拿到设备+游戏 → 选 `pressure-edging-v2` → 配置 → 启动 → B iframe 渲染原始 UI（`?runtime=remote`）
+
+![A 被控端 · 02-authorized](remote-control-e2e-2026-10-06/a-02-authorized.jpg)
+
+*A 被控端 · 02-authorized*
+
+![B 主控端 · 02-authorized](remote-control-e2e-2026-10-06/b-02-authorized.jpg)
+
+*B 主控端 · 02-authorized*
+
+![A 被控端 · 03-game-running](remote-control-e2e-2026-10-06/a-03-game-running.jpg)
+
+*A 被控端 · 03-game-running*
+
+![B 主控端 · 03-game-running](remote-control-e2e-2026-10-06/b-03-game-running.jpg)
+
+*B 主控端 · 03-game-running*
+
+#### 步骤 3：暂停/继续 → 运行中改参 → shockOnce → +10 → forceEdge → 停止（设备复位）
+
+![A 被控端 · 04-paused](remote-control-e2e-2026-10-06/a-04-paused.jpg)
+
+*A 被控端 · 04-paused*
+
+![B 主控端 · 04-paused](remote-control-e2e-2026-10-06/b-04-paused.jpg)
+
+*B 主控端 · 04-paused*
+
+![A 被控端 · 05-shock](remote-control-e2e-2026-10-06/a-05-shock.jpg)
+
+*A 被控端 · 05-shock*
+
+![B 主控端 · 05-shock](remote-control-e2e-2026-10-06/b-05-shock.jpg)
+
+*B 主控端 · 05-shock*
+
+#### 步骤 4：F5：删掉 B 本地 `surge-edging` 缓存后**首次**启动注册表游戏
+
+![A 被控端 · 06-surge-first](remote-control-e2e-2026-10-06/a-06-surge-first.jpg)
+
+*A 被控端 · 06-surge-first*
+
+![B 主控端 · 06-surge-first](remote-control-e2e-2026-10-06/b-06-surge-first.jpg)
+
+*B 主控端 · 06-surge-first*
+
+#### 步骤 5：手动输出：DIANJI 999V 钳到 20 + 10s 看门狗；TD01 999 钳到 128 + 60s 看门狗；未知字段拒绝；stop 永远放行
+
+![A 被控端 · 07-manual-clamped](remote-control-e2e-2026-10-06/a-07-manual-clamped.jpg)
+
+*A 被控端 · 07-manual-clamped*
+
+![B 主控端 · 07-manual-clamped](remote-control-e2e-2026-10-06/b-07-manual-clamped.jpg)
+
+*B 主控端 · 07-manual-clamped*
+
+![B 主控端 · 08-shock-watchdog](remote-control-e2e-2026-10-06/b-08-shock-watchdog.jpg)
+
+*B 主控端 · 08-shock-watchdog*
+
+#### 步骤 6：B 有手动输出时 A 撤权
+
+![A 被控端 · 09-manual-output-active](remote-control-e2e-2026-10-06/a-09-manual-output-active.jpg)
+
+*A 被控端 · 09-manual-output-active*
+
+![B 主控端 · 09-manual-output-active](remote-control-e2e-2026-10-06/b-09-manual-output-active.jpg)
+
+*B 主控端 · 09-manual-output-active*
+
+![A 被控端 · 10-revoked](remote-control-e2e-2026-10-06/a-10-revoked.jpg)
+
+*A 被控端 · 10-revoked*
+
+![B 主控端 · 10-revoked](remote-control-e2e-2026-10-06/b-10-revoked.jpg)
+
+*B 主控端 · 10-revoked*
+
+#### 步骤 7：F2：B 点「离开房间」→ 迅速返回且按钮不卡 → 同码重入
+
+![B 主控端 · 11-rejoined](remote-control-e2e-2026-10-06/b-11-rejoined.jpg)
+
+*B 主控端 · 11-rejoined*
+
+#### 步骤 8：踢人：A 点「移出房间」
+
+![A 被控端 · 12-kicked](remote-control-e2e-2026-10-06/a-12-kicked.jpg)
+
+*A 被控端 · 12-kicked*
+
+![B 主控端 · 12-kicked](remote-control-e2e-2026-10-06/b-12-kicked.jpg)
+
+*B 主控端 · 12-kicked*
+
+![B 主控端 · 13-kicked-then-authorized（踢人后再授权的状态不一致缺陷现场，已在 §7 修复）](remote-control-e2e-2026-10-06/b-13-kicked-then-authorized.jpg)
+
+*B 主控端 · 13-kicked-then-authorized（踢人后再授权的状态不一致缺陷现场，已在 §7 修复）*
+
+#### 步骤 9：F3：硬杀 A 后端（房主 retained offline），B 在房间内
+
+![B 主控端 · 14-after-host-crash](remote-control-e2e-2026-10-06/b-14-after-host-crash.jpg)
+
+*B 主控端 · 14-after-host-crash*
+
+#### 步骤 10：F1 长跑：已授权 + 游戏运行 ≥13 分钟；投影房并发 ≥9 分钟
+
+![A 被控端 · 15-longrun](remote-control-e2e-2026-10-06/a-15-longrun.png)
+
+*A 被控端 · 15-longrun*
+
+![B 主控端 · 15-longrun](remote-control-e2e-2026-10-06/b-15-longrun.png)
+
+*B 主控端 · 15-longrun*
+
+![A 被控端 · 16-longrun-10min](remote-control-e2e-2026-10-06/a-16-longrun-10min.jpg)
+
+*A 被控端 · 16-longrun-10min*
+
+![B 主控端 · 16-longrun-10min](remote-control-e2e-2026-10-06/b-16-longrun-10min.jpg)
+
+*B 主控端 · 16-longrun-10min*
+
+![A 被控端 · 18-longrun2](remote-control-e2e-2026-10-06/a-18-longrun2.jpg)
+
+*A 被控端 · 18-longrun2*
+
+![B 主控端 · 18-longrun2](remote-control-e2e-2026-10-06/b-18-longrun2.jpg)
+
+*B 主控端 · 18-longrun2*
+
+#### 步骤 11：投影：未授权操作方无设备清单 → 授权后有 → 写限幅 → 锁存看门狗
+
+![A 被控端 · 17-projection](remote-control-e2e-2026-10-06/a-17-projection.jpg)
+
+*A 被控端 · 17-projection*
+
+![B 主控端 · 17-projection](remote-control-e2e-2026-10-06/b-17-projection.jpg)
+
+*B 主控端 · 17-projection*
 
 ---
 
