@@ -169,8 +169,17 @@ class RemoteSessionService {
     if (requested && this.game.isKicked?.(requested)) {
       throw this._error('USER_KICKED', '该成员已被移出房间');
     }
+    // 授权结果不靠异步事件回填：面板点「允许控制」时可能还没等到主房间的成员事件，
+    // 编排层此时没有 peerUserId，直接从主房间状态里挑当前在线的操作方兜底。
+    if (!state.peerUserId) {
+      const gameStatus = this._safeStatus(this.game);
+      const online = (gameStatus?.operators || []).find((item) => item.online);
+      state.peerUserId = online?.userId || (gameStatus?.members || [])
+        .find((member) => member.status === 'joined' && member.userId !== gameStatus?.hostUserId)?.userId
+        || null;
+    }
     await this.game.authorize();
-    const target = this.game.getAuthorizedUserId?.() || requested;
+    const target = this.game.getAuthorizedUserId?.() || requested || state.peerUserId;
     if (!target) throw this._error('NO_OPERATOR', '没有可授权的成员');
     state.peerUserId = target;
     state.authorized = true;
@@ -188,8 +197,9 @@ class RemoteSessionService {
     if (state.role !== 'owner') throw this._error('NOT_OWNER', '只有被控端可以撤权');
     this._finishAuthorize(state);
     state.authorized = false;
-    state.peerUserId = null;
-    state.phase = 'waiting';
+    // 房间里的成员还在线：撤权后应回到「待授权」（面板仍能重新点「允许控制」），
+    // 成员已离开才是 waiting。撤销本身不踢人，成员会一直连着 MQTT。
+    state.phase = state.peerUserId ? 'pending-authorization' : 'waiting';
     this._logEvent('ok', 'session.revoke', null, null);
     await Promise.allSettled([
       this.game.revoke(),
@@ -420,6 +430,11 @@ class RemoteSessionService {
     if (!state) return;
     if (event.type === 'member' && state.role === 'owner') {
       if (event.online && event.userId && !state.peerUserId) state.peerUserId = event.userId;
+      // 有成员上线且尚未授权 → 进入「待授权」：被控端面板据此显示「允许控制 / 拒绝」，
+      // 远程条也据此出现授权按钮（没有这一步，房主看不到任何可点的授权入口）。
+      if (event.online && event.userId && !state.authorized && state.phase === 'waiting') {
+        state.phase = 'pending-authorization';
+      }
       return;
     }
     if (event.type === 'authorization' && state.role === 'owner') {

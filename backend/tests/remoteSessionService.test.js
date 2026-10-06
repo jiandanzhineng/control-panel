@@ -354,7 +354,8 @@ describe('remote session service', () => {
     await flush();
     expect(ownerGame.getAuthorizedUserId()).toBeNull();
     expect(projection.owner.revoke).toHaveBeenCalled();
-    expect(ownerSession.getStatus()).toMatchObject({ authorized: false, phase: 'waiting', peer: null });
+    // 成员还在房间里：撤权后回到「待授权」，房主可以再次点「允许控制」
+    expect(ownerSession.getStatus()).toMatchObject({ authorized: false, phase: 'pending-authorization', peer: null });
 
     await ownerSession.authorize({});
     await flush();
@@ -523,6 +524,35 @@ describe('remote session service', () => {
     await flush();
     // 「对方已结束远程」而不是「与对方的连接已断开」：reason 由编排层给出
     expect(operatorSession.getStatus().lastError).toBe('session-stop-by-host');
+    await operatorSession.stop();
+    await operatorGame.stop();
+  });
+
+  test('a member joining moves the host into pending authorization', async () => {
+    const ctx = setup();
+    const { ownerSession, operatorSession, operatorGame } = ctx;
+    await ownerSession.create({ token: 'owner' });
+    expect(ownerSession.getStatus().phase).toBe('waiting');
+    await operatorSession.join({ token: 'operator', joinCode: 'JOIN123' });
+    await flush();
+    // 房主面板据此出现「允许控制 / 拒绝」（否则界面上没有授权入口）
+    expect(ownerSession.getStatus().phase).toBe('pending-authorization');
+    expect(ownerSession.getStatus().peer).toMatchObject({ userId: 'operator' });
+    await ownerSession.stop();
+    await operatorSession.stop();
+    await operatorGame.stop();
+  });
+
+  test('authorize works even when the member event has not arrived yet', async () => {
+    const ctx = setup();
+    const { ownerSession, operatorSession, ownerGame, operatorGame } = ctx;
+    await ownerSession.create({ token: 'owner' });
+    await operatorSession.join({ token: 'operator', joinCode: 'JOIN123' });
+    // 不 flush：编排层还没处理 member 事件，peerUserId 仍为空
+    await ownerSession.authorize({});
+    expect(ownerSession.getStatus()).toMatchObject({ authorized: true, phase: 'active' });
+    expect(ownerGame.getAuthorizedUserId()).toBe('operator');
+    await ownerSession.stop();
     await operatorSession.stop();
     await operatorGame.stop();
   });
