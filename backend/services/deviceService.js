@@ -99,9 +99,12 @@ async function disconnectDeviceConnections(deviceId, connectionType = null) {
 }
 
 async function removeDevice(deviceId) {
-  const index = state.devices.findIndex(device => device.id === deviceId);
-  if (index !== -1) {
+  if (state.devices.some(device => device.id === deviceId)) {
     await disconnectDeviceConnections(deviceId);
+    // 等待断开期间设备表可能被并发删除改动过（投影收尾会同时删多台）：
+    // 必须在 await 之后重新定位，用旧下标 splice 会删错设备、漏删本该删的那台。
+    const index = state.devices.findIndex(device => device.id === deviceId);
+    if (index === -1) return;
     state.devices.splice(index, 1);
     saveDevices();
 
