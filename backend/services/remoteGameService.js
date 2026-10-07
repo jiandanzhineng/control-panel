@@ -540,13 +540,18 @@ class RemoteGameService {
     return this._setAuthorized(true);
   }
 
-  async revoke() {
+  /**
+   * 撤权。reason 会原样带进给操作方的定向结束通知：会话层「踢出」也先走这里关授权，
+   * 必须传 'kicked'，否则操作方先收到 revoked，显示成「对方已收回控制权」。
+   */
+  async revoke({ reason = 'revoked' } = {}) {
+    const endReason = reason === 'kicked' ? 'kicked' : 'revoked';
     const session = this.session;
     if (session?.role === 'owner' && session.playOccupancy) {
       // 撤权即结束主控端的玩法：占用不能留给下一个（或没有）被授权的人
       session.playOccupancy = null;
       await this._publishPlayOccupancy(session).catch(() => {});
-      await this._publishEnvelope(session, 'events', 'session.play.ended', { reason: 'revoked' }).catch(() => {});
+      await this._publishEnvelope(session, 'events', 'session.play.ended', { reason: endReason }).catch(() => {});
     }
     // 撤权是「对方已收回控制权」：只发 client.authorization（authorized=false）时，
     // 操作方只能从轮询里看到未授权，永远收不到结束通知，界面既没有提示也不会退回
@@ -560,7 +565,7 @@ class RemoteGameService {
         session,
         'events',
         'session.revoked',
-        { reason: 'revoked', forUserId: target },
+        { reason: endReason, forUserId: target },
       ).catch(() => {});
     }
     return result;

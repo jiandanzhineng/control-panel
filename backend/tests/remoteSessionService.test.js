@@ -593,6 +593,29 @@ describe('remote session service', () => {
     await operatorGame.stop();
   });
 
+  test('the operator learns it was kicked, not revoked, when the host kicks it', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, operatorGame } = ctx;
+    const target = ownerSession.getStatus().peer.userId;
+    await ownerSession.kick({ userId: target });
+    await flush();
+    expect(operatorSession.getStatus()).toMatchObject({ phase: 'ended', lastError: 'kicked' });
+    await ownerSession.stop();
+    await operatorSession.stop();
+    await operatorGame.stop();
+  });
+
+  test('the operator learns it was revoked when the host only revokes', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, operatorGame } = ctx;
+    await ownerSession.revoke();
+    await flush();
+    expect(operatorSession.getStatus()).toMatchObject({ phase: 'ended', lastError: 'revoked' });
+    await ownerSession.stop();
+    await operatorSession.stop();
+    await operatorGame.stop();
+  });
+
   test('a member joining moves the host into pending authorization', async () => {
     const ctx = setup();
     const { ownerSession, operatorSession, operatorGame } = ctx;

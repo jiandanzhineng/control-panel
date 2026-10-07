@@ -301,7 +301,8 @@ class RemoteSessionService {
     this._logEvent('ok', 'session.kick', target, null);
     // 先关授权（急停需要授权态才能下发），再停输出、踢人
     await this.projection.revoke({ reason: 'kicked' }).catch(() => {});
-    await this.game.revoke().catch(() => {});
+    // 关授权时的定向结束通知要带 kicked：主控端据此显示「对方已将你移出」而不是「收回控制权」
+    await this.game.revoke({ reason: 'kicked' }).catch(() => {});
     await this.game.emergencyStop().catch(() => {});
     await this.projection.emergencyStop().catch(() => {});
     await Promise.allSettled([
