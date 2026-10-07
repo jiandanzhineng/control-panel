@@ -801,7 +801,7 @@ class RemoteProjectionService {
       }, adapter);
     }
     for (const oldId of session.remoteDeviceIds) {
-      if (!nextIds.has(oldId)) this.devices.disconnectTransportDevice(oldId, 'remote');
+      if (!nextIds.has(oldId)) this._dropProjectedDevice(oldId);
     }
     session.remoteDeviceIds = nextIds;
   }
@@ -1255,6 +1255,21 @@ class RemoteProjectionService {
       this.devices.disconnectTransportDevice(deviceId, 'remote');
     }
     session.remoteDeviceIds.clear();
+  }
+
+  /**
+   * 摘掉一台投影设备：解除 remote 连接 + 删掉设备记录。
+   *
+   * 被控端设备在主控端设备表里是纯投影出来的（会话结束就没有实体了）。只解除连接
+   * 会让设备页留下若干台「离线设备」（实测撤权后 6 台），所以这里连记录一起删；
+   * 房主重新授权时 _applyDeviceList 会按清单重新登记。id 记进 lastRemoteDeviceIds，
+   * 供编排层收尾时兜底再清一次。
+   */
+  _dropProjectedDevice(deviceId) {
+    if (!this.lastRemoteDeviceIds) this.lastRemoteDeviceIds = new Set();
+    this.lastRemoteDeviceIds.add(deviceId);
+    try { this.devices.disconnectTransportDevice(deviceId, 'remote'); } catch (_) {}
+    Promise.resolve(this.devices.deleteDeviceById?.(deviceId)).catch(() => {});
   }
 
   _clearTimers(session) {
