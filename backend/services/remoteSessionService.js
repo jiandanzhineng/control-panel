@@ -13,6 +13,8 @@ const RENEW_CHECK_MS = 5 * 60 * 1000;
 const AUTHORIZE_RETRY_MS = 3000;
 const AUTHORIZE_MAX_ATTEMPTS = 10;
 const PING_INTERVAL_MS = 5000;
+// 投影房间 join 失败后的重试间隔（房间服务偶发超时不该让会话永久停在「重连中」）。
+const PROJECTION_JOIN_RETRY_MS = 5000;
 const LOG_LIMIT = 50;
 // 结束后的一小段时间内 phase 仍报 ended，让界面能弹出「远程已结束」。
 const ENDED_TTL_MS = 60 * 1000;
@@ -578,16 +580,27 @@ class RemoteSessionService {
     if (!joinCode) return;
     // 已经在这个房间了：只是补发/重放的邀请，不重复 join
     if (state.projectionJoinCode === joinCode && state.projectionRoomId) return;
+    // 上一轮 join 失败（房间服务超时等）时不能只靠「邀请还在」就永久停在
+    // 「重连中」：已经排了重试定时器就等它，否则再试一次。
+    if (state.projectionJoinRetry) return;
     state.joiningProjection = true;
     state.projectionJoinCode = joinCode;
     try {
       const status = await this.projection.join({ token: state.token, joinCode });
       state.projectionRoomId = status?.roomId || invite?.projectionRoomId || null;
+      state.projectionJoinRetry = false;
       this._logEvent('ok', 'session.projection-join', null, { roomId: state.projectionRoomId });
     } catch (error) {
       state.projectionRoomId = null;
       state.lastError = error?.message || String(error);
       this._logEvent('rejected', 'session.projection-join', null, { message: state.lastError });
+      // 5 秒后再试：房间服务偶发超时不该让整场会话停在「重连中」
+      state.projectionJoinRetry = true;
+      state.timers.authorize = this.setTimer(() => {
+        if (this.state !== state) return;
+        state.projectionJoinRetry = false;
+        void this._joinProjectionRoom(state);
+      }, PROJECTION_JOIN_RETRY_MS);
     } finally {
       state.joiningProjection = false;
     }

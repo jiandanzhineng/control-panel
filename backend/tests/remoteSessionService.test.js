@@ -557,6 +557,30 @@ describe('remote session service', () => {
     await operatorGame.stop();
   });
 
+  test('a failed projection join is retried instead of leaving the operator stuck', async () => {
+    const ctx = setup();
+    const { ownerSession, operatorSession, projection, clock, operatorGame } = ctx;
+    await ownerSession.create({ token: 'owner' });
+    await operatorSession.join({ token: 'operator', joinCode: 'JOIN123' });
+    await flush();
+    // 第一次 join 失败（房间服务超时），之后恢复
+    projection.operator.join.mockRejectedValueOnce(Object.assign(new Error('房间服务请求超时'), { code: 'ROOM_API_TIMEOUT' }));
+    await ownerSession.authorize({});
+    await flush();
+    expect(operatorSession.getStatus().links.projection.roomId).toBeNull();
+    expect(operatorSession.getStatus().phase).toBe('reconnecting');
+    // 重试定时器到点后自己再试一次，成功后会话回到 active
+    for (let i = 0; i < 5; i += 1) {
+      clock.fire(5000);
+      await flush();
+    }
+    expect(operatorSession.getStatus().links.projection.roomId).toMatch(/^room-proj-/);
+    expect(operatorSession.getStatus().phase).toBe('active');
+    await ownerSession.stop();
+    await operatorSession.stop();
+    await operatorGame.stop();
+  });
+
   test('operator tears down a leftover projection link when the host closes the session', async () => {
     const ctx = await setupActiveSession();
     const { ownerSession, operatorSession, projection, operatorGame } = ctx;
