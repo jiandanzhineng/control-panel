@@ -1251,9 +1251,7 @@ class RemoteProjectionService {
     // 记下最近一次摘掉的设备：会话对象随即清空（stop 时 session=null），
     // 编排层随后的 pruneRemoteDevices 还要靠这份 id 删设备记录。
     this.lastRemoteDeviceIds = new Set(session.remoteDeviceIds);
-    for (const deviceId of session.remoteDeviceIds) {
-      this.devices.disconnectTransportDevice(deviceId, 'remote');
-    }
+    for (const deviceId of session.remoteDeviceIds) this._dropProjectedDevice(deviceId);
     session.remoteDeviceIds.clear();
   }
 
@@ -1268,8 +1266,10 @@ class RemoteProjectionService {
   _dropProjectedDevice(deviceId) {
     if (!this.lastRemoteDeviceIds) this.lastRemoteDeviceIds = new Set();
     this.lastRemoteDeviceIds.add(deviceId);
+    // 设备记录可能已经被别的路径删掉（同一 id 第二次进来）：先摘连接再删记录，
+    // 两者都做「存在才动」，重复调用是安全的。
     try { this.devices.disconnectTransportDevice(deviceId, 'remote'); } catch (_) {}
-    Promise.resolve(this.devices.deleteDeviceById?.(deviceId)).catch(() => {});
+    try { this.devices.deleteDeviceById?.(deviceId); } catch (_) {}
   }
 
   _clearTimers(session) {
