@@ -240,14 +240,18 @@ class RemoteProjectionService {
       this._removeRemoteDevices(session);
       return { active: true, removed: 0 };
     }
-    // 会话对象已不在：按设备表里遗留的 remote 连接判定（本机只可能有一条投影链路）
+    // 会话对象已不在：按设备表里遗留的 remote 连接判定（本机只可能有一条投影链路）。
+    // 除了解除连接，还要把设备本身删掉：被控端设备在操作方设备表里是纯投影出来的，
+    // 会话结束后留着只会显示成 6 台「离线设备」（实测），断开后本机设备表必须干净。
     const list = this.devices.listDevicesForApi?.() || [];
     let removed = 0;
     for (const device of list) {
       const connections = device.connections || [];
       if (!connections.some((connection) => connection?.type === 'remote')) continue;
       try {
-        if (this.devices.disconnectTransportDevice(device.id, 'remote')) removed += 1;
+        this.devices.disconnectTransportDevice(device.id, 'remote');
+        await this.devices.deleteDeviceById?.(device.id);
+        removed += 1;
       } catch (_) {}
     }
     if (removed) logService.info(`[projection] pruned ${removed} leftover remote devices (${reason})`);
