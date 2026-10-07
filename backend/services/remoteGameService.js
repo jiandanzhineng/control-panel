@@ -771,6 +771,7 @@ class RemoteGameService {
       authorized: false,
       authorizedUserId: null,
       kicked: new Set(),
+      gameNames: new Map(),
       members: [],
       operatorsOnline: new Map(),
       waitingForHost: false,
@@ -1157,6 +1158,7 @@ class RemoteGameService {
     session.devices = [];
     session.games = [];
     session.gameSnapshot = null;
+    session.gameNames.clear();
     void this._endClient(session, true);
     // 会话已清空：画面流直接发一份「无会话」全量（订阅者据此收起界面）
     this.stream.reset(this.getStatus());
@@ -1182,6 +1184,11 @@ class RemoteGameService {
       });
       return;
     }
+    // 玩法命令的游戏名：payload 里没带（主控端新版本才带）时用本会话记住的，
+    // 否则被控端的操作记录只能显示游戏 id。
+    const cmdGameId = String(envelope.payload?.gameId || '').trim();
+    const cmdGameName = envelope.payload?.gameName || (cmdGameId ? session.gameNames.get(cmdGameId) : null) || null;
+    if (cmdGameId && envelope.payload?.gameName) session.gameNames.set(cmdGameId, String(envelope.payload.gameName));
     try {
       const result = await this._dispatch(type, envelope.payload || {}, { senderUserId });
       await this._respond(session, envelope.messageId, { ok: true, result });
@@ -1190,7 +1197,7 @@ class RemoteGameService {
         userId: senderUserId,
         kind: type,
         target: envelope.payload?.deviceId || envelope.payload?.gameId || null,
-        gameName: envelope.payload?.gameName || null,
+        gameName: cmdGameName,
         outcome: 'ok',
         detail: null,
       });
@@ -1202,7 +1209,7 @@ class RemoteGameService {
         userId: senderUserId,
         kind: type,
         target: envelope.payload?.deviceId || envelope.payload?.gameId || null,
-        gameName: envelope.payload?.gameName || null,
+        gameName: cmdGameName,
         outcome: 'rejected',
         detail: { code: error?.code || 'COMMAND_FAILED', message: error?.message || '命令执行失败' },
       });

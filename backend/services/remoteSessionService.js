@@ -126,6 +126,8 @@ class RemoteSessionService {
     try { this.projection.setPlayOccupiedSource?.(() => this._isPlayOccupied()); } catch (_) {}
     this.log = log;
     this.now = now;
+    // 玩法 id → 显示名（主控端登记占用时学到），会话级，操作记录据此写游戏名
+    this._gameNames = new Map();
     this.setTimer = setTimer;
     this.clearTimer = clearTimer;
     this.setRepeating = setRepeating;
@@ -369,6 +371,7 @@ class RemoteSessionService {
       await this._pruneOperatorProjection();
     }
     this._markEnded(reason, state.sessionId);
+    this._gameNames.clear();
     this._logEvent('ok', 'session.stop', null, { reason });
     return this.getStatus();
   }
@@ -415,6 +418,7 @@ class RemoteSessionService {
       throw error;
     }
     const occupancy = result?.result || { gameId: id, gameName: gameName || null };
+    if (occupancy.gameName) this._gameNames.set(String(occupancy.gameId || id), String(occupancy.gameName));
     state.localPlay = { gameId: occupancy.gameId || id, gameName: occupancy.gameName || gameName || null };
     state.playEndedReason = null;
     // 被控端记录的那份（界面显示「{peer} 正在运行《X》」用）。
@@ -870,10 +874,17 @@ class RemoteSessionService {
     if (kind === 'devices.controlConnection.set') return `切换「${name}」的控制连接`;
     // 玩法类：写游戏名（主控端登记占用时带 gameName），没有才退回游戏 id；target 是游戏 id 不是设备
     if (kind.startsWith('game.') || kind.startsWith('play.')) {
-      const game = String(gameName || '').trim() || target || detail?.gameId || '';
+      const game = this._gameName(target, detail?.gameId, gameName);
       return game ? `${base}《${game}》` : base;
     }
     return name ? `${base}「${name}」` : base;
+  }
+
+  /** 玩法显示名：命令带的 gameName → 本会话登记过的名字 → 游戏 id。 */
+  _gameName(target, detailGameId, gameName) {
+    const id = String(target || detailGameId || '').trim();
+    const known = id ? this._gameNames?.get(id) : null;
+    return String(gameName || '').trim() || known || id;
   }
 
   /** 悬停详情：限制 → 「请求 999 → 实际 20」；拒绝 → 原因 */
@@ -903,6 +914,12 @@ class RemoteSessionService {
   }
 
   _pushLog(entry) {
+    // 玩法命令的显示名只在本会话内学到（payload 里带 gameName 时），会话结束后不残留
+    if (entry?.kind && (entry.kind.startsWith('game.') || entry.kind.startsWith('play.'))) {
+      const id = String(entry.target || entry.detail?.gameId || '').trim();
+      const name = this._gameName(id, entry.detail?.gameId, entry.gameName);
+      if (id && name && name !== id) this._gameNames.set(id, name);
+    }
     this.logEntries.push(entry);
     if (this.logEntries.length > this.logLimit) {
       this.logEntries.splice(0, this.logEntries.length - this.logLimit);

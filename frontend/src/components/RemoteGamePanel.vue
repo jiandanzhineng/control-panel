@@ -352,7 +352,7 @@ async function startGame() {
   if (blocking.value.length || busy.value) return
   busy.value = true
   try {
-    await sendRemoteGameCommand('game.start', { gameId: gameId.value, deviceMap: { ...deviceMap }, params: { ...params } })
+    await sendRemoteGameCommand('game.start', { gameId: gameId.value, gameName: selectedGame.value?.title || undefined, deviceMap: { ...deviceMap }, params: { ...params } })
     localStorage.setItem(configKey(gameId.value), JSON.stringify({ deviceMap, params }))
     error.value = ''
     await refresh()
@@ -376,7 +376,7 @@ async function stopRunningGame() {
   busy.value = true
   try {
     if (status.value.role === 'owner') await stopGameRuntime('user_stop')
-    else await sendRemoteGameCommand('game.stop', { gameSessionId: status.value.gameSessionId || undefined })
+    else await sendRemoteGameCommand('game.stop', { gameSessionId: status.value.gameSessionId || undefined, gameId: status.value.snapshot?.gameId || gameId.value || undefined, gameName: selectedGame.value?.title || undefined })
     error.value = ''
     await refresh()
   } catch (e: any) { error.value = e?.message || t('remoteGame.commandFailed') }

@@ -819,6 +819,12 @@ describe('remote session play occupancy', () => {
     const releaseRow = operatorSession.getStatus().log.find((row) => row.kind === 'play.release');
     expect(releaseRow?.summary).toBe('结束玩法《气压突变寸止》');
 
+    // 主控端后续的 game.* 命令（只带 gameId）也用本会话学到的游戏名写记录
+    await operatorSession.command({ type: 'game.stop', payload: { gameId: 'surge-edging' } });
+    await flush();
+    const stopRow = ownerSession.getStatus().log.filter((row) => row.kind === 'game.stop').pop();
+    expect(stopRow?.summary).toBe('停止玩法《气压突变寸止》');
+
     await ownerSession.stop();
     await operatorSession.stop();
   });
