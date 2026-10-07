@@ -97,3 +97,26 @@ export function pollIntervalMs(phase: RemoteSessionPhase, hidden: boolean): numb
   return phase === 'active' || phase === 'reconnecting' ? 1000 : 3000
 }
 
+/** 自动跳设备页的记忆：已经为哪段会话跳过 */
+export interface AutoNavigateMemo {
+  handledKey: string | null
+}
+
+/**
+ * 主控端授权成功（进入远程模式）的那一刻自动跳 /devices 一次。
+ * 按会话 id 记：上一段会话结束后界面没轮询到 idle（后台窗口节流、直接加入新房间）也不会漏跳；
+ * 在 /remote 页等授权是最常见的情况，同样要跳。已在设备页就不跳。返回要跳的路径或 null（会修改 memo）。
+ */
+export function stepAutoNavigate(
+  memo: AutoNavigateMemo,
+  ui: RemoteUiState,
+  sessionId: string | null | undefined,
+  path: string,
+): string | null {
+  if (!ui.live) { memo.handledKey = null; return null }
+  if (!ui.isOperatorRemote) return null
+  const key = sessionId || '(no-session-id)'
+  if (memo.handledKey === key) return null
+  memo.handledKey = key
+  return String(path || '').startsWith('/devices') ? null : '/devices'
+}

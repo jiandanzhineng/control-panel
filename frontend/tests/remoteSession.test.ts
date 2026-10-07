@@ -7,6 +7,7 @@ import {
   deriveUiState,
   pollIntervalMs,
   sessionTone,
+  stepAutoNavigate,
 } from '../src/remote/remoteSessionState.ts'
 import { isMenuItemLocked, isRouteLocked } from '../src/remote/remoteLock.ts'
 import { endReasonKey, isLivePhase, isStaleEndedNotice, shouldAutoReturn, shouldFireEnded, stepEndedGate } from '../src/remote/remoteEnded.ts'
@@ -222,3 +223,25 @@ test('bar text follows phase: pending never says "controlling"', () => {
   assert.equal(sessionTone('pending-authorization'), 'pending')
 })
 
+test('operator auto-navigates to /devices once per session, including from /remote', () => {
+  const projection = { game: { connected: true }, projection: { connected: true, roomId: 'p1' } }
+  const pending = deriveUiState(status({ role: 'operator', phase: 'pending-authorization' }))
+  const active = deriveUiState(status({ role: 'operator', phase: 'active', authorized: true, links: projection }))
+  const memo = { handledKey: null as string | null }
+
+  assert.equal(stepAutoNavigate(memo, pending, 's1', '/remote'), null)
+  assert.equal(stepAutoNavigate(memo, active, 's1', '/remote'), '/devices')
+  assert.equal(stepAutoNavigate(memo, active, 's1', '/home'), null, 'only once per session')
+
+  // 上一段会话结束没被轮询到（直接进入下一段）：新会话 id 仍然要跳
+  assert.equal(stepAutoNavigate(memo, pending, 's2', '/home'), null)
+  assert.equal(stepAutoNavigate(memo, active, 's2', '/home'), '/devices')
+
+  // 已经在设备页：记为已处理但不跳
+  assert.equal(stepAutoNavigate(memo, active, 's3', '/devices'), null)
+  assert.equal(stepAutoNavigate(memo, active, 's3', '/home'), null)
+
+  // 回到 idle 后清空记忆
+  stepAutoNavigate(memo, deriveUiState(status({ active: false, phase: 'idle' })), null, '/remote')
+  assert.equal(memo.handledKey, null)
+})

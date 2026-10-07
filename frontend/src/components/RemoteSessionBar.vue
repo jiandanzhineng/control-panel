@@ -75,7 +75,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { useRemoteSession } from '../composables/useRemoteSession'
-import { barView, barVisible } from '../remote/remoteSessionState'
+import { barView, barVisible, stepAutoNavigate } from '../remote/remoteSessionState'
 import { peerLabel, formatClock, latencyValue, detailText as detailTextOf } from '../remote/remoteSessionFormat'
 import { endReasonKey, isStaleEndedNotice, shouldAutoReturn } from '../remote/remoteEnded'
 import { playEndedMessageKey, preemptedLocalPlay, playLabel } from '../remote/remotePlay'
@@ -195,13 +195,11 @@ async function stopLocalPlay(gameId?: string) {
   }).catch(() => {})
 }
 
-// 主控端授权成功：自动进一次设备页（远程设备就在那里）
-let navigatedForSession = false
-watch(() => [ui.value.isOperatorRemote, ui.value.live], ([remote, live]) => {
-  if (!live) { navigatedForSession = false; return }
-  if (!remote || navigatedForSession) return
-  navigatedForSession = true
-  if (shouldAutoReturn('operator', router.currentRoute.value.path)) router.push('/devices')
+// 主控端授权成功：自动进一次设备页（远程设备就在那里），按会话 id 只跳一次
+const autoNavigate = { handledKey: null as string | null }
+watch(() => [ui.value.isOperatorRemote, ui.value.live, session.sessionId.value], () => {
+  const target = stepAutoNavigate(autoNavigate, ui.value, session.sessionId.value, router.currentRoute.value.path)
+  if (target) router.push(target)
 }, { immediate: true })
 
 onMounted(() => { session.start() })
