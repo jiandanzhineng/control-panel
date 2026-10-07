@@ -239,8 +239,10 @@ class RemoteProjectionService {
     const ids = new Set();
     if (session) {
       for (const id of session.remoteDeviceIds) ids.add(id);
-    } else {
-      // 会话对象已不在：按设备表里遗留的 remote 连接判定（本机只可能有一条投影链路）
+    }
+    for (const id of this.lastRemoteDeviceIds || []) ids.add(id);
+    if (!ids.size) {
+      // 两条登记都没有：按设备表里遗留的 remote 连接判定（本机只可能有一条投影链路）
       for (const device of this.devices.listDevicesForApi?.() || []) {
         if ((device.connections || []).some((connection) => connection?.type === 'remote')) ids.add(device.id);
       }
@@ -257,6 +259,7 @@ class RemoteProjectionService {
       } catch (_) {}
     }
     if (session) session.remoteDeviceIds.clear();
+    this.lastRemoteDeviceIds = new Set();
     if (removed) logService.info(`[projection] pruned ${removed} leftover remote devices (${reason})`);
     return { active: !!session, removed };
   }
@@ -1245,6 +1248,9 @@ class RemoteProjectionService {
   }
 
   _removeRemoteDevices(session) {
+    // 记下最近一次摘掉的设备：会话对象随即清空（stop 时 session=null），
+    // 编排层随后的 pruneRemoteDevices 还要靠这份 id 删设备记录。
+    this.lastRemoteDeviceIds = new Set(session.remoteDeviceIds);
     for (const deviceId of session.remoteDeviceIds) {
       this.devices.disconnectTransportDevice(deviceId, 'remote');
     }
