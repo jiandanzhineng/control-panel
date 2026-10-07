@@ -22,6 +22,7 @@ export function endReasonKey(reason: string | null | undefined): string {
       return 'ended'
     // 本端自己断开 / 被新会话顶替：用户刚点的按钮，不再弹提示也不跳页
     case 'operator-stop':
+    case 'host-stop':
     case 'session-create-failed':
     case 'replaced':
       return 'none'

@@ -210,7 +210,9 @@ async function onEmergencyStop() {
 }
 
 async function onStop() {
-  try { await session.stopSession('session-stop') } catch (e: any) { fail(e) }
+  // 本端主动结束/取消/断开：用本端原因，结束提示不弹（'session-stop' 会被当成「对方已结束远程」）
+  const reason = session.role.value === 'owner' ? 'host-stop' : 'operator-stop'
+  try { await session.stopSession(reason) } catch (e: any) { fail(e) }
 }
 
 async function copyCode() {

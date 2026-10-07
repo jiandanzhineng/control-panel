@@ -122,6 +122,7 @@ test('end reasons map to the four messages', () => {
   assert.equal(endReasonKey(null), 'offline')
   // 本端主动断开不提示
   assert.equal(endReasonKey('operator-stop'), 'none')
+  assert.equal(endReasonKey('host-stop'), 'none')
   assert.equal(endReasonKey('replaced'), 'none')
 })
 
