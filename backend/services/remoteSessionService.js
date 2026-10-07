@@ -290,7 +290,12 @@ class RemoteSessionService {
     // 主房间的 session.revoked 是「对方结束远程」的唯一通知：投影链路不会自己给
     // 操作方发投影层 ended（房主只关掉自己那侧房间）。主控端要自己把投影链路
     // 与设备表收干净，否则被控端的设备会一直留在本机设备列表里。
-    if (role === 'operator') await this._teardownOperatorLinks();
+    if (role === 'operator') {
+      await this._teardownOperatorLinks();
+      // 投影链路自己那侧「会话已不在」时不会删设备记录，编排层再兜一次
+      // （撤权/踢出后投影服务可能已先收尾，_teardownOperatorLinks 里那次就白跑了）。
+      await this._pruneOperatorProjection();
+    }
     this.lastEnded = { at: this.now(), reason };
     this._logEvent('ok', 'session.stop', null, { reason });
     return this.getStatus();
