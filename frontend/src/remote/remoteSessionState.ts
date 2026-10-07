@@ -2,7 +2,7 @@
 // 全部为纯函数，便于 node --experimental-strip-types --test 直接测（不依赖 Vue / DOM）。
 import type { RemoteSessionPhase, RemoteSessionRole, RemoteSessionStatus } from './remoteSessionTypes'
 
-export type SessionTone = 'ok' | 'warn' | 'off'
+export type SessionTone = 'ok' | 'warn' | 'pending' | 'off'
 
 export interface RemoteUiState {
   phase: RemoteSessionPhase
@@ -47,11 +47,41 @@ export function deriveUiState(status: RemoteSessionStatus | null | undefined): R
   }
 }
 
-/** 状态灯：已连接绿 / 重连中琥珀 / 断开红 */
+/** 状态灯：已连接绿 / 重连中琥珀（脉冲）/ 待授权琥珀（静止）/ 断开红 */
 export function sessionTone(phase: RemoteSessionPhase): SessionTone {
   if (phase === 'active') return 'ok'
   if (phase === 'reconnecting') return 'warn'
+  if (phase === 'pending-authorization' || phase === 'waiting') return 'pending'
   return 'off'
+}
+
+/** 远程条文案键（remoteSession.bar.*）与按钮：待授权阶段不能说「正在控制」 */
+export interface BarView {
+  textKey: 'operator' | 'operatorPending' | 'host' | 'hostPending'
+  tone: SessionTone
+  /** 急停只在真的有人在控制时出现 */
+  showEmergencyStop: boolean
+  /** 主控端右侧按钮：待授权时是「取消」，已控制时是「断开」 */
+  operatorStopKey: 'disconnect' | 'cancel'
+}
+
+export function barView(ui: RemoteUiState): BarView {
+  if (ui.isOperator) {
+    const pending = !ui.authorized
+    return {
+      textKey: pending ? 'operatorPending' : 'operator',
+      tone: pending && !ui.reconnecting ? 'pending' : ui.tone,
+      showEmergencyStop: !pending,
+      operatorStopKey: pending ? 'cancel' : 'disconnect',
+    }
+  }
+  const controlled = ui.isHostControlled
+  return {
+    textKey: controlled ? 'host' : 'hostPending',
+    tone: controlled || ui.reconnecting ? ui.tone : 'pending',
+    showEmergencyStop: controlled,
+    operatorStopKey: 'disconnect',
+  }
 }
 
 /** 远程条是否显示：主控端等待授权/连接中也要看得见，被控端只在有人控制时出现 */
@@ -66,3 +96,4 @@ export function pollIntervalMs(phase: RemoteSessionPhase, hidden: boolean): numb
   if (hidden) return 5000
   return phase === 'active' || phase === 'reconnecting' ? 1000 : 3000
 }
+

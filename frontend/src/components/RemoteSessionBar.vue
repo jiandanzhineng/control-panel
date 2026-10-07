@@ -36,11 +36,10 @@
       </el-popover>
 
       <el-button
-        v-if="ui.isHostControlled || ui.isOperator"
+        v-if="view.showEmergencyStop"
         size="small"
         type="danger"
         :loading="busy"
-        :disabled="!authorized"
         @click="onEmergencyStop"
       >
         {{ t('remoteSession.bar.emergencyStop') }}
@@ -52,7 +51,7 @@
       </template>
       <template v-else-if="ui.isOperator">
         <el-button size="small" plain :loading="busy" @click="onStop">
-          {{ t('remoteSession.bar.disconnect') }}
+          {{ t(`remoteSession.bar.${view.operatorStopKey}`) }}
         </el-button>
       </template>
       <template v-else-if="ui.isOwner">
@@ -76,7 +75,7 @@ import { useI18n } from 'vue-i18n'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { useRemoteSession } from '../composables/useRemoteSession'
-import { barVisible } from '../remote/remoteSessionState'
+import { barView, barVisible } from '../remote/remoteSessionState'
 import { peerLabel, formatClock, latencyValue, detailText as detailTextOf } from '../remote/remoteSessionFormat'
 import { endReasonKey, isStaleEndedNotice, shouldAutoReturn } from '../remote/remoteEnded'
 import { playEndedMessageKey, preemptedLocalPlay, playLabel } from '../remote/remotePlay'
@@ -88,20 +87,22 @@ const session = useRemoteSession()
 const ui = computed(() => session.ui.value)
 const visible = computed(() => barVisible(ui.value))
 const busy = computed(() => session.busy.value)
-const authorized = computed(() => session.authorized.value)
 const showMask = computed(() => ui.value.isOperator && ui.value.reconnecting)
 
 const roleClass = computed(() => (ui.value.isOperator ? 'is-operator' : 'is-host'))
-const toneClass = computed(() => `is-${ui.value.tone}`)
+const view = computed(() => barView(ui.value))
+const toneClass = computed(() => `is-${view.value.tone}`)
 
 const peerName = computed(() => peerLabel(session.peer.value))
 const text = computed(() => {
-  const name = peerName.value
+  // 还不知道对方是谁时用「对方」，不留空名字
+  const name = peerName.value || t('remoteSession.bar.peerFallback')
+  const key = view.value.textKey
   if (ui.value.isOperator) {
-    const base = t('remoteSession.bar.operator', { name })
+    const base = t(`remoteSession.bar.${key}`, { name })
     return ui.value.reconnecting ? `${base} · ${t('remoteSession.bar.reconnecting')}` : base
   }
-  const base = t('remoteSession.bar.host', { name })
+  const base = t(`remoteSession.bar.${key}`, { name })
   const line = ui.value.reconnecting ? `${base} · ${t('remoteSession.bar.reconnecting')}` : base
   const occupancy = ui.value.isHostControlled ? session.occupancy.value : null
   return occupancy ? `${line} · ${t('remoteSession.bar.occupancy', { name, game: playLabel(occupancy) })}` : line
@@ -230,6 +231,7 @@ onUnmounted(() => { session.stop() })
 .remote-bar__dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .remote-bar__dot.is-ok { background: #22c55e; }
 .remote-bar__dot.is-off { background: #ef4444; }
+.remote-bar__dot.is-pending { background: #f5a524; }
 .remote-bar__dot.is-warn { background: #f5a524; animation: remote-pulse 1.2s ease-in-out infinite; }
 
 @keyframes remote-pulse {

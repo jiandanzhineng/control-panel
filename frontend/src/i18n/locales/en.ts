@@ -1038,6 +1038,10 @@ const en = {
     entryOpen: 'Open remote session',
     bar: {
       operator: 'Controlling {name}\'s client',
+      operatorPending: 'Waiting for {name} to allow control…',
+      hostPending: '{name} requests control of your client',
+      peerFallback: 'the other side',
+      cancel: 'Cancel',
       host: '⚠ {name} is controlling your client',
       latency: '{n}ms',
       reconnecting: 'Reconnecting…',

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  barView,
   barVisible,
   deriveUiState,
   pollIntervalMs,
@@ -201,3 +202,23 @@ test('ended notice belongs to the session that just ended', () => {
   assert.equal(stepEndedGate(gate, 'active', null, 'B'), false)
   assert.equal(stepEndedGate(gate, 'ended', 'session-stop-by-host', 'B'), true)
 })
+
+test('bar text follows phase: pending never says "controlling"', () => {
+  const projection = { game: { connected: true }, projection: { connected: true, roomId: 'p1' } }
+  const opPending = barView(deriveUiState(status({ role: 'operator', phase: 'pending-authorization' })))
+  assert.deepEqual(opPending, { textKey: 'operatorPending', tone: 'pending', showEmergencyStop: false, operatorStopKey: 'cancel' })
+  const opActive = barView(deriveUiState(status({ role: 'operator', phase: 'active', authorized: true, links: projection })))
+  assert.deepEqual(opActive, { textKey: 'operator', tone: 'ok', showEmergencyStop: true, operatorStopKey: 'disconnect' })
+  const opReconnecting = barView(deriveUiState(status({ role: 'operator', phase: 'reconnecting', authorized: true, links: projection })))
+  assert.equal(opReconnecting.textKey, 'operator')
+  assert.equal(opReconnecting.tone, 'warn')
+
+  const hostPending = barView(deriveUiState(status({ role: 'owner', phase: 'pending-authorization' })))
+  assert.deepEqual(hostPending, { textKey: 'hostPending', tone: 'pending', showEmergencyStop: false, operatorStopKey: 'disconnect' })
+  const hostActive = barView(deriveUiState(status({ role: 'owner', phase: 'active', authorized: true })))
+  assert.equal(hostActive.textKey, 'host')
+  assert.equal(hostActive.tone, 'ok')
+  assert.equal(hostActive.showEmergencyStop, true)
+  assert.equal(sessionTone('pending-authorization'), 'pending')
+})
+

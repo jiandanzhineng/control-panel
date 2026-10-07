@@ -1038,6 +1038,10 @@ const zh = {
     entryOpen: '打开远程连接',
     bar: {
       operator: '正在控制：{name} 的客户端',
+      operatorPending: '等待 {name} 允许控制…',
+      hostPending: '{name} 请求控制你的客户端',
+      peerFallback: '对方',
+      cancel: '取消',
       host: '⚠ {name} 正在控制你的客户端',
       latency: '延迟 {n}ms',
       reconnecting: '重连中…',
