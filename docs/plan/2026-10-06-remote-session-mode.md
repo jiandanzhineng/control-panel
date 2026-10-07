@@ -1,6 +1,6 @@
 # 远程会话模式（客户端级远控）方案
 
-> 状态：方案待审阅（2026-10-06）
+> 状态：已实施（PC↔PC），2026-10-07 端到端验收通过（docs/test/remote-session-e2e-2026-10-07.md），待合并
 > 术语：**被控端** = 设备所在、被远程操作的客户端；**主控端** = 发起远程操作的客户端。
 > 承接：[2026-09-23-remote-game-client-control.md](2026-09-23-remote-game-client-control.md) §7「客户端级远控」，本文把它细化为可实施方案；游戏级远控（HostRuntime）沿用该文。
 > 现状基础：远程设备投影、远程游戏两条链路已在生产 room API + EMQX 上回归通过（见 `docs/test/remote-control-e2e-2026-10-06.md`）。
