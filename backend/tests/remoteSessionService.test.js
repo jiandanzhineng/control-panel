@@ -354,11 +354,9 @@ describe('remote session service', () => {
     await flush();
     expect(ownerGame.getAuthorizedUserId()).toBeNull();
     expect(projection.owner.revoke).toHaveBeenCalled();
-    // 成员还在房间里：撤权后回到「待授权」，房主可以再次点「允许控制」
-    expect(ownerSession.getStatus()).toMatchObject({ authorized: false, phase: 'pending-authorization', peer: null });
+    // 主控端收到撤权即结束会话离开：被控端回到「等待加入」，不留点不动的「允许控制」
+    expect(ownerSession.getStatus()).toMatchObject({ authorized: false, phase: 'waiting', peer: null });
 
-    await ownerSession.authorize({});
-    await flush();
     await ownerSession.kick({ userId: target });
     await flush();
     expect(api.kickMember).toHaveBeenCalledWith('owner', 'room-game', target);

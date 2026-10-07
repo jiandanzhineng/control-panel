@@ -267,9 +267,10 @@ class RemoteSessionService {
     if (state.role !== 'owner') throw this._error('NOT_OWNER', '只有被控端可以撤权');
     this._finishAuthorize(state);
     state.authorized = false;
-    // 房间里的成员还在线：撤权后应回到「待授权」（面板仍能重新点「允许控制」），
-    // 成员已离开才是 waiting。撤销本身不踢人，成员会一直连着 MQTT。
-    state.phase = state.peerUserId ? 'pending-authorization' : 'waiting';
+    // 主控端收到撤权通知会结束会话并离开房间，被控端回到「等待加入」；
+    // 对方重新加入时 member 上线事件会再把阶段推到「待授权」。
+    state.peerUserId = null;
+    state.phase = 'waiting';
     this._logEvent('ok', 'session.revoke', null, null);
     await Promise.allSettled([
       this.game.revoke(),
@@ -524,7 +525,8 @@ class RemoteSessionService {
       if (!event.authorized) {
         state.authorized = false;
         state.peerUserId = null;
-        if (state.phase === 'active') state.phase = 'waiting';
+        // 授权关闭后没有可授权对象：待授权也一并回到等待，避免远程条出现点不动的「允许控制」
+        if (state.phase === 'active' || state.phase === 'pending-authorization') state.phase = 'waiting';
       }
       return;
     }
