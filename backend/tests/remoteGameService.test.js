@@ -189,6 +189,17 @@ function pair({ games = [{ id: 'surge-edging', title: '气压突变寸止', runt
   return { broker, api, host, owner, operator };
 }
 
+// 同房间的第二个操作方：撤权/踢出只能结束被针对的那个账号
+function pairWithOther() {
+  const ctx = pair();
+  const other = new RemoteGameService({
+    host: ctx.host, api: ctx.api, mqttConnect: ctx.broker.connect,
+    listGames: () => [{ id: 'surge-edging', runtimeMode: 'host', params: [], devices: [] }],
+    listDevices: () => [], outputGuard: guardWith(timers()), ...timers(),
+  });
+  return { ...ctx, other };
+}
+
 // 带可控时钟的实例对：用于凭据刷新 / 重连 / 宽限期测试
 function clockPair({ games = [{ id: 'surge-edging', runtimeMode: 'host', params: [], devices: [] }], devices = [], credentialTtlMs = 600000 } = {}) {
   const broker = new FakeBroker();
@@ -588,6 +599,28 @@ describe('remote game service', () => {
     // 「对方已收回控制权」：房主发的 session.revoked 里带 revoked 原因
     const revoked = [...broker.publishes].reverse().find(({ payload }) => payload.type === 'session.revoked');
     expect(revoked.payload.payload).toMatchObject({ reason: 'revoked' });
+    await owner.stop();
+  });
+
+  test('revoke and kick only end the targeted member, not the other one in the room', async () => {
+    const { broker, owner, operator, other } = pairWithOther();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await other.join({ token: 'other', joinCode: 'JOIN123' });
+    await flush();
+    await owner.authorize();
+    await flush();
+    const target = owner.session.authorizedUserId;
+    expect(['operator', 'other']).toContain(target);
+    await owner.revoke();
+    await flush();
+    // 结束通知定向发给被撤权的那个账号（带 forUserId），房间里的另一个不受影响
+    const revoked = [...broker.publishes].reverse().find(({ payload }) => payload.type === 'session.revoked');
+    expect(revoked.payload.payload).toMatchObject({ reason: 'revoked', forUserId: target });
+    const ended = target === 'operator' ? operator : other;
+    const survivor = target === 'operator' ? other : operator;
+    expect(ended.getStatus().active).toBe(false);
+    expect(survivor.getStatus().active).toBe(true);
     await owner.stop();
   });
 
