@@ -609,6 +609,57 @@ describe('RemoteProjectionService', () => {
     await owner.stop();
   });
 
+  test('a device list computed before a revoke but delivered after it does not re-register devices', async () => {
+    const { broker, ownerDevices, operatorDevices, owner, operator } = await setupAuthorizedPair();
+    expect(operatorDevices.getDeviceForApi('dev-1')).not.toBeNull();
+    // 撤权前已经发出的完整清单（代次 = 当前授权）
+    const stale = [...broker.published].reverse()
+      .map(({ topic, payload }) => ({ topic, envelope: JSON.parse(payload) }))
+      .find(({ envelope }) => envelope.type === 'projection.device-list' && envelope.payload.devices.length > 0);
+    expect(stale.envelope.payload.authEpoch).toEqual(expect.any(Number));
+
+    await owner.revoke();
+    await flush();
+    operatorDevices.deleteDeviceById = async (id) => { operatorDevices.rows.delete(id); };
+    await operator.pruneRemoteDevices('test');
+    operatorDevices.rows.delete('dev-1');
+    expect(operatorDevices.getDeviceForApi('dev-1')).toBeNull();
+
+    // 旧清单迟到：不认
+    operator._onOperatorEvent(operator.session, stale.envelope);
+    expect(operatorDevices.getDeviceForApi('dev-1')).toBeNull();
+    expect(operator.getStatus().authorized).toBe(false);
+    // 旧设备状态迟到：也不认
+    operator._onOperatorEvent(operator.session, {
+      type: 'projection.device-state', payload: { deviceId: 'dev-1', data: { power: 3 } },
+    });
+    expect(operatorDevices.getDeviceForApi('dev-1')).toBeNull();
+
+    // 房主重新授权（新代次）：恢复登记
+    await owner.authorize('operator');
+    await flush();
+    expect(operatorDevices.getDeviceForApi('dev-1')).not.toBeNull();
+    expect(operator.getStatus().authorized).toBe(true);
+    void ownerDevices;
+    await operator.stop();
+    await owner.stop();
+  });
+
+  test('the host never publishes a full device list while nobody is authorized', async () => {
+    const { broker, owner } = await setupAuthorizedPair();
+    await owner.revoke();
+    await flush();
+    const before = broker.published.length;
+    await owner._publishDeviceList(owner.session);
+    owner._onLocalDeviceListChange();
+    await flush();
+    const lists = broker.published.slice(before)
+      .map(({ payload }) => JSON.parse(payload))
+      .filter((envelope) => envelope.type === 'projection.device-list');
+    expect(lists).toEqual([]);
+    await owner.stop();
+  });
+
   test('rejects writes from unauthorized operators', async () => {
     const broker = new FakeBroker();
     const api = createRoomApi();
@@ -901,9 +952,9 @@ describe('RemoteProjectionService', () => {
       { id: 'dev-1', message: { method: 'update', power: 10 } },
     ]));
 
-    // 未授权的 operator-b 写不进任何设备。
-    await expect(secondDevices.adapters.get('dev-1').send({ method: 'update', power: 20 }))
-      .rejects.toMatchObject({ code: 'CONTROL_NOT_AUTHORIZED' });
+    // 未授权的 operator-b 不登记清单里给别人的设备（写入被拒见「rejects writes from unauthorized operators」）。
+    expect(secondDevices.adapters.get('dev-1')).toBeUndefined();
+    expect(secondDevices.getDeviceForApi('dev-1')).toBeNull();
 
     ownerDevices.closed = [];
     await first.stop();

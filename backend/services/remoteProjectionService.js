@@ -239,6 +239,8 @@ class RemoteProjectionService {
     const ids = new Set();
     if (session) {
       for (const id of session.remoteDeviceIds) ids.add(id);
+      // 先清登记再逐台删：删除要 await，期间到达的设备状态不能再命中这些 id
+      session.remoteDeviceIds.clear();
     }
     for (const id of this.lastRemoteDeviceIds || []) ids.add(id);
     if (!ids.size) {
@@ -283,6 +285,12 @@ class RemoteProjectionService {
       sequences: new Map(),
       seenMessageIds: new Set(),
       remoteDeviceIds: new Set(),
+      // 授权代次：房主每次授权/撤权 +1 并随设备清单下发；操作方只认不比已见过的旧的清单，
+      // 撤权后迟到的旧清单（撤权前算好、撤权后才到）不会把设备重新登记回来。
+      authEpoch: 0,
+      // 操作方：见过的最大授权代次；revoked = 本账号的授权已结束（等新授权前不认任何设备清单/状态）
+      seenAuthEpoch: null,
+      revoked: false,
       operatorsOnline: new Map(),
       // 授权绑定具体 userId：新加入的操作方默认未授权（审查报告 §2.3）。
       authorizedUserId: null,
@@ -697,6 +705,7 @@ class RemoteProjectionService {
       controlTtlSec: session.controlTtlSec,
       controlExpiresAt: new Date(session.controlExpiresAt).toISOString(),
       authorizedFor: null,
+      authEpoch: session.authEpoch,
     }).catch(() => {});
   }
 
@@ -735,14 +744,14 @@ class RemoteProjectionService {
     if (envelope.type === 'projection.device-list') {
       this._applyDeviceList(session, payload);
     } else if (envelope.type === 'projection.device-state') {
-      if (!payload || !session.remoteDeviceIds.has(payload.deviceId)) return;
+      if (session.revoked || !payload || !session.remoteDeviceIds.has(payload.deviceId)) return;
       this.devices.handleTransportMessage(
         payload.deviceId,
         { method: 'update', ...(payload.data || {}) },
         'remote',
       );
     } else if (envelope.type === 'projection.device-message') {
-      if (!payload || !session.remoteDeviceIds.has(payload.deviceId)) return;
+      if (session.revoked || !payload || !session.remoteDeviceIds.has(payload.deviceId)) return;
       this.devices.handleTransportMessage(payload.deviceId, payload.message, 'remote');
     } else if (envelope.type === 'projection.write-result') {
       if (!payload || typeof payload.requestId !== 'string') return;
@@ -774,6 +783,11 @@ class RemoteProjectionService {
       this._removeRemoteDevices(session);
       return;
     }
+    // 授权代次比已见过的旧：撤权前算好、撤权后才到的清单，直接丢掉
+    const epoch = Number.isFinite(Number(payload.authEpoch)) && payload.authEpoch !== null
+      ? Number(payload.authEpoch) : null;
+    if (epoch !== null && session.seenAuthEpoch !== null && epoch < session.seenAuthEpoch) return;
+    if (epoch !== null) session.seenAuthEpoch = epoch;
     // 收到设备清单即按房主给的对象判定授权：authorizedFor 命中本账号才授权；
     // 老房主（无该字段）回退到「清单非空即已授权」，保持与移动端兼容。
     if (typeof payload.authorizedFor === 'string') {
@@ -783,8 +797,10 @@ class RemoteProjectionService {
     } else {
       session.authorizedUserId = payload.devices.length > 0 ? session.credential.userId : null;
     }
+    session.revoked = !session.authorizedUserId;
+    const devices = session.authorizedUserId ? payload.devices : [];
     const nextIds = new Set();
-    for (const item of payload.devices) {
+    for (const item of devices) {
       if (!item || typeof item.deviceId !== 'string' || typeof item.deviceType !== 'string') continue;
       nextIds.add(item.deviceId);
       const adapter = {
@@ -811,6 +827,8 @@ class RemoteProjectionService {
       this._expireOwnerSession(session, 'control-ttl-expired-on-device-list');
       return this._publishEnvelope(session, 'events', 'projection.expired', {});
     }
+    // 没有被授权的操作方就不发完整清单：撤权/移出后只能收到 _publishRevokedDeviceList 的空清单。
+    if (!session.authorizedUserId) return Promise.resolve();
     return this._publishEnvelope(session, 'events', 'projection.device-list', {
       devices: this._ownerDevices().map((device) => this._deviceDescriptor(device, session)),
       limits: session.limits,
@@ -819,6 +837,7 @@ class RemoteProjectionService {
       // 显式授权标记：操作方据此判断自己是否被授权（空设备清单不等于未授权）。
       // 老客户端（移动端）忽略未知字段，兼容。
       authorizedFor: session.authorizedUserId || null,
+      authEpoch: session.authEpoch,
     });
   }
 
@@ -1117,6 +1136,7 @@ class RemoteProjectionService {
       await this.revoke({ reason: 'authorized-operator-changed' });
     }
     session.authorizedUserId = target;
+    session.authEpoch += 1;
     if (session.operatorsOnline.get(target) !== true) {
       await this._refreshMembers(session);
     }
@@ -1132,6 +1152,7 @@ class RemoteProjectionService {
     }
     const userId = session.authorizedUserId;
     session.authorizedUserId = null;
+    session.authEpoch += 1;
     if (userId) {
       await this._stopOperatorOutputs(session, userId, reason);
     }
@@ -1152,6 +1173,7 @@ class RemoteProjectionService {
     }
     if (session.authorizedUserId === target) {
       session.authorizedUserId = null;
+      session.authEpoch += 1;
       await this._stopOperatorOutputs(session, target, 'kicked');
       await this._publishRevokedDeviceList(session);
     }
