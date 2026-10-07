@@ -842,6 +842,9 @@ class RemoteProjectionService {
       this._removeRemoteDevices(session);
       throw this._error('CONTROL_EXPIRED', '远程控制已过期');
     }
+    // 操作方侧的输出登记：本机「急停」要靠它知道该给被控端发哪些停机帧
+    // （被控端另有一份自己的登记，两边各自负责自己那一半）。
+    this._trackLocalOutput(session, deviceId, message);
     const requestId = randomUUID();
     return new Promise((resolve, reject) => {
       const timer = this.setTimer(() => {
@@ -1169,6 +1172,62 @@ class RemoteProjectionService {
     session.operatorOutputs.clear();
     await Promise.all([...deviceIds].map((deviceId) => this._stopRemoteOutput(deviceId)));
     logService.info('RemoteProjection', `safe stop: ${reason} (${deviceIds.size})`);
+  }
+
+  /**
+   * 主控端本机「急停」：把本机（操作方）经投影触发的输出全部停掉。
+   *
+   * 操作方发不了 events（ACL），被控端的急停只能看到主房间那条命令；投影链路在操作方
+   * 这一侧的收尾由这里负责：清掉输出登记与看门狗，并向被控端逐个下发停止报文
+   * （停止路径永远放行，被控端侧也做同样的事，两边幂等）。
+   */
+  async emergencyStopOperatorOutputs(reason = 'operator-emergency-stop') {
+    const session = this.session;
+    if (!session || session.role !== 'operator') return { ok: false, stopped: [] };
+    const deviceIds = new Set(this.watchdog.touched());
+    for (const ids of session.operatorOutputs.values()) {
+      for (const id of ids) deviceIds.add(id);
+    }
+    for (const id of session.localOutputs || []) deviceIds.add(id);
+    session.operatorOutputs.clear();
+    if (session.localOutputs) session.localOutputs.clear();
+    for (const deviceId of deviceIds) this.watchdog.clear(deviceId);
+    const stopped = [];
+    for (const deviceId of deviceIds) {
+      const message = this._stopMessageFor(this.devices.getDeviceForApi?.(deviceId));
+      if (!message) continue;
+      try {
+        await this._sendRemoteWrite(session, deviceId, message);
+        stopped.push(deviceId);
+      } catch (_) { /* 被控端不可达：本地登记已清，输出由对端看门狗兜底 */ }
+    }
+    logService.info('RemoteProjection', `operator safe stop: ${reason} (${stopped.length})`);
+    return { ok: true, stopped };
+  }
+
+  /** 主控端本机输出登记（与 _trackOperatorOutput 对称：一个记对方写的，一个记自己写的）。 */
+  _trackLocalOutput(session, deviceId, message) {
+    if (!session.localOutputs) session.localOutputs = new Set();
+    session.localOutputs.add(deviceId);
+    const device = this.devices.getDeviceForApi?.(deviceId);
+    const latch = outputGuard.isLatchedProjectionMessage({ device, message });
+    if (latch.latched) this.watchdog.arm(deviceId, latch.maxMs);
+    else this.watchdog.clear(deviceId);
+  }
+
+  /**
+   * 停止/归零报文：按设备类型自己的字段规格生成，保证一定通过安全层校验
+   * （每种设备允许的字段不同，写死字段会被 REMOTE_OUTPUT_REJECTED 挡下）。
+   * 只归零「输出类」字段，不碰锁与上报频率；没有任何输出字段的设备返回 null。
+   */
+  _stopMessageFor(device) {
+    const type = outputGuard.deviceType(device);
+    const specs = outputGuard.DEVICE_FIELD_SPECS?.[type] || {};
+    const out = { method: 'update' };
+    for (const key of outputGuard.STOP_ZERO_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(specs, key)) out[key] = 0;
+    }
+    return Object.keys(out).length > 1 ? out : null;
   }
 
   _expireOwnerSession(session, reason) {

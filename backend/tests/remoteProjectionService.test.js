@@ -683,6 +683,38 @@ describe('RemoteProjectionService', () => {
     await owner.stop();
   });
 
+  test('operator emergency stop zeroes its own outputs without touching the session', async () => {
+    const broker = new FakeBroker();
+    const api = createRoomApi();
+    const ownerDevices = new FakeDevices([{
+      id: 'dev-1', name: 'Owner device', type: 'DIANJI', connected: true,
+      connectionType: 'ble', controlConnection: 'ble',
+      connections: [{ type: 'ble', connected: true }], data: {},
+    }]);
+    const operatorDevices = new FakeDevices();
+    const owner = new RemoteProjectionService({ devices: ownerDevices, api, mqttConnect: broker.connect, ...timers() });
+    const operator = new RemoteProjectionService({ devices: operatorDevices, api, mqttConnect: broker.connect, ...timers() });
+
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await flush();
+    await owner.authorize('operator');
+    await flush();
+    const sent = operatorDevices.adapters.get('dev-1').send({ method: 'update', voltage: 12, shock: 1 });
+    for (let i = 0; i < 40; i += 1) await new Promise((resolve) => setImmediate(resolve));
+    await sent.catch(() => {});
+    ownerDevices.sent = [];
+
+    const result = await operator.emergencyStopOperatorOutputs('session-emergency-stop');
+    await flush();
+    expect(result.stopped).toEqual(['dev-1']);
+    // 停止帧到达被控端（停止路径永远放行），且会话仍活着
+    expect(ownerDevices.sent.at(-1)).toMatchObject({ id: 'dev-1', message: { method: 'update', voltage: 0, shock: 0 } });
+    expect(operator.getStatus().active).toBe(true);
+    await owner.stop();
+    await operator.stop();
+  });
+
   test('stopping a session while a credential refresh is in flight leaves no zombie reconnect', async () => {
     const broker = new FakeBroker();
     const api = createRoomApi();

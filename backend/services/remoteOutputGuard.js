@@ -34,6 +34,11 @@ const MAX_TEXT_LEN = 32;
 
 const STOP_ACTIONS = new Set(['stop', 'stopall', 'off', 'halt']);
 
+// 停机/归零时要清零的「输出类」字段（锁、上报频率、显示参数不在内）。
+const STOP_ZERO_FIELDS = Object.freeze([
+  'voltage', 'shock', 'power', 'intensity', 'vibration', 'suction', 'stroke', 'pump',
+]);
+
 function reject(message) {
   return { ok: false, code: REMOTE_OUTPUT_REJECTED, message };
 }
@@ -661,6 +666,8 @@ module.exports = {
   deviceType,
   ownField,
   STOP_ACTIONS,
+  STOP_ZERO_FIELDS,
+  DEVICE_FIELD_SPECS,
   HOST_INTENT_ACTIONS,
   isKnownHostIntent,
   sanitizeHostIntent,

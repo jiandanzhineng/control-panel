@@ -428,6 +428,13 @@ class RemoteSessionService {
   _onGameEvent(event) {
     const state = this.state;
     if (!state) return;
+    // 主控端（操作方）在本机点「急停」：主房间的 session.emergency-stop 只停设备输出
+    // （投影链路的锁存输出由被控端操作方输出看门狗兜底），投影链路本身没有被停，
+    // 这里由编排层补一条：投影链路也急停一次。掉线/未授权时不打扰。
+    if (event.type === 'operator-output' && event.kind === 'session.emergency-stop'
+        && state.role === 'operator' && this._isAuthorized(state, this._safeStatus(this.game))) {
+      void Promise.resolve(this.projection.emergencyStopOperatorOutputs?.('session-emergency-stop')).catch(() => {});
+    }
     if (event.type === 'member' && state.role === 'owner') {
       if (event.online && event.userId && !state.peerUserId) state.peerUserId = event.userId;
       // 有成员上线且尚未授权 → 进入「待授权」：被控端面板据此显示「允许控制 / 拒绝」，
