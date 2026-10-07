@@ -1,5 +1,17 @@
 # 开发测试记录
 
+- 2026-10-07 远程会话模式端到端验收（分支 feat/remote-session-mode，生产房间服务 api.undersilicon.cn + 生产 EMQX，双隔离 Electron，仅虚拟设备）：被控端 A 前端/后端/CDP `5303/5301/9234`，主控端 B `5304/5302/9225`，harness 在 `.tmp/remote-session-e2e-1007/`（`lib.js` 提供 ev/api/pageFetch/shootBoth/waitButton，`session-lib.js` 用 token 直连建会话，`sniff.js` 常驻订阅本机 EMQX `/drecv/#` 抓设备下行帧）。7 项场景全过；修 9 处缺陷（详见报告 §5）。报告 `docs/test/remote-session-e2e-2026-10-07.md`（54 张内嵌截图）。
+
+  复用要点：
+  1. **房间码**由房间服务生成、区分大小写且含 `-`/`_`（如 `x_ny6g-l7uk`），前端不得 `toUpperCase` 或去连字符，只 strip 空白（`frontend/src/remote/remoteSessionFormat.ts` 的 `normalizeJoinCode`）。
+  2. **虚拟设备只订阅 `/dpub`**，设备真正收到的下行帧在 `/drecv/<id>`：验证钳制/看门狗要订阅本机 EMQX `/drecv/#`（`GET /api/virtual-devices/:id/commands` 只记宿主侧调用，不含投影写入，且被控端改投影设备时是远端写的，只有 `/drecv` 抓包能证明）。
+  3. **界面轮询会吞掉点击**：远程会话页状态 1–3s 轮询一次，脚本点「允许控制」前必须 `waitButton` 等按钮出现；授权后主控端「远程条」会自动跳一次 `/devices`（B 停在 `/home` 也会跳）。
+  4. **急停链路**：主控端点急停 = 主房间命令（被控端停它登记的输出）+ 主控端本机 `emergencyStopOperatorOutputs`（停投影链路输出）；只做前者实测要等 ~8.8s 看门狗。
+  5. **撤权/踢出**通过 events 通道的 `session.revoked {reason, forUserId}` 定向通知主控端；投影设备记录在收尾时删除（被控端设备在主控端是纯投影出来的）。
+  6. **SSE 帧数**统计要在页面脚本前注入钩子（CDP `Page.addScriptToEvaluateOnNewDocument` 包一层 `EventSource`），否则 `RemoteGamePanel` 的流在注入前就建好了；分离式游戏实测：运行中 10s 13 条 patch、活动 3s 5 条、停止后 10s 2 条。
+  7. 长跑/多脚本并发跑时**先 `powershell Stop-Process` 清掉上一轮同名脚本**，否则两个采样进程互相 reset 会话（本轮踩过一次，日志里会出现 `elapsedSec` 回跳）。
+  8. 会话建好后 `GET /api/game-runtime/status`（被控端）才有 `source: remote`；主控端 `/api/games/status` 恒为本机状态，别用它判断分离式游戏在哪跑。
+
 - 2026-10-06 远控加固（分支 fix/remote-control-hardening）：修复 10 分钟断线/离开卡死/残留房间挂死/断开谎报/首次启动无界面；新增 `backend/services/remoteOutputGuard.js`（逐字段限幅、未知拒绝、电刺激 10s/电机 60s 看门狗）、授权绑定 userId + 踢人、gameSessionId（不带则兼容放行）、5277/5278 只绑回环 + 远控路由 loopbackOnly、gameProxy 白名单、第三方 iframe sandbox。生产房间服务+EMQX 双端实测 13/13 通过，报告 `docs/test/remote-control-e2e-2026-10-06.md`（含截图），harness 在 `.tmp/remote-regression-1006/`。未做：服务端 joinCode 过期/踢线接线、四路写入统一仲裁、手机端适配。
 
 - 2026-10-06 远控回归（生产房间服务 api.undersilicon.cn + 生产 EMQX，双隔离 Electron，仅虚拟设备，脚本在 `.tmp/remote-regression-1006/`）：单局全链路通过（建房/加入/授权/选游戏/启动/原始 UI 渲染/暂停继续/改参/电击/forceEdge/停止复位/设备管理白名单/投影写与限幅）。失败：① 远程游戏 10 分钟凭据到期必断且无刷新（`Bad User Name or Password`）；② 操作方 `stop()` 向 `events` 发 `session.revoked` 被 ACL 拒→broker 135 踢线→publish 回调不返回，`leave`/二次 `join` 永久挂起、按钮无限 loading；③ 房主 presence 为 retained offline 的房间，`join` 静默挂死；④ `devices.disconnect` 返回成功但虚拟设备仍在线；⑤ 首次远程启动 surge-edging 时 B 请求 `/api/games/surge-edging` 404 不出 iframe，刷新恢复。9-30 审查报告各项均未修复；远程仅支持 surge-edging/pressure-edging-v2；手机端未实现远程游戏协议。后端 599/600、前端测试全过。
