@@ -548,12 +548,20 @@ class RemoteGameService {
       await this._publishPlayOccupancy(session).catch(() => {});
       await this._publishEnvelope(session, 'events', 'session.play.ended', { reason: 'revoked' }).catch(() => {});
     }
-    const result = await this._setAuthorized(false);
     // 撤权是「对方已收回控制权」：只发 client.authorization（authorized=false）时，
-    // 操作方只能从轮询里看到未授权，永远收不到 session.revoked 的结束事件，
-    // 界面既没有提示也不会退回远程连接页（§4.2「被撤销后自动退回本机模式」）。
-    if (session?.role === 'owner' && session.connected) {
-      await this._publishEnvelope(session, 'events', 'session.revoked', { reason: 'revoked' }).catch(() => {});
+    // 操作方只能从轮询里看到未授权，永远收不到结束通知，界面既没有提示也不会退回
+    // 远程连接页（§4.2「被撤销后自动退回本机模式」）。
+    // 注意只通知「当前被授权的那个账号」：同一房间可能还有别人（房间容量 2 时不会，
+    // 但不能假设），不能把撤权当成「所有人都被结束」广播出去。
+    const target = session?.authorizedUserId || null;
+    const result = await this._setAuthorized(false);
+    if (session?.role === 'owner' && session.connected && target) {
+      await this._publishEnvelope(
+        session,
+        'events',
+        'session.revoked',
+        { reason: 'revoked', forUserId: target },
+      ).catch(() => {});
     }
     return result;
   }
@@ -569,8 +577,9 @@ class RemoteGameService {
     if (typeof this.api.kickMember === 'function') {
       await this.api.kickMember(session.token, roomId, target);
     }
-    // 被踢的人要收到「对方已将你移出」：服务端踢线未接线，只能靠这条事件通知
-    await this._publishEnvelope(session, 'events', 'session.revoked', { reason: 'kicked' }).catch(() => {});
+    // 被踢的人要收到「对方已将你移出」：服务端踢线未接线，只能靠这条事件通知。
+    // 事件走 events 通道（操作方只订阅它），带 forUserId 标明只给这个账号。
+    await this._publishEnvelope(session, 'events', 'session.revoked', { reason: 'kicked', forUserId: target }).catch(() => {});
     session.kicked.add(target);
     session.operatorsOnline.delete(target);
     if (session.authorizedUserId === target) session.authorizedUserId = null;
@@ -1580,6 +1589,9 @@ class RemoteGameService {
       return;
     }
     if (envelope.type === 'session.revoked') {
+      // 定向结束（撤权/踢出）带 forUserId：不是发给本账号就忽略
+      const forUserId = envelope.payload?.forUserId;
+      if (forUserId && forUserId !== session.credential.userId) return;
       this._endOperatorSession(session, envelope.payload?.reason || 'session-revoked');
     }
   }
