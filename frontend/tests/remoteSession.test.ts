@@ -9,7 +9,7 @@ import {
 } from '../src/remote/remoteSessionState.ts'
 import { isMenuItemLocked, isRouteLocked } from '../src/remote/remoteLock.ts'
 import { endReasonKey, isLivePhase, shouldAutoReturn, shouldFireEnded } from '../src/remote/remoteEnded.ts'
-import { detailText, formatClock, normalizeJoinCode, peerLabel } from '../src/remote/remoteSessionFormat.ts'
+import { detailText, formatClock, latencyValue, normalizeJoinCode, peerLabel } from '../src/remote/remoteSessionFormat.ts'
 import { EMPTY_REMOTE_SESSION_STATUS, type RemoteSessionStatus } from '../src/remote/remoteSessionTypes.ts'
 
 function status(patch: Partial<RemoteSessionStatus> = {}): RemoteSessionStatus {
@@ -171,4 +171,14 @@ test('clock and detail formatting', () => {
   assert.equal(detailText({ ts: 0, userId: null, kind: 'k', target: null, summary: 's', outcome: 'clamped', detail: { message: '超过上限' } }), '超过上限')
   assert.equal(detailText({ ts: 0, userId: null, kind: 'k', target: null, summary: 's', outcome: 'rejected', detail: { code: 'DENIED' } }), 'DENIED')
   assert.equal(detailText({ ts: 0, userId: null, kind: 'k', target: null, summary: 's', outcome: 'ok', detail: null }), '')
+  assert.equal(detailText({ ts: 0, userId: null, kind: 'k', target: null, summary: 's', outcome: 'clamped', detail: { hint: '请求 999 → 实际 20', message: 'x' } }), '请求 999 → 实际 20')
+})
+
+test('latency is hidden when unknown', () => {
+  assert.equal(latencyValue(null), null)
+  assert.equal(latencyValue(undefined), null)
+  assert.equal(latencyValue('abc'), null)
+  assert.equal(latencyValue(-1), null)
+  assert.equal(latencyValue(0), 0)
+  assert.equal(latencyValue(52.6), 53)
 })

@@ -77,7 +77,7 @@ import { ElMessageBox, ElMessage } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import { useRemoteSession } from '../composables/useRemoteSession'
 import { barVisible } from '../remote/remoteSessionState'
-import { peerLabel, formatClock, detailText as detailTextOf } from '../remote/remoteSessionFormat'
+import { peerLabel, formatClock, latencyValue, detailText as detailTextOf } from '../remote/remoteSessionFormat'
 import { endReasonKey, shouldAutoReturn } from '../remote/remoteEnded'
 import { playEndedMessageKey, preemptedLocalPlay, playLabel } from '../remote/remotePlay'
 import { router } from '../router'
@@ -107,8 +107,9 @@ const text = computed(() => {
   return occupancy ? `${line} · ${t('remoteSession.bar.occupancy', { name, game: playLabel(occupancy) })}` : line
 })
 const latencyText = computed(() => {
-  const value = session.latencyMs.value
-  return Number.isFinite(Number(value)) ? t('remoteSession.bar.latency', { n: value }) : ''
+  // 拿不到就不显示（被控端没有延迟；Number(null) 是 0，不能用 isFinite 判）
+  const value = latencyValue(session.latencyMs.value)
+  return value === null ? '' : t('remoteSession.bar.latency', { n: value })
 })
 // 操作记录最新在上
 const logRows = computed(() => [...session.log.value].reverse())
