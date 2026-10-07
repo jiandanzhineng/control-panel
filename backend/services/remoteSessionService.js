@@ -26,7 +26,7 @@ const KIND_SUMMARY = {
   'devices.invoke': '操作设备',
   'devices.stop': '停止设备',
   'devices.disconnect': '断开设备',
-  'host-output': '远程玩法输出限幅',
+  'host-output': '远程玩法输出',
   'operator-output': '停止主控端输出',
   'play.occupy': '开始玩法',
   'play.release': '结束玩法',
@@ -38,7 +38,65 @@ const KIND_SUMMARY = {
   'game.resume': '继续玩法',
   'game.setParams': '调整玩法参数',
   'game.action': '玩法操作',
+  'game.config.set': '保存玩法配置',
+  'devices.connect': '连接设备',
+  'session.emergency-stop': '主控端急停',
+  'session.create': '开启远程',
+  'session.authorize': '允许控制',
+  'session.revoke': '收回控制权',
+  'session.kick': '移出主控端',
+  'session.emergencyStop': '急停',
+  'session.stop': '结束远程',
+  'session.ended': '远程已结束',
 };
+
+// 心跳 / 只读请求：被控端用户不关心，不进操作记录（否则 client.ping 每 5s 刷一条）。
+const QUIET_KINDS = new Set([
+  'client.hello',
+  'client.ping',
+  'client.snapshot.request',
+  'client.workspace.set',
+  'game.snapshot.request',
+  'session.projection-invite.request',
+  'games.list',
+  'game.meta',
+  'game.config.get',
+  'devices.list',
+  'devices.scan.start',
+  'devices.scan.stop',
+]);
+
+// 设备字段 → 操作记录里的人话（没收录的照原样显示）
+const FIELD_LABELS = {
+  voltage: '电压',
+  power: '强度',
+  intensity: '强度',
+  strength: '强度',
+  shock: '电击',
+  value: '数值',
+  stroke: '行程',
+  speed: '速度',
+  frequency: '频率',
+  pulse: '脉冲',
+  lock: '锁',
+};
+const SUMMARY_FIELDS = ['voltage', 'power', 'intensity', 'strength', 'shock', 'value', 'stroke', 'speed', 'frequency'];
+
+/** 操作记录里的设备名：昵称 > 名称 > id（查不到就用 id） */
+function defaultDeviceLabel(id) {
+  if (!id) return '';
+  try {
+    const device = require('./deviceService').getDeviceForApi?.(id);
+    const label = String(device?.nickname || device?.name || '').trim();
+    return label || id;
+  } catch (_) {
+    return id;
+  }
+}
+
+function fieldLabel(field) {
+  return FIELD_LABELS[field] || field;
+}
 
 class RemoteSessionService {
   constructor({
@@ -57,6 +115,7 @@ class RemoteSessionService {
     authorizeMaxAttempts = AUTHORIZE_MAX_ATTEMPTS,
     pingIntervalMs = PING_INTERVAL_MS,
     logLimit = LOG_LIMIT,
+    deviceLabel = defaultDeviceLabel,
   } = {}) {
     this.game = game;
     this.projection = projection;
@@ -76,6 +135,7 @@ class RemoteSessionService {
     this.authorizeMaxAttempts = authorizeMaxAttempts;
     this.pingIntervalMs = pingIntervalMs;
     this.logLimit = logLimit;
+    this.deviceLabel = deviceLabel;
     this.state = null;
     this.logEntries = [];
     this.lastEnded = null;
@@ -753,6 +813,8 @@ class RemoteSessionService {
     const detail = event.detail || null;
     // operator-output 是「主控端输出被停」的汇总事件，按它自己的名字记一条
     const kind = event.type === 'operator-output' ? 'operator-output' : (event.kind || 'unknown');
+    // 心跳 / 只读请求不进操作记录
+    if (QUIET_KINDS.has(kind)) return;
     const summary = this._summarize(kind, outcome, event.target, detail);
     this._pushLog({
       ts: this.now(),
@@ -761,7 +823,7 @@ class RemoteSessionService {
       target: event.target || null,
       summary,
       outcome,
-      detail: this._summarizeDetail(kind, detail),
+      detail: this._summarizeDetail(kind, outcome, detail),
     });
   }
 
@@ -777,38 +839,50 @@ class RemoteSessionService {
     });
   }
 
-  _summarize(kind, outcome, target, detail) {
-    const base = KIND_SUMMARY[kind] || kind;
-    const applied = detail?.applied;
-    const requested = detail?.requested;
-    if (applied && typeof applied === 'object') {
-      const field = ['voltage', 'power', 'intensity', 'shock', 'value', 'stroke']
-        .find((key) => applied[key] !== undefined);
-      if (field) {
-        const want = requested?.[field];
-        const got = applied[field];
-        return want !== undefined && Number(want) !== Number(got)
-          ? `${base}「${target || ''}」${field} ${want} → 已限制为 ${got}`
-          : `${base}「${target || ''}」${field} ${got}`;
-      }
-      if (applied.brand && applied.cmd) return `${base}「${target || ''}」${applied.brand}.${applied.cmd}`;
-    }
-    if (outcome === 'rejected') {
-      return `${base}「${target || ''}」被拒绝${detail?.message ? `：${detail.message}` : ''}`;
-    }
-    if (kind === 'devices.rename') return `重命名「${target || ''}」`;
-    if (kind === 'devices.controlConnection.set') return `切换「${target || ''}」的控制连接`;
-    if (kind.startsWith('game.')) return `${base}${detail?.gameId ? `《${detail.gameId}》` : ''}`;
-    return target ? `${base}「${target}」` : base;
+  _label(id) {
+    if (!id) return '';
+    try { return String(this.deviceLabel(id) || id); } catch (_) { return String(id); }
   }
 
-  _summarizeDetail(kind, detail) {
+  /** 摘要只写「做了什么」；限制/拒绝由结果标签表达，细节放 detail.hint（悬停显示）。 */
+  _summarize(kind, outcome, target, detail) {
+    const base = KIND_SUMMARY[kind] || kind;
+    const name = this._label(target);
+    const applied = detail?.applied;
+    if (applied && typeof applied === 'object') {
+      const field = SUMMARY_FIELDS.find((key) => applied[key] !== undefined);
+      if (field) return `${base}「${name}」${fieldLabel(field)} ${applied[field]}`;
+      if (applied.brand && applied.cmd) return `${base}「${name}」${applied.brand}.${applied.cmd}`;
+    }
+    if (kind === 'devices.rename') return `重命名「${name}」`;
+    if (kind === 'devices.controlConnection.set') return `切换「${name}」的控制连接`;
+    if (kind.startsWith('game.')) return `${base}${detail?.gameId ? `《${detail.gameId}》` : ''}`;
+    return name ? `${base}「${name}」` : base;
+  }
+
+  /** 悬停详情：限制 → 「请求 999 → 实际 20」；拒绝 → 原因 */
+  _hint(outcome, detail) {
+    if (outcome === 'clamped') {
+      const applied = detail?.applied || {};
+      const requested = detail?.requested || {};
+      const parts = Object.keys(applied)
+        .filter((key) => requested[key] !== undefined && String(requested[key]) !== String(applied[key]))
+        .map((key) => `${fieldLabel(key)}：请求 ${requested[key]} → 实际 ${applied[key]}`);
+      if (parts.length === 1) return parts[0].replace(/^[^：]+：/, '');
+      if (parts.length) return parts.join('；');
+    }
+    return String(detail?.message || detail?.code || '');
+  }
+
+  _summarizeDetail(kind, outcome, detail) {
     if (!detail) return null;
     const out = { kind };
     if (detail.code) out.code = detail.code;
     if (detail.message) out.message = detail.message;
     if (detail.requested) out.requested = detail.requested;
     if (detail.applied) out.applied = detail.applied;
+    const hint = outcome === 'ok' ? '' : this._hint(outcome, detail);
+    if (hint) out.hint = hint;
     return out;
   }
 

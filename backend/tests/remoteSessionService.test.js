@@ -444,7 +444,12 @@ describe('remote session service', () => {
     expect(outcomes).toContain('clamped');
     expect(outcomes).toContain('rejected');
     const clamped = log.find((entry) => entry.outcome === 'clamped');
-    expect(clamped.summary).toContain('已限制为 128');
+    expect(clamped.summary).not.toContain('已限制');
+    expect(clamped.summary).toContain('强度 128');
+    expect(clamped.detail.hint).toBe('请求 240 → 实际 128');
+    const rejected = log.find((entry) => entry.outcome === 'rejected');
+    expect(rejected.summary).not.toContain('被拒绝');
+    expect(rejected.detail.hint).toBe('远程投影不允许设备字段: x');
     expect(clamped.detail.applied.power).toBe(128);
     expect(clamped.userId).toBe(target);
 
@@ -456,6 +461,42 @@ describe('remote session service', () => {
     }
     expect(ownerSession.getStatus().log).toHaveLength(50);
 
+    await ownerSession.stop();
+    await flush();
+  });
+
+  test('heartbeat and read-only commands stay out of the op log', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, ownerGame } = ctx;
+    const before = ownerSession.getStatus().log.length;
+    for (const kind of ['client.ping', 'client.hello', 'client.snapshot.request', 'game.snapshot.request',
+      'session.projection-invite.request', 'games.list', 'game.meta', 'game.config.get', 'devices.list']) {
+      ownerGame._emitEvent({ type: 'command', userId: 'operator', kind, target: null, outcome: 'ok', detail: null });
+    }
+    expect(ownerSession.getStatus().log).toHaveLength(before);
+    ownerGame._emitEvent({ type: 'command', userId: 'operator', kind: 'devices.rename', target: 'dev-1', outcome: 'ok', detail: null });
+    expect(ownerSession.getStatus().log).toHaveLength(before + 1);
+    await ownerSession.stop();
+    await flush();
+  });
+
+  test('op log shows the device display name and a human field label', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, projection } = ctx;
+    ownerSession.deviceLabel = (id) => (id === 'a_dianji' ? '电击器-左' : null);
+    projection.owner.emit({
+      type: 'operation', userId: 'operator', kind: 'projection.write', target: 'a_dianji', outcome: 'clamped',
+      detail: { requested: { voltage: 999, shock: 1 }, applied: { voltage: 20, shock: 1 } },
+    });
+    projection.owner.emit({
+      type: 'operation', userId: 'operator', kind: 'projection.write', target: 'unknown_dev', outcome: 'ok',
+      detail: { requested: { power: 30 }, applied: { power: 30 } },
+    });
+    const log = ownerSession.getStatus().log;
+    expect(log[log.length - 2].summary).toBe('控制设备「电击器-左」电压 20');
+    expect(log[log.length - 2].detail.hint).toBe('请求 999 → 实际 20');
+    expect(log[log.length - 1].summary).toBe('控制设备「unknown_dev」强度 30');
+    expect(log[log.length - 1].detail.hint).toBeUndefined();
     await ownerSession.stop();
     await flush();
   });

@@ -23,8 +23,15 @@ export function formatClock(ts: number | null | undefined): string {
 export function detailText(entry: RemoteSessionLogEntry | null | undefined): string {
   const detail = entry?.detail
   if (!detail) return ''
-  const message = String(detail.message || detail.code || '')
-  return message
+  // hint 由后端生成（限制：「请求 999 → 实际 20」；拒绝：原因），旧记录退回 message/code
+  return String(detail.hint || detail.message || detail.code || '')
+}
+
+/** 延迟文案用的数值：拿不到（null/非数字/负数）就返回 null，远程条不显示「延迟 ms」 */
+export function latencyValue(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null
 }
 
 /**
