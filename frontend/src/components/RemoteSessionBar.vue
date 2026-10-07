@@ -78,7 +78,7 @@ import { ArrowDown } from '@element-plus/icons-vue'
 import { useRemoteSession } from '../composables/useRemoteSession'
 import { barVisible } from '../remote/remoteSessionState'
 import { peerLabel, formatClock, latencyValue, detailText as detailTextOf } from '../remote/remoteSessionFormat'
-import { endReasonKey, shouldAutoReturn } from '../remote/remoteEnded'
+import { endReasonKey, isStaleEndedNotice, shouldAutoReturn } from '../remote/remoteEnded'
 import { playEndedMessageKey, preemptedLocalPlay, playLabel } from '../remote/remotePlay'
 import { router } from '../router'
 
@@ -144,18 +144,31 @@ async function onAuthorize() {
 }
 
 // 会话结束：按原因弹一次说明；主控端随后回远程连接页
+// 提示只属于刚结束的那段会话：提示还开着时又开始了新会话，就关掉它、也不再跳页。
+let openEndedSessionId: string | null | undefined
+const currentSession = () => ({ phase: session.phase.value, sessionId: session.sessionId.value })
 watch(() => session.endedAt.value, async (at) => {
   if (!at) return
   const role = session.endedRole.value
   const reason = session.endedReason.value
+  const endedSessionId = session.endedSessionId.value
   session.clearEnded()
   const key = endReasonKey(reason)
   if (key === 'none') return
+  openEndedSessionId = endedSessionId
   await ElMessageBox.alert(t(`remoteSession.end.${key}`), t('remoteSession.end.title'), {
     type: 'warning',
     confirmButtonText: t('common.ok'),
   }).catch(() => {})
+  openEndedSessionId = undefined
+  if (isStaleEndedNotice(endedSessionId, currentSession())) return
   if (shouldAutoReturn(role, router.currentRoute.value.path)) router.push('/remote')
+})
+watch(() => [session.phase.value, session.sessionId.value], () => {
+  if (openEndedSessionId === undefined) return
+  if (!isStaleEndedNotice(openEndedSessionId, currentSession())) return
+  openEndedSessionId = undefined
+  ElMessageBox.close()
 })
 
 // 主控端本机玩法被被控端结束（本地玩法顶替 / 被控端停止或急停）：停掉本机游戏并提示，

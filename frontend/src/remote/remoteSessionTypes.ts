@@ -36,6 +36,8 @@ export interface RemoteSessionStatus {
   active: boolean
   role: RemoteSessionRole | null
   phase: RemoteSessionPhase
+  /** 会话身份（ended 时是刚结束的那一段）：结束提示据此对号入座 */
+  sessionId?: string | null
   joinCode: string | null
   peer: RemoteSessionPeer | null
   authorized: boolean

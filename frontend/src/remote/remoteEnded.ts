@@ -33,18 +33,72 @@ export function endReasonKey(reason: string | null | undefined): string {
 export interface EndedGate {
   /** 本次启动是否见过活跃会话：首次加载就撞上历史的 ended 时不打扰用户 */
   wasLive: boolean
-  /** 已经提示过的结束原因 */
+  /** 已经提示过的结束原因（后端没给会话 id 时的退路） */
   handledReason: string | null
+  /** 最近一次见到的活跃会话 id */
+  liveSessionId?: string | null
+  /** 已经提示过的会话 id */
+  handledSessionId?: string | null
 }
 
 export function isLivePhase(phase: RemoteSessionPhase): boolean {
   return phase === 'waiting' || phase === 'pending-authorization' || phase === 'active' || phase === 'reconnecting'
 }
 
-/** 结束提示闸门：同一段 ended 会被轮询反复读到，只有「见过活跃会话」后的第一次才提示 */
-export function shouldFireEnded(gate: EndedGate, phase: RemoteSessionPhase, reason: string | null): boolean {
-  if (phase !== 'ended') return false
-  return gate.wasLive && gate.handledReason !== reason
+/**
+ * 结束提示闸门：同一段 ended 会被轮询反复读到，只有「见过活跃会话」后的第一次才提示；
+ * 有会话 id 时只提示刚才在跑的那一段（别的会话的 ended 不弹）。
+ */
+export function shouldFireEnded(
+  gate: EndedGate,
+  phase: RemoteSessionPhase,
+  reason: string | null,
+  sessionId?: string | null,
+): boolean {
+  if (phase !== 'ended' || !gate.wasLive) return false
+  if (sessionId) {
+    if (gate.liveSessionId && gate.liveSessionId !== sessionId) return false
+    return gate.handledSessionId !== sessionId
+  }
+  return gate.handledReason !== reason
+}
+
+/**
+ * 每读到一次状态推进一次闸门，返回这次是否要弹结束提示（会修改 gate）。
+ * 轮询顺序：活跃(会话 A) → ended(A) 弹一次 → 活跃(会话 B) → ended(B) 再弹一次；
+ * ended(A) 在会话 B 已活跃后才读到（迟到）不会弹。
+ */
+export function stepEndedGate(
+  gate: EndedGate,
+  phase: RemoteSessionPhase,
+  reason: string | null,
+  sessionId?: string | null,
+): boolean {
+  if (phase === 'ended') {
+    const fire = shouldFireEnded(gate, phase, reason, sessionId)
+    if (fire) {
+      gate.handledReason = reason
+      gate.handledSessionId = sessionId || null
+    }
+    gate.wasLive = false
+    return fire
+  }
+  gate.wasLive = isLivePhase(phase)
+  if (gate.wasLive) gate.liveSessionId = sessionId || null
+  gate.handledReason = null
+  return false
+}
+
+/**
+ * 结束提示是否已过时：提示还开着时又开始了新会话（或者已经回到活跃状态），
+ * 旧提示要关掉，也不能再把用户从新会话里拉回 /remote。
+ */
+export function isStaleEndedNotice(
+  endedSessionId: string | null | undefined,
+  current: { phase: RemoteSessionPhase; sessionId?: string | null },
+): boolean {
+  if (!isLivePhase(current.phase)) return false
+  return !endedSessionId || !current.sessionId || current.sessionId !== endedSessionId
 }
 
 /** 结束提示由远程条负责（主控端随后回 /remote）；已经在远程连接页就不再跳 */

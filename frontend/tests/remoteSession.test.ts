@@ -8,7 +8,7 @@ import {
   sessionTone,
 } from '../src/remote/remoteSessionState.ts'
 import { isMenuItemLocked, isRouteLocked } from '../src/remote/remoteLock.ts'
-import { endReasonKey, isLivePhase, shouldAutoReturn, shouldFireEnded } from '../src/remote/remoteEnded.ts'
+import { endReasonKey, isLivePhase, isStaleEndedNotice, shouldAutoReturn, shouldFireEnded, stepEndedGate } from '../src/remote/remoteEnded.ts'
 import { detailText, formatClock, latencyValue, normalizeJoinCode, peerLabel } from '../src/remote/remoteSessionFormat.ts'
 import { EMPTY_REMOTE_SESSION_STATUS, type RemoteSessionStatus } from '../src/remote/remoteSessionTypes.ts'
 
@@ -181,4 +181,23 @@ test('latency is hidden when unknown', () => {
   assert.equal(latencyValue(-1), null)
   assert.equal(latencyValue(0), 0)
   assert.equal(latencyValue(52.6), 53)
+})
+
+test('ended notice belongs to the session that just ended', () => {
+  const gate = { wasLive: false, handledReason: null, liveSessionId: null, handledSessionId: null }
+  assert.equal(stepEndedGate(gate, 'active', null, 'A'), false)
+  // 会话 A 结束：弹一次，轮询重复读到不再弹
+  assert.equal(stepEndedGate(gate, 'ended', 'session-stop-by-host', 'A'), true)
+  assert.equal(stepEndedGate(gate, 'ended', 'session-stop-by-host', 'A'), false)
+  // 新会话 B 开始：A 的提示已过时（关掉、不跳页）
+  assert.equal(stepEndedGate(gate, 'pending-authorization', null, 'B'), false)
+  assert.equal(isStaleEndedNotice('A', { phase: 'pending-authorization', sessionId: 'B' }), true)
+  assert.equal(isStaleEndedNotice('A', { phase: 'ended', sessionId: 'A' }), false)
+  assert.equal(isStaleEndedNotice('A', { phase: 'idle', sessionId: null }), false)
+  // B 活跃期间读到迟到的 A 的 ended：不弹
+  assert.equal(stepEndedGate(gate, 'active', null, 'B'), false)
+  assert.equal(stepEndedGate(gate, 'ended', 'session-stop-by-host', 'A'), false)
+  // B 自己结束（同样的原因）：照样弹
+  assert.equal(stepEndedGate(gate, 'active', null, 'B'), false)
+  assert.equal(stepEndedGate(gate, 'ended', 'session-stop-by-host', 'B'), true)
 })

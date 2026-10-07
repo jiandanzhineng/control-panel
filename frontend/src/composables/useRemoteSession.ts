@@ -4,7 +4,7 @@ import { computed, reactive } from 'vue'
 import * as api from '../api/remoteSession'
 import type { RemoteSessionLogEntry, RemoteSessionStatus } from '../api/remoteSession'
 import { deriveUiState, pollIntervalMs } from '../remote/remoteSessionState'
-import { isLivePhase, shouldFireEnded } from '../remote/remoteEnded'
+import { stepEndedGate } from '../remote/remoteEnded'
 
 interface RemoteSessionStoreState {
   status: RemoteSessionStatus
@@ -16,6 +16,8 @@ interface RemoteSessionStoreState {
   /** 最近一次结束：远程条据此弹「远程已结束」，弹过即清 */
   endedReason: string | null
   endedAt: number
+  /** 最近一次结束提示属于哪段会话（新会话开始后据此关掉旧提示） */
+  endedSessionId: string | null
 }
 
 const state = reactive<RemoteSessionStoreState>({
@@ -26,13 +28,19 @@ const state = reactive<RemoteSessionStoreState>({
   error: null,
   endedReason: null,
   endedAt: 0,
+  endedSessionId: null,
 })
 
 let timer: ReturnType<typeof setTimeout> | null = null
 let started = false
 let inflight = false
 /** 结束提示闸门（见 remote/remoteEnded.ts） */
-const gate = { wasLive: false, handledReason: null as string | null }
+const gate = {
+  wasLive: false,
+  handledReason: null as string | null,
+  liveSessionId: null as string | null,
+  handledSessionId: null as string | null,
+}
 /** 结束那一刻的身份（ended 状态里 role 已被后端清空） */
 let endedRole: RemoteSessionStatus['role'] = null
 
@@ -42,19 +50,15 @@ function applyStatus(next: RemoteSessionStatus | null | undefined) {
   state.status = next
   state.loaded = true
   if (next.role) state.lastRole = next.role
-  if (next.phase === 'ended') {
-    const reason = next.lastError || 'ended'
-    if (shouldFireEnded(gate, next.phase, reason)) {
-      gate.handledReason = reason
-      state.endedReason = reason
-      state.endedAt = Date.now()
-      endedRole = state.lastRole
-    }
-    gate.wasLive = false
-    return
+  const reason = next.phase === 'ended' ? (next.lastError || 'ended') : null
+  const sessionId = next.sessionId || null
+  if (stepEndedGate(gate, next.phase, reason, sessionId)) {
+    state.endedReason = reason
+    state.endedAt = Date.now()
+    state.endedSessionId = sessionId
+    endedRole = state.lastRole
   }
-  gate.wasLive = isLivePhase(next.phase)
-  gate.handledReason = null
+  if (next.phase === 'ended') return
   state.endedReason = null
   state.endedAt = 0
 }
@@ -141,6 +145,8 @@ export function useRemoteSession() {
     error: computed(() => state.error),
     endedReason: computed(() => state.endedReason),
     endedAt: computed(() => state.endedAt),
+    endedSessionId: computed(() => state.endedSessionId),
+    sessionId: computed(() => state.status.sessionId ?? null),
     /** 结束那一刻的身份（ended 状态里 role 已被后端清空） */
     endedRole: computed(() => endedRole),
     role: computed(() => state.status.role),

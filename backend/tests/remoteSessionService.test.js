@@ -569,6 +569,30 @@ describe('remote session service', () => {
     await operatorGame.stop();
   });
 
+  test('ended status carries the id of the session that ended, a new join gets a new id', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, operatorGame } = ctx;
+    const firstId = operatorSession.getStatus().sessionId;
+    expect(firstId).toEqual(expect.any(String));
+    await ownerSession.stop();
+    await flush();
+    const ended = operatorSession.getStatus();
+    expect(ended.phase).toBe('ended');
+    expect(ended.sessionId).toBe(firstId);
+
+    await ownerSession.create({ token: 'owner' });
+    await operatorSession.join({ token: 'operator', joinCode: 'JOIN123' });
+    await flush();
+    const next = operatorSession.getStatus();
+    expect(next.phase).not.toBe('ended');
+    expect(next.sessionId).toEqual(expect.any(String));
+    expect(next.sessionId).not.toBe(firstId);
+    await ownerSession.stop();
+    await flush();
+    await operatorSession.stop();
+    await operatorGame.stop();
+  });
+
   test('a member joining moves the host into pending authorization', async () => {
     const ctx = setup();
     const { ownerSession, operatorSession, operatorGame } = ctx;

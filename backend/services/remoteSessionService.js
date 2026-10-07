@@ -1,5 +1,6 @@
 const remoteGameService = require('./remoteGameService');
 const remoteProjectionService = require('./remoteProjectionService');
+const { randomUUID } = require('crypto');
 const logService = require('./logService');
 
 // 远程会话编排层：同时拉起「远程游戏（主房间）」与「设备投影」两条链路并统一授权。
@@ -142,6 +143,7 @@ class RemoteSessionService {
     this._unsubscribes = [];
     this._stopping = false;
     this._latencyMs = null;
+    this._lastSessionId = null;
   }
 
   // ---------- 被控端 ----------
@@ -163,6 +165,8 @@ class RemoteSessionService {
     }
     this.state = {
       role: 'owner',
+      // 会话身份：结束提示按它对号入座，新会话开始后不再弹上一段的「远程已结束」
+      sessionId: randomUUID(),
       phase: 'waiting',
       token,
       joinCode: gameStatus?.joinCode || null,
@@ -182,6 +186,7 @@ class RemoteSessionService {
     this.logEntries = [];
     this.lastEnded = null;
     this._latencyMs = null;
+    this._lastSessionId = this.state.sessionId;
     this._attach();
     this._scheduleRenewal(this.state);
     this._logEvent('ok', 'session.create', null, { joinCode: this.state.joinCode });
@@ -197,6 +202,7 @@ class RemoteSessionService {
     const gameStatus = await this.game.join({ token, joinCode: code });
     this.state = {
       role: 'operator',
+      sessionId: randomUUID(),
       phase: 'pending-authorization',
       token,
       joinCode: null,
@@ -215,6 +221,7 @@ class RemoteSessionService {
     };
     this.logEntries = [];
     this.lastEnded = null;
+    this._lastSessionId = this.state.sessionId;
     this._attach();
     this._startPing();
     return this.getStatus();
@@ -358,7 +365,7 @@ class RemoteSessionService {
       // （撤权/踢出后投影服务可能已先收尾，_teardownOperatorLinks 里那次就白跑了）。
       await this._pruneOperatorProjection();
     }
-    this.lastEnded = { at: this.now(), reason };
+    this._markEnded(reason, state.sessionId);
     this._logEvent('ok', 'session.stop', null, { reason });
     return this.getStatus();
   }
@@ -556,7 +563,7 @@ class RemoteSessionService {
       return;
     }
     if (event.type === 'ended' && state.role === 'operator') {
-      this.lastEnded = { at: this.now(), reason: event.reason || 'ended' };
+      this._markEnded(event.reason || 'ended');
       this._teardown();
       this._logEvent('ok', 'session.ended', null, { reason: event.reason || null });
       // 被控端只关掉自己那侧房间（stop/踢出/离线）：主控端的投影链路与设备表要自己收掉
@@ -572,7 +579,7 @@ class RemoteSessionService {
     if (!state) {
       if (this._stopping) return;
       if (event.type === 'ended') {
-        this.lastEnded = { at: this.now(), reason: event.reason || 'ended' };
+        this._markEnded(event.reason || 'ended');
         this._logEvent('ok', 'session.ended', null, { reason: event.reason || null });
         // 投影链路自己结束了（房主关掉他那侧房间）：主控端把链路与设备表收干净
         void this._teardownOperatorLinks();
@@ -602,7 +609,7 @@ class RemoteSessionService {
       return;
     }
     if (event.type === 'ended' && state.role === 'operator') {
-      this.lastEnded = { at: this.now(), reason: event.reason || 'ended' };
+      this._markEnded(event.reason || 'ended');
       this._teardown();
       this._logEvent('ok', 'session.ended', null, { reason: event.reason || null });
       // 被控端只关掉自己那侧房间：主控端的投影链路与设备表要自己收掉
@@ -903,6 +910,7 @@ class RemoteSessionService {
         active: false,
         role: null,
         phase: ended ? 'ended' : 'idle',
+        sessionId: ended?.sessionId || null,
         joinCode: null,
         peer: null,
         authorized: false,
@@ -921,6 +929,7 @@ class RemoteSessionService {
       active: true,
       role: state.role,
       phase: this._phase(state, gameStatus, projectionStatus),
+      sessionId: state.sessionId || null,
       joinCode: state.role === 'owner' ? state.joinCode : null,
       peer: state.peerUserId
         ? { userId: state.peerUserId, nickname: null }
@@ -949,6 +958,12 @@ class RemoteSessionService {
   _isAuthorized(state, gameStatus) {
     if (state.role === 'owner') return !!state.authorized;
     return !!gameStatus?.authorized;
+  }
+
+  /** 记一次结束：带上刚结束的会话身份（state 已清空时用最近一次会话的 id） */
+  _markEnded(reason, sessionId) {
+    const id = sessionId || this.state?.sessionId || this._lastSessionId || null;
+    this.lastEnded = { at: this.now(), reason, sessionId: id };
   }
 
   _endedState() {    const ended = this.lastEnded;
