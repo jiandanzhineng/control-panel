@@ -1190,6 +1190,7 @@ class RemoteGameService {
         userId: senderUserId,
         kind: type,
         target: envelope.payload?.deviceId || envelope.payload?.gameId || null,
+        gameName: envelope.payload?.gameName || null,
         outcome: 'ok',
         detail: null,
       });
@@ -1201,6 +1202,7 @@ class RemoteGameService {
         userId: senderUserId,
         kind: type,
         target: envelope.payload?.deviceId || envelope.payload?.gameId || null,
+        gameName: envelope.payload?.gameName || null,
         outcome: 'rejected',
         detail: { code: error?.code || 'COMMAND_FAILED', message: error?.message || '命令执行失败' },
       });

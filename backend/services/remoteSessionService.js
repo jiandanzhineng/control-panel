@@ -422,7 +422,7 @@ class RemoteSessionService {
     if (result?.result?.idempotent !== true || !state.remotePlay) {
       state.remotePlay = { ...occupancy, gameId: state.localPlay.gameId };
     }
-    this._logEvent('ok', 'play.occupy', null, { gameId: id });
+    this._logEvent('ok', 'play.occupy', null, { gameId: id }, gameName);
     return { ok: true, ...state.localPlay };
   }
 
@@ -432,10 +432,11 @@ class RemoteSessionService {
     if (state.role !== 'operator') throw this._error('NOT_OPERATOR', '只有主控端可以释放玩法占用');
     const id = String(gameId || '').trim();
     if (state.localPlay && (!id || state.localPlay.gameId === id)) {
+      const released = state.localPlay;
       state.localPlay = null;
       state.remotePlay = null;
       state.playPreempted = false;
-      this._logEvent('ok', 'play.release', null, { gameId: id || null });
+      this._logEvent('ok', 'play.release', null, { gameId: id || null }, released.gameName);
     }
     const result = await this.game.command({ type: 'play.release', payload: { gameId: id || null } });
     if (result?.ok === false) {
@@ -826,7 +827,7 @@ class RemoteSessionService {
     const kind = event.type === 'operator-output' ? 'operator-output' : (event.kind || 'unknown');
     // 心跳 / 只读请求不进操作记录
     if (QUIET_KINDS.has(kind)) return;
-    const summary = this._summarize(kind, outcome, event.target, detail);
+    const summary = this._summarize(kind, outcome, event.target, detail, event.gameName);
     this._pushLog({
       ts: this.now(),
       userId: event.userId || null,
@@ -838,13 +839,13 @@ class RemoteSessionService {
     });
   }
 
-  _logEvent(outcome, kind, target, detail) {
+  _logEvent(outcome, kind, target, detail, gameName) {
     this._pushLog({
       ts: this.now(),
       userId: null,
       kind,
       target: target || null,
-      summary: KIND_SUMMARY[kind] || kind,
+      summary: this._summarize(kind, outcome, target, detail, gameName),
       outcome,
       detail: detail || null,
     });
@@ -856,7 +857,7 @@ class RemoteSessionService {
   }
 
   /** 摘要只写「做了什么」；限制/拒绝由结果标签表达，细节放 detail.hint（悬停显示）。 */
-  _summarize(kind, outcome, target, detail) {
+  _summarize(kind, outcome, target, detail, gameName) {
     const base = KIND_SUMMARY[kind] || kind;
     const name = this._label(target);
     const applied = detail?.applied;
@@ -867,7 +868,11 @@ class RemoteSessionService {
     }
     if (kind === 'devices.rename') return `重命名「${name}」`;
     if (kind === 'devices.controlConnection.set') return `切换「${name}」的控制连接`;
-    if (kind.startsWith('game.')) return `${base}${detail?.gameId ? `《${detail.gameId}》` : ''}`;
+    // 玩法类：写游戏名（主控端登记占用时带 gameName），没有才退回游戏 id；target 是游戏 id 不是设备
+    if (kind.startsWith('game.') || kind.startsWith('play.')) {
+      const game = String(gameName || '').trim() || target || detail?.gameId || '';
+      return game ? `${base}《${game}》` : base;
+    }
     return name ? `${base}「${name}」` : base;
   }
 

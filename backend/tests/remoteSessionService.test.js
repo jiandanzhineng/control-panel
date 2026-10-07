@@ -803,6 +803,9 @@ describe('remote session play occupancy', () => {
     expect(ownerSession.getStatus().occupancy).toMatchObject({
       gameId: 'surge-edging', gameName: '气压突变寸止',
     });
+    // 被控端操作记录写游戏名，不写游戏 id
+    const occupyRow = ownerSession.getStatus().log.find((row) => row.kind === 'play.occupy');
+    expect(occupyRow?.summary).toBe('开始玩法《气压突变寸止》');
 
     // 同一游戏重复登记：幂等，不再发命令
     operatorCommand.mockClear();
@@ -812,6 +815,9 @@ describe('remote session play occupancy', () => {
     await operatorSession.releasePlay({ gameId: 'surge-edging' });
     expect(operatorSession.getStatus().localPlay).toBeNull();
     expect(ownerSession.getStatus().occupancy).toBeNull();
+    // 结束玩法也写游戏名（不是游戏 id）
+    const releaseRow = operatorSession.getStatus().log.find((row) => row.kind === 'play.release');
+    expect(releaseRow?.summary).toBe('结束玩法《气压突变寸止》');
 
     await ownerSession.stop();
     await operatorSession.stop();
