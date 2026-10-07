@@ -2,7 +2,7 @@
 
 - 日期：2026-10-07
 - 分支：`feat/remote-session-mode`
-- 结论摘要：**7 项场景 7 项通过**；过程中发现并修复 **9 处缺陷**，终验又修复 **7 项**（提交见 §5.1，复核见 §5.2），关键指标：控制延迟 43–71ms（均值 49ms）、分离式游戏触发→电击同一步完成（虚拟设备命令日志 0 延迟）、空闲 10s 的 SSE 帧数 13→2（停止后）、长跑 804s 跨 2 次 600s 凭据刷新全程无断线
+- 结论摘要：**7 项场景 7 项通过**；过程中发现并修复 **9 处缺陷**，终验又修复 **7 项**，截图重拍复核再修 **2 项**（F9/F10，提交见 §5.1，重拍说明见 §5.3），关键指标：控制延迟 45–53ms（长跑均值 50ms）、分离式游戏触发→电击同一步完成（虚拟设备命令日志 0 延迟）、空闲 10s 的 SSE 帧数 14→2（停止后）、长跑 809s 跨 2 次 600s 凭据刷新全程无断线；报告内 56 张截图全部在当前代码上重拍并逐张核对过
 
 ---
 
@@ -16,7 +16,7 @@
 | 房间服务 | **生产** `https://api.undersilicon.cn` |
 | MQTT（远控链路） | **生产** `wss://mqtt.undersilicon.cn:8084/mqtt`（凭据由房间服务下发） |
 | MQTT（设备链路） | 本机 EMQX `mqtt://127.0.0.1:1883`（虚拟设备下行帧抓包） |
-| 账号 | 两端各一个 `POST /auth/anonymous` 匿名账号（A `01M49PWTZFA7TMWFH8H29KAYAF`、B `01M49PWTQGQWX8JD73NZP3HBS1`） |
+| 账号 | 两端各一个 `POST /auth/anonymous` 匿名账号（早期取证 A `01M49PWTZ…KAYAF`、B `01M49PWTQ…P3HBS1`；重拍复核另建一对，房间码/短 id 随会话变化） |
 | 虚拟设备 | A：`a1007_dianji(DIANJI)` `a1007_dglab(DGLAB)` `a1007_td01(TD01)` `a1007_qtz(QTZ)` `a1007_lock(ZIDONGSUO)` `a1007_cunzhi(CUNZHI01)`；B：`b1007_td01(TD01)`（用于验证「只显示对方设备」） |
 | 硬件 | **全程仅虚拟设备**，启动前确认两端设备表为空（无串口/BLE/MQTT 真实硬件） |
 | `/api/dev-access` | 两端 `enabled=true`（仅本机手测；测试结束已复位 `false`） |
@@ -35,13 +35,13 @@
 
 | # | 场景 | 结果 | 关键结论 |
 |---|---|---|---|
-| 1 | 一码连接：开启远程 → 输码 → 待授权 → 允许控制 → 自动进投影 + 只显示对方设备 + 两端远程条 + 延迟 | **通过**（修复 #1–#3） | 房间码大小写/连字符原样保留；被控端授权入口恢复；B 自动进投影并跳 `/devices`，设备表只有 A 的 6 台；延迟 53ms |
+| 1 | 一码连接：开启远程 → 输码 → 待授权 → 允许控制 → 自动进投影 + 只显示对方设备 + 两端远程条 + 延迟 | **通过**（修复 #1–#3） | 房间码大小写/连字符原样保留；被控端授权入口恢复；B 自动进投影并跳 `/devices`，设备表只有 A 的 6 台；延迟 48–53ms |
 | 2 | 主控端锁定：侧栏置灰 / 路由拦截 / 本机接口 423 | **通过** | 5 项菜单置灰；`/settings` 被拦并提示；5 条本机接口 423 `REMOTE_LOCKED`；本机设备 id 被拒（写 423 / 读 404）；被控端设备可写 |
 | 3 | 主控端手动控制：超限钳制 / 操作记录 / 重命名回流 | **通过** | 电压 999→20、强度 999→128；电击 10.0s 看门狗自动停机；未知字段 500 `REMOTE_OUTPUT_REJECTED`；A 操作记录显示「已限制」；改名在 A 与 B 同时生效 |
 | 4 | 主控端页面式游戏（device-control）：输出经投影到 A 并钳制；被控端本地玩法顶替 | **通过** | 页面写入 999→20（同一帧）；A 远程条显示「正在运行《设备控制台》」；A 起本地玩法后 B 收到「被控端开始了本地玩法，已停止你的游戏」、写入被拒（`HOST_PLAY_ACTIVE`）、停止放行 |
 | 5 | 分离式游戏 maid-punishment 2.2.2 由主控端启动、逻辑在被控端 | **通过** | A `gameHostService.source=remote`；两端画面渲染；QTZ 按下→A 电击器 `shock.start{voltage:20}`（远程钳制 24→20），B 画面同步；SSE 帧数见 §4.3；开局已按住不电击 |
 | 6 | 急停（两端）/ 撤权 / 重新加入授权 / 踢出 | **通过**（修复 #5–#8） | 主控端急停 3s 内停投影输出且会话保持；被控端急停 ~31ms 停输出；撤权弹「对方已收回控制权」并回本机模式；重新授权成功；踢出弹「对方已将你移出」并回 `/remote`（终验修复 F5） |
-| 7 | 长跑 ≥12 分钟（覆盖 ≥1 次 600s 凭据刷新） | **通过**（修复 #9） | 40 次采样 / 804s 全程 `active`、0 错误；期间 2 次凭据刷新无断线；13 次设备写入全部 200；延迟 43–71ms（均值 49ms） |
+| 7 | 长跑 ≥12 分钟（覆盖 ≥1 次 600s 凭据刷新） | **通过**（修复 #9） | 39 次采样 / 809s 全程 `active`、0 错误；期间 2 次凭据刷新无断线；13 次设备写入全部 200；延迟 45–53ms（均值 50ms） |
 
 ---
 
@@ -51,10 +51,10 @@
 
 | # | 步骤 | 预期 | 实际 | 结果 |
 |---|---|---|---|---|
-| 1 | A 点「开启远程」 | 显示房间码、`phase=waiting`、两条链路 connected | 房间码 `F8jMl76-PtY`；`links.game.connected=true`、`links.projection.connected=true` | 通过 |
-| 2 | B 输码点「加入」 | B 进 `pending-authorization`；A 面板出现「允许控制 / 拒绝」 | A 面板 `9KAYAF | 01M49PWTZ…KAYAF | 允许控制 | 拒绝`；B 面板「已加入，等待对方允许…」 | 通过（**修复 #3**：原先 A 恒为 `waiting`，看不到授权按钮） |
-| 3 | A 点「允许控制」 | 主房间授权 + 下发投影房间码 + 自动授权投影 | A `phase=active`；B `authorized=true`、`projectionRoomId=01M49R8G1QX8S9Y5E6Y2J7554H` | 通过 |
-| 4 | B 自动进入投影并跳 `/devices` | 不需要二次输码；设备表只有 A 的 6 台；两端远程条可见；显示延迟 | B `#/devices`，设备 `a1007_dianji/dglab/td01/qtz/lock/cunzhi`（**无 `b1007_td01`**）；B 条「正在控制：P3HBS1 的客户端 延迟 53ms」；A 条「⚠ 9KAYAF 正在控制你的客户端」 | 通过 |
+| 1 | A 点「开启远程」 | 显示房间码、`phase=waiting`、两条链路 connected | 房间码 `_ZfbLmRcvL8`（大小写/`-`/`_` 原样）；`links.game.connected=true`、`links.projection.connected=true` | 通过 |
+| 2 | B 输码点「加入」 | B 进 `pending-authorization`；A 面板出现「允许控制 / 拒绝」 | A 面板 `{短id} / {userId} / 允许控制 / 拒绝`；B 面板「已加入，等待对方允许…」、远程条「等待 {A} 允许控制…」+ 琥珀点 +「取消」 | 通过（**修复 #3**：原先 A 恒为 `waiting`，看不到授权按钮；重拍复核确认待授权文案不再是「正在控制」） |
+| 3 | A 点「允许控制」 | 主房间授权 + 下发投影房间码 + 自动授权投影 | A `phase=active`；B `authorized=true`、`projectionRoomId` 已下发且两端一致 | 通过 |
+| 4 | B 自动进入投影并跳 `/devices` | 不需要二次输码；设备表只有 A 的 6 台；两端远程条可见；显示延迟 | B `#/devices`，设备 `a1007_dianji/dglab/td01/qtz/lock/cunzhi`（**无 `b1007_td01`**）；B 条「正在控制：Z88218 的客户端 延迟 48ms」；A 条「⚠ 7ETZNS 正在控制你的客户端」 | 通过 |
 | 5 | B 停在 `/home` 时授权 | 远程条自动跳一次 `/devices` | `hashBeforeAuthorize=#/home` → 授权后 `#/devices` | 通过 |
 
 ### 场景 2：主控端锁定（`s2.js`）
@@ -83,7 +83,7 @@
 | # | 步骤 | 预期 | 实际 | 结果 |
 |---|---|---|---|---|
 | 1 | B 游戏库（远程状态） | 游戏卡片带「远程」标签 | 设备控制台「远程时有延迟」、女仆偷懒惩罚「远程无延迟」 | 通过 |
-| 2 | B 启动 device-control | 被控端登记占用 | A `occupancy={gameId:'device-control',gameName:'设备控制台'}`，A 条「⚠ 9KAYAF 正在控制你的客户端 · 9KAYAF 正在运行《设备控制台》」 | 通过 |
+| 2 | B 启动 device-control | 被控端登记占用 | A `occupancy={gameId:'device-control',gameName:'设备控制台'}`，A 条「⚠ {B} 正在控制你的客户端 · {B} 正在运行《设备控制台》」，操作记录「开始玩法《设备控制台》」（F9） | 通过 |
 | 3 | 页面式游戏输出 | 经投影到 A 并钳制 | B 写 `voltage:999` → `/drecv` 帧 `{voltage:20,shock:1}`（31ms）；A 操作记录 `clamped` | 通过 |
 | 4 | A 起本地玩法 | 顶掉 B 的玩法 + 提示 | B 弹「远程已结束｜被控端开始了本地玩法，已停止你的游戏」；`localPlay=null`、`playEndedReason=host-local-play`、游戏已停；A 操作记录 `session.play.preempted` | 通过 |
 | 5 | A 玩法运行中 B 再写 | 拒绝；停止放行 | `voltage:15,shock:1` → 500 `HOST_PLAY_ACTIVE`「被控端正在运行本地玩法」；`voltage:0,shock:0` → 200 且 `/drecv` 收到归零帧 | 通过 |
@@ -98,7 +98,7 @@
 | 3 | A 上模拟 QTZ 按钮按下 | 同一步内电击，电压 ≤20V | 虚拟设备命令日志 `{invoke, shock.start, {voltage:20}}`（**0 延迟**，与 `_publishState` 同步）；抓包帧 `{voltage:20,shock:1}`；核心快照 `lastShockVoltage=24`（核心请求 24V 被钳到 20V，操作记录 `host-output clamped`）；B 画面「电击中(24V) / 累计电击 1」 | 通过 |
 | 4 | 松手 | 电击停止 | `isShocking=false`、`button0Pressed=false` | 通过 |
 | 5 | 开局已按住按钮 | 不电击 | 开局前 `button0=1` 启动 → 命令日志为空、`shockCount=0`；松开再按才 `shock.start{voltage:20}` | 通过 |
-| 6 | SSE 帧数（10s 空闲 / 活动 3s） | 记录数值 | 运行中 10s：**13 条 patch**（1.4/s，TD01 每 5s 递增触发）；活动 3s：**5 条 patch**（2.4/s）；停止后 10s：**2 条 patch**（0.4/s） | 通过 |
+| 6 | SSE 帧数（10s 空闲 / 活动 3s） | 记录数值 | 运行中 10s：**14 条 patch**（1.4/s，TD01 每 5s 递增触发）；活动 3s：**6 条 patch**（2.3/s）；停止后 10s：**2 条 patch**（0.4/s） | 通过 |
 | 7 | 停止游戏 | 被控端结束 | A `running=false`、`endReason` 由 `stop-current` 收尾 | 通过 |
 
 ### 场景 6：急停 / 撤权 / 踢出 / 掉线（`s6.js`、`s6b-disconnect.js`）
@@ -117,12 +117,12 @@
 
 | # | 步骤 | 预期 | 实际 | 结果 |
 |---|---|---|---|---|
-| 1 | 会话建立后每 20s 采样 | 全程不断线 | 40 次采样 / 804s：A/B 均 `phase=active`、`authorized=true`，投影房间 id 全程稳定 `01M4A3VP35FR2F6J5Z44WXKGGS`；非 active 采样 0 次 | 通过 |
-| 2 | 跨 600s TTL 凭据刷新 | ≥1 次刷新不断线 | 窗口内 2 次 `RemoteGame credential refreshed and reconnected`（02:50:39 / 02:50:40，另 A 侧 02:21:15 一次），刷新期间会话未变 `reconnecting` | 通过 |
+| 1 | 会话建立后每 20s 采样 | 全程不断线 | 39 次采样 / 809s：A/B 均 `phase=active`、`authorized=true`、`lastError=null`，投影房间 id 全程稳定；非 active 采样 0 次 | 通过 |
+| 2 | 跨 600s TTL 凭据刷新 | ≥1 次刷新不断线 | 窗口内 2 次 `RemoteGame credential refreshed and reconnected`（B 侧 16:44:26 / 16:57:43，另 A 侧 16:57:37 一次），刷新期间会话未变 `reconnecting` | 通过 |
 | 3 | 每 3 次采样写一次设备 | 控制仍可用 | 13 次写入全部 200（`writeOk=13, writeFail=0`） | 通过 |
-| 4 | 延迟 | 记录 | 43–71ms（均值 49ms） | 通过 |
+| 4 | 延迟 | 记录 | 45–53ms（均值 50ms） | 通过 |
 
-> 长跑脚本 `s7-longrun.js` 输出：`{"samples":40,"errors":0,"writeOk":13,"writeFail":0,"latencyMin":43,"latencyMax":71,"latencyAvg":49,"durationSec":804}`。
+> 长跑脚本 `s7-reshoot.js` 输出：`{"samples":39,"errors":0,"writeOk":13,"writeFail":0,"latencyMin":45,"latencyMax":53,"latencyAvg":50,"durationSec":809}`。
 
 ---
 
@@ -132,9 +132,9 @@
 
 | 场景 | 延迟 |
 |---|---|
-| 场景 1 授权后 | 53ms |
-| 场景 6 急停前 | 48–63ms |
-| 场景 7 长跑 40 次采样 | 43–71ms（均值 49ms） |
+| 场景 1 授权后 | 48–53ms |
+| 场景 6 急停前 | 50–64ms |
+| 场景 7 长跑 39 次采样 | 45–53ms（均值 50ms） |
 
 ### 4.2 钳制与看门狗（`/drecv` 抓包）
 
@@ -150,8 +150,8 @@ B 写 DIANJI {voltage:10, bogus:1}  → 500 REMOTE_OUTPUT_REJECTED，无下行�
 
 | 窗口 | 帧数 | 速率 | 说明 |
 |---|---|---|---|
-| 运行中 10s | 13 条 `patch` | 1.4/s | TD01 每 5s 递增 → 有变化才推 |
-| 活动 3s（QTZ 按下 → 电击） | 5 条 `patch` | 2.4/s | 含状态变化 + 日志 |
+| 运行中 10s | 14 条 `patch` | 1.4/s | TD01 每 5s 递增 → 有变化才推 |
+| 活动 3s（QTZ 按下 → 电击） | 6 条 `patch` | 2.3/s | 含状态变化 + 日志 |
 | 停止后 10s | 2 条 `patch` | 0.4/s | 收尾变化，之后无流量 |
 
 > 说明：本机设备每 30s 心跳重发属性，`gameHostService` 只在值真变化时转发，因此空闲窗口仍有低频 patch（TD01 递增）；**完全静止的窗口（场景 5 停止后 10s）降到 2 条**。50ms 合并窗口上限 ~20 条/秒，实测远低于上限。
@@ -169,6 +169,7 @@ B 写 DIANJI {voltage:10, bogus:1}  → 500 REMOTE_OUTPUT_REJECTED，无下行�
 
 ## 5. 发现并修复的缺陷
 
+
 | # | 现象 | 根因 | 修复 | 提交 |
 |---|---|---|---|---|
 | 1 | 主控端粘贴正确房间码点「加入」静默失败（按钮无 loading、无提示） | `RemoteSessionView` 对房间码做 `toUpperCase()`，而房间码区分大小写 | 新增 `normalizeJoinCode`，只 strip 空白 | `d2f9311` |
@@ -185,7 +186,7 @@ B 写 DIANJI {voltage:10, bogus:1}  → 500 REMOTE_OUTPUT_REJECTED，无下行�
 
 **`npm run check`（全部修复后，冻结代码）：后端 916 通过 / 1 跳过（110 个套件），前端 59 通过，前端类型检查与生产构建通过。**
 
-### 5.1 终验修复（2026-10-07 终验）
+### 5.1 终验修复（2026-10-07 终验；F9–F10 为当日晚截图重拍复核时补修）
 
 | # | 现象 | 根因 | 修复 | 提交 |
 |---|---|---|---|---|
@@ -196,6 +197,8 @@ B 写 DIANJI {voltage:10, bogus:1}  → 500 REMOTE_OUTPUT_REJECTED，无下行�
 | F5 | 踢出后主控端显示「对方已收回控制权」 | 会话层 `kick` 先调 `game.revoke()` 关授权，它发出的定向结束通知固定 `reason=revoked`，主控端先收到它就按撤权收尾，随后的 `kicked` 被忽略 | `revoke({reason})`，踢出路径传 `kicked` | `3f4c4ac` |
 | F6 | 撤权后主控端残留 `a1007_dglab/qtz/cunzhi` 三台离线设备（原 §6.2） | **根因不是晚到的清单**：`deviceService.removeDevice` 在 `await` 断开连接之前取下标、之后 `splice`；投影收尾同时删 6 台，后面的删除用过期下标，删错、漏删一半——恰好是隔一台漏删的这 3 台 | `removeDevice` 在 await 之后重新定位；另做时序加固：房主每次授权/撤权/移出递增 `authEpoch` 随清单下发，操作方丢弃代次更旧的清单、`authorizedFor` 不是本账号时不登记设备、授权结束后忽略设备状态；房主无授权对象时不发完整清单 | `63d4bbb` `bb1e1ea` |
 | F7 | 主控端远程模式下设备页「蓝牙连接 / 设备工具 / 清空设备」仍可点，点了只得到 423 | 设备页没有接远程锁定 | 三个入口置灰，悬停提示「请在被控端操作」（设备工具含配网/串口/批量/固件，全部打本机锁定接口） | `0dca926` |
+| F9 | 被控端操作记录把玩法写成游戏 id（「启动玩法《maid-punishment》」「开始玩法「device-control」」） | 主控端 `game.start` 只带 `gameId`，编排层 `_summarize` 拿不到游戏名；`play.occupy` 走 `_logEvent` 直出摘要，从不拼名字 | 主控端 `game.start` / `game.stop` 带上游戏名；被控端会话级记住玩法 id→名字（登记占用时学到、写记录时兜底），摘要据此写名字 | `412fde0` `7323422` |
+| F10 | 被控端房间被挂住：主控端玩法登记/停止全部超时、`HOST_PLAY_ACTIVE` 闸门关着不放开（12 个用例超时复现） | 上一版把 `gameName` 的取值写进了 `_onOwnerCommand` 的 `try` 里，而 `session.gameNames` 在某些会话对象上不存在，取名字时抛错 → 被控端房间收到命令后既不回执也不执行 | 取值挪到 `try` 之外、会话创建时就带 `gameNames`、收尾时清空；`remoteSessionService._gameName` 对缺失的映射表做兜底 | `7323422` |
 
 新增/更新单测：`remoteSessionService.test.js`（心跳不入记录、设备名与字段中文、`sessionId` 随 ended 带出、踢出/撤权原因区分）、`deviceTransportRouting.test.js`（并发删除 6 台只剩本机设备，修复前复现残留 3 台）、`remoteProjectionService.test.js`（撤权前算好的清单撤权后才到不重新登记、迟到的设备状态不认、重新授权恢复；无授权时不发完整清单；未授权操作方不登记给别人的设备）、`frontend/tests/remoteSession.test.ts`（结束提示按会话对号入座的完整时序、延迟缺省、悬停详情）。
 
@@ -207,11 +210,27 @@ B 写 DIANJI {voltage:10, bogus:1}  → 500 REMOTE_OUTPUT_REJECTED，无下行�
 
 | 项 | 步骤 | 结果 |
 |---|---|---|
-| F1–F3 | 主控端写 电压 999、强度 999、未知字段 `bogus`、强度 30、归零，等 12s（跨两次心跳）后看被控端记录 | 记录 7 条：开启远程 / 允许控制 / 3 条 ok / 2 条已限制 / 1 条已拒绝，**`client.ping` 0 条**；标签悬停详情「请求 999 → 实际 20」「请求 255 → 实际 128」「远程投影不允许设备字段: bogus」；被控端远程条 `⚠ 7ETZNS 正在控制你的客户端 | 操作记录 | 急停 | 踢出`，无延迟字样 |
+| F1–F3 | 主控端写 电压 999、强度 999、未知字段 `bogus`、强度 30、归零，等 12s（跨两次心跳）后看被控端记录 | 记录 7 条：开启远程 / 允许控制 / 3 条 ok / 2 条已限制 / 1 条已拒绝，**`client.ping` 0 条**；标签悬停详情「请求 999 → 实际 20」「请求 255 → 实际 128」「远程投影不允许设备字段: bogus」；被控端远程条 `⚠ 7ETZNS 正在控制你的客户端 / 操作记录 / 急停 / 踢出`，无延迟字样 |
 | F4 | 会话 1 进行中 → 被控端结束（主控端弹「对方已结束远程」，不点）→ 直接开会话 2 并授权 | 会话 2 活跃后提示自动关闭（`dialogClosedByNewSession=true`），主控端停在 `#/devices`、远程条「正在控制」、设备表为 A 的 6 台 |
 | F5 | 建会话 → 被控端踢出 | 主控端 `lastError=kicked`，弹「对方已将你移出」，确定后回 `#/remote` |
 | F6 | 建会话 → 被控端撤权，15s 内每秒采样主控端设备表 | A 的设备 15 次采样均为 0 台，只剩 `b1007_td01`；弹「对方已收回控制权」 |
 | F7 | 主控端远程模式进入设备页 | 蓝牙连接 / 设备工具 / 清空设备 `disabled=true`，刷新列表可用；悬停提示「请在被控端操作」 |
+
+### 5.3 截图重拍复核（2026-10-07 晚）
+
+报告里的早期截图是在后续修复之前拍的（例如 b-04 还挂着上一段会话的「远程已结束」、a-07 的操作记录还是原始 id/字段）。本次在**当前代码**上重拍全部截图，逐张核对「屏幕内容 ↔ 图注 ↔ 当前行为」，过程中又发现并修复两处缺陷（**F9 / F10**，见 §5.1 表末）：
+
+- **F9** 被控端操作记录把玩法写成游戏 id（「启动玩法《maid-punishment》」「开始玩法「device-control」」）；
+- **F10** 为修 F9 引入的回归：被控端房间被挂住（主控端玩法登记/停止全部超时、`HOST_PLAY_ACTIVE` 闸门不放开），12 个后端用例超时复现。
+
+重拍说明（同一套 harness，生产房间服务与生产 EMQX，仅虚拟设备）：
+
+- **重拍步骤**：场景 1（01–05）、场景 2（06–07）、场景 3（08–09）、场景 4（10–12）、场景 5（13–19）、场景 6（20–26）、场景 7 长跑（27）；
+- 重拍脚本在 `.tmp/remote-session-e2e-1007/`（`s1-reshoot.js`、`s2.js`、`s3.js`、`s4b-dialog.js`、`s5b-reshoot.js`、`s5d-pair.js`、`s5e-pair17.js`、`s5b-held.js`、`s5c-opl-reshoot.js`、`s6c-shots.js`、`s6d-rejoin.js`、`s6b-reshoot.js`、`s7-reshoot.js`）；
+- 重拍时关掉页面过渡动画、并在取证前手动催一次状态轮询（后台窗口计时器被节流），否则弹层/弹窗会被拍到淡出中的半透明状态；
+- 每张图都按「屏幕 ↔ 图注」核对过一遍；重拍后没有一张图依赖早期（修复前）的界面。
+
+**`npm run check`（本次重拍复核后）：后端 924 通过 / 1 跳过（110 个套件），前端 63 通过，前端类型检查与生产构建通过。**
 
 ---
 
@@ -234,6 +253,8 @@ B 写 DIANJI {voltage:10, bogus:1}  → 500 REMOTE_OUTPUT_REJECTED，无下行�
 ---
 
 ## 7. 步骤截图
+
+> 本节 56 张图均在**当前代码**上重拍（重拍步骤见 §5.3）：图注写的就是屏幕上的实际内容，与「预期」不一致的地方已在图注里说明。早期（修复前）的截图已全部替换，报告里不再引用它们。
 
 ### 场景 1：一码连接
 
@@ -263,11 +284,11 @@ B 写 DIANJI {voltage:10, bogus:1}  → 500 REMOTE_OUTPUT_REJECTED，无下行�
 
 ![A 被控端 · 04 设备表](remote-session-e2e-2026-10-07/a-04-devices-only-remote.jpg)
 
-*A 被控端 · 04 本机 6 台虚拟设备（终验复核时重截）*
+*A 被控端 · 04 本机 6 台虚拟设备（重拍复核）*
 
 ![B 主控端 · 04 只显示对方设备](remote-session-e2e-2026-10-07/b-04-devices-only-remote.jpg)
 
-*B 主控端 · 04 设备表只有被控端 6 台（无本机 `b1007_td01`）；远程条「正在控制」时没有上一段会话的「远程已结束」弹窗（终验 F4 复核：上一段会话结束的提示在新会话活跃后自动关闭）；蓝牙连接 / 设备工具 / 清空设备置灰（F7）*
+*B 主控端 · 04 设备表只有被控端 6 台（无本机 `b1007_td01`）；远程条「正在控制」时没有上一段会话的「远程已结束」弹窗（F4：上一段会话结束的提示在新会话活跃后自动关闭）；蓝牙连接 / 设备工具 / 清空设备置灰（F7）*
 
 ![A 被控端 · 05 自动跳转](remote-session-e2e-2026-10-07/a-05-auto-navigate.jpg)
 
@@ -299,7 +320,7 @@ B 写 DIANJI {voltage:10, bogus:1}  → 500 REMOTE_OUTPUT_REJECTED，无下行�
 
 ![A 被控端 · 08 钳制与操作记录](remote-session-e2e-2026-10-07/a-07-clamped-oplog.jpg)
 
-*A 被控端 · 08 操作记录弹层（终验重截）：设备名 + 字段中文名，「已限制」琥珀标签、「已拒绝」红色标签，无 `client.ping`；远程条无「延迟 ms」*
+*A 被控端 · 08 操作记录弹层（重拍复核）：设备名 + 字段中文名，「已限制」琥珀标签、「已拒绝」红色标签，无 `client.ping`；远程条无「延迟 ms」*
 
 ![B 主控端 · 08 超限写入](remote-session-e2e-2026-10-07/b-07-clamped-oplog.jpg)
 
@@ -317,7 +338,7 @@ B 写 DIANJI {voltage:10, bogus:1}  → 500 REMOTE_OUTPUT_REJECTED，无下行�
 
 ![A 被控端 · 10 页面式游戏运行](remote-session-e2e-2026-10-07/a-09-b-page-game-running.jpg)
 
-*A 被控端 · 10 主控端正在运行《设备控制台》*
+*A 被控端 · 10 远程条显示「{对方} 正在运行《设备控制台》」，操作记录里是「开始玩法《设备控制台》」（F9）*
 
 ![B 主控端 · 10 页面式游戏运行](remote-session-e2e-2026-10-07/b-09-b-page-game-running.jpg)
 
@@ -417,11 +438,11 @@ B 写 DIANJI {voltage:10, bogus:1}  → 500 REMOTE_OUTPUT_REJECTED，无下行�
 
 ![A 被控端 · 22 撤权](remote-session-e2e-2026-10-07/a-19-revoked.jpg)
 
-*A 被控端 · 22 撤权后回到待授权（终验重截；远程条缺对方名字见 §6.3）*
+*A 被控端 · 22 撤权后回到「等待对方加入…」，远程条消失（F8）*
 
 ![B 主控端 · 22 撤权](remote-session-e2e-2026-10-07/b-19-revoked.jpg)
 
-*B 主控端 · 22 弹窗「对方已收回控制权」，设备表只剩本机 `b1007_td01`（终验 F6 复核，A 的设备 0 台残留）*
+*B 主控端 · 22 弹窗「对方已收回控制权」，设备表只剩本机 1 台（F6 复核：A 的 6 台投影设备 0 台残留）*
 
 ![A 被控端 · 23 重新授权](remote-session-e2e-2026-10-07/a-20-rejoined.jpg)
 
@@ -433,33 +454,33 @@ B 写 DIANJI {voltage:10, bogus:1}  → 500 REMOTE_OUTPUT_REJECTED，无下行�
 
 ![A 被控端 · 24 踢出](remote-session-e2e-2026-10-07/a-21-kicked.jpg)
 
-*A 被控端 · 24 踢出后回到等待（终验重截）*
+*A 被控端 · 24 踢出后回到「等待对方加入…」，远程条消失*
 
 ![B 主控端 · 24 踢出](remote-session-e2e-2026-10-07/b-21-kicked.jpg)
 
-*B 主控端 · 24 弹窗「对方已将你移出」（终验 F5 复核），确定后回远程连接页*
+*B 主控端 · 24 弹窗「对方已将你移出」（F5 复核），确定后回远程连接页*
 
 ![A 被控端 · 25 主控端掉线](remote-session-e2e-2026-10-07/a-22-operator-offline.jpg)
 
-*A 被控端 · 25 主控端掉线（输出自动停）*
+*A 被控端 · 25 主控端掉线：操作记录里最后一条是「控制设备「电脉冲设备-anji」电压 20」，会话保持 active（被控端不主动结束，等对方回来）*
 
 ![B 主控端 · 25 主控端掉线](remote-session-e2e-2026-10-07/b-22-operator-offline.jpg)
 
-*B 主控端 · 25 后端被杀死*
+*B 主控端 · 25 后端被杀死（页面停在设备管理，远程条还挂着最后一次状态）*
 
 ![A 被控端 · 26 主控端重启](remote-session-e2e-2026-10-07/a-23-operator-restarted.jpg)
 
-*A 被控端 · 26 主控端重启后*
+*A 被控端 · 26 主控端重启后：被控端画面与 25 相同（会话仍 active，等对方重新加入）*
 
 ![B 主控端 · 26 主控端重启](remote-session-e2e-2026-10-07/b-23-operator-restarted.jpg)
 
-*B 主控端 · 26 重启后回到本机模式*
+*B 主控端 · 26 重启后回到本机模式（无远程条，设备表只有本机设备）*
 
 ### 终验补充：主控端设备页本机专属按钮
 
 ![A 被控端 · 28 本机专属按钮](remote-session-e2e-2026-10-07/a-28-host-only-locked.jpg)
 
-*A 被控端 · 28 对照：被控端设备页按钮照常可用（右上角弹层是上一步操作记录在后台窗口里未走完的关闭动画）*
+*A 被控端 · 28 对照：被控端设备页按钮照常可用*
 
 ![B 主控端 · 28 本机专属按钮置灰](remote-session-e2e-2026-10-07/b-28-host-only-locked.jpg)
 
@@ -469,11 +490,11 @@ B 写 DIANJI {voltage:10, bogus:1}  → 500 REMOTE_OUTPUT_REJECTED，无下行�
 
 ![A 被控端 · 27 长跑](remote-session-e2e-2026-10-07/a-27-longrun.jpg)
 
-*A 被控端 · 27 长跑（800s，跨 2 次凭据刷新）*
+*A 被控端 · 27 长跑（809s，跨 2 次凭据刷新）：操作记录弹层里是每 5s 一条「远程玩法输出「偏轴电机控制器-td01」数值 128」+「已限制」，以及主控端的「控制设备…强度 30 / 0」*
 
 ![B 主控端 · 27 长跑](remote-session-e2e-2026-10-07/b-27-longrun.jpg)
 
-*B 主控端 · 27 长跑*
+*B 主控端 · 27 长跑（延迟 52ms，设备表 6 台在线）*
 
 ## 8. 清理
 
@@ -482,3 +503,4 @@ B 写 DIANJI {voltage:10, bogus:1}  → 500 REMOTE_OUTPUT_REJECTED，无下行�
 - 测试脚本保留在 `.tmp/remote-session-e2e-1007/`；
 - 未切换分支；除 §5 的缺陷修复与单测外未改动生产代码。
 - 终验复核：重新拉起同一套 harness（两端新建匿名账号），`s8-final-fixes.js` 跑完后结束会话、两端 `/api/dev-access` 复位 `enabled=false`，`stop-all.ps1` 停掉全部进程（含上一轮遗留的 3 个空闲 shell）。
+- 截图重拍复核：复用同一套 harness 重拍全部 56 张图（场景 1–7），期间重启过两次隔离后端（`7323422` 落盘后各端各重启一次），跑完长跑（809s）后结束两端会话、`stop-all.ps1` 停掉全部进程，两端 `/api/dev-access` 复位 `enabled=false`。
