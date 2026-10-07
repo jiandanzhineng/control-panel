@@ -548,7 +548,14 @@ class RemoteGameService {
       await this._publishPlayOccupancy(session).catch(() => {});
       await this._publishEnvelope(session, 'events', 'session.play.ended', { reason: 'revoked' }).catch(() => {});
     }
-    return this._setAuthorized(false);
+    const result = await this._setAuthorized(false);
+    // 撤权是「对方已收回控制权」：只发 client.authorization（authorized=false）时，
+    // 操作方只能从轮询里看到未授权，永远收不到 session.revoked 的结束事件，
+    // 界面既没有提示也不会退回远程连接页（§4.2「被撤销后自动退回本机模式」）。
+    if (session?.role === 'owner' && session.connected) {
+      await this._publishEnvelope(session, 'events', 'session.revoked', { reason: 'revoked' }).catch(() => {});
+    }
+    return result;
   }
 
   // 房主把成员移出房间；服务端踢线未接线，本地立刻拒绝该 userId 的命令
@@ -562,6 +569,8 @@ class RemoteGameService {
     if (typeof this.api.kickMember === 'function') {
       await this.api.kickMember(session.token, roomId, target);
     }
+    // 被踢的人要收到「对方已将你移出」：服务端踢线未接线，只能靠这条事件通知
+    await this._publishEnvelope(session, 'events', 'session.revoked', { reason: 'kicked' }).catch(() => {});
     session.kicked.add(target);
     session.operatorsOnline.delete(target);
     if (session.authorizedUserId === target) session.authorizedUserId = null;

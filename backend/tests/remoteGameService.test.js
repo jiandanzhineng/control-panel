@@ -571,10 +571,37 @@ describe('remote game service', () => {
     await flush();
     await owner.revoke();
     await flush();
-    expect(operator.getStatus().authorized).toBe(false);
-    const denied = await operator.command({ type: 'game.pause' });
-    expect(denied.code).toBe('CONTROL_NOT_AUTHORIZED');
+    // 撤权即结束操作方会话（它随后回本机模式），这里直接看主房间状态
+    expect(owner.getStatus().authorized).toBe(false);
+    expect(operator.getStatus().active).toBe(false);
     expect(host.pause).not.toHaveBeenCalled();
+  });
+
+  test('revoke ends the operator session with a revoked reason so the UI can tell the user', async () => {
+    const { broker, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await owner.revoke();
+    await flush();
+    // 「对方已收回控制权」：房主发的 session.revoked 里带 revoked 原因
+    const revoked = [...broker.publishes].reverse().find(({ payload }) => payload.type === 'session.revoked');
+    expect(revoked.payload.payload).toMatchObject({ reason: 'revoked' });
+    await owner.stop();
+  });
+
+  test('kick tells the kicked operator why its session ended', async () => {
+    const { broker, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await owner.kick({ userId: 'operator' });
+    await flush();
+    const revoked = [...broker.publishes].reverse().find(({ payload }) => payload.type === 'session.revoked');
+    expect(revoked.payload.payload).toMatchObject({ reason: 'kicked' });
+    await owner.stop();
   });
 
   test('closing the room revokes the operator and clears remote device state', async () => {
@@ -875,8 +902,9 @@ describe('remote game service', () => {
     await flush();
     expect((await owner.kick({ userId: 'operator' })).active).toBe(true);
     expect(api.kickMember).toHaveBeenCalledWith('owner', 'room-1', 'operator');
-    const denied = await operator.command({ type: 'game.pause' });
-    expect(denied.code).toBe('CONTROL_NOT_AUTHORIZED');
+    // 被踢者的会话已被结束（收到 session.revoked 的 kicked），命令自然发不出去
+    expect(operator.getStatus().active).toBe(false);
+    await expect(operator.command({ type: 'game.pause' })).rejects.toMatchObject({ code: 'NOT_OPERATOR' });
     expect(host.pause).not.toHaveBeenCalled();
     expect(owner.getStatus().operators).toEqual([]);
   });
@@ -887,9 +915,10 @@ describe('remote game service', () => {
     await operator.join({ token: 'operator', joinCode: 'JOIN123' });
     await owner.authorize();
     await flush();
+    const operatorSession = operator.session;
     await owner.kick({ userId: 'operator' });
     // 被踢者仍连着 MQTT，重发 presence 也不能被重新选中
-    await operator._publishPresence(operator.session, 'online');
+    await operator._publishPresence(operatorSession, 'online');
     await flush();
     await expect(owner.authorize()).rejects.toMatchObject({ code: 'NO_OPERATOR' });
     expect(owner.getStatus()).toMatchObject({ authorized: false });
@@ -1097,11 +1126,11 @@ describe('remote game service', () => {
     expect(allowed.ok).toBe(true);
     expect(host.stop).toHaveBeenCalledWith({ reason: 'remote-emergency-stop' });
 
-    // 已被踢出的成员：急停立刻被拒（服务端还没断它的 MQTT）
+    // 已被踢出的成员：会话被结束（服务端还没断它的 MQTT），命令发不出去
     await owner.kick({ userId: 'operator' });
     await flush();
-    const kicked = await operator.command({ type: 'session.emergency-stop', payload: {} });
-    expect(kicked).toMatchObject({ ok: false, code: 'CONTROL_NOT_AUTHORIZED' });
+    await expect(operator.command({ type: 'session.emergency-stop', payload: {} }))
+      .rejects.toMatchObject({ code: 'NOT_OPERATOR' });
     expect(broker.publishes.length).toBeGreaterThan(0);
     await owner.stop();
   });
@@ -1376,19 +1405,22 @@ describe('remote game play occupancy lifecycle', () => {
     await owner.revoke();
     await flush();
     expect(owner.getStatus().occupancy).toBeNull();
-    expect(operator.getStatus().playOccupancy).toBeNull();
+    // 撤权同时结束操作方会话：占用随会话清空
+    expect(operator.getStatus().active).toBe(false);
     const revoked = [...broker.publishes].reverse().find(({ payload }) => (
       payload.type === 'session.play.ended'
     ));
     expect(revoked.payload.payload).toMatchObject({ reason: 'revoked' });
 
+    // 撤权已结束操作方会话：重新加入并授权后才能再登记占用
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
     await owner.authorize();
     await flush();
     await operator.command({ type: 'play.occupy', payload: { gameId: 'surge-edging' } });
     await owner.kick({ userId: 'operator' });
     await flush();
     expect(owner.getStatus().occupancy).toBeNull();
-    expect(operator.getStatus().playOccupancy).toBeNull();
+    expect(operator.getStatus().active).toBe(false);
     await owner.stop();
   });
 
