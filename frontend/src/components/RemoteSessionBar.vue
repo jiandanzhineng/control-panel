@@ -22,13 +22,13 @@
         </template>
         <div class="remote-log">
           <div v-if="!logRows.length" class="remote-log__empty">{{ t('remoteSession.log.empty') }}</div>
-          <div v-for="(row, index) in logRows" :key="index" class="remote-log__row">
+          <div v-for="(row, index) in logRows" :key="`${row.ts}-${logRows.length - index}`" class="remote-log__row">
             <span class="remote-log__time">{{ formatTime(row.ts) }}</span>
             <span class="remote-log__summary">{{ row.summary }}</span>
-            <el-tag v-if="row.outcome === 'clamped'" size="small" type="warning" :title="detailText(row)">
+            <el-tag v-if="row.outcome === 'clamped'" size="small" type="warning" disable-transitions :title="detailText(row)">
               {{ t('remoteSession.log.clamped') }}
             </el-tag>
-            <el-tag v-else-if="row.outcome === 'rejected'" size="small" type="danger" :title="detailText(row)">
+            <el-tag v-else-if="row.outcome === 'rejected'" size="small" type="danger" disable-transitions :title="detailText(row)">
               {{ t('remoteSession.log.rejected') }}
             </el-tag>
           </div>

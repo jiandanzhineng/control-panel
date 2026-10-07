@@ -67,13 +67,13 @@
           </div>
           <div class="log-list">
             <div v-if="!logRows.length" class="log-empty">{{ t('remoteSession.log.empty') }}</div>
-            <div v-for="(row, index) in logRows" :key="index" class="log-row">
+            <div v-for="(row, index) in logRows" :key="`${row.ts}-${logRows.length - index}`" class="log-row">
               <span class="log-time">{{ formatTime(row.ts) }}</span>
               <span class="log-summary">{{ row.summary }}</span>
-              <el-tag v-if="row.outcome === 'clamped'" size="small" type="warning" :title="detailText(row)">
+              <el-tag v-if="row.outcome === 'clamped'" size="small" type="warning" disable-transitions :title="detailText(row)">
                 {{ t('remoteSession.log.clamped') }}
               </el-tag>
-              <el-tag v-else-if="row.outcome === 'rejected'" size="small" type="danger" :title="detailText(row)">
+              <el-tag v-else-if="row.outcome === 'rejected'" size="small" type="danger" disable-transitions :title="detailText(row)">
                 {{ t('remoteSession.log.rejected') }}
               </el-tag>
             </div>

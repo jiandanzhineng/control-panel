@@ -49,6 +49,7 @@ const KIND_SUMMARY = {
   'session.emergencyStop': '急停',
   'session.stop': '结束远程',
   'session.ended': '远程已结束',
+  'session.projection-authorize': '设备授权',
 };
 
 // 心跳 / 只读请求：被控端用户不关心，不进操作记录（否则 client.ping 每 5s 刷一条）。
@@ -744,7 +745,7 @@ class RemoteSessionService {
         return true;
       }
       this._finishAuthorize(state);
-      this._logEvent('ok', 'session.projection-authorize', userId, null);
+      // 设备投影授权成功只是「允许控制」的内部一步，被控端用户不关心；失败才记
       return true;
     }
     return false;
