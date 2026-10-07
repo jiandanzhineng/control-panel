@@ -1082,6 +1082,7 @@ const zh = {
     },
     lock: {
       menu: '远程控制中不可用，断开后可用',
+      hostOnly: '请在被控端操作',
     },
     end: {
       title: '远程已结束',

@@ -1082,6 +1082,7 @@ const en = {
     },
     lock: {
       menu: 'Unavailable while remote-controlling; available after disconnect',
+      hostOnly: 'Do this on the controlled client',
     },
     end: {
       title: 'Remote session ended',

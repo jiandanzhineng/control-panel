@@ -11,41 +11,50 @@
           <el-statistic :title="t('devices.offline')" :value="disconnectedCount" class="offline-stat" />
         </div>
         <div class="actions">
-          <el-button
-            :icon="Connection"
-            :disabled="!bleSupported || bleBusy"
-            :loading="bleBusy"
-            @click="startBleConnect"
-          >
-            {{ bleBusy ? t('devices.bleConnecting') : t('devices.bleConnect') }}
-          </el-button>
-          <el-dropdown trigger="click" @command="handleDeviceToolCommand">
-            <el-button>
-              <el-icon><Tools /></el-icon>
-              {{ t('devices.tools') }}
-              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item
-                  command="provision"
-                  :icon="SetUp"
-                  :disabled="!provisionSupported || provisionBusy || bleBusy"
-                >
-                  {{ t('devices.provision') }}
-                </el-dropdown-item>
-                <el-dropdown-item command="serial" :icon="Link" :disabled="serialBusy">
-{{ serialBusy ? t('devices.serialConnecting') : t('devices.serialConnect') }}
-                </el-dropdown-item>
-                <el-dropdown-item command="batch" :icon="Operation">
-                  {{ t('devices.batch') }}
-                </el-dropdown-item>
-                <el-dropdown-item command="firmware" :icon="Upload">
-                  {{ t('firmware.title') }}
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <!-- 主控端远程模式：本机专属操作（蓝牙/配网/串口/批量/固件/清空）置灰，提示去被控端做 -->
+          <el-tooltip :disabled="!hostOnlyLocked" :content="t('remoteSession.lock.hostOnly')" placement="top">
+            <span class="action-wrap">
+              <el-button
+                :icon="Connection"
+                :disabled="hostOnlyLocked || !bleSupported || bleBusy"
+                :loading="bleBusy"
+                @click="startBleConnect"
+              >
+                {{ bleBusy ? t('devices.bleConnecting') : t('devices.bleConnect') }}
+              </el-button>
+            </span>
+          </el-tooltip>
+          <el-tooltip :disabled="!hostOnlyLocked" :content="t('remoteSession.lock.hostOnly')" placement="top">
+            <span class="action-wrap">
+              <el-dropdown trigger="click" :disabled="hostOnlyLocked" @command="handleDeviceToolCommand">
+                <el-button :disabled="hostOnlyLocked">
+                  <el-icon><Tools /></el-icon>
+                  {{ t('devices.tools') }}
+                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      command="provision"
+                      :icon="SetUp"
+                      :disabled="!provisionSupported || provisionBusy || bleBusy"
+                    >
+                      {{ t('devices.provision') }}
+                    </el-dropdown-item>
+                    <el-dropdown-item command="serial" :icon="Link" :disabled="serialBusy">
+                      {{ serialBusy ? t('devices.serialConnecting') : t('devices.serialConnect') }}
+                    </el-dropdown-item>
+                    <el-dropdown-item command="batch" :icon="Operation">
+                      {{ t('devices.batch') }}
+                    </el-dropdown-item>
+                    <el-dropdown-item command="firmware" :icon="Upload">
+                      {{ t('firmware.title') }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </span>
+          </el-tooltip>
           <el-button 
             type="primary" 
             :icon="Refresh" 
@@ -54,14 +63,18 @@
           >
 {{ loading ? t('devices.refreshing') : t('devices.refreshList') }}
           </el-button>
-          <el-button 
-            type="danger" 
-            :icon="Delete"
-            :disabled="loading || devices.length === 0"
-            @click="clearAllDevices"
-          >
-            {{ t('devices.clear') }}
-          </el-button>
+          <el-tooltip :disabled="!hostOnlyLocked" :content="t('remoteSession.lock.hostOnly')" placement="top">
+            <span class="action-wrap">
+              <el-button
+                type="danger"
+                :icon="Delete"
+                :disabled="hostOnlyLocked || loading || devices.length === 0"
+                @click="clearAllDevices"
+              >
+                {{ t('devices.clear') }}
+              </el-button>
+            </span>
+          </el-tooltip>
         </div>
       </div>
     </el-card>
@@ -951,6 +964,7 @@ import DeviceBatchControl from '../components/DeviceBatchControl.vue'
 import { track } from '../analytics'
 import { listDevices, getDeviceTypes, getDeviceTypeConfigs } from '../api/devices'
 import { friendlyMessage } from '../api/errorMessage'
+import { useRemoteSession } from '../composables/useRemoteSession'
 
 interface DeviceData { [key: string]: any }
 type TransportType = 'mqtt' | 'serial' | 'ble' | 'remote' | 'brand' | 'brandBle';
@@ -1013,6 +1027,9 @@ interface OtaStatus {
 
 const router = useRouter();
 const { t } = useI18n();
+// 主控端远程模式：设备表只有被控端设备，本机专属操作（蓝牙/串口/配网/批量/固件/清空）后端会 423，界面先置灰
+const remoteSession = useRemoteSession();
+const hostOnlyLocked = computed(() => remoteSession.isOperatorRemote.value === true);
 
 function deviceTypeName(type?: string) {
   if (!type) return '';
@@ -2192,6 +2209,11 @@ async function executeDeviceOperation(device: Device, operation: any) {
   flex-wrap: wrap;
 }
 
+/* 置灰按钮不触发鼠标事件，包一层 span 让提示能悬停出来 */
+.action-wrap {
+  display: inline-flex;
+}
+
 .serial-auto-control {
   display: flex;
   align-items: center;
@@ -2476,7 +2498,9 @@ async function executeDeviceOperation(device: Device, operation: any) {
     gap: 8px;
   }
   
-  .actions .el-button {
+  .actions .el-button,
+  .actions .action-wrap,
+  .actions .action-wrap .el-dropdown {
     width: 100%;
   }
 
