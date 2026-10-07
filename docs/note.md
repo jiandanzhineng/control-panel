@@ -79,3 +79,5 @@
 
 - 2026-09-23 独立远程工作区路由 `/remote-game`；视觉验证使用 BrowserOS neo，前端 Vite 端口 5174，后端 `npm run dev:backend`。（当时的 Vue 重做 UI / `GameRuntimeSurface` 已于 09-29 删除，见首条。）
 - 2026-09-24 PC 双 Electron 实测：A/B 创建、加入、授权、远程启动 pressure-edging-v2、暂停/继续、运行中改参、B 断线后 A 继续、A 停止和设备复位均通过；仅虚拟设备与本机 MQTT，未验证真实硬件。
+- ESP32-C3 虚拟心率带（标准 BLE HRS 假设备，2026-10-07）：同一块 C3 板（COM17 / CH343，芯片 MAC `60:55:f9:7c:34:2c`，BLE 地址 `60:55:f9:7c:34:2e`），广播名 `HRM-Virtual`。固件 `tools/hrm-c3-mock/`（MicroPython `hrm.py` + 开机自启 `main.py`，部署 `pwsh tools/hrm-c3-mock/deploy.ps1`；mpremote 1.29.0 已装在 IDF 5.2 venv）。服务：标准 `0x180D`（`0x2A37` notify 1Hz / `0x2A38` / `0x2A39`）+ `0x180F` 电量 + `0x180A` 设备信息（序列号 = 基础 MAC）+ `0x00FF` 面板身份 `0xFF04` + `0xFFE0` 测试控制（`0xFFE1` 写文本命令）。命令：`hr=150` 立即固定、`mode=cycle/rest/fixed/nocontact/silent`、`contact=0`、`rr=0/1`、`battery=NN`、`noise=F`、`adv=on/off`。主机自测 `python tools/hrm-c3-mock/host_test.py`（20 项检查，实测全过）。注意：① 写命令要占用设备唯一中央连接，panel/手机连着时脚本连不上；② 串口工具打开端口时 DTR/RTS 会把板子按在复位态，需同时置 False 才能读到输出；③ 该 main.py 覆盖了板上原来的 `ycy-c3-mock`，切回命令见 README。
+
