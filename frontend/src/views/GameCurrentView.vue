@@ -4,7 +4,7 @@
       v-if="iframeSrc"
       :src="iframeSrc"
       class="game-frame"
-      :sandbox="iframeSandbox"
+      :sandbox.attr="iframeSandbox"
       allow="fullscreen; autoplay; gyroscope; accelerometer; microphone"
       allowfullscreen
     ></iframe>
