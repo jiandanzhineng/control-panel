@@ -45,6 +45,8 @@ $mp = "C:\Users\46907\.espressif\python_env\idf5.2_py3.11_env\Scripts\python.exe
 
 - **BLE**：写 `0xFFE1`，状态从 `0xFFE2` 回读/通知
 - **REPL**：`Ctrl-C` 中断主循环（BLE 连接不受影响）→ `import hrm` → `hrm.cmd("hr=150")` → `hrm.run()` 继续
+  - 脚本化：`python serial_cmd.py "contact=0"`（需要 pyserial，用 IDF 5.2 venv 的 python）。**面板连着心率带时改场景就用这个**，BLE 写命令那条通道会被面板占住。
+- **模拟断电重启**：串口 RTS 拉 EN（`s.rts=True` 0.2s 再 `False`），面板约 10s 检测掉线并自动重连。
 
 | 命令 | 作用 |
 | --- | --- |
