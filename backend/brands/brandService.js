@@ -15,7 +15,6 @@ const { NobleBleConnection } = require('./nobleConnection');
 const { HrmConnection } = require('./hrmConnection');
 const nobleBle = require('./nobleBle');
 const dglabV2 = require('./protocols/dglabV2');
-const hrs = require('./protocols/hrs');
 const discovery = require('./discovery');
 const ycyProto = require('./protocols/ycy');
 const { brandLabel, typeLabel } = require('./brandLabels');
