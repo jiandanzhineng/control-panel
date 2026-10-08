@@ -47,17 +47,36 @@ class HrmConnection {
       }
       if (evt.type === 'data' && evt.props) this._onData?.(evt.props);
     });
-    // 连接即先给一次「无有效读数」，避免卡片停在断开前的旧心率。
-    this._onData?.({
+    // 初始状态（无有效读数 + 连接时读到的电量）等设备注册后由 flushInitial 上报，
+    // 注册前上报会被设备服务丢掉。
+    this._initial = {
       heart_rate: 0,
       hr_status: hrs.STALE_STATUS,
       ...(ready?.battery != null ? { battery: ready.battery } : {}),
-    });
+    };
     return this;
+  }
+
+  /** 设备注册进设备服务后调用：避免卡片停在断开前的旧心率，并补上首读电量。 */
+  flushInitial() {
+    if (!this._initial) return;
+    const props = this._initial;
+    this._initial = null;
+    this._onData?.(props);
   }
 
   /** 下行命令（监控弹窗的 report_delay_ms、玩法复位等）一律静默忽略，不报错。 */
   send() { return { ok: true, ignored: true }; }
+
+  /**
+   * 摘掉 noble 事件监听（不断开物理链路，GATT 会话由 nobleBle 持有）。
+   * 同一台心率带重复连接时调用，避免两个适配器各上报一次同一帧。
+   */
+  dispose() {
+    try { this._off?.(); } catch (_) { /* 已摘掉 */ }
+    this._off = null;
+    this._initial = null;
+  }
 
   async disconnect() {
     try { this._off?.(); } catch (_) { /* ignore */ }

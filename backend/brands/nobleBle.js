@@ -151,16 +151,26 @@ async function readChar(c) {
   }
 }
 
-/** 订阅通知（on('data') 为主，noble 回调式 subscribe 仅作兼容）。 */
+/**
+ * 订阅通知（on('data') 为主，noble 回调式 subscribe 仅作兼容）。
+ * 返回取消函数：摘掉 data 监听并尽力取消订阅。会话结束时必须调用，
+ * 否则同一 Characteristic 对象在每次重连时都会多挂一个监听，一帧被上报多次。
+ */
 function subscribeChar(c, onData) {
-  if (!c || !canNotify(c)) return false;
+  if (!c || !canNotify(c)) return () => {};
   const handler = (data) => onData(Buffer.isBuffer(data) ? data : Buffer.from(data || []));
   c.on('data', handler);
   try {
-    if (typeof c.subscribeAsync === 'function') { c.subscribeAsync().catch(() => {}); return true; }
-    if (typeof c.subscribe === 'function') { c.subscribe(); return true; }
+    if (typeof c.subscribeAsync === 'function') c.subscribeAsync().catch(() => {});
+    else if (typeof c.subscribe === 'function') c.subscribe();
   } catch (_) { /* 订阅失败仍保留监听，等设备侧推送 */ }
-  return true;
+  return () => {
+    try { c.removeListener?.('data', handler); } catch (_) { /* ignore */ }
+    try {
+      if (typeof c.unsubscribeAsync === 'function') c.unsubscribeAsync().catch(() => {});
+      else if (typeof c.unsubscribe === 'function') c.unsubscribe();
+    } catch (_) { /* 已断开时取消订阅会失败，忽略 */ }
+  };
 }
 
 function pickWriteChar(chars) {
@@ -349,22 +359,12 @@ class NobleBle {
     }
 
     const onData = (buf) => this._onHrmData(key, buf);
-    subscribeChar(heartRateChar, onData);
-    subscribeChar(batteryChar, (buf) => this._onHrmBattery(key, buf));
+    const offHr = subscribeChar(heartRateChar, onData);
+    const offBattery = subscribeChar(batteryChar, (buf) => this._onHrmBattery(key, buf));
     const onDisconnect = () => this._onHrmDisconnect(key);
     p.once?.('disconnect', onDisconnect);
 
-    const sess = {
-      peripheral: p, kind: 'hrm', heartRateChar, batteryChar, identity, chars,
-      lastFrameAt: Date.now(), onDisconnect,
-    };
-    this._sessions.set(key, sess);
-    if (battery !== null) this._emitHrm(key, { battery });
-    this._startHrmWatchdog(key);
-    logger.info('[ble] hrm ready', {
-      address: key, identity: identity?.deviceId || null, battery, ms: Date.now() - t0,
-    });
-    return {
+    const ready = {
       address: key,
       kind: 'hrm',
       heartRateChar: heartRateChar.uuid,
@@ -372,6 +372,17 @@ class NobleBle {
       battery,
       identity,
     };
+    const sess = {
+      peripheral: p, kind: 'hrm', heartRateChar, batteryChar, identity, chars,
+      lastFrameAt: Date.now(), onDisconnect, offHr, offBattery, ready,
+    };
+    this._sessions.set(key, sess);
+    if (battery !== null) this._emitHrm(key, { battery });
+    this._startHrmWatchdog(key);
+    logger.info('[ble] hrm ready', {
+      address: key, identity: identity?.deviceId || null, battery, ms: Date.now() - t0,
+    });
+    return ready;
   }
 
   /** 一帧心率测量：解析 → 转发给监听者；坏帧只记日志，不影响连接。 */
@@ -392,12 +403,22 @@ class NobleBle {
     this._emitHrm(key, { battery: buf[0] });
   }
 
+  /** 摘掉会话上的 notify 监听并取消订阅（尽力而为；重连/断开都必须走这里）。 */
+  _teardownHrmSession(sess) {
+    if (!sess) return;
+    try { sess.offHr?.(); } catch (_) { /* ignore */ }
+    try { sess.offBattery?.(); } catch (_) { /* ignore */ }
+    sess.offHr = null;
+    sess.offBattery = null;
+  }
+
   /** 断线：清会话 + 通知监听者（brandService 据此置离线并交给自动连接 tick）。 */
   _onHrmDisconnect(key) {
     const sess = this._sessions.get(key);
     if (!sess) return;
     this._sessions.delete(key);
     this._stopHrmWatchdog(key);
+    this._teardownHrmSession(sess);
     logger.info('[ble] hrm disconnected', { address: key });
     for (const cb of this._hrmListeners) {
       try { cb({ type: 'disconnect', address: key }); } catch (_) { /* 单个监听者异常不影响其他 */ }
@@ -494,6 +515,8 @@ class NobleBle {
   }
 
   _readyInfo(key, sess) {
+    // 心率带没有写特征，直接复用连接时构造的 ready 信息（幂等 connect 用）。
+    if (sess.kind === 'hrm') return sess.ready;
     const write = sess.write;
     const writeShort = shortUuid(write.uuid);
     const proto = writeShort === '150a' ? 'v3' : (writeShort === '1504' || String(write.uuid).toLowerCase().includes('955a1504') ? 'v2' : undefined);
@@ -503,6 +526,7 @@ class NobleBle {
   async connect(address) {
     const key = String(address || '').toLowerCase();
     const sess = this._sessions.get(key);
+    if (sess?.kind === 'hrm') return this._readyInfo(key, sess);
     if (sess?.write) return this._readyInfo(key, sess);
     const pending = this._inflight.get(key);
     if (pending) return pending;
@@ -603,9 +627,11 @@ class NobleBle {
     this._sessions.delete(key);
     this._stopHrmWatchdog(key);
     if (!sess?.peripheral) return;
-    if (sess.kind === 'hrm') {
-      // 主动断开：摘掉断线监听，避免把用户断开又当成掉线触发重连。
+    if (sess?.kind === 'hrm') {
+      // 主动断开：摘掉断线监听（避免把用户断开又当成掉线触发重连），
+      // 同时摘掉 notify 监听并取消订阅，避免同一特征对象残留监听。
       try { sess.peripheral.removeListener?.('disconnect', sess.onDisconnect); } catch (_) { /* ignore */ }
+      this._teardownHrmSession(sess);
     }
     try {
       if (typeof sess.peripheral.disconnectAsync === 'function') await sess.peripheral.disconnectAsync();

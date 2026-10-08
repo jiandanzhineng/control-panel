@@ -333,15 +333,9 @@ function scheduleReconnect(deviceId, kind, error) {
 }
 
 // 依据既有 metadata 重建一个同类适配器（用于无原生 reconnect 的连接）。
+// 心率带不在此列：它的断线走 handleHrmDisconnect（置离线 + 交给自动连接 tick），
+// 且 hrm 适配器 mode 为 native，isReconnectable 恒为 false，永远到不了这里。
 function rebuildConnection(deviceId, meta) {
-  if (meta.brand === 'hrm') {
-    return new HrmConnection({
-      deviceId, address: meta.address, name: meta.name,
-      onData: (props) => {
-        try { deviceService.handleTransportMessage(deviceId, { method: 'update', ...props }, 'brand'); } catch (_) { /* ignore */ }
-      },
-    });
-  }
   if (meta.mode === 'native') {
     if (meta.kind === 'native-bridge') {
       return new NativeBridgeConnection({
@@ -373,6 +367,7 @@ async function connectHrm(opts = {}) {
   const fallbackId = normalizeMacDeviceId(address);
   if (!fallbackId) throw new Error('心率带连接需要有效 BLE 地址');
   const name = opts.name || address;
+  disposeHrmConnections(address, fallbackId);
   const connection = new HrmConnection({
     deviceId: fallbackId,
     address,
@@ -412,6 +407,7 @@ async function connectHrm(opts = {}) {
     },
   );
   connections.set(finalDeviceId, connection);
+  connection.flushInitial();
   logger.info('[ble] hrm registered', { address, deviceId: finalDeviceId, viaIdentity: !!connection.identity });
   return {
     device: deviceService.getDeviceById(finalDeviceId),
@@ -419,6 +415,25 @@ async function connectHrm(opts = {}) {
     brand: 'hrm',
     type: 'HRM',
   };
+}
+
+/**
+ * 同一台心率带重复连接：先摘掉旧适配器的 onHrmEvent 监听（不断开物理链路，
+ * 新旧适配器共用同一条 GATT 会话）。否则一帧会被两个适配器各上报一次。
+ */
+function disposeHrmConnections(address, fallbackId) {
+  const addr = String(address || '').toLowerCase();
+  for (const [deviceId, conn] of [...connections.entries()]) {
+    if (conn?.brand !== 'hrm') continue;
+    const sameAddr = String(conn.address || '').toLowerCase() === addr;
+    const sameId = deviceId === fallbackId || conn.deviceId === fallbackId || conn.resolvedDeviceId === fallbackId;
+    if (!sameAddr && !sameId) continue;
+    connections.delete(deviceId);
+    try { conn.dispose?.(); } catch (_) { /* 监听已摘 */ }
+    if (deviceId !== fallbackId) {
+      try { deviceService.disconnectTransportDevice(deviceId, 'brand'); } catch (_) { /* 已离线 */ }
+    }
+  }
 }
 
 /**
@@ -593,6 +608,7 @@ function list() {
       lastChange: st.lastChange || 0,
       reconnecting: st.reconnecting || false,
       metadata: meta,
+      // 设备 data 属性（心率带的心率/状态/电量），前端卡片直接读这里。
       data: dev?.data || {},
     };
   });

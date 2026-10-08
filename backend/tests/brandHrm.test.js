@@ -126,6 +126,33 @@ describe('心率带连接', () => {
     );
   });
 
+  test('连接时读到的电量在 connectHrm 返回后立刻进入设备 data', async () => {
+    const ble = fakeBle({ identity: { deviceId: 'aabbccddeeff', firmwareVersion: 'v1' }, battery: 77 });
+    await brandService.connect('hrm', { mode: 'native', address: ADDR, name: 'HRM-Virtual', ble });
+    const dev = deviceService.getDeviceById('aabbccddeeff');
+    // 初始上报在设备注册之后才发出（注册前上报会被设备服务丢掉）。
+    expect(dev.data.battery).toBe(77);
+    expect(dev.data.heart_rate).toBe(0);
+    expect(dev.data.hr_status).toBe('stale');
+    // 前端卡片读的是 /api/brands 列表里的 data，必须与设备层一致。
+    expect(brandService.list()[0].data.battery).toBe(77);
+  });
+
+  test('重复连接同一台：旧适配器被摘掉监听，一帧只上报一次', async () => {
+    const ble = fakeBle({ identity: { deviceId: 'aabbccddeeff', firmwareVersion: 'v1' } });
+    await brandService.connect('hrm', { mode: 'native', address: ADDR, name: 'HRM-Virtual', ble });
+    await brandService.connect('hrm', { mode: 'native', address: ADDR, name: 'HRM-Virtual', ble });
+    expect(brandService.list()).toHaveLength(1);
+    deviceService.handleTransportMessage.mockClear();
+    ble.emit({ type: 'data', address: ADDR, props: { heart_rate: 128, hr_status: 'ok' } });
+    expect(deviceService.handleTransportMessage).toHaveBeenCalledTimes(1);
+    expect(deviceService.handleTransportMessage).toHaveBeenCalledWith(
+      'aabbccddeeff',
+      expect.objectContaining({ heart_rate: 128 }),
+      'brand',
+    );
+  });
+
   test('断线：设备置离线且清会话（交给自动连接 tick 重连）', async () => {
     const ble = fakeBle({ identity: { deviceId: 'aabbccddeeff', firmwareVersion: 'v1' } });
     await brandService.connect('hrm', { mode: 'native', address: ADDR, name: 'HRM-Virtual', ble });

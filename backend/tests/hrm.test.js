@@ -9,15 +9,18 @@ const hrs = require('../brands/protocols/hrs');
 const ADDR = '60:55:f9:7c:34:2e';
 
 function fakeChar(uuid, props = ['notify', 'read']) {
-  const listeners = [];
+  let listeners = [];
   return {
     uuid,
     properties: props,
     subscribed: false,
     readValue: null,
     on(ev, fn) { if (ev === 'data') listeners.push(fn); },
-    emit(data) { listeners.forEach((fn) => fn(data)); },
+    removeListener(ev, fn) { if (ev === 'data') listeners = listeners.filter((x) => x !== fn); },
+    listenerCount() { return listeners.length; },
+    emit(data) { [...listeners].forEach((fn) => fn(data)); },
     async subscribeAsync() { this.subscribed = true; },
+    async unsubscribeAsync() { this.subscribed = false; },
     async readAsync() { return this.readValue; },
   };
 }
@@ -124,6 +127,39 @@ describe('心率带连接', () => {
     const ready = await ble.connect(ADDR);
     expect(ready.battery).toBe(88);
     expect(events.find((e) => e.props?.battery === 88)).toBeTruthy();
+  });
+
+  test('重复 connect 幂等：不重复订阅、不叠加 data 监听', async () => {
+    const p = fakePeripheral();
+    const ble = newBle(p);
+    const first = await ble.connect(ADDR);
+    const second = await ble.connect(ADDR);
+    expect(second).toBe(first);
+    expect(p.chars[0].listenerCount()).toBe(1);
+  });
+
+  test('重连两次后一帧只产生一次上报', async () => {
+    const p = fakePeripheral();
+    const ble = newBle(p);
+    const events = [];
+    ble.onHrmEvent((e) => { if (e.type === 'data') events.push(e.props); });
+    await ble.connect(ADDR);
+    // 断线后再连（nobleBle 会摘掉旧监听），再断线再连：监听不该累积。
+    p.emitDisconnect();
+    await ble.connect(ADDR);
+    p.emitDisconnect();
+    await ble.connect(ADDR);
+    p.chars[0].emit(Buffer.from([0x06, 133]));
+    expect(events.filter((e) => e.heart_rate === 133).length).toBe(1);
+  });
+
+  test('主动 disconnect 摘掉 notify 监听并取消订阅', async () => {
+    const p = fakePeripheral();
+    const ble = newBle(p);
+    await ble.connect(ADDR);
+    await ble.disconnect(ADDR);
+    expect(p.chars[0].listenerCount()).toBe(0);
+    expect(p.chars[0].subscribed).toBe(false);
   });
 
   test('测量帧转发为设备属性', async () => {
