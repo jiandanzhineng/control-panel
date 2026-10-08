@@ -244,10 +244,8 @@ class NobleBle {
     }
   }
 
-  /** 连接超时（假时钟/未就绪适配器下不要挂死；注入 timers 便于测试）。 */
   _sleep(ms) {
-    const t = this._timers || { setTimeout, clearTimeout };
-    return new Promise((r) => t.setTimeout(r, ms));
+    return new Promise((r) => setTimeout(r, ms));
   }
 
   async _discoverChars(p) {
@@ -353,9 +351,13 @@ class NobleBle {
     const onData = (buf) => this._onHrmData(key, buf);
     subscribeChar(heartRateChar, onData);
     subscribeChar(batteryChar, (buf) => this._onHrmBattery(key, buf));
-    p.once?.('disconnect', () => this._onHrmDisconnect(key));
+    const onDisconnect = () => this._onHrmDisconnect(key);
+    p.once?.('disconnect', onDisconnect);
 
-    const sess = { peripheral: p, kind: 'hrm', heartRateChar, batteryChar, identity, chars, lastFrameAt: Date.now() };
+    const sess = {
+      peripheral: p, kind: 'hrm', heartRateChar, batteryChar, identity, chars,
+      lastFrameAt: Date.now(), onDisconnect,
+    };
     this._sessions.set(key, sess);
     if (battery !== null) this._emitHrm(key, { battery });
     this._startHrmWatchdog(key);
@@ -603,7 +605,7 @@ class NobleBle {
     if (!sess?.peripheral) return;
     if (sess.kind === 'hrm') {
       // 主动断开：摘掉断线监听，避免把用户断开又当成掉线触发重连。
-      try { sess.peripheral.removeListener?.('disconnect', () => {}); } catch (_) { /* ignore */ }
+      try { sess.peripheral.removeListener?.('disconnect', sess.onDisconnect); } catch (_) { /* ignore */ }
     }
     try {
       if (typeof sess.peripheral.disconnectAsync === 'function') await sess.peripheral.disconnectAsync();
