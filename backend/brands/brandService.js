@@ -12,14 +12,17 @@ const { SosexyWebBleConnection } = require('./sosexyWebBleConnection');
 const { GxpWebBleConnection } = require('./gxpWebBleConnection');
 const { NativeBridgeConnection } = require('./nativeBridgeConnection');
 const { NobleBleConnection } = require('./nobleConnection');
+const { HrmConnection } = require('./hrmConnection');
+const nobleBle = require('./nobleBle');
 const dglabV2 = require('./protocols/dglabV2');
+const hrs = require('./protocols/hrs');
 const discovery = require('./discovery');
 const ycyProto = require('./protocols/ycy');
 const { brandLabel, typeLabel } = require('./brandLabels');
 const logger = require('../utils/logger');
 const fileStorage = require('../utils/fileStorage');
 
-const SUPPORTED = ['dglab', 'ycy', 'sosexy', 'gxp'];
+const SUPPORTED = ['dglab', 'ycy', 'sosexy', 'gxp', 'hrm'];
 const connections = new Map(); // deviceId -> connection adapter
 // 连接状态机（基础连接状态管理，轻量）：
 //   connecting | connected | disconnected | error
@@ -66,6 +69,7 @@ function getConnection(deviceId) {
 
 /** 设备类型推断：根据品牌与发现的型号决定 registry 中的 type */
 function resolveDeviceType(brand, { model, mode, type } = {}) {
+  if (brand === 'hrm') return 'HRM';
   if (brand === 'dglab') return 'DGLAB';
   if (brand === 'sosexy' || type === 'SOSEXY_PID0004' || /SOSEXY/i.test(String(model || ''))) {
     return 'SOSEXY_PID0004';
@@ -95,6 +99,9 @@ async function discover(brand, opts = {}) {
     const found = (await discovery.listNativeBle({ brand, port: opts.port, fetchImpl: opts.fetchImpl }))
       .filter((d) => {
         const n = String(d.name || '').toUpperCase();
+        if (brand === 'hrm') {
+          return nobleBle.isHrmPeripheral({ advertisement: { localName: d.name, serviceUuids: d.serviceUuids } });
+        }
         if (brand === 'dglab') return ['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k));
         if (brand === 'sosexy') return n.includes('SOSEXY');
         if (brand === 'gxp') return n.includes('XA9935') || n.includes('GXP');
@@ -176,6 +183,9 @@ async function connect(brand, opts = {}) {
   let finalDeviceId;
   let finalName;
   let kind = 'brand';
+
+  // 心率带：连接前只认广播地址，连接后再用 0xFF04 身份确定设备 ID（ADR 0009/0010）。
+  if (brand === 'hrm') return connectHrm(opts);
 
   if (opts.mode === 'native') {
     if (!opts.address) throw new Error('本机桥接需要 address');
@@ -325,6 +335,14 @@ function scheduleReconnect(deviceId, kind, error) {
 
 // 依据既有 metadata 重建一个同类适配器（用于无原生 reconnect 的连接）。
 function rebuildConnection(deviceId, meta) {
+  if (meta.brand === 'hrm') {
+    return new HrmConnection({
+      deviceId, address: meta.address, name: meta.name,
+      onData: (props) => {
+        try { deviceService.handleTransportMessage(deviceId, { method: 'update', ...props }, 'brand'); } catch (_) { /* ignore */ }
+      },
+    });
+  }
   if (meta.mode === 'native') {
     if (meta.kind === 'native-bridge') {
       return new NativeBridgeConnection({
@@ -342,6 +360,81 @@ function rebuildConnection(deviceId, meta) {
     return new YCYConnection({ deviceId, mode: meta.mode });
   }
   return new DGLabV2WebBleConnection({ deviceId, send: () => {} });
+}
+
+// ============ 心率带（标准 BLE HRS） ============
+
+/**
+ * 连接标准蓝牙心率带：先按广播地址连，再读 0xFF04 身份确定设备 ID。
+ * 身份特征缺失（第三方心率带）→ 回退规范化 BLE 地址；存在但非法 → 拒绝连接（ADR 0011）。
+ */
+async function connectHrm(opts = {}) {
+  const address = opts.address || opts.deviceId;
+  if (!address) throw new Error('心率带连接需要 address');
+  const fallbackId = normalizeMacDeviceId(address);
+  if (!fallbackId) throw new Error('心率带连接需要有效 BLE 地址');
+  const name = opts.name || address;
+  const connection = new HrmConnection({
+    deviceId: fallbackId,
+    address,
+    name,
+    ble: opts.ble,
+    onData: (props) => {
+      // 身份可能在连接过程中才确定，设备 ID 以连接后的 resolvedDeviceId 为准。
+      const id = connection.resolvedDeviceId || fallbackId;
+      try {
+        deviceService.handleTransportMessage(id, { method: 'update', ...props }, 'brand');
+      } catch (e) {
+        logger.warn('Brand', `心率上报失败: ${e?.message || String(e)}`);
+      }
+    },
+  });
+  await connection.connect();
+  const finalDeviceId = connection.resolvedDeviceId || fallbackId;
+  const finalName = name || `心率带 ${finalDeviceId.slice(-4)}`;
+  setState(finalDeviceId, STATUS.CONNECTED, { userClosed: false, reconnecting: false, error: null });
+  connection.onStatus((status, detail = {}) => {
+    if (status === 'close') handleHrmDisconnect(finalDeviceId, detail.error);
+    else if (status === 'error') setState(finalDeviceId, STATUS.ERROR, { error: detail.error });
+  });
+  deviceService.connectTransportDevice(
+    {
+      id: finalDeviceId,
+      name: finalName,
+      type: 'HRM',
+      connectionType: 'brand',
+      transportMetadata: connection.toMetadata(),
+      firmwareVersion: connection.firmwareVersion || undefined,
+    },
+    {
+      kind: 'brand',
+      send: (msg) => connection.send(msg),
+      disconnect: () => connection.disconnect(),
+    },
+  );
+  connections.set(finalDeviceId, connection);
+  logger.info('[ble] hrm registered', { address, deviceId: finalDeviceId, viaIdentity: !!connection.identity });
+  return {
+    device: deviceService.getDeviceById(finalDeviceId),
+    connection: connection.toMetadata(),
+    brand: 'hrm',
+    type: 'HRM',
+  };
+}
+
+/**
+ * 心率带掉线：清会话（连接适配器内部已清 noble 会话），置离线，
+ * 交给已有自动连接 tick（10s 一轮）重连；不在此处抢占式重连。
+ */
+function handleHrmDisconnect(deviceId, error) {
+  const st = getState(deviceId);
+  if (st.userClosed) {
+    setState(deviceId, STATUS.DISCONNECTED, { error });
+    return;
+  }
+  connections.delete(deviceId);
+  try { deviceService.disconnectTransportDevice(deviceId, 'brand'); } catch (_) { /* 已离线 */ }
+  setState(deviceId, STATUS.DISCONNECTED, { error: error || '心率带已断开' });
 }
 
 // ============ 控制 ============
@@ -573,6 +666,7 @@ function isMacDeviceId(id) {
 function isBrandBleRecord(d) {
   if (browserIdFromDeviceId(d.id)) return true;
   return isMacDeviceId(d.id) && (d.type === 'DGLAB'
+    || d.type === 'HRM'
     || String(d.type || '').startsWith('YCY_')
     || d.type === 'SOSEXY_PID0004'
     || d.type === 'GXP_XA9935');
@@ -640,12 +734,11 @@ async function tickAutoConnect() {
   try {
     const on = new Set(listSavedBleDevices().filter((d) => d.connected && d.name).map((d) => d.name.trim().toUpperCase()));
     const saved = listSavedBleDevices();
-    const nobleBle = require('./nobleBle');
     let found = [];
     try { found = await nobleBle.scan({ quiet: true }); } catch (_) { found = []; }
     if (generation !== autoGeneration) return;
     for (const d of found) {
-      const brand = nobleBle.detectBrand(d.name);
+      const brand = nobleBle.detectBrand(d.name, { advertisement: { localName: d.name, serviceUuids: d.serviceUuids } });
       if (!brand) continue;
       const name = String(d.name || '').trim().toUpperCase();
       if (name && on.has(name)) continue;
