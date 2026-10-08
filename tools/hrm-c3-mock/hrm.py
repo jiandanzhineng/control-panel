@@ -100,7 +100,9 @@ def _packet():
     """标准 Heart Rate Measurement（8 位心率 + 能量消耗 + RR 间期）。"""
     live = STATE["contact"] and STATE["mode"] not in ("nocontact", "silent")
     hr = int(STATE["hr"] + 0.5) if live else 0
-    flags = 0x06 if live else 0x02  # bit1 支持接触检测, bit2 已检测到接触
+    # Sensor Contact 两位字段：bit2 = 支持检测，bit1 = 已检测到接触。
+    # live → 0x06（支持且接触）；未接触 → 0x04（支持但未检测到接触，心率报 0）。
+    flags = 0x06 if live else 0x04
     if live and STATE["energy"]:
         flags |= 0x08
     if live and STATE["rr"]:

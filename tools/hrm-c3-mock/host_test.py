@@ -52,8 +52,9 @@ def parse(data):
     return {
         "flags": flags,
         "hr": hr,
-        "contact_supported": bool(flags & 0x02),
-        "contact": bool(flags & 0x04),
+        # Sensor Contact 两位字段：bit2 = 支持检测，bit1 = 已检测到接触。
+        "contact_supported": bool(flags & 0x04),
+        "contact": bool(flags & 0x02),
         "energy": energy,
         "rr": rr,
     }
@@ -169,6 +170,9 @@ async def scenarios(client, secs):
     got = await sample(client, secs)
     check("接触丢失：contact 标志=0 且心率报 0",
           bool(got) and all((not s["contact"]) and s["hr"] == 0 for s in got), "%d 帧" % len(got))
+    check("接触丢失帧仍声明支持检测（flags=0x04，Sensor Contact=0b01）",
+          bool(got) and all(s["contact_supported"] for s in got),
+          "flags=%s" % (hex(got[-1]["flags"]) if got else "-"))
 
     await send_cmd(client, "contact=1 rr=0")
     got = await sample(client, secs)

@@ -33,17 +33,21 @@ describe('hrs 帧解析', () => {
     expect(parsed.rrInterval).toBe(399);
   });
 
-  test('接触未检测：flags 只有支持位，心率 0', () => {
-    const parsed = hrs.parseMeasurement(Buffer.from([0x02, 0]));
+  test('接触未检测：flags 只有支持位（0x04），心率 0 → no_contact', () => {
+    const parsed = hrs.parseMeasurement(Buffer.from([0x04, 0]));
     expect(parsed.contactSupported).toBe(true);
     expect(parsed.contactDetected).toBe(false);
     expect(hrs.statusFromMeasurement(parsed)).toBe('no_contact');
   });
 
-  test('不带接触检测位时状态为 ok', () => {
-    const parsed = hrs.parseMeasurement(Buffer.from([0x00, 88]));
-    expect(parsed.contactSupported).toBeUndefined();
-    expect(hrs.statusFromMeasurement(parsed)).toBe('ok');
+  test('不支持接触检测（0x00 / 0x02）时无接触字段，状态为 ok', () => {
+    // 0b00 与 0b10 都是「不支持」；0x02 只置了 detected 位但没有支持位，仍然算不支持。
+    for (const flags of [0x00, 0x02]) {
+      const parsed = hrs.parseMeasurement(Buffer.from([flags, 88]));
+      expect(parsed.contactSupported).toBeUndefined();
+      expect(parsed.contactDetected).toBeUndefined();
+      expect(hrs.statusFromMeasurement(parsed)).toBe('ok');
+    }
   });
 
   test('帧过短 / 字段缺失抛错', () => {
@@ -51,6 +55,15 @@ describe('hrs 帧解析', () => {
     expect(() => hrs.parseMeasurement(Buffer.from([0x01, 0x01]))).toThrow(/心率字段/);
     expect(() => hrs.parseMeasurement(Buffer.from([0x08, 72]))).toThrow(/能量消耗/);
     expect(() => hrs.parseMeasurement(Buffer.from([0x10, 72]))).toThrow(/RR/);
+  });
+
+  test('flags 位含义：bit2=支持接触检测，bit1=已检测到接触', () => {
+    // 0x06 = 0b0110：支持 + 已接触
+    const detected = hrs.parseMeasurement(Buffer.from([0x06, 72]));
+    expect([detected.contactSupported, detected.contactDetected]).toEqual([true, true]);
+    // 0x04 = 0b0100：支持但未接触
+    const lost = hrs.parseMeasurement(Buffer.from([0x04, 72]));
+    expect([lost.contactSupported, lost.contactDetected]).toEqual([true, false]);
   });
 
   test('RR 换算：1/1024 秒 → 毫秒', () => {
@@ -71,8 +84,8 @@ describe('hrs 属性映射', () => {
     });
   });
 
-  test('无接触帧：心率 0 + no_contact + hr_contact=0', () => {
-    expect(hrs.toProps(hrs.parseMeasurement(Buffer.from([0x02, 0])))).toEqual({
+  test('无接触帧（0x04 支持但未接触）：心率 0 + no_contact + hr_contact=0', () => {
+    expect(hrs.toProps(hrs.parseMeasurement(Buffer.from([0x04, 0])))).toEqual({
       heart_rate: 0,
       hr_status: 'no_contact',
       hr_contact: 0,
@@ -80,8 +93,10 @@ describe('hrs 属性映射', () => {
   });
 
   test('不支持接触检测时不写 hr_contact', () => {
-    const props = hrs.toProps(hrs.parseMeasurement(Buffer.from([0x00, 90])));
-    expect(props).toEqual({ heart_rate: 90, hr_status: 'ok' });
-    expect('hr_contact' in props).toBe(false);
+    for (const flags of [0x00, 0x02]) {
+      const props = hrs.toProps(hrs.parseMeasurement(Buffer.from([flags, 90])));
+      expect(props).toEqual({ heart_rate: 90, hr_status: 'ok' });
+      expect('hr_contact' in props).toBe(false);
+    }
   });
 });

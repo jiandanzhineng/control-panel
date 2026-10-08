@@ -3,12 +3,15 @@
  * 纯函数，无副作用：供 noble 连接层与单测复用，语义与移动端同构。
  * 规范：GATT 0x2A37 Heart Rate Measurement。
  *
- * flags 位：
+ * flags 位（Bluetooth SIG HRS，Sensor Contact 是 bit1-2 组成的两位字段）：
  *   bit0    心率值格式：0 = uint8，1 = uint16
- *   bit1    支持接触检测
- *   bit2    已检测到接触（bit1=0 时无意义）
+ *   bit2    支持接触检测（Sensor Contact supported）
+ *   bit1    已检测到接触（Sensor Contact detected，仅在 bit2=1 时有意义）
  *   bit3    帧内带能量消耗（uint16，kJ）
  *   bit4    帧内带 RR 间期（uint16，1/1024 s，可重复多组）
+ *
+ * Sensor Contact 字段取值：0b00/0b10 = 不支持；0b01（bit2=1）= 支持但未接触；
+ * 0b11 = 支持且已接触。即 0x00/0x02 → 不支持，0x04 → 未接触，0x06 → 已接触。
  */
 
 const HRS_SERVICE = '180d';
@@ -43,9 +46,10 @@ function parseMeasurement(bytes) {
   const heartRate = wide ? buf.readUInt16LE(1) : buf[1];
 
   const out = { heartRate };
-  if (flags & 0x02) {
+  // Sensor Contact 是两位字段：bit2 = 支持检测，bit1 = 已检测到接触。
+  if (flags & 0x04) {
     out.contactSupported = true;
-    out.contactDetected = (flags & 0x04) !== 0;
+    out.contactDetected = (flags & 0x02) !== 0;
   }
 
   let offset = need;
