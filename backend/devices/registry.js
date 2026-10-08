@@ -138,6 +138,13 @@ const registeredTypes = [
     close: (ctx) => ctx.writeProps({ report_delay_ms: 200 }),
   }),
 
+  // 标准蓝牙心率带：纯上行传感器，无动作、无 close（心率不归零，只标记 stale）。
+  new BaseDeviceType({
+    type: 'HRM',
+    name: '心率带',
+    capabilities: ['heartRate'],
+  }),
+
   // 郊狼：shock=双通道同强度；estim=分通道+波形预设。
   new BaseDeviceType({
     type: 'DGLAB',

@@ -143,6 +143,8 @@ const DEVICE_FIELD_SPECS = {
     vibration: 'intensity', suction: 'intensity',
   },
   GXP_XA9935: { power: 'power', vibration: 'intensity' },
+  // 心率带是纯上行传感器：心率/电量等字段都不在表内，远程写不碰。
+  HRM: {},
 };
 
 // 所有设备类型都允许的通用字段（上报频率，纯采样参数，无输出风险）。
@@ -211,6 +213,7 @@ const DEVICE_CAPABILITIES = {
   DZC01: ['weight', 'reporting'],
   CUNZHI01: ['sphincterPressure', 'tiptoePressure', 'strength', 'shock', 'reporting'],
   DAN01: ['attitude', 'reporting', 'buttonInput'],
+  HRM: ['heartRate'],
   DGLAB: ['shock', 'estim'],
   YCY_EMS: ['shock', 'estim'],
   YCY_TOY: ['strength', 'motors'],

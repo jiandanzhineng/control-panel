@@ -20,6 +20,13 @@ const monitorSpecByCapability = {
     { key: 'height', name: '高度', unit: 'm' },
     { key: 'mag_accuracy', name: '磁力计精度', unit: '', chart: false },
   ],
+  heartRate: [
+    { key: 'heart_rate', name: '心率', unit: 'bpm' },
+    { key: 'hr_status', name: '状态', unit: '', chart: false },
+    { key: 'hr_contact', name: '接触', unit: '', chart: false },
+    { key: 'rr_interval', name: 'RR 间期', unit: 'ms', chart: false },
+    { key: 'battery', name: '电量', unit: '%', chart: false },
+  ],
 };
 
 function getMonitorSpec(capabilityKey) {
