@@ -23,6 +23,8 @@
 - `weight`：重量上报，默认可读值来自 `weight`。
 - `buttonInput`：按钮输入，默认监控字段 `button0`、`button1`。
 - `distance`：距离检测，默认可读值来自 `distance`，动作 `configure(lowBand?, highBand?, reportDelayMs?)`。
+- `heartRate`：心率（bpm），纯上行，默认可读值来自 `heart_rate`；事件 `heartRateChange`（prop `heart_rate`）、`statusChange`（prop `hr_status`）。无动作，无需 stop。
+  监控字段：`heart_rate`(bpm) / `hr_status` / `hr_contact` / `rr_interval`(ms) / `battery`(%)。
 
 ## 能力可读值
 
@@ -42,6 +44,9 @@
 - `DZC01`：电子秤，能力 `weight`、`reporting`。
 - `CUNZHI01`：寸止玩法设备，能力 `sphincterPressure`、`tiptoePressure`、`strength`、`shock`、`reporting`；踮脚压力仍读取真实 `pressure1`。
 - `GXP_XA9935`：gxp艾萝机娘二代，能力 `strength`（往复电机 0–255→0–100%）。
+- `HRM`：心率带，能力 `heartRate`。后端经 noble 直连任何标准 BLE 心率带（GATT `0x180D` / `0x2A37`），
+  设备 ID 取 `0xFF04` 身份特征的 `device_id`；第三方心率带没有该特征时回退规范化 BLE 地址。
+  无 close 定义：心率是只读量，玩法复位时不需要（也无法）归零。
 
 未知设备类型会返回一个基础设备类型，显示名为类型本身，不包含能力、操作或监控字段。
 
@@ -81,6 +86,13 @@ requiredDevices: [
 DeviceAPI.device('stim').invoke('strength', 'set', { value: 120 })
 DeviceAPI.device('sensor').onValue('sphincterPressure', (value) => console.log(value))
 const values = await DeviceAPI.device('sensor').readValue('sphincterPressure')
+// 心率带：读实时心率（bpm，0 表示当前无有效读数）
+const bpm = await DeviceAPI.device('hrm').readValue('heartRate')
+DeviceAPI.device('hrm').onValue('heartRate', (value) => console.log(value))
 ```
+
+心率带的数据属性：`heart_rate`（bpm，0 = 无有效读数）、`hr_status`（`ok` / `no_contact` / `stale`，
+`stale` 为 5 秒未收到测量帧）、`hr_contact`（1/0，设备不支持接触检测时不写）、
+`rr_interval`（最近一个 RR 间期，毫秒）、`energy`（能量消耗 kJ）、`battery`（电量 %，设备有 `0x180F` 时）。
 
 底层会把能力动作转换为具体 MQTT payload，并发布到 `/drecv/{deviceId}`。

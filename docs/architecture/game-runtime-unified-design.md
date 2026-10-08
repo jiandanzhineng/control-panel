@@ -503,6 +503,7 @@ export const distance = {
 | buttonInput | — | pressed, pushDown, pushUp | QTZ, ZIDONGSUO |
 | weight | — | weightChange | DZC01 |
 | reporting | setReportDelay(ms) | — | QIYA, QTZ, DZC01, CUNZHI01 |
+| heartRate | — | heartRateChange, statusChange | HRM |
 
 ## 8. 游戏开发流程
 

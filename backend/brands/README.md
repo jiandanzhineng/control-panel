@@ -127,19 +127,36 @@ UI 入口：郊狼 tab 内「连接方式」可选择 **App 娱乐模式（WebSo
 
 发现：BLE 扫描并按广播名关键字（`YCY`/`YOKONEX`/`YSKJ`/`役次元`）过滤。
 
+## 标准蓝牙心率带（HRM）
+
+除品牌设备外，本目录还支持**任意标准 BLE 心率带**（GATT `0x180D` / 测量特征 `0x2A37`），
+用于给玩法提供实时心率能力 `heartRate`。
+
+- 识别：广播 `serviceUuids` 含 `180D`，或广播名含 `HRM` / `HEART` / `PULSE` / `心率`（大小写不敏感）。
+- 连接（`nobleBle._connectHrm`）：**不要求写特征**——订阅 `0x2A37` 通知、读并订阅 `0x2A19` 电量（有则）、
+  读 `0xFF04` 身份。设备 ID 取身份里的 `device_id`；特征缺失（第三方心率带）回退规范化 BLE 地址；
+  特征存在但 JSON/`device_id`/`firmware_version` 非法则拒绝连接（ADR 0011）。
+- 上行：`hrmConnection` 把属性经 `deviceService.handleTransportMessage(..., 'brand')` 送入设备层，
+  于是 bridge / 监控 SSE / 远程投影与其他传感器走同一条路。下行命令（如监控弹窗的 `report_delay_ms`）静默忽略。
+- 断线：peripheral `disconnect` → 清会话、置离线，交给已有的 10s 自动连接 tick 重连。
+- 看门狗：5s 无测量帧 → `heart_rate=0`、`hr_status='stale'`。
+- 帧解析集中在 `protocols/hrs.js`（纯函数，便于测试与移动端同构）。
+
 ## 文件结构
 
 ```
 backend/brands/
   index.js              模块入口（init）
-  brandService.js       发现/连接/断开/控制编排 + 注册进 deviceService（含 webble 路径）
+  brandService.js       发现/连接/断开/控制编排 + 注册进 deviceService（含 webble / 心率带路径）
   dglabConnection.js    郊狼连接适配器（transport adapter 接口）
   ycyConnection.js      役次元连接适配器（bridge / ble 双模式）
+  hrmConnection.js      标准蓝牙心率带适配器（纯上行，send 静默忽略）
   webBleConnection.js   原版 V2 蓝牙直连适配器（brandBle transport，send 经 IPC 写 GATT）
   discovery.js          设备发现（可达性探测 / BLE 扫描）
   protocols/
     dglab.js            郊狼 WebSocket 协议（帧构造 + DGLabSocketClient）
     dglabV2.js          原版 V2 BLE 协议（UUID / 强度 / 波形 / GATT 操作纯函数）
+    hrs.js              标准心率服务帧解析（0x2A37 flags/心率/能量/RR + 0xFF04 身份）
     ycy.js              役次元协议（IM/桥接消息 + BLE 帧构造 + 客户端/传输层）
   __smoke__.js          无依赖逻辑冒烟测试（node 直接运行）
 electron/ble/
