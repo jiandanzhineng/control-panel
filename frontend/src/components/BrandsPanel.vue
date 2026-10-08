@@ -66,7 +66,21 @@
               </div>
               <el-button size="small" :icon="Close" @click="disconnectDevice(dev)">{{ t('brands.disconnect') }}</el-button>
             </div>
-            <div v-if="dev.brand === 'dglab'" class="control-stack">
+            <div v-if="dev.brand === 'hrm'" class="control-grid">
+              <div class="control-field">
+                <label>{{ t('brands.heartRateLive') }}</label>
+                <span class="hrm-value">{{ hrmValue(dev) }} bpm</span>
+              </div>
+              <div class="control-field">
+                <label>{{ t('brands.hrStatusLabel') }}</label>
+                <span class="hrm-value">{{ hrStatusText(dev) }}</span>
+              </div>
+              <div class="control-field" v-if="hrBattery(dev) !== null">
+                <label>{{ t('brands.battery') }}</label>
+                <span class="hrm-value">{{ hrBattery(dev) }}%</span>
+              </div>
+            </div>
+            <div v-else-if="dev.brand === 'dglab'" class="control-stack">
               <div class="control-row">
                 <div class="control-field"><label>{{ t('brands.intensity', { n: ctl(dev).intensity }) }}</label><el-slider v-model="ctl(dev).intensity" :min="0" :max="100" /></div>
                 <div class="control-actions">
@@ -256,6 +270,7 @@ const BRAND_LABEL = computed<Record<string, string>>(() => ({
   ycy: t('brands.brandYcy'),
   sosexy: t('brands.brandSosexy'),
   gxp: t('brands.brandGxp'),
+  hrm: t('brands.brandHrm'),
 }))
 const TYPE_LABEL = computed<Record<string, string>>(() => ({
   DGLAB: t('brands.typeDglab'),
@@ -266,7 +281,25 @@ const TYPE_LABEL = computed<Record<string, string>>(() => ({
   YCY_ENEMA: t('brands.typeEnema'),
   SOSEXY_PID0004: t('brands.typeBobobei'),
   GXP_XA9935: t('brands.typeAiluo'),
+  HRM: t('brands.typeHrm'),
 }))
+
+// 心率带卡片：数据来自 /api/brands 已连接列表里的 dev.data（后端上行走 deviceService）。
+function hrmValue(dev: BrandDevice) {
+  const v = Number(dev.data?.heart_rate)
+  return Number.isFinite(v) ? v : 0
+}
+function hrBattery(dev: BrandDevice) {
+  const v = Number(dev.data?.battery)
+  return Number.isFinite(v) ? v : null
+}
+function hrStatusText(dev: BrandDevice) {
+  const s = String(dev.data?.hr_status || '')
+  if (s === 'ok') return t('brands.hrStatusOk')
+  if (s === 'no_contact') return t('brands.hrStatusNoContact')
+  if (s === 'stale') return t('brands.hrStatusStale')
+  return s || t('brands.hrStatusStale')
+}
 
 // 设备名映射为友好中文名（仅显示层，不改连接/电量逻辑）
 function brandLabel(brand: string, rawName?: string | null): string {
@@ -279,6 +312,7 @@ function brandLabel(brand: string, rawName?: string | null): string {
   }
   if (brand === 'sosexy') return t('brands.bobobei')
   if (brand === 'gxp') return t('brands.ailuo')
+  if (brand === 'hrm') return name || t('brands.brandHrm')
   if (brand === 'ycy') {
     if (/FJB/i.test(name)) return t('brands.cup')
     if (/(YISK|灌肠|ENEMA|GLJ|GLS)/i.test(name)) return t('brands.enema')
@@ -832,8 +866,10 @@ const connectingId = ref('')
 function ycyWebbleCancelScan() {
   brandBle.cancelSelection().catch(() => {})
 }
-function classifyBleBrand(name?: string): 'dglab' | 'ycy' | 'sosexy' | 'gxp' {
+function classifyBleBrand(name?: string): 'dglab' | 'ycy' | 'sosexy' | 'gxp' | 'hrm' {
   const n = String(name || '').toUpperCase()
+  // 标准蓝牙心率带：广播名关键字（服务 0x180D 由后端识别，此处只按名字兜底）
+  if (/HRM|HEART|PULSE|心率/.test(n)) return 'hrm'
   if (['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k))) return 'dglab'
   if (n.includes('SOSEXY') || name?.includes('啵啵贝') || name?.includes('繁野')) return 'sosexy'
   if (n.includes('XA9935') || n.includes('GXP') || name?.includes('艾萝')) return 'gxp'
@@ -847,13 +883,14 @@ async function startBleConnect() {
   scanningYcyWebble.value = true
   ycyWebbleCandidates.value = []
   try {
-    const [y, d, s, g] = await Promise.all([
+    const [y, d, s, g, h] = await Promise.all([
       brandsApi.discover('ycy', { mode: 'native' }),
       brandsApi.discover('dglab', { mode: 'native' }),
       brandsApi.discover('sosexy', { mode: 'native' }),
       brandsApi.discover('gxp', { mode: 'native' }),
+      brandsApi.discover('hrm', { mode: 'native' }),
     ])
-    const list = [...(y.devices || []), ...(d.devices || []), ...(s.devices || []), ...(g.devices || [])]
+    const list = [...(y.devices || []), ...(d.devices || []), ...(s.devices || []), ...(g.devices || []), ...(h.devices || [])]
     ycyWebbleCandidates.value = list.map((c) => ({
       id: c.address || c.deviceId || '',
       name: c.name || c.suggestedName || '',
@@ -880,14 +917,15 @@ async function ycyWebblePick(c: { id: string; name: string; address?: string; de
   connectingId.value = c.id
   ElMessage.info(t('brands.connectingNamed', { name: c.name }))
   try {
-    const brand = classifyBleBrand(c.name)
+    // 心率带由后端按广播服务/名字识别；连接后设备 ID 由 0xFF04 身份决定，前端不指定 type。
+    const brand = (c.brand as any) || classifyBleBrand(c.name)
     await brandsApi.connect({
       brand,
       mode: 'native',
       address: c.address || c.id,
       name: c.name,
       deviceId: c.deviceId,
-      ...(brand === 'dglab' ? {} : { type: ycyPanelType({ name: c.name }) }),
+      ...(brand === 'dglab' || brand === 'hrm' ? {} : { type: ycyPanelType({ name: c.name }) }),
     })
     ycyWebbleCandidates.value = []
     await refreshConnected()
