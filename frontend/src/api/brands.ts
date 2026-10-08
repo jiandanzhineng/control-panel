@@ -11,6 +11,8 @@ export interface BrandDevice {
   name?: string;
   connected: boolean;
   metadata?: Record<string, unknown>;
+  /** 设备 data 属性（心率带的心率/状态/电量等由后端上行走 deviceService）。 */
+  data?: Record<string, unknown>;
 }
 
 export interface BrandStatus {

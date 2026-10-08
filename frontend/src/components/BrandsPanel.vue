@@ -42,8 +42,8 @@
         <div v-if="ycyWebbleCandidates.length" class="candidate-list">
           <div v-for="c in ycyWebbleCandidates" :key="c.id" class="candidate-item">
             <div class="candidate-info">
-              <span class="candidate-name">{{ brandLabel(classifyBleBrand(c.name), c.name) }}</span>
-              <span class="candidate-meta">{{ BRAND_LABEL[classifyBleBrand(c.name)] || t('brands.ycy') }} · {{ c.name }}</span>
+              <span class="candidate-name">{{ brandLabel(candidateBrand(c), c.name) }}</span>
+              <span class="candidate-meta">{{ BRAND_LABEL[candidateBrand(c)] || t('brands.ycy') }} · {{ c.name }}</span>
             </div>
             <el-button
               size="small"
@@ -61,8 +61,8 @@
             <div class="device-card__head">
               <div>
                 <span class="device-card__name">{{ brandLabel(dev.brand, dev.name) }}</span>
-                <el-tag size="small" class="tag-brand">{{ BRAND_LABEL[dev.brand] || dev.brand }}</el-tag>
-                <el-tag v-if="dev.type" size="small" type="warning">{{ TYPE_LABEL[dev.type] || ycyPanelType(dev) }}</el-tag>
+                <el-tag size="small" class="tag-brand">{{ brandTagText(dev) }}</el-tag>
+                <el-tag v-if="showTypeTag(dev)" size="small" type="warning">{{ typeTagText(dev) }}</el-tag>
               </div>
               <el-button size="small" :icon="Close" @click="disconnectDevice(dev)">{{ t('brands.disconnect') }}</el-button>
             </div>
@@ -299,6 +299,17 @@ function hrStatusText(dev: BrandDevice) {
   if (s === 'no_contact') return t('brands.hrStatusNoContact')
   if (s === 'stale') return t('brands.hrStatusStale')
   return s || t('brands.hrStatusStale')
+}
+
+// 卡片头部两个标签：品牌标签与类型标签文案相同时（如心率带），不重复显示类型标签。
+function brandTagText(dev: BrandDevice): string {
+  return BRAND_LABEL.value[dev.brand] || dev.brand
+}
+function typeTagText(dev: BrandDevice): string {
+  return TYPE_LABEL.value[dev.type || ''] || ycyPanelType(dev)
+}
+function showTypeTag(dev: BrandDevice): boolean {
+  return !!dev.type && typeTagText(dev) !== brandTagText(dev)
 }
 
 // 设备名映射为友好中文名（仅显示层，不改连接/电量逻辑）
@@ -874,6 +885,13 @@ function classifyBleBrand(name?: string): 'dglab' | 'ycy' | 'sosexy' | 'gxp' | '
   if (n.includes('SOSEXY') || name?.includes('啵啵贝') || name?.includes('繁野')) return 'sosexy'
   if (n.includes('XA9935') || n.includes('GXP') || name?.includes('艾萝')) return 'gxp'
   return 'ycy'
+}
+// 候选行的品牌：后端按广播服务识别出的 brand 优先（Polar H10 这类名字无关键字的心率带），
+// 只在后端没给 brand 时才退回按名字分类。
+function candidateBrand(c: { name?: string; brand?: string }): 'dglab' | 'ycy' | 'sosexy' | 'gxp' | 'hrm' {
+  const b = c.brand
+  if (b === 'dglab' || b === 'ycy' || b === 'sosexy' || b === 'gxp' || b === 'hrm') return b
+  return classifyBleBrand(c.name)
 }
 function cancelBleScan() {
   dglabWebbleCancelScan()
