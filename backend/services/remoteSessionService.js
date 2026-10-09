@@ -147,6 +147,8 @@ class RemoteSessionService {
     this._stopping = false;
     this._latencyMs = null;
     this._lastSessionId = null;
+    // 投影撤权 → 主房间级联撤权的重入锁（级联过程会再派发事件，必须挡住自激）
+    this._cascadingRevoke = false;
   }
 
   // ---------- 被控端 ----------
@@ -177,6 +179,9 @@ class RemoteSessionService {
       projectionJoinCode: projectionStatus?.joinCode || null,
       peerUserId: null,
       authorized: false,
+      // 投影侧当前授权给谁：与主房间授权分开记录，二者不一致时（主控端离开投影房间被
+      // 投影侧撤权）由编排层级联撤掉主房间授权。
+      projectionAuthorizedUserId: null,
       waitingAuthorize: null,
       lastError: null,
       // 本机运行中的玩法（主控端起的）：被控端本地开始时紧急停输出并清占用
@@ -213,6 +218,9 @@ class RemoteSessionService {
       projectionJoinCode: null,
       peerUserId: gameStatus?.hostUserId || null,
       authorized: false,
+      // 投影侧授权只对被控端有意义（主控端拿不到投影房间的授权对象），保留同名字段
+      // 让两条链路的清理逻辑可以共用。
+      projectionAuthorizedUserId: null,
       waitingAuthorize: null,
       lastError: null,
       // 主控端本机运行的玩法占用（被控端记录的那份）
@@ -272,6 +280,7 @@ class RemoteSessionService {
     // 主控端收到撤权通知会结束会话并离开房间，被控端回到「等待加入」；
     // 对方重新加入时 member 上线事件会再把阶段推到「待授权」。
     state.peerUserId = null;
+    state.projectionAuthorizedUserId = null;
     state.phase = 'waiting';
     this._logEvent('ok', 'session.revoke', null, null);
     await Promise.allSettled([
@@ -315,6 +324,7 @@ class RemoteSessionService {
     ]);
     state.authorized = false;
     state.peerUserId = null;
+    state.projectionAuthorizedUserId = null;
     state.phase = 'waiting';
     return this.getStatus();
   }
@@ -518,11 +528,26 @@ class RemoteSessionService {
       void Promise.resolve(this.projection.emergencyStopOperatorOutputs?.('session-emergency-stop')).catch(() => {});
     }
     if (event.type === 'member' && state.role === 'owner') {
+      // 被授权者：peerUserId 与主房间当前授权对象是同一份事实（主房间不存在第二个被授权者）。
+      // 主房间可能还没回填 peerUserId（面板先点了授权），以主房间授权为准兜底。
+      const authorizedUserId = state.peerUserId || this.game.getAuthorizedUserId?.() || null;
+      // 投影侧当前授权对象：以投影服务的实时状态为准（它才是事实），服务报不出来时用本层缓存兜底
+      const projectionStatus = this._safeStatus(this.projection);
+      const projectionAuthorizedUserId = projectionStatus && 'authorizedUserId' in projectionStatus
+        ? (projectionStatus.authorizedUserId || null)
+        : (state.projectionAuthorizedUserId || null);
       if (event.online && event.userId && !state.peerUserId) state.peerUserId = event.userId;
       // 有成员上线且尚未授权 → 进入「待授权」：被控端面板据此显示「允许控制 / 拒绝」，
       // 远程条也据此出现授权按钮（没有这一步，房主看不到任何可点的授权入口）。
       if (event.online && event.userId && !state.authorized && state.phase === 'waiting') {
         state.phase = 'pending-authorization';
+      }
+      // 已授权的主控端重新上线（异常掉线后回来，没有 leave 所以主房间授权还在）：
+      // 投影侧可能已经掉了（App 被杀后重进时投影链路要重建），补一次邀请并重排自动授权轮询，
+      // 否则主房间 authorized=true、投影侧授权为空，主控端设备页永远为空。
+      if (event.online && state.authorized && event.userId === authorizedUserId
+          && projectionAuthorizedUserId !== event.userId) {
+        void this._reauthorizeProjection(state, event.userId);
       }
       return;
     }
@@ -530,6 +555,7 @@ class RemoteSessionService {
       if (!event.authorized) {
         state.authorized = false;
         state.peerUserId = null;
+        state.projectionAuthorizedUserId = null;
         // 授权关闭后没有可授权对象：待授权也一并回到等待，避免远程条出现点不动的「允许控制」
         if (state.phase === 'active' || state.phase === 'pending-authorization') state.phase = 'waiting';
       }
@@ -598,6 +624,18 @@ class RemoteSessionService {
     if (event.type === 'peer' && state.role === 'operator' && event.roomId) {
       // 操作方自己 join 投影房间时也会收到一次 peer：房间码由主房间邀请决定
       void this._joinProjectionRoom(state);
+      return;
+    }
+    if (event.type === 'revoked' && state.role === 'owner'
+        && (!event.userId || event.userId === (state.peerUserId || this.game.getAuthorizedUserId?.()))) {
+      // 投影侧撤权了：本层记录的「投影授权对象」必须跟着清掉，否则主控端重新上线时
+      // 会误判投影仍授权、不再补邀请与自动授权。
+      state.projectionAuthorizedUserId = null;
+      if (state.authorized && event.reason === 'operator-left-room') {
+        // 主控端主动离开投影房间（＝断开，不是异常掉线）：投影侧已自行撤权，
+        // 这里把主房间的授权一起撤掉，避免半状态（重新加入必须重新「允许控制」）。
+        void this._cascadeRevokeFromProjection(state, event);
+      }
       return;
     }
     if (event.type === 'write-result' && state.role === 'operator') {
@@ -699,6 +737,20 @@ class RemoteSessionService {
     }
   }
 
+  /**
+   * 已授权的主控端重新上线时补投影链路：重发邀请 + 重排自动授权轮询
+   * （_tryAuthorizeProjection 会轮询到它进投影房间后再 projection.authorize）。
+   * 主房间授权保留（异常掉线不等于断开），所以这里不碰 authorized。
+   */
+  async _reauthorizeProjection(state, userId) {
+    await this._inviteOperator(state, userId);
+    // 主房间当前授权对象：owner state 里维护的是 peerUserId（授权时写入、撤权/踢出/级联时清空）
+    if (this.state !== state || !state.authorized
+        || (state.peerUserId || this.game.getAuthorizedUserId?.()) !== userId) return;
+    state.waitingAuthorize = { userId, attempts: 0 };
+    this._scheduleAuthorizeRetry(state);
+  }
+
   /** 操作方进入投影房间后由被控端自动授权；顺序不定，轮询到出现或超次数为止。 */
   _scheduleAuthorizeRetry(state) {
     this._clearAuthorizeTimer(state);
@@ -742,8 +794,11 @@ class RemoteSessionService {
         state.lastError = error?.message || String(error);
         return false;
       }
+      // 记录投影侧授权对象：主控端离开投影房间被投影侧撤权时，编排层据此级联撤掉主房间授权
+      state.projectionAuthorizedUserId = userId;
       // 轮询期间被踢出：授权刚落地也要立刻撤掉，避免「踢出后仍被授权」
       if (this.game.isKicked?.(userId)) {
+        state.projectionAuthorizedUserId = null;
         await this.projection.revoke({ reason: 'kicked-during-authorize' }).catch(() => {});
         this._logEvent('rejected', 'session.projection-authorize', userId, {
           message: '成员已被移出房间',
@@ -769,6 +824,37 @@ class RemoteSessionService {
   _finishAuthorize(state) {
     this._clearAuthorizeTimer(state);
     if (state) state.waitingAuthorize = null;
+  }
+
+  // ---------- 投影侧撤权 → 主房间级联撤权 ----------
+
+  /**
+   * 投影侧撤权（如「主控端离开投影房间」）后把主房间授权一起撤掉，
+   * 避免「主房间已授权、投影已撤」的半状态：主控端同码重新加入时主房间会误判
+   * 「已授权、直接恢复」，却拿不到投影邀请、设备页永远为空。
+   *
+   * 语义：主控端主动断开（离开房间）＝会话对该主控端结束，重新加入必须重新经过「允许控制」；
+   * 异常掉线（MQTT 断开、App 被杀，没有 leave）保留授权，重新上线时由 _onGameEvent 补投影授权。
+   * 用 _cascadingRevoke 挡住重入：级联过程会再派发事件，不能自激。
+   */
+  async _cascadeRevokeFromProjection(state, event) {
+    if (this._cascadingRevoke) return;
+    this._cascadingRevoke = true;
+    try {
+      if (this.state !== state) return;
+      this._finishAuthorize(state);
+      state.authorized = false;
+      state.peerUserId = null;
+      state.projectionAuthorizedUserId = null;
+      state.phase = 'waiting';
+      this._logEvent('ok', 'session.revoke', event?.userId || null, { reason: event?.reason || null });
+      // 投影侧已经撤过权了，这里只撤主房间（再调一次 projection.revoke 只会重复发事件）
+      await this.game.revoke().catch(() => {});
+      // 操作方设备表回到只有本机设备：投影侧的空清单是 MQTT 广播，房主离线/丢包时收不到
+      await this._pruneOperatorProjection();
+    } finally {
+      this._cascadingRevoke = false;
+    }
   }
 
   // ---------- 投影 TTL 续期 / 延迟 ----------

@@ -1158,6 +1158,9 @@ class RemoteProjectionService {
     }
     // 撤权后操作方不应再看到任何设备。
     await this._publishRevokedDeviceList(session);
+    // 事件出口：编排层据此把主房间的授权一起撤掉，避免「主房间已授权、投影已撤」的半状态
+    // （主控端离开投影房间时只有投影侧会自己撤权，主房间没人撤）。
+    this._emitEvent({ type: 'revoked', reason, userId: userId || null });
     return this.getStatus();
   }
 

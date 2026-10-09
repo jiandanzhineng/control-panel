@@ -1166,4 +1166,28 @@ describe('RemoteProjectionService', () => {
     await operator.stop();
     await owner.stop();
   });
+
+  test('revoke emits a revoked event carrying the reason and the revoked userId', async () => {
+    const { owner } = await setupAuthorizedPair();
+    const events = [];
+    owner.onEvent((event) => events.push(event));
+
+    await owner.revoke({ reason: 'operator-left-room' });
+    await flush();
+
+    const revoked = events.filter((event) => event.type === 'revoked');
+    // 编排层据此把主房间的授权一起撤掉，避免「主房间已授权、投影已撤」的半状态
+    expect(revoked).toHaveLength(1);
+    expect(revoked[0]).toMatchObject({ reason: 'operator-left-room', userId: 'operator' });
+    expect(owner.getStatus().authorizedUserId).toBeNull();
+
+    // 没有可撤权的对象时也要发一条（userId 为 null），reason 原样带出
+    events.length = 0;
+    await owner.revoke({ reason: 'session-revoke' });
+    await flush();
+    expect(events.filter((event) => event.type === 'revoked'))
+      .toEqual([expect.objectContaining({ reason: 'session-revoke', userId: null })]);
+
+    await owner.stop();
+  });
 });

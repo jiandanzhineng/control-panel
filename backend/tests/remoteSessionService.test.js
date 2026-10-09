@@ -463,6 +463,80 @@ describe('remote session service', () => {
     await flush();
   });
 
+  test('a clamped devices.invoke is recorded as clamped on the owner, not as executed', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, host, ownerGame } = ctx;
+    // 被控端本机的一台电击设备（DIANJI 支持 shock.start，voltage 上限 20）
+    const device = {
+      id: 'vdev_dianji', name: '电击器', type: 'DIANJI', connected: true,
+      connectionType: 'mqtt', connections: [{ type: 'mqtt' }], capabilities: ['shock'],
+    };
+    host.devices = {
+      listDevicesForApi: jest.fn(() => [device]),
+      getDeviceForApi: jest.fn((id) => (id === device.id ? device : null)),
+      invokeDeviceCapabilityAndWait: jest.fn(async () => ({ ok: true })),
+      stopExecutionDeviceAndWait: jest.fn(async () => ({ ok: true })),
+    };
+
+    const result = await operatorSession.command({
+      type: 'devices.invoke',
+      payload: { deviceId: 'vdev_dianji', capability: 'shock', action: 'start', input: { voltage: 99 } },
+    });
+    await flush();
+
+    // 命令本身成功（钳制不是失败），但安全层把 99 钳到了 20
+    expect(result).toMatchObject({ ok: true });
+    expect(host.devices.invokeDeviceCapabilityAndWait).toHaveBeenCalledWith(
+      'vdev_dianji', 'shock', 'start', { voltage: 20 },
+    );
+    const log = ownerSession.getStatus().log;
+    const clamped = log.find((entry) => entry.kind === 'devices.invoke' && entry.outcome === 'clamped');
+    expect(clamped).toBeTruthy();
+    expect(clamped.target).toBe('vdev_dianji');
+    expect(clamped.detail.requested.voltage).toBe(99);
+    expect(clamped.detail.applied.voltage).toBe(20);
+    expect(clamped.detail.hint).toBe('请求 99 → 实际 20');
+    // 不能同时再记一条「已执行」
+    expect(log.some((entry) => entry.kind === 'devices.invoke' && entry.outcome === 'ok')).toBe(false);
+    expect(ownerGame.getStatus().active).toBe(true);
+
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+
+  test('a normal devices.invoke stays recorded as executed', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, host } = ctx;
+    const device = {
+      id: 'vdev_dianji', name: '电击器', type: 'DIANJI', connected: true,
+      connectionType: 'mqtt', connections: [{ type: 'mqtt' }], capabilities: ['shock'],
+    };
+    host.devices = {
+      listDevicesForApi: jest.fn(() => [device]),
+      getDeviceForApi: jest.fn((id) => (id === device.id ? device : null)),
+      invokeDeviceCapabilityAndWait: jest.fn(async () => ({ ok: true })),
+      stopExecutionDeviceAndWait: jest.fn(async () => ({ ok: true })),
+    };
+
+    await operatorSession.command({
+      type: 'devices.invoke',
+      payload: { deviceId: 'vdev_dianji', capability: 'shock', action: 'start', input: { voltage: 10 } },
+    });
+    // 停止动作的归一化参数恒为 {}，不能被误报成 clamped
+    await operatorSession.command({
+      type: 'devices.invoke',
+      payload: { deviceId: 'vdev_dianji', capability: 'shock', action: 'stop', input: {} },
+    });
+    await flush();
+
+    const log = ownerSession.getStatus().log.filter((entry) => entry.kind === 'devices.invoke');
+    expect(log.map((entry) => entry.outcome)).toEqual(['ok', 'ok']);
+    expect(ownerSession.getStatus().log.some((entry) => entry.outcome === 'clamped')).toBe(false);
+
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+
   test('heartbeat and read-only commands stay out of the op log', async () => {
     const ctx = await setupActiveSession();
     const { ownerSession, ownerGame } = ctx;
@@ -782,6 +856,85 @@ describe('remote session service', () => {
     await ownerSession.stop();
     await operatorSession.stop();
     await otherSession.stop();
+  });
+
+  test('a re-joining authorized operator gets a fresh projection invite and re-authorization', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, ownerGame, operatorGame, projection, clock } = ctx;
+    const target = ownerSession.getStatus().peer.userId;
+    const authorizeMock = projection.owner.authorize;
+    authorizeMock.mockClear();
+    expect(ownerSession.getStatus().authorized).toBe(true);
+
+    // 主控端异常掉线（没有 leave，只是 MQTT 断开）：主房间授权保留，
+    // 但投影侧授权已经没了（App 被杀后重进，投影链路要重建）
+    projection.world.authorized = null;
+    ownerGame._emitEvent({ type: 'member', userId: target, online: false });
+    await flush();
+    expect(ownerSession.getStatus()).toMatchObject({ authorized: true, phase: 'active' });
+    expect(authorizeMock).not.toHaveBeenCalled();
+
+    // 主控端重新上线（presence online）但还没进投影房间：先补发投影邀请，自动授权轮询重新排上
+    projection.world.members.delete(target);
+    ownerGame._emitEvent({ type: 'member', userId: target, online: true });
+    await flush();
+    expect(operatorGame.getProjectionInvite()).toMatchObject({ joinCode: 'PCODE', forUserId: target });
+    expect(authorizeMock).not.toHaveBeenCalled();
+    expect(projection.world.authorized).toBeNull();
+
+    // 主控端进了投影房间：轮询到之后重新授权，设备清单恢复
+    projection.world.members.add(target);
+    clock.fire(3000);
+    await flush();
+    expect(authorizeMock).toHaveBeenCalledTimes(1);
+    expect(authorizeMock).toHaveBeenCalledWith(target);
+    expect(projection.world.authorized).toBe(target);
+    // 异常掉线不撤主房间授权：会话保持已授权
+    expect(ownerSession.getStatus()).toMatchObject({ authorized: true, phase: 'active' });
+
+    await ownerSession.stop();
+    await operatorSession.stop();
+  });
+
+  test('an operator leaving the projection room cascades the revoke to the main room', async () => {
+    const ctx = await setupActiveSession();
+    const { ownerSession, operatorSession, ownerGame, projection, clock } = ctx;
+    const target = ownerSession.getStatus().peer.userId;
+    const revokeSpy = jest.spyOn(ownerGame, 'revoke');
+    const authorizeMock = projection.owner.authorize;
+    authorizeMock.mockClear();
+    expect(ownerSession.getStatus().authorized).toBe(true);
+
+    // 主控端主动离开投影房间：投影侧自行撤权并通过事件出口告知编排层
+    projection.world.authorized = null;
+    await projection.owner.revoke({ reason: 'operator-left-room' });
+    projection.owner.emit({ type: 'revoked', reason: 'operator-left-room', userId: target });
+    await flush();
+
+    // 主房间授权一起撤：不留「主房间已授权、投影已撤」的半状态
+    expect(ownerSession.getStatus()).toMatchObject({
+      authorized: false, phase: 'waiting', peer: null,
+    });
+    expect(ownerGame.getAuthorizedUserId()).toBeNull();
+    expect(ownerSession.getStatus().log.some(
+      (entry) => entry.kind === 'session.revoke' && entry.detail?.reason === 'operator-left-room',
+    )).toBe(true);
+    // 级联撤权是幂等的：只撤一次主房间授权
+    expect(revokeSpy).toHaveBeenCalledTimes(1);
+
+    // 主控端重新加入：回到待授权，必须被控端再次「允许控制」，不会自动恢复
+    await operatorSession.join({ token: 'operator', joinCode: 'JOIN123' });
+    await flush();
+    expect(ownerSession.getStatus().phase).toBe('pending-authorization');
+    expect(ownerSession.getStatus().authorized).toBe(false);
+    // 会话已回到待授权：不会再有人去自动授权投影房间（需要被控端再点一次「允许控制」）
+    clock.fire(3000);
+    await flush();
+    expect(authorizeMock).not.toHaveBeenCalled();
+    revokeSpy.mockRestore();
+
+    await ownerSession.stop();
+    await operatorSession.stop();
   });
 });
 

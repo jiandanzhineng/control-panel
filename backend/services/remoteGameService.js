@@ -1189,8 +1189,10 @@ class RemoteGameService {
     const cmdGameId = String(envelope.payload?.gameId || '').trim();
     const cmdGameName = envelope.payload?.gameName || (cmdGameId ? session.gameNames.get(cmdGameId) : null) || null;
     if (cmdGameId && envelope.payload?.gameName) session.gameNames.set(cmdGameId, String(envelope.payload.gameName));
+    // 安全层钳制的记录由 _invokeDevice 写进这个 context（outcome:'clamped' + requested/applied）
+    const context = { senderUserId };
     try {
-      const result = await this._dispatch(type, envelope.payload || {}, { senderUserId });
+      const result = await this._dispatch(type, envelope.payload || {}, context);
       await this._respond(session, envelope.messageId, { ok: true, result });
       this._emitEvent({
         type: 'command',
@@ -1198,8 +1200,8 @@ class RemoteGameService {
         kind: type,
         target: envelope.payload?.deviceId || envelope.payload?.gameId || null,
         gameName: cmdGameName,
-        outcome: 'ok',
-        detail: null,
+        outcome: context.outcome || 'ok',
+        detail: context.detail || null,
       });
       await this._publishClientSnapshot(session);
       await this._publishGameSnapshot(session);
@@ -1413,6 +1415,13 @@ class RemoteGameService {
       throw this._error(sanitized?.code || 'DEVICE_INVOKE_REJECTED', sanitized?.message || '设备指令被安全层拒绝');
     }
     const input = sanitized.input || {};
+    // 安全层钳制过（如 input.voltage 99 → 20）：记进调用方传进来的 context，
+    // 由 _onOwnerCommand 写成 outcome:'clamped'，被控端操作记录才显示「已限制」而不是「已执行」。
+    // 停止动作的 sanitized input 恒为 {}，拿它比较会把正常停止误报成 clamped，必须排除。
+    if (!this._isStopInvoke(action) && this._isClampedInput(rawInput, input)) {
+      context.outcome = 'clamped';
+      context.detail = { requested: rawInput, applied: input };
+    }
     const latched = this.outputGuard.isLatchedOutput({ device, capability, action, input });
     if (action === 'stop' || !latched?.latched) {
       try { this.watchdog.clear(deviceId); } catch (_) {}
@@ -1440,6 +1449,22 @@ class RemoteGameService {
     if (String(device.controlConnection || device.connectionType || '') === 'remote') return true;
     return Array.isArray(device.connections)
       && device.connections.some((connection) => connection?.type === 'remote');
+  }
+
+  /** 停止类动作（stop/stopall/off/halt）：安全层对它们一律返回空参数，不能拿来做钳制比较。 */
+  _isStopInvoke(action) {
+    const key = String(action || '').toLowerCase();
+    const stopActions = this.outputGuard.STOP_ACTIONS;
+    return key === 'stop' || (stopActions ? stopActions.has(key) : false);
+  }
+
+  /** 归一化后的参数与原始参数是否不同（与投影链路 _isClamped 同一套比较）。 */
+  _isClampedInput(requested, applied) {
+    try {
+      return JSON.stringify(requested) !== JSON.stringify(applied);
+    } catch (_) {
+      return false;
+    }
   }
 
   async _stopDevice(payload) {
