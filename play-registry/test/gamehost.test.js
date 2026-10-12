@@ -259,6 +259,22 @@ test('cardHtml 渲染出 data-cache 和 data-launch 两个按钮', async () => {
   assert.match(html, /game-intro\.html\?id=demo/);
 });
 
+test('cardHtml 显示社区游戏作者署名', async () => {
+  const ctx = makeContext({
+    games: [
+      { id: 'demo', title: '演示', version: '1.0.0', devices: [], authorName: '投稿人' },
+      { id: 'builtin', title: '内置', version: '1.0.0', devices: [] },
+    ],
+  });
+  ctx.window.PlayLauncher = { open() {}, cache() {}, closeModal() {} };
+  loadList(ctx);
+  await flush();
+  const html = ctx.__elements.grid.innerHTML;
+  assert.match(html, /class="game-author"/);
+  assert.match(html, /投稿人/);
+  assert.strictEqual((html.match(/game-author/g) || []).length, 1, '没有署名的游戏不该渲染作者行');
+});
+
 test('无宿主时 cache 给出明确提示且不触发 127.0.0.1', async () => {
   const ctx = makeContext({ gameHost: undefined });
   loadLauncher(ctx);

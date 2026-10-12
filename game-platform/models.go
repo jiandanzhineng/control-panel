@@ -21,8 +21,13 @@ type Submission struct {
 	ReviewNote  string `json:"reviewNote,omitempty"`
 	ReviewedBy  string `json:"reviewedBy,omitempty"`
 	ReleaseID   string `json:"releaseId,omitempty"`
-	CreatedAt   int64  `json:"createdAt"`
-	UpdatedAt   int64  `json:"updatedAt"`
+	// AuthorIsAdmin 记录投稿人身份，发布事务按它判断能否更新官方保留的 game_id。
+	AuthorIsAdmin bool `json:"authorIsAdmin,omitempty"`
+	// GameID / GameIDStatus 只在审核后台列表里填充，用于显示「新游戏 / 更新（原作者）/ ID 冲突」。
+	GameID       string `json:"gameId,omitempty"`
+	GameIDStatus string `json:"gameIdStatus,omitempty"`
+	CreatedAt    int64  `json:"createdAt"`
+	UpdatedAt    int64  `json:"updatedAt"`
 }
 
 type RegistryFile struct {

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title data-i18n-title="loginTitle">登录 · 硅基之下游戏库</title>
+<meta name="description" content="登录硅基之下游戏库投稿工作台，使用与控制面板 App 相同的邮箱账号。" />
+<meta name="robots" content="noindex" />
+<meta name="theme-color" content="#0e0d0c" />
+<link rel="stylesheet" href="assets/css/site.css" />
+<script src="assets/js/baidu-tongji.js"></script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff5b3a'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='%231a0a04'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark">⚡</span>
+      <span data-i18n="brand">硅基之下游戏库</span>
+    </a>
+    <div class="nav-links">
+      <a href="games.html" data-i18n="navGames">游戏</a>
+      <a href="control.html" data-i18n="navControl">设备控制</a>
+      <a href="docs/agent-guide.html" data-i18n="navDocs">开发文档</a>
+      <a href="docs/device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
+      <a href="submit.html" class="nav-cta" data-i18n="navContribute">投稿</a>
+      <div class="lang-switch">
+        <button type="button" data-set-locale="zh">中</button>
+        <button type="button" data-set-locale="en">EN</button>
+      </div>
+    </div>
+    <div class="nav-account" data-auth-slot></div>
+  </div>
+</nav>
+
+<main class="auth-layout">
+  <section class="auth-intro">
+    <div class="auth-intro-inner">
+      <span class="eyebrow-mono"><span class="live-dot"></span><span>Creator Console</span></span>
+      <h1 data-i18n="authH1">投稿工作台</h1>
+      <p data-i18n="authLead">把你做的游戏交给审核，上架后玩家在控制面板里直接玩。</p>
+      <ol class="auth-points">
+        <li><span class="k">01</span><div><strong data-i18n="authPoint1">一个账号，处处通用</strong><span data-i18n="authPoint1Desc">与控制面板 App、商城使用同一邮箱账号</span></div></li>
+        <li><span class="k">02</span><div><strong data-i18n="authPoint2">ZIP 或 Git 地址</strong><span data-i18n="authPoint2Desc">浏览器直传 ZIP，或提交公开 GitHub / GitLab 仓库</span></div></li>
+        <li><span class="k">03</span><div><strong data-i18n="authPoint3">人工审核，自动上架</strong><span data-i18n="authPoint3Desc">审核意见与进度在工作台实时可见</span></div></li>
+        <li><span class="k">04</span><div><strong data-i18n="authPoint4">按月结算奖励金</strong><span data-i18n="authPoint4Desc">按游玩表现发放到你的商城账号</span></div></li>
+      </ol>
+    </div>
+    <svg class="auth-wave" viewBox="0 0 800 120" preserveAspectRatio="none" aria-hidden="true">
+      <path class="w-ghost" d="M0,52.3 L8,49.6 L16,47.6 L24,46.5 L32,46.7 L40,48.1 L48,50.8 L56,54.5 L64,58.7 L72,63.1 L80,67.2 L88,70.4 L96,72.6 L104,73.5 L112,73.1 L120,71.6 L128,69.3 L136,66.6 L144,63.9 L152,61.7 L160,60.3 L168,60.0 L176,60.8 L184,62.5 L192,65.0 L200,67.7 L208,70.4 L216,72.4 L224,73.5 L232,73.3 L240,71.9 L248,69.2 L256,65.5 L264,61.3 L272,56.9 L280,52.8 L288,49.6 L296,47.4 L304,46.5 L312,46.9 L320,48.4 L328,50.7 L336,53.4 L344,56.1 L352,58.3 L360,59.7 L368,60.0 L376,59.2 L384,57.5 L392,55.0 L400,52.3 L408,49.6 L416,47.6 L424,46.5 L432,46.7 L440,48.1 L448,50.8 L456,54.5 L464,58.7 L472,63.1 L480,67.2 L488,70.4 L496,72.6 L504,73.5 L512,73.1 L520,71.6 L528,69.3 L536,66.6 L544,63.9 L552,61.7 L560,60.3 L568,60.0 L576,60.8 L584,62.5 L592,65.0 L600,67.7 L608,70.4 L616,72.4 L624,73.5 L632,73.3 L640,71.9 L648,69.2 L656,65.5 L664,61.3 L672,56.9 L680,52.8 L688,49.6 L696,47.4 L704,46.5 L712,46.9 L720,48.4 L728,50.7 L736,53.4 L744,56.1 L752,58.3 L760,59.7 L768,60.0 L776,59.2 L784,57.5 L792,55.0 L800,52.3" />
+      <path class="w-main" d="M0,39.8 L8,38.2 L16,39.1 L24,41.7 L32,45.0 L40,48.0 L48,49.7 L56,49.8 L64,48.3 L72,45.8 L80,43.3 L88,41.7 L96,41.7 L104,43.9 L112,48.1 L120,53.6 L128,59.4 L136,64.4 L144,67.7 L152,68.6 L160,67.0 L168,63.6 L176,59.2 L184,55.0 L192,52.1 L200,51.5 L208,53.3 L216,57.3 L224,62.7 L232,68.5 L240,73.6 L248,77.1 L256,78.5 L264,77.9 L272,75.8 L280,73.2 L288,71.0 L296,70.1 L304,70.8 L312,73.0 L320,76.2 L328,79.4 L336,81.5 L344,81.5 L352,79.0 L360,73.8 L368,66.7 L376,58.5 L384,50.5 L392,44.0 L400,39.8 L408,38.2 L416,39.1 L424,41.7 L432,45.0 L440,48.0 L448,49.7 L456,49.8 L464,48.3 L472,45.8 L480,43.3 L488,41.7 L496,41.7 L504,43.9 L512,48.1 L520,53.6 L528,59.4 L536,64.4 L544,67.7 L552,68.6 L560,67.0 L568,63.6 L576,59.2 L584,55.0 L592,52.1 L600,51.5 L608,53.3 L616,57.3 L624,62.7 L632,68.5 L640,73.6 L648,77.1 L656,78.5 L664,77.9 L672,75.8 L680,73.2 L688,71.0 L696,70.1 L704,70.8 L712,73.0 L720,76.2 L728,79.4 L736,81.5 L744,81.5 L752,79.0 L760,73.8 L768,66.7 L776,58.5 L784,50.5 L792,44.0 L800,39.8" />
+    </svg>
+  </section>
+
+  <section class="auth-main">
+    <div class="auth-box">
+      <p class="auth-checking" id="auth-checking" hidden data-i18n="authChecking">已登录，正在跳转…</p>
+
+      <div data-auth-view="login">
+        <h2 data-i18n="authLoginH2">登录</h2>
+        <p class="auth-sub" data-i18n="authLoginSub">使用控制面板 App 的邮箱账号</p>
+        <form id="login-form" class="auth-form" novalidate>
+          <div class="field">
+            <label for="login-email" data-i18n="authEmail">邮箱</label>
+            <input id="login-email" name="email" type="email" autocomplete="email" inputmode="email" required data-i18n-placeholder="emailPh" placeholder="you@example.com" />
+          </div>
+          <div class="field">
+            <div class="field-row">
+              <label for="login-password" data-i18n="authPassword">密码</label>
+              <button type="button" class="field-link" data-auth-go="recover" data-i18n="authForgot">忘记密码？</button>
+            </div>
+            <div class="password-wrap">
+              <input id="login-password" name="password" type="password" autocomplete="current-password" required minlength="8" />
+              <button type="button" class="password-toggle" data-password-toggle data-i18n="authShow">显示</button>
+            </div>
+          </div>
+          <label class="check"><input type="checkbox" name="remember" checked /><span data-i18n="authRemember">保持登录</span></label>
+          <p class="form-error" role="alert" hidden></p>
+          <button class="btn btn-primary btn-block" type="submit" data-i18n="authLoginBtn">登录</button>
+        </form>
+        <p class="auth-switch"><span data-i18n="authNoAccount">还没有账号？</span><button type="button" data-auth-go="register" data-i18n="authToRegister">注册</button></p>
+      </div>
+
+      <div data-auth-view="register" hidden>
+        <h2 data-i18n="authRegisterH2">创建账号</h2>
+        <p class="auth-sub" data-i18n="authRegisterSub">注册后同样可登录控制面板 App 与商城</p>
+        <form id="register-form" class="auth-form" novalidate>
+          <div class="field">
+            <label for="register-email" data-i18n="authEmail">邮箱</label>
+            <input id="register-email" name="email" type="email" autocomplete="email" inputmode="email" required data-i18n-placeholder="emailPh" placeholder="you@example.com" />
+          </div>
+          <div class="field">
+            <label for="register-password" data-i18n="authPassword">密码</label>
+            <div class="password-wrap">
+              <input id="register-password" name="password" type="password" autocomplete="new-password" required minlength="8" maxlength="128" aria-describedby="register-password-hint" />
+              <button type="button" class="password-toggle" data-password-toggle data-i18n="authShow">显示</button>
+            </div>
+            <span class="field-hint" id="register-password-hint" data-i18n="authPasswordHint">至少 8 位</span>
+          </div>
+          <div class="field">
+            <label for="register-confirm" data-i18n="authConfirm">确认密码</label>
+            <input id="register-confirm" name="confirm" type="password" autocomplete="new-password" required minlength="8" maxlength="128" />
+          </div>
+          <p class="form-error" role="alert" hidden></p>
+          <button class="btn btn-primary btn-block" type="submit" data-i18n="authRegisterBtn">创建账号</button>
+        </form>
+        <p class="auth-switch"><span data-i18n="authHasAccount">已有账号？</span><button type="button" data-auth-go="login" data-i18n="authToLogin">登录</button></p>
+      </div>
+
+      <div data-auth-view="recover" hidden>
+        <button type="button" class="text-button auth-back" data-auth-go="login" data-i18n="authBack">← 返回登录</button>
+        <h2 data-i18n="authRecoverH2">找回密码</h2>
+        <p class="auth-sub" data-i18n="authRecoverSub">提交后管理员会人工核实，并把新密码发到你的邮箱。</p>
+        <form id="recover-form" class="auth-form" novalidate>
+          <div class="field">
+            <label for="recover-email" data-i18n="authEmail">邮箱</label>
+            <input id="recover-email" name="email" type="email" autocomplete="email" inputmode="email" required data-i18n-placeholder="emailPh" placeholder="you@example.com" />
+          </div>
+          <p class="form-error" role="alert" hidden></p>
+          <button class="btn btn-primary btn-block" type="submit" data-i18n="authRecoverBtn">提交申请</button>
+        </form>
+        <p class="form-success" id="recover-done" hidden data-i18n="authRecoverDone">申请已提交。管理员核实后会把新密码发到你的邮箱，也可以扫码联系客服加快处理。</p>
+      </div>
+
+      <p class="auth-foot" data-i18n="authFoot">账号由 UnderSilicon 账号中心统一管理。登录凭证只保存在本浏览器。</p>
+    </div>
+  </section>
+</main>
+
+<script src="assets/js/i18n.js"></script>
+<script src="assets/js/platform-config.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/login.js"></script>
+</body>
+</html>

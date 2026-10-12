@@ -40,6 +40,7 @@
       + '<div class="game-id">' + esc(g.id) + "</div>"
       + "</div></div>"
       + '<p class="game-desc">' + esc(g.description || t("noDesc")) + "</p>"
+      + (g.authorName ? '<div class="game-author">' + esc(t("introAuthor") + ": " + g.authorName) + "</div>" : "")
       + '<div class="game-card-foot">'
       + '<span class="badge ver">v' + esc(g.version || "0.0.0") + "</span>"
       + '<button class="play-link" type="button" data-launch="' + esc(g.id) + '">' + t("launch") + "</button>"

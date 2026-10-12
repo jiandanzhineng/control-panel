@@ -131,7 +131,7 @@ func (a *App) createSubmission(ctx context.Context, user User, authorName, title
 		status = "draft"
 		zipKey = a.config.SubmissionPrefix + "/" + id + "/source.zip"
 	}
-	_, err = a.db.ExecContext(ctx, `INSERT INTO submissions(id, author_id, author_name, title, description, kind, git_url, zip_key, status, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, user.ID, authorName, title, description, kind, strings.TrimSpace(gitURL), zipKey, status, now, now)
+	_, err = a.db.ExecContext(ctx, `INSERT INTO submissions(id, author_id, author_name, title, description, kind, git_url, zip_key, status, author_is_admin, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, id, user.ID, authorName, title, description, kind, strings.TrimSpace(gitURL), zipKey, status, user.Role == "admin", now, now)
 	if err != nil {
 		return Submission{}, err
 	}
@@ -186,7 +186,12 @@ func (a *App) completeZipSubmission(ctx context.Context, submission Submission) 
 	if err != nil {
 		return Submission{}, errors.New("uploaded zip could not be read")
 	}
-	if _, err := prepareGameArchive(source, a.config); err != nil {
+	// ZIP 投稿在上传完成、拿到 manifest 时提前校验归属，避免作者白等一次人工审核。
+	game, err := prepareGameArchive(source, a.config)
+	if err != nil {
+		return Submission{}, err
+	}
+	if _, err := a.checkGameIDOwnership(ctx, a.db, submission.UserID, submission.AuthorIsAdmin, game.ID, game.Version); err != nil {
 		return Submission{}, err
 	}
 	_, err = a.db.ExecContext(ctx, `UPDATE submissions SET status = 'pending', updated_at = ? WHERE id = ? AND status = 'draft'`, nowUnix(), submission.ID)

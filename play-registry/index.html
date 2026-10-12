@@ -5,9 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title data-i18n-title="homeTitle">硅基之下游戏库 · UnderSilicon 控制面板</title>
 <meta name="description" content="硅基之下游戏库：控制面板的在线游戏站。游戏经面板 gameProxy 同源加载、连本机 Bridge 驱动真实设备，改站即上新，无需重发 App。" />
+<meta name="theme-color" content="#0e0d0c" />
 <link rel="stylesheet" href="assets/css/site.css" />
 <script src="assets/js/baidu-tongji.js"></script>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff5b3a'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='%231a0a04'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
 </head><body>
 
 <nav class="nav">
@@ -27,82 +28,114 @@
         <button type="button" data-set-locale="en">EN</button>
       </div>
     </div>
+    <div class="nav-account" data-auth-slot></div>
   </div>
 </nav>
 
-<header class="hero hero-compact">
-  <div class="container">
-    <span class="hero-eyebrow"><span class="dot"></span> <span data-i18n="homeEyebrow">硅基之下 · 在线游戏站</span></span>
-    <h1><span data-i18n="homeH1Before">硅基之下</span><span class="grad" data-i18n="homeH1Grad">游戏库</span></h1>
-    <p class="lead"><span data-i18n="homeLead">连接你的真实设备，在浏览器里直接玩。每个游戏都是自包含网页，经控制面板同源加载、驱动本机硬件——上新即玩，无需更新 App。</span></p>
-    <div class="stat-row" id="stats">
-      <div class="stat"><div class="stat-num" id="stat-games">—</div><div class="stat-label" data-i18n="statGames">在线游戏</div></div>
-      <div class="stat"><div class="stat-num" id="stat-devices">—</div><div class="stat-label" data-i18n="statDevices">支持设备类型</div></div>
-      <div class="stat"><div class="stat-num" id="stat-caps">—</div><div class="stat-label" data-i18n="statCaps">设备能力</div></div>
+<header class="home-hero">
+  <div class="container home-hero-grid">
+    <div class="home-hero-copy">
+      <span class="eyebrow-mono"><span class="live-dot"></span><span data-i18n="homeEyebrow">UnderSilicon · 在线游戏库</span></span>
+      <h1><span data-i18n="homeH1Before">接上设备，</span><br /><span class="grad" data-i18n="homeH1Grad">在浏览器里开玩。</span></h1>
+      <p class="lead" data-i18n="homeLead">每个游戏都是一张自包含网页，经控制面板驱动你身边的真实硬件。新玩法上线即可玩，不用等 App 更新。</p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="games.html" data-i18n="browseGames">浏览全部游戏 →</a>
+        <a class="btn btn-ghost" href="#submit" data-i18n="makeGame">投稿你的游戏</a>
+      </div>
+      <dl class="home-stats" id="stats">
+        <div><dt data-i18n="statGames">在线游戏</dt><dd id="stat-games">—</dd></div>
+        <div><dt data-i18n="statDevices">支持设备类型</dt><dd id="stat-devices">—</dd></div>
+        <div><dt data-i18n="statCaps">设备能力</dt><dd id="stat-caps">—</dd></div>
+      </dl>
     </div>
+    <aside class="signal-panel" aria-hidden="true">
+      <div class="signal-head"><span class="live-dot"></span><span>Live · Device Bridge</span><span class="signal-val">CH-01</span></div>
+      <div class="signal-screen">
+        <svg class="signal-wave" viewBox="0 0 800 170" preserveAspectRatio="none">
+          <defs><linearGradient id="wave-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff5b3a" stop-opacity="0.22" /><stop offset="1" stop-color="#ff5b3a" stop-opacity="0" /></linearGradient></defs>
+          <path class="w-fill" d="M0,85.0 L8,69.6 L16,58.3 L24,52.9 L32,51.9 L40,52.1 L48,51.1 L56,49.0 L64,48.3 L72,51.5 L80,59.3 L88,69.1 L96,76.8 L104,79.2 L112,76.2 L120,70.6 L128,66.3 L136,65.6 L144,67.9 L152,70.3 L160,70.4 L168,68.1 L176,66.0 L184,67.5 L192,74.3 L200,85.0 L208,95.7 L216,102.5 L224,104.0 L232,101.9 L240,99.6 L248,99.7 L256,102.1 L264,104.4 L272,103.7 L280,99.4 L288,93.8 L296,90.8 L304,93.2 L312,100.9 L320,110.7 L328,118.5 L336,121.7 L344,121.0 L352,118.9 L360,117.9 L368,118.1 L376,117.1 L384,111.7 L392,100.4 L400,85.0 L408,69.6 L416,58.3 L424,52.9 L432,51.9 L440,52.1 L448,51.1 L456,49.0 L464,48.3 L472,51.5 L480,59.3 L488,69.1 L496,76.8 L504,79.2 L512,76.2 L520,70.6 L528,66.3 L536,65.6 L544,67.9 L552,70.3 L560,70.4 L568,68.1 L576,66.0 L584,67.5 L592,74.3 L600,85.0 L608,95.7 L616,102.5 L624,104.0 L632,101.9 L640,99.6 L648,99.7 L656,102.1 L664,104.4 L672,103.7 L680,99.4 L688,93.8 L696,90.8 L704,93.2 L712,100.9 L720,110.7 L728,118.5 L736,121.7 L744,121.0 L752,118.9 L760,117.9 L768,118.1 L776,117.1 L784,111.7 L792,100.4 L800,85.0 L800,170 L0,170 Z" />
+          <path class="w-ghost" d="M0,63.4 L8,62.4 L16,64.5 L24,70.3 L32,78.9 L40,88.6 L48,97.0 L56,102.0 L64,102.7 L72,99.4 L80,93.7 L88,87.8 L96,83.6 L104,82.3 L112,83.5 L120,85.8 L128,87.6 L136,87.1 L144,83.8 L152,78.2 L160,72.2 L168,68.0 L176,67.3 L184,71.0 L192,78.5 L200,88.1 L208,97.3 L216,104.1 L224,107.3 L232,107.2 L240,105.0 L248,102.6 L256,101.8 L264,103.2 L272,106.2 L280,109.5 L288,110.8 L296,108.6 L304,102.3 L312,92.4 L320,81.0 L328,70.5 L336,62.9 L344,59.4 L352,59.8 L360,62.7 L368,66.0 L376,68.0 L384,67.8 L392,65.8 L400,63.4 L408,62.4 L416,64.5 L424,70.3 L432,78.9 L440,88.6 L448,97.0 L456,102.0 L464,102.7 L472,99.4 L480,93.7 L488,87.8 L496,83.6 L504,82.3 L512,83.5 L520,85.8 L528,87.6 L536,87.1 L544,83.8 L552,78.2 L560,72.2 L568,68.0 L576,67.3 L584,71.0 L592,78.5 L600,88.1 L608,97.3 L616,104.1 L624,107.3 L632,107.2 L640,105.0 L648,102.6 L656,101.8 L664,103.2 L672,106.2 L680,109.5 L688,110.8 L696,108.6 L704,102.3 L712,92.4 L720,81.0 L728,70.5 L736,62.9 L744,59.4 L752,59.8 L760,62.7 L768,66.0 L776,68.0 L784,67.8 L792,65.8 L800,63.4" />
+          <path class="w-main" d="M0,85.0 L8,69.6 L16,58.3 L24,52.9 L32,51.9 L40,52.1 L48,51.1 L56,49.0 L64,48.3 L72,51.5 L80,59.3 L88,69.1 L96,76.8 L104,79.2 L112,76.2 L120,70.6 L128,66.3 L136,65.6 L144,67.9 L152,70.3 L160,70.4 L168,68.1 L176,66.0 L184,67.5 L192,74.3 L200,85.0 L208,95.7 L216,102.5 L224,104.0 L232,101.9 L240,99.6 L248,99.7 L256,102.1 L264,104.4 L272,103.7 L280,99.4 L288,93.8 L296,90.8 L304,93.2 L312,100.9 L320,110.7 L328,118.5 L336,121.7 L344,121.0 L352,118.9 L360,117.9 L368,118.1 L376,117.1 L384,111.7 L392,100.4 L400,85.0 L408,69.6 L416,58.3 L424,52.9 L432,51.9 L440,52.1 L448,51.1 L456,49.0 L464,48.3 L472,51.5 L480,59.3 L488,69.1 L496,76.8 L504,79.2 L512,76.2 L520,70.6 L528,66.3 L536,65.6 L544,67.9 L552,70.3 L560,70.4 L568,68.1 L576,66.0 L584,67.5 L592,74.3 L600,85.0 L608,95.7 L616,102.5 L624,104.0 L632,101.9 L640,99.6 L648,99.7 L656,102.1 L664,104.4 L672,103.7 L680,99.4 L688,93.8 L696,90.8 L704,93.2 L712,100.9 L720,110.7 L728,118.5 L736,121.7 L744,121.0 L752,118.9 L760,117.9 L768,118.1 L776,117.1 L784,111.7 L792,100.4 L800,85.0" />
+        </svg>
+      </div>
+      <ul class="signal-specs">
+        <li><span class="spec-k">01</span><span data-i18n="homeSpec1">自包含网页，打开即玩</span></li>
+        <li><span class="spec-k">02</span><span data-i18n="homeSpec2">经控制面板同源加载，驱动本机设备</span></li>
+        <li><span class="spec-k">03</span><span data-i18n="homeSpec3">站点上新即生效，无需更新 App</span></li>
+      </ul>
+    </aside>
   </div>
 </header>
 
-<section class="section home-main">
+<main>
+<section class="home-section" id="library">
   <div class="container">
-    <div class="home-split">
-      <div class="home-col">
-        <div class="home-col-head">
-          <div>
-            <span class="tag">Library</span>
-            <h2 data-i18n="recH2">推荐游戏</h2>
-            <p data-i18n="recLead">精选玩法，完整列表在游戏页。</p>
-          </div>
-          <a class="btn btn-ghost" href="games.html" data-i18n="recAll">查看全部 →</a>
-        </div>
-        <div class="rec-grid" id="rec-grid">
-          <div class="skeleton"></div>
-          <div class="skeleton"></div>
-          <div class="skeleton"></div>
-          <div class="skeleton"></div>
-        </div>
+    <div class="section-row">
+      <div>
+        <span class="tag">01 · Library</span>
+        <h2 data-i18n="recH2">推荐游戏</h2>
+        <p data-i18n="recLead">精选玩法，完整列表在游戏页。</p>
       </div>
+      <a class="link-arrow" href="games.html" data-i18n="recAll">查看全部 →</a>
+    </div>
+    <div class="rec-grid" id="rec-grid">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </div>
+  </div>
+</section>
 
-      <div class="home-col home-col-guide">
-        <span class="tag">Submit</span>
-        <h2 data-i18n="submitGuideH2">游戏投稿说明</h2>
+<section class="home-section" id="submit">
+  <div class="container">
+    <div class="section-row">
+      <div>
+        <span class="tag">02 · Submit</span>
+        <h2 data-i18n="submitGuideH2">把你的玩法做成游戏</h2>
         <p data-i18n="submitGuideLead">不用 GitHub 也能投稿。复制 Prompt 让 AI 写游戏，上传 ZIP 或公开 Git 地址，审核通过后上架。</p>
-        <div class="tier-list">
-          <div class="tier"><span class="tier-icon">01</span><div class="tier-info"><div class="tier-name" data-i18n="submitStep1Name">用 AI 做游戏</div><div class="tier-desc" data-i18n="submitStep1Desc">复制 Prompt，交给 Claude Code / Codex 按开发规范实现</div></div></div>
-          <div class="tier"><span class="tier-icon">02</span><div class="tier-info"><div class="tier-name" data-i18n="submitStep2Name">打包并投稿</div><div class="tier-desc" data-i18n="submitStep2Desc">根目录含 index.html 与 game-manifest，打成 ZIP 或准备公开 Git 地址</div></div></div>
-          <div class="tier"><span class="tier-icon">03</span><div class="tier-info"><div class="tier-name" data-i18n="submitStep3Name">审核上架拿奖励</div><div class="tier-desc" data-i18n="submitStep3Desc">通过后玩家可直接玩；上架送硬件 + Token 套餐</div></div></div>
+      </div>
+      <a class="link-arrow" href="docs/contribute.html" data-i18n="submitRules">投稿与分成规则 →</a>
+    </div>
+    <ol class="step-row">
+      <li><span class="step-k">01</span><h3 data-i18n="submitStep1Name">用 AI 做游戏</h3><p data-i18n="submitStep1Desc">复制 Prompt，交给 Claude Code / Codex 按开发规范实现</p></li>
+      <li><span class="step-k">02</span><h3 data-i18n="submitStep2Name">打包并投稿</h3><p data-i18n="submitStep2Desc">根目录含 index.html 与 game-manifest，打成 ZIP 或准备公开 Git 地址</p></li>
+      <li><span class="step-k">03</span><h3 data-i18n="submitStep3Name">审核上架拿奖励</h3><p data-i18n="submitStep3Desc">通过后玩家可直接玩；按月结算创作者奖励金</p></li>
+    </ol>
+    <div class="submit-grid">
+      <div class="prompt-card">
+        <div class="prompt-card-head">
+          <span class="prompt-card-title"><span class="term-dots"><i></i><i></i><i></i></span>prompt.txt</span>
+          <button class="copy-btn" id="home-copy" data-copy-target="#home-prompt" data-i18n="copyPrompt">复制 Prompt</button>
         </div>
-        <div class="prompt-card">
-          <div class="prompt-card-head">
-            <span class="prompt-card-title"><span class="grad">Prompt</span></span>
-            <button class="copy-btn" id="home-copy" data-copy-target="#home-prompt" data-i18n="copyPrompt">复制 Prompt</button>
-          </div>
-          <pre id="home-prompt">你是「硅基之下」游戏库的玩法开发者。请先阅读开发规范：
+        <pre id="home-prompt">你是「硅基之下」游戏库的玩法开发者。请先阅读开发规范：
 https://game.undersilicon.cn/docs/agent-guide.html
 
 按开发规范做一个自包含游戏，游戏根目录必须包含 index.html、game-manifest 和所需资源：
 
-【玩法描述】<写清用什么设备、玩家做什么、什么条件触发反馈、如何结束>
+【玩法描述】&lt;写清用什么设备、玩家做什么、什么条件触发反馈、如何结束&gt;
 
 要求：id 使用英文 kebab-case，设备交互只走 window.DeviceAPI；
 完成后自测，并将游戏根目录打成 ZIP，或准备公开 GitHub/GitLab 仓库地址。
 打开 https://game.undersilicon.cn/submit.html 提交审核。</pre>
-        </div>
-        <div class="guide-actions">
-          <a class="btn btn-primary" href="submit.html"><span data-i18n="viewContribute">提交游戏 →</span></a>
-          <a class="btn btn-ghost" href="docs/agent-guide.html" data-i18n="agentGuide">Agent 开发指南</a>
-        </div>
+      </div>
+      <aside class="submit-side">
+        <h3 data-i18n="submitSideH">准备好了？</h3>
+        <p data-i18n="submitSideP">用控制面板 App 的邮箱账号登录，上传 ZIP 或填写公开 Git 地址。</p>
+        <a class="btn btn-primary" href="submit.html" data-i18n="viewContribute">提交游戏 →</a>
+        <a class="btn btn-ghost" href="docs/agent-guide.html" data-i18n="agentGuide">Agent 开发指南</a>
         <div class="qr-inline">
           <img src="assets/img/微信客服二维码.png" alt="微信客服二维码" data-i18n-alt="qrAlt" onerror="this.style.display='none'" />
           <div>
             <div class="qr-label" data-i18n="qrLabel">扫码加客服微信</div>
-            <div class="qr-sub" data-i18n="qrSub">投稿审核 · 套餐咨询 · 技术答疑</div>
+            <div class="qr-sub" data-i18n="qrSub">投稿审核 · 分成答疑 · 技术答疑</div>
           </div>
         </div>
-      </div>
+      </aside>
     </div>
   </div>
 </section>
+</main>
 
 <footer class="footer">
   <div class="container">
@@ -133,8 +166,9 @@ https://game.undersilicon.cn/docs/agent-guide.html
     </div>
   </div>
 </div>
-
 <script src="assets/js/i18n.js"></script>
+<script src="assets/js/platform-config.js"></script>
+<script src="assets/js/auth.js"></script>
 <script src="assets/js/play-launcher.js"></script>
 <script src="assets/js/home.js"></script>
 </body>
