@@ -68,6 +68,7 @@ const LOCK_ALLOWLIST = [
   ['GET', /^\/mqtt\/status$/],
   ['GET', /^\/mdns\/status$/],
   ['GET', /^\/voice\/status$/],
+  ['GET', /^\/voice\/phrases$/],
   ['GET', /^\/dev-access$/],
   ['GET', /^\/local-apps$/],
   ['GET', /^\/plugins$/],

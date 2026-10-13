@@ -74,3 +74,6 @@ agent/
 
 # Claude 工作区
 .worktrees/
+
+# 临时文件
+tmp/

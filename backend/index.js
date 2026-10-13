@@ -9,6 +9,7 @@ const mqttService = require('./services/mqttService');
 const mdnsService = require('./services/mdnsService');
 const logService = require('./services/logService');
 const bridgeService = require('./services/bridgeService');
+const voiceTriggerWs = require('./services/voiceTriggerWs');
 const gameService = require('./services/gameService');
 const gameCacheService = require('./services/gameCacheService');
 const localAppProcessService = require('./services/localAppProcessService');
@@ -149,6 +150,7 @@ function shutdownBackend(reason = 'backend-shutdown', {
     await remoteGameService.shutdown();
     await gameHostService.shutdown();
     await remoteProjectionService.shutdown();
+    voiceTriggerWs.closeAll();
     if (typeof beforeTransportShutdown === 'function') {
       await beforeTransportShutdown();
     }
@@ -230,6 +232,8 @@ app.use((err, req, res, next) => {
 
 const server = http.createServer(app);
 bridgeService.init(server);
+// 「语音开始」WS 与 /bridge 共用同一 server：各自 noServer，在 upgrade 里按路径分发
+voiceTriggerWs.init(server);
 server.on('listening', () => {
   startRuntimeServices();
 });

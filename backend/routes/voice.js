@@ -1,6 +1,7 @@
 const express = require('express');
 const localSession = require('../services/localSessionService');
 const voiceSettings = require('../services/voiceSettingsService');
+const phraseCatalog = require('../voice/voicePhraseCatalog');
 const { sendError } = require('../utils/http');
 
 const router = express.Router();
@@ -14,6 +15,15 @@ function requireLoopback(req, res) {
 router.get('/status', (req, res) => {
   if (!requireLoopback(req, res)) return;
   res.json(voiceSettings.status());
+});
+
+// 「语音开始」固定口令目录：前端从这里取，避免前后端各存一份定义。
+// 读接口不做回环限制（远程模式下前端也要能渲染，只是入口隐藏、后端拒连）。
+router.get('/phrases', (req, res) => {
+  res.json({
+    phrases: phraseCatalog.listPhrasesForApi(),
+    defaultId: phraseCatalog.DEFAULT_VOICE_PHRASE_ID,
+  });
 });
 
 router.post('/settings', (req, res) => {

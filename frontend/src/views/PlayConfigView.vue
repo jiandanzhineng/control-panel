@@ -389,6 +389,14 @@
           >
             {{ t('playConfig.buttonStart') }}
           </el-button>
+          <el-button
+            v-if="carrierType === 'game' && !remoteSession.isOperatorRemote.value"
+            :loading="startBusy && pendingStartMode === 'voice'"
+            :disabled="loadingAll || blocking.length > 0 || startBusy"
+            @click="openVoiceStartDialog"
+          >
+            {{ t('playConfig.voiceStart') }}
+          </el-button>
         </div>
       </div>
 
@@ -474,6 +482,83 @@
         >{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="voiceStartDialog.visible"
+      :title="t('playConfig.pickVoiceTrigger')"
+      width="480px"
+      append-to-body
+      @closed="onVoiceStartDialogClosed"
+    >
+      <p class="button-start-hint">{{ t('playConfig.pickVoiceTriggerHint') }}</p>
+      <el-form label-width="88px">
+        <el-form-item :label="t('playConfig.voicePhrase')">
+          <el-select v-model="voicePhraseId" style="width: 100%">
+            <el-option
+              v-for="p in voicePhrases"
+              :key="p.id"
+              :label="p.label"
+              :value="p.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('playConfig.voiceMic')">
+          <el-select
+            v-model="voiceMicId"
+            :placeholder="t('playConfig.pickMic')"
+            :loading="voiceMicLoading"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="m in voiceMicOptions"
+              :key="m.id"
+              :label="m.label"
+              :value="m.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('playConfig.voiceTest')">
+          <div class="start-trigger-row">
+            <el-button
+              :disabled="voiceTestStatus === 'waiting' || !voicePhraseId"
+              :loading="voiceTestStatus === 'waiting'"
+              @click="testVoicePhrase"
+            >{{ t('playConfig.sayOnce') }}</el-button>
+            <el-tag v-if="voiceTestStatus === 'ok'" type="success" size="small">{{ t('playConfig.voiceHeard') }}</el-tag>
+            <el-tag v-else-if="voiceTestStatus === 'fail'" type="danger" size="small">{{ t('playConfig.voiceNotHeard') }}</el-tag>
+            <el-tag v-else-if="voiceTestStatus === 'waiting'" type="warning" size="small">{{ t('playConfig.voiceListening') }}</el-tag>
+          </div>
+        </el-form-item>
+        <el-form-item v-if="voiceTestStatus === 'waiting' || voiceLevel > 0" :label="t('playConfig.voiceLevel')">
+          <div class="voice-level-track">
+            <div class="voice-level-bar" :style="{ width: `${Math.round(voiceLevel * 100)}%` }"></div>
+          </div>
+        </el-form-item>
+      </el-form>
+      <el-alert
+        v-if="voiceDialogError"
+        :title="voiceDialogError"
+        type="error"
+        :closable="false"
+        show-icon
+      />
+      <el-alert
+        v-else-if="voiceMicOptions.length <= 1 && !voiceMicLoading"
+        :title="t('playConfig.noMicDevice')"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+      <template #footer>
+        <el-button @click="closeVoiceStartDialog">{{ t('common.cancel') }}</el-button>
+        <el-button
+          type="primary"
+          :loading="startBusy"
+          :disabled="!canConfirmVoiceStart"
+          @click="confirmVoiceStart"
+        >{{ t('common.confirm') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -486,6 +571,14 @@ import { mappedDeviceCount, mappedDeviceMacs, mappedDeviceTypes, mappedRoles } f
 import { setActivePlay } from '../composables/useActivePlay';
 import { isHostRuntime, requestGameStart } from '../play/launchGame';
 import { listenDeviceButtonPress } from '../composables/useButtonStart';
+import {
+  DEFAULT_MIC_ID,
+  fetchVoicePhrases,
+  listenVoicePhrase,
+  listMicrophones,
+  type MicOption,
+} from '../composables/useVoiceStart';
+import { resolveMicId, voiceErrorKey } from '../play/voiceStart';
 import { useRemoteSession } from '../composables/useRemoteSession';
 import { friendlyMessage } from '../api/errorMessage';
 import { needsFrontendOccupy } from '../remote/remotePlay';
@@ -585,8 +678,20 @@ const parameters = reactive<Record<string, any>>({});
 const startTriggerDeviceId = ref('');
 const triggerTestStatus = ref<'idle' | 'waiting' | 'ok' | 'fail'>('idle');
 let triggerTestCloser: null | (() => void) = null;
-const pendingStartMode = ref<'immediate' | 'button' | null>(null);
+const pendingStartMode = ref<'immediate' | 'button' | 'voice' | null>(null);
 const buttonStartDialog = reactive({ visible: false });
+
+// 语音开始：口令来自后端固定目录，麦克风来自 enumerateDevices，测试通过才能确认。
+const voiceStartDialog = reactive({ visible: false });
+const voicePhrases = ref<Array<{ id: string; label: string; default: boolean }>>([]);
+const voicePhraseId = ref('');
+const voiceMicId = ref(DEFAULT_MIC_ID);
+const voiceMicOptions = ref<MicOption[]>([{ id: DEFAULT_MIC_ID, label: '' }]);
+const voiceMicLoading = ref(false);
+const voiceTestStatus = ref<'idle' | 'waiting' | 'ok' | 'fail'>('idle');
+const voiceLevel = ref(0);
+const voiceDialogError = ref('');
+let voiceTestCloser: null | (() => void) = null;
 
 const isMobile = ref(window.innerWidth <= 768);
 function onResize() { isMobile.value = window.innerWidth <= 768; }
@@ -829,6 +934,118 @@ const canConfirmButtonStart = computed(() => {
   return !!startTriggerDeviceId.value && triggerTestStatus.value === 'ok' && buttonInputDevices.value.length > 0 && !startBusy.value;
 });
 
+// ---------- 语音开始 ----------
+
+const voicePhraseLabel = computed(() => {
+  const found = voicePhrases.value.find((p) => p.id === voicePhraseId.value);
+  return found?.label || '';
+});
+
+function stopVoiceTest() {
+  if (voiceTestCloser) {
+    voiceTestCloser();
+    voiceTestCloser = null;
+  }
+}
+
+function resetVoiceTest() {
+  stopVoiceTest();
+  voiceTestStatus.value = 'idle';
+  voiceLevel.value = 0;
+}
+
+function voiceErrorMessage(error: any): string {
+  return t(voiceErrorKey(error?.code || error?.name));
+}
+
+async function loadVoicePhrases() {
+  if (voicePhrases.value.length > 0) return;
+  try {
+    const list = await fetchVoicePhrases();
+    voicePhrases.value = list;
+    if (!voicePhraseId.value || !list.some((p) => p.id === voicePhraseId.value)) {
+      voicePhraseId.value = list.find((p) => p.default)?.id || list[0]?.id || '';
+    }
+  } catch (e: any) {
+    voiceDialogError.value = voiceErrorMessage(e);
+  }
+}
+
+async function loadVoiceMics() {
+  voiceMicLoading.value = true;
+  try {
+    const list = await listMicrophones(t('playConfig.micDefault'));
+    voiceMicOptions.value = list;
+    voiceMicId.value = resolveMicId(voiceMicId.value, list);
+    voiceDialogError.value = '';
+  } catch (e: any) {
+    voiceDialogError.value = voiceErrorMessage(e);
+  } finally {
+    voiceMicLoading.value = false;
+  }
+}
+
+function testVoicePhrase() {
+  if (!voicePhraseId.value) return;
+  resetVoiceTest();
+  voiceDialogError.value = '';
+  voiceTestStatus.value = 'waiting';
+  voiceTestCloser = listenVoicePhrase({
+    phraseId: voicePhraseId.value,
+    micDeviceId: voiceMicId.value,
+    onDetected: () => {
+      voiceTestStatus.value = 'ok';
+      voiceTestCloser = null;
+    },
+    onLevel: (level) => { voiceLevel.value = level; },
+    onError: (error) => {
+      voiceTestStatus.value = 'fail';
+      voiceDialogError.value = voiceErrorMessage(error);
+      voiceTestCloser = null;
+    },
+    onTimeout: () => {
+      voiceTestStatus.value = 'fail';
+      voiceTestCloser = null;
+    },
+    timeoutMs: 15000,
+  });
+}
+
+const canConfirmVoiceStart = computed(() => {
+  return !!voicePhraseId.value && voiceTestStatus.value === 'ok' && !startBusy.value;
+});
+
+async function openVoiceStartDialog() {
+  startError.value = '';
+  if (loadingAll.value) {
+    startError.value = t('playConfig.loadingPlay');
+    return;
+  }
+  if (blocking.value.length > 0) {
+    startError.value = t('playConfig.hasBlocking');
+    return;
+  }
+  voiceDialogError.value = '';
+  resetVoiceTest();
+  voiceStartDialog.visible = true;
+  await Promise.all([loadVoicePhrases(), loadVoiceMics()]);
+}
+
+function closeVoiceStartDialog() {
+  voiceStartDialog.visible = false;
+}
+
+function onVoiceStartDialogClosed() {
+  resetVoiceTest();
+  voiceDialogError.value = '';
+}
+
+async function confirmVoiceStart() {
+  if (!canConfirmVoiceStart.value) return;
+  await start(false, 'voice');
+  if (!startError.value) closeVoiceStartDialog();
+}
+
 function buildDefaultParameters(meta: any) {
   const defaults: Record<string, any> = {};
   if (Array.isArray(meta?.params)) {
@@ -893,6 +1110,8 @@ function loadSavedConfig(): {
   deviceMap?: Record<string, string[]>;
   params?: Record<string, any>;
   startTriggerDeviceId?: string;
+  voicePhraseId?: string;
+  voiceMicId?: string;
 } | null {
   try {
     const raw = localStorage.getItem(storageKey());
@@ -908,6 +1127,8 @@ function saveConfig() {
       deviceMap: { ...deviceMapping },
       params: { ...parameters },
       startTriggerDeviceId: startTriggerDeviceId.value,
+      voicePhraseId: voicePhraseId.value,
+      voiceMicId: voiceMicId.value,
     }));
   } catch (_) {}
 }
@@ -1078,6 +1299,11 @@ async function loadAll() {
     startTriggerDeviceId.value = buttonInputDevices.value.some((d) => d.id === savedTrigger)
       ? savedTrigger
       : pickDefaultTriggerDeviceId();
+
+    const savedPhrase = String(saved?.voicePhraseId || '');
+    if (savedPhrase) voicePhraseId.value = savedPhrase;
+    const savedMic = String(saved?.voiceMicId || '');
+    if (savedMic) voiceMicId.value = savedMic;
   } catch (e: any) {
     error.value = e?.message || t('playConfig.loadFailed');
   } finally {
@@ -1261,7 +1487,7 @@ async function occupyRemotePlayIfNeeded(): Promise<boolean> {
   }
 }
 
-async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate') {
+async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'immediate') {
   startError.value = '';
   pendingStartMode.value = mode;
   // meta/设备列表还在加载时禁止启动：此时 play 为空，会以空 deviceMap/params 启动，
@@ -1283,6 +1509,18 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
       return;
     }
     if (triggerTestStatus.value !== 'ok') {
+      startError.value = t('playConfig.testFirst');
+      pendingStartMode.value = null;
+      return;
+    }
+  }
+  if (mode === 'voice') {
+    if (!voicePhraseId.value) {
+      startError.value = t('playConfig.pickVoicePhraseFirst');
+      pendingStartMode.value = null;
+      return;
+    }
+    if (voiceTestStatus.value !== 'ok') {
       startError.value = t('playConfig.testFirst');
       pendingStartMode.value = null;
       return;
@@ -1324,7 +1562,7 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
         playId.value,
         { ...deviceMapping },
         { ...parameters },
-        mode === 'button',
+        mode !== 'immediate',
         {
           gamePath: installedGamePath || (play.value as any)?.gamePath || String(route.query.gamePath || ''),
           externalUrl,
@@ -1341,6 +1579,11 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
           hostQuery.deviceMap = JSON.stringify({ ...deviceMapping });
           hostQuery.params = JSON.stringify({ ...parameters });
           if (startTriggerDeviceId.value) hostQuery.startTriggerDeviceId = startTriggerDeviceId.value;
+          if (mode === 'voice') {
+            hostQuery.voicePhraseId = voicePhraseId.value;
+            hostQuery.voicePhraseLabel = voicePhraseLabel.value;
+            hostQuery.voiceMicId = voiceMicId.value;
+          }
         }
         setActivePlay({ carrierType: 'game', id: playId.value, title: playTitle, resume: { name: 'game_runtime', query: hostQuery } });
         router.push({ name: 'game_runtime', query: hostQuery });
@@ -1359,6 +1602,11 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
       if (mode === 'button' && startTriggerDeviceId.value) {
         resumeQuery.startMode = 'button';
         resumeQuery.startTriggerDeviceId = startTriggerDeviceId.value;
+      } else if (mode === 'voice' && voicePhraseId.value) {
+        resumeQuery.startMode = 'voice';
+        resumeQuery.voicePhraseId = voicePhraseId.value;
+        resumeQuery.voicePhraseLabel = voicePhraseLabel.value;
+        resumeQuery.voiceMicId = voiceMicId.value;
       }
       setActivePlay({ carrierType: 'game', id: playId.value, title: playTitle, resume: { name: 'game_current', query: resumeQuery } });
       router.push({ name: 'game_current', query: resumeQuery });
@@ -1450,6 +1698,7 @@ watch(locale, () => { void loadAll().then(() => recomputeBlocking()); });
 onUnmounted(() => {
   window.removeEventListener('resize', onResize);
   stopTriggerTest();
+  stopVoiceTest();
 });
 </script>
 
@@ -1703,6 +1952,22 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* 语音测试的音量条：宽度按实时响度走，给用户「麦克风在工作」的反馈。 */
+.voice-level-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.voice-level-bar {
+  height: 100%;
+  border-radius: 4px;
+  background: #409eff;
+  transition: width .08s linear;
 }
 
 .action-buttons {

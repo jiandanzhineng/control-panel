@@ -914,6 +914,19 @@ function startFrontendServer(callback) {
     },
   });
   frontendApp.use('/bridge', bridgeWsProxy);
+
+  // 语音开始 WS 转发：与 /bridge 同规则（upgrade 里直接 .upgrade()，不加 pathRewrite）。
+  const voiceTriggerWsProxy = createProxyMiddleware({
+    target: backendTarget,
+    changeOrigin: true,
+    ws: true,
+    on: {
+      proxyReqWs(proxyReq) {
+        proxyReq.setHeader(BRIDGE_INTERNAL_HEADER, '1');
+      },
+    },
+  });
+  frontendApp.use('/voice-trigger', voiceTriggerWsProxy);
   
   frontendApp.use(express.static(distPath));
   frontendApp.get('/*path', (req, res) => {
@@ -927,10 +940,14 @@ function startFrontendServer(callback) {
     console.log(`[electron] frontend server started: ${process.env.FRONTEND_URL}`);
     callback();
   });
-  // 将 /bridge 的 WebSocket 升级请求转发到后端
+  // 将 /bridge 与 /voice-trigger 的 WebSocket 升级请求转发到后端
   frontendServer.on('upgrade', (req, socket, head) => {
     if (req.url && req.url.startsWith('/bridge')) {
       bridgeWsProxy.upgrade(req, socket, head);
+      return;
+    }
+    if (req.url && req.url.startsWith('/voice-trigger')) {
+      voiceTriggerWsProxy.upgrade(req, socket, head);
     }
   });
 }

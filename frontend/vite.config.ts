@@ -69,6 +69,17 @@ export default defineConfig(({ command }) => {
             })
           },
         },
+        // 语音开始：前端采集的 PCM 经 WS 发到后端做关键词检测
+        '/voice-trigger': {
+          target: apiProxyTarget,
+          changeOrigin: true,
+          ws: true,
+          configure: (proxy) => {
+            proxy.on('proxyReqWs', (proxyReq) => {
+              proxyReq.setHeader(BRIDGE_INTERNAL_HEADER, '1')
+            })
+          },
+        },
       }
     },
   }
