@@ -24,7 +24,7 @@
     <div v-else-if="waitingForVoice" class="wait-overlay">
       <div class="wait-card">
         <h2>{{ t('gameRun.soon') }}</h2>
-        <p class="wait-desc">{{ t('gameRun.sayToStart', { phrase: voicePhraseLabel }) }}</p>
+        <p class="wait-desc">{{ t('gameRun.sayToStart', { phrase: voicePhraseText }) }}</p>
         <p class="wait-hint">{{ voiceError || t('gameRun.afterStart') }}</p>
         <div class="voice-level-track">
           <div class="voice-level-bar" :style="{ width: `${Math.round(voiceLevel * 100)}%` }"></div>
@@ -67,11 +67,10 @@ const stopping = ref(false);
 const triggerId = String(route.query.startTriggerDeviceId || '');
 const waitingForButton = ref(String(route.query.startMode || '') === 'button' && !!triggerId);
 const triggerLabel = ref('');
-// 语音开始：口令来自配置页，识别到即开始（不加倒计时）
-const voicePhraseId = String(route.query.voicePhraseId || '');
-const voicePhraseLabel = ref(String(route.query.voicePhraseLabel || '') || t('playConfig.voiceStart'));
+// 语音开始：口令目录里的口令全都生效，识别到任意一条即开始（不加倒计时）
+const voicePhraseText = ref(String(route.query.voicePhraseLabel || '') || t('playConfig.voiceStart'));
 const voiceMicId = String(route.query.voiceMicId || '') || DEFAULT_MIC_ID;
-const waitingForVoice = ref(String(route.query.startMode || '') === 'voice' && !!voicePhraseId);
+const waitingForVoice = ref(String(route.query.startMode || '') === 'voice');
 const voiceLevel = ref(0);
 const voiceError = ref('');
 let stopped = false;
@@ -169,7 +168,6 @@ function startVoiceWaiting() {
   waitingForVoice.value = true;
   voiceError.value = '';
   stopWait = listenVoicePhrase({
-    phraseId: voicePhraseId,
     micDeviceId: voiceMicId,
     onDetected: () => { beginGame(); },
     onLevel: (level) => { voiceLevel.value = level; },

@@ -6,9 +6,9 @@ import {
   buildMicOptions,
   buildVoiceTriggerUrl,
   frameLevel,
+  joinPhraseLabels,
   micConstraintsFor,
   resolveMicId,
-  resolvePhraseId,
   smoothLevel,
   voiceErrorKey,
 } from '../src/play/voiceStart.ts'
@@ -50,15 +50,11 @@ test('micConstraintsFor leaves the default device to the browser', () => {
   assert.deepEqual(micConstraintsFor('mic-1'), { deviceId: { exact: 'mic-1' } })
 })
 
-test('buildVoiceTriggerUrl follows the page origin and encodes the phrase id', () => {
-  assert.equal(
-    buildVoiceTriggerUrl('http://127.0.0.1:5277', 'start_game'),
-    'ws://127.0.0.1:5277/voice-trigger?phrase=start_game',
-  )
-  assert.equal(
-    buildVoiceTriggerUrl('https://example.com', 'a b'),
-    'wss://example.com/voice-trigger?phrase=a%20b',
-  )
+test('buildVoiceTriggerUrl follows the page origin and carries no phrase', () => {
+  // 口令不用选：目录里的口令全都生效，URL 上不带 phrase
+  assert.equal(buildVoiceTriggerUrl('http://127.0.0.1:5277'), 'ws://127.0.0.1:5277/voice-trigger')
+  assert.equal(buildVoiceTriggerUrl('https://example.com'), 'wss://example.com/voice-trigger')
+  assert.equal(buildVoiceTriggerUrl(''), '/voice-trigger')
 })
 
 test('frameLevel maps silence to 0 and loud input to 1', () => {
@@ -91,15 +87,12 @@ const PHRASES = [
   { id: 'start_the_game', label: 'start the game', default: false },
 ]
 
-test('resolvePhraseId keeps a saved phrase that is still in the catalog', () => {
-  assert.equal(resolvePhraseId('start_the_game', PHRASES), 'start_the_game')
-})
-
-test('resolvePhraseId falls back to the default for removed or missing ids', () => {
-  // 口令目录换过之后，localStorage 里可能还留着已删除的 id
-  assert.equal(resolvePhraseId('start_challenge', PHRASES), 'start_game')
-  assert.equal(resolvePhraseId('launch_game', PHRASES), 'start_game')
-  assert.equal(resolvePhraseId('', PHRASES), 'start_game')
-  assert.equal(resolvePhraseId(null, PHRASES), 'start_game')
-  assert.equal(resolvePhraseId(undefined, PHRASES), 'start_game')
+test('joinPhraseLabels lists every phrase so the hint can say "any of"', () => {
+  assert.equal(joinPhraseLabels(PHRASES), '「开始游戏」或「start the game」')
+  assert.equal(joinPhraseLabels([{ label: '开始游戏' }]), '「开始游戏」')
+  assert.equal(joinPhraseLabels([]), '')
+  assert.equal(joinPhraseLabels(null), '')
+  assert.equal(joinPhraseLabels(undefined), '')
+  // 空标签与空白标签都跳过，避免出现「」这种空引用
+  assert.equal(joinPhraseLabels([{ label: '  ' }, { label: '开始游戏' }]), '「开始游戏」')
 })

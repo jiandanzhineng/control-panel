@@ -19,7 +19,6 @@ export { DEFAULT_MIC_ID }
 export type { MicOption, VoicePhrase }
 
 export interface ListenVoiceOptions {
-  phraseId: string
   micDeviceId: string
   onDetected: (phrase: { id: string; label: string }) => void
   onLevel?: (level: number) => void
@@ -63,7 +62,6 @@ export async function fetchVoicePhrases(): Promise<VoicePhrase[]> {
  */
 export function listenVoicePhrase(options: ListenVoiceOptions): () => void {
   const {
-    phraseId,
     micDeviceId = DEFAULT_MIC_ID,
     onDetected,
     onLevel,
@@ -146,7 +144,7 @@ export function listenVoicePhrase(options: ListenVoiceOptions): () => void {
     }
 
     try {
-      ws = new WebSocket(buildVoiceTriggerUrl(window.location.origin, phraseId))
+      ws = new WebSocket(buildVoiceTriggerUrl(window.location.origin))
     } catch (error: any) {
       fail(makeError(error?.message || '无法连接语音识别服务', 'WebSocketError'))
       return

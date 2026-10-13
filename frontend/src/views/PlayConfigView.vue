@@ -491,20 +491,9 @@
       @closed="onVoiceStartDialogClosed"
     >
       <p class="button-start-hint">{{ t('playConfig.pickVoiceTriggerHint') }}</p>
+      <!-- 口令不用选：目录里的口令全都生效，说中哪条都开始 -->
+      <p class="voice-phrase-list">{{ t('playConfig.voicePhrasesAny', { phrases: voicePhraseText }) }}</p>
       <el-form label-width="88px">
-        <el-form-item :label="t('playConfig.voicePhrase')">
-          <!-- 同上：挂弹窗内，避免被后加的 el-overlay 盖住 -->
-          <el-select v-model="voicePhraseId" :teleported="false" style="width: 100%">
-            <el-option
-              v-for="p in voicePhrases"
-              :key="p.id"
-              :label="p.label"
-              :value="p.id"
-            />
-          </el-select>
-        </el-form-item>
-        <!-- 中英两个口令混在一个模型里，说明各用自己的语言念 -->
-        <p class="voice-phrase-hint">{{ t('playConfig.voicePhraseLangHint') }}</p>
         <el-form-item :label="t('playConfig.voiceMic')">
           <!-- 挂到弹窗内：默认挂 body 时，弹层会被后加的 el-overlay 压住，
                虽然能点但看不见（真机第一次打开列表就是空白的）。 -->
@@ -526,7 +515,7 @@
         <el-form-item :label="t('playConfig.voiceTest')">
           <div class="start-trigger-row">
             <el-button
-              :disabled="voiceTestStatus === 'waiting' || !voicePhraseId"
+              :disabled="voiceTestStatus === 'waiting'"
               :loading="voiceTestStatus === 'waiting'"
               @click="testVoicePhrase"
             >{{ t('playConfig.sayOnce') }}</el-button>
@@ -584,7 +573,7 @@ import {
   listMicrophones,
   type MicOption,
 } from '../composables/useVoiceStart';
-import { resolveMicId, resolvePhraseId, voiceErrorKey } from '../play/voiceStart';
+import { joinPhraseLabels, resolveMicId, voiceErrorKey } from '../play/voiceStart';
 import { useRemoteSession } from '../composables/useRemoteSession';
 import { friendlyMessage } from '../api/errorMessage';
 import { needsFrontendOccupy } from '../remote/remotePlay';
@@ -690,7 +679,7 @@ const buttonStartDialog = reactive({ visible: false });
 // 语音开始：口令来自后端固定目录，麦克风来自 enumerateDevices，测试通过才能确认。
 const voiceStartDialog = reactive({ visible: false });
 const voicePhrases = ref<Array<{ id: string; label: string; default: boolean }>>([]);
-const voicePhraseId = ref('');
+
 const voiceMicId = ref(DEFAULT_MIC_ID);
 const voiceMicOptions = ref<MicOption[]>([{ id: DEFAULT_MIC_ID, label: '' }]);
 const voiceMicLoading = ref(false);
@@ -942,10 +931,8 @@ const canConfirmButtonStart = computed(() => {
 
 // ---------- 语音开始 ----------
 
-const voicePhraseLabel = computed(() => {
-  const found = voicePhrases.value.find((p) => p.id === voicePhraseId.value);
-  return found?.label || '';
-});
+// 弹窗里展示「说哪条都行」，进等待页时也用它提示
+const voicePhraseText = computed(() => joinPhraseLabels(voicePhrases.value));
 
 function stopVoiceTest() {
   if (voiceTestCloser) {
@@ -967,11 +954,7 @@ function voiceErrorMessage(error: any): string {
 async function loadVoicePhrases() {
   if (voicePhrases.value.length > 0) return;
   try {
-    const list = await fetchVoicePhrases();
-    voicePhrases.value = list;
-    // localStorage 里可能存着已删除的口令 id（start_challenge / launch_game），
-    // 或本次是新装：统一回退到目录里的默认口令。
-    voicePhraseId.value = resolvePhraseId(voicePhraseId.value, list);
+    voicePhrases.value = await fetchVoicePhrases();
   } catch (e: any) {
     voiceDialogError.value = voiceErrorMessage(e);
   }
@@ -992,12 +975,10 @@ async function loadVoiceMics() {
 }
 
 function testVoicePhrase() {
-  if (!voicePhraseId.value) return;
   resetVoiceTest();
   voiceDialogError.value = '';
   voiceTestStatus.value = 'waiting';
   voiceTestCloser = listenVoicePhrase({
-    phraseId: voicePhraseId.value,
     micDeviceId: voiceMicId.value,
     onDetected: () => {
       voiceTestStatus.value = 'ok';
@@ -1018,7 +999,7 @@ function testVoicePhrase() {
 }
 
 const canConfirmVoiceStart = computed(() => {
-  return !!voicePhraseId.value && voiceTestStatus.value === 'ok' && !startBusy.value;
+  return voiceTestStatus.value === 'ok' && !startBusy.value;
 });
 
 async function openVoiceStartDialog() {
@@ -1116,7 +1097,6 @@ function loadSavedConfig(): {
   deviceMap?: Record<string, string[]>;
   params?: Record<string, any>;
   startTriggerDeviceId?: string;
-  voicePhraseId?: string;
   voiceMicId?: string;
 } | null {
   try {
@@ -1133,7 +1113,6 @@ function saveConfig() {
       deviceMap: { ...deviceMapping },
       params: { ...parameters },
       startTriggerDeviceId: startTriggerDeviceId.value,
-      voicePhraseId: voicePhraseId.value,
       voiceMicId: voiceMicId.value,
     }));
   } catch (_) {}
@@ -1306,9 +1285,7 @@ async function loadAll() {
       ? savedTrigger
       : pickDefaultTriggerDeviceId();
 
-    const savedPhrase = String(saved?.voicePhraseId || '');
-    // 口令目录可能已经换过：旧 id 先记下来，等口令列表拉到后校验
-    if (savedPhrase) voicePhraseId.value = savedPhrase;
+    // 口令不再需要保存/回填：目录里的口令全都生效
     const savedMic = String(saved?.voiceMicId || '');
     if (savedMic) voiceMicId.value = savedMic;
   } catch (e: any) {
@@ -1522,11 +1499,6 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
     }
   }
   if (mode === 'voice') {
-    if (!voicePhraseId.value) {
-      startError.value = t('playConfig.pickVoicePhraseFirst');
-      pendingStartMode.value = null;
-      return;
-    }
     if (voiceTestStatus.value !== 'ok') {
       startError.value = t('playConfig.testFirst');
       pendingStartMode.value = null;
@@ -1587,8 +1559,7 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
           hostQuery.params = JSON.stringify({ ...parameters });
           if (startTriggerDeviceId.value) hostQuery.startTriggerDeviceId = startTriggerDeviceId.value;
           if (mode === 'voice') {
-            hostQuery.voicePhraseId = voicePhraseId.value;
-            hostQuery.voicePhraseLabel = voicePhraseLabel.value;
+            hostQuery.voicePhraseLabel = voicePhraseText.value;
             hostQuery.voiceMicId = voiceMicId.value;
           }
         }
@@ -1609,10 +1580,9 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
       if (mode === 'button' && startTriggerDeviceId.value) {
         resumeQuery.startMode = 'button';
         resumeQuery.startTriggerDeviceId = startTriggerDeviceId.value;
-      } else if (mode === 'voice' && voicePhraseId.value) {
+      } else if (mode === 'voice') {
         resumeQuery.startMode = 'voice';
-        resumeQuery.voicePhraseId = voicePhraseId.value;
-        resumeQuery.voicePhraseLabel = voicePhraseLabel.value;
+        resumeQuery.voicePhraseLabel = voicePhraseText.value;
         resumeQuery.voiceMicId = voiceMicId.value;
       }
       setActivePlay({ carrierType: 'game', id: playId.value, title: playTitle, resume: { name: 'game_current', query: resumeQuery } });
@@ -2003,12 +1973,13 @@ onUnmounted(() => {
   white-space: pre-line;
 }
 
-.voice-phrase-hint {
-  margin: -8px 0 16px;
-  padding-left: 88px;
+.voice-phrase-list {
+  margin: 0 0 16px;
+  padding: 10px 12px;
   line-height: 1.6;
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
+  border-radius: 6px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
 }
 
 @media (max-width: 768px) {

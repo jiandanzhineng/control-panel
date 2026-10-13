@@ -8,13 +8,6 @@ export interface MicOption {
   label: string
 }
 
-/** 后端口令目录返回的一项（前端不做自定义输入）。 */
-export interface VoicePhrase {
-  id: string
-  label: string
-  default: boolean
-}
-
 /** 麦克风列表：始终带上「系统默认」在最前，后面接真实设备（按 id 去重）。 */
 export function buildMicOptions(devices: Array<{ deviceId?: string; kind?: string; label?: string }> | null | undefined, defaultLabel: string): MicOption[] {
   const list: MicOption[] = [{ id: DEFAULT_MIC_ID, label: defaultLabel }]
@@ -44,10 +37,13 @@ export function micConstraintsFor(micId: string): MediaTrackConstraints {
   return { deviceId: { exact: id } }
 }
 
-/** 语音触发 WS 地址：跟随页面 origin（dev 走 vite 代理，打包走 Electron 的 5277 代理）。 */
-export function buildVoiceTriggerUrl(origin: string, phraseId: string): string {
+/**
+ * 语音触发 WS 地址：跟随页面 origin（dev 走 vite 代理，打包走 Electron 的 5277 代理）。
+ * 不再带口令参数——目录里的口令全都生效，命中哪条由后端回哪条。
+ */
+export function buildVoiceTriggerUrl(origin: string): string {
   const base = String(origin || '').replace(/^http/, 'ws')
-  return `${base}/voice-trigger?phrase=${encodeURIComponent(String(phraseId || ''))}`
+  return `${base}/voice-trigger`
 }
 
 /** 一帧 PCM 的响度（0~1，供音量条用）。RMS 开方后按 0.25 归一，日常说话约 0.2~0.6。 */
@@ -66,11 +62,10 @@ export function smoothLevel(previous: number, next: number, weight = 0.35): numb
   return prev * (1 - weight) + value * weight
 }
 
-/** 已保存的口令 id 还在不在（口令目录换过之后 localStorage 里可能留着旧 id）。 */
-export function resolvePhraseId(saved: string | null | undefined, phrases: VoicePhrase[]): string {
-  const id = String(saved || '')
-  if (id && phrases.some((phrase) => phrase.id === id)) return id
-  return phrases.find((phrase) => phrase.default)?.id || phrases[0]?.id || ''
+/** 口令列表拼成人话：「开始游戏」或 start the game。 */
+export function joinPhraseLabels(phrases: Array<{ label?: string }> | null | undefined): string {
+  const labels = (phrases || []).map((p) => String(p?.label || '').trim()).filter(Boolean)
+  return labels.map((label) => `「${label}」`).join('或')
 }
 
 /** 后端/浏览器错误 → 中文提示用的 i18n key。 */

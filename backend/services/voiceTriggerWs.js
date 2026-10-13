@@ -1,14 +1,17 @@
-// 「语音开始」WebSocket 端点：/voice-trigger?phrase=<id>
+// 「语音开始」WebSocket 端点：/voice-trigger
 //
 // 与 bridge 共用同一个 http server，因此也复用 bridge 的访问控制规则
 // （只放行本机来源）并在 server 的 upgrade 事件里按路径分发——两个带 path 的
 // WebSocketServer 会互相 abortHandshake(400)，必须 noServer（见 bridgeService.init）。
 //
 // 协议：
-//   连上 → 服务端发 {"type":"ready"}
+//   连上 → 服务端发 {"type":"ready","phrases":[{"id":"start_game","label":"开始游戏"}]}
 //   收到前端二进制 16kHz 单声道 Float32 PCM 帧 → 检测
-//   检测到 → 服务端发 {"type":"detected","phrase":"开始游戏"}
+//   检测到 → 服务端发 {"type":"detected","phrase":"开始游戏","phraseId":"start_game"}
 //   出错 → 服务端发 {"type":"error","message":"..."} 并关闭
+//
+// 用户不需要选口令：目录里的口令全都生效，命中哪条就回哪条（模型一次装全部口令，
+// KeywordSpotter 不支持按流换词，因此这里不做过滤）。
 // 远程会话（主控端远程模式）期间拒绝连接：本机麦克风与识别不参与远控。
 const { WebSocketServer } = require('ws');
 const logService = require('./logService');
@@ -31,15 +34,6 @@ function isVoiceTriggerUpgradePath(url) {
   return pathname === VOICE_TRIGGER_PATH;
 }
 
-function parsePhraseId(url) {
-  try {
-    const parsed = new URL(String(url || ''), 'http://127.0.0.1');
-    return parsed.searchParams.get('phrase') || '';
-  } catch (_) {
-    return '';
-  }
-}
-
 function sendJson(ws, payload) {
   if (ws.readyState === 1) ws.send(JSON.stringify(payload));
 }
@@ -51,13 +45,6 @@ function handleConnection(ws, req) {
     ws.close();
     return;
   }
-
-  const requested = parsePhraseId(req?.url);
-  const phrase = phraseCatalog.getPhrase(requested) || phraseCatalog.getDefaultPhrase();
-
-  // 模型一次装全部口令（KeywordSpotter 不支持按流换词），所以这里拿到的命中可能是
-  // 另一个口令；只回本连接选定的那个，避免「选了英文口令却被中文口令触发」。
-  const wanted = phrase.label;
 
   let session = null;
   let closed = false;
@@ -77,7 +64,7 @@ function handleConnection(ws, req) {
   voiceTrigger.createSession().then((created) => {
     if (closed) { created.close(); return; }
     session = created;
-    sendJson(ws, { type: 'ready', phrase: { id: phrase.id, label: phrase.label } });
+    sendJson(ws, { type: 'ready', phrases: phraseCatalog.listPhrasesForApi() });
   }).catch((error) => {
     logService.warn('VoiceTrigger', `识别流创建失败：${error?.message || error}`);
     sendJson(ws, { type: 'error', code: 'MODEL_UNAVAILABLE', message: '语音模型不可用' });
@@ -94,7 +81,7 @@ function handleConnection(ws, req) {
     const samples = new Float32Array(aligned.buffer, aligned.byteOffset, Math.floor(aligned.length / 4));
     try {
       const hit = session.accept(samples);
-      if (hit && hit.label === wanted) {
+      if (hit) {
         sendJson(ws, { type: 'detected', phrase: hit.label, phraseId: hit.id });
         ws.close();
       }
@@ -135,7 +122,6 @@ function closeAll() {
 module.exports = {
   VOICE_TRIGGER_PATH,
   isVoiceTriggerUpgradePath,
-  parsePhraseId,
   init,
   closeAll,
 };

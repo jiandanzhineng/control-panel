@@ -6,7 +6,7 @@
       </div>
       <div v-if="waiting" class="wait-card">
         <span class="eyebrow">{{ gameTitle }}</span>
-        <h2 v-if="voiceWaiting">{{ t('gameRun.sayToStart', { phrase: voicePhraseLabel }) }}</h2>
+        <h2 v-if="voiceWaiting">{{ t('gameRun.sayToStart', { phrase: voicePhraseText }) }}</h2>
         <h2 v-else>{{ t('gameRuntime.waitingButton') }}</h2>
         <p v-if="voiceWaiting && voiceError" class="wait-error">{{ voiceError }}</p>
         <div v-if="voiceWaiting" class="voice-level-track">
@@ -93,7 +93,7 @@ const stopping = ref(false)
 const voiceWaiting = ref(false)
 const voiceLevel = ref(0)
 const voiceError = ref('')
-const voicePhraseLabel = ref('')
+const voicePhraseText = ref('')
 // 等待页顶部标题：用宿主游戏清单里的标题（query 只有 id）。原来的固定文案
 // 会把任何托管游戏都写成「气压突变寸止」。
 const hostTitle = ref('')
@@ -221,9 +221,8 @@ function cancelWait() {
 function startVoiceWaiting() {
   voiceWaiting.value = true
   voiceError.value = ''
-  voicePhraseLabel.value = String(route.query.voicePhraseLabel || '') || t('playConfig.voiceStart')
+  voicePhraseText.value = String(route.query.voicePhraseLabel || '') || t('playConfig.voiceStart')
   stopWait = listenVoicePhrase({
-    phraseId: String(route.query.voicePhraseId || ''),
     micDeviceId: String(route.query.voiceMicId || '') || DEFAULT_MIC_ID,
     onDetected: () => { void beginDeferred() },
     onLevel: (level) => { voiceLevel.value = level },
@@ -233,7 +232,7 @@ function startVoiceWaiting() {
 
 onMounted(async () => {
   if (props.source !== 'local') return
-  if (String(route.query.startMode || '') === 'voice' && String(route.query.voicePhraseId || '')) {
+  if (String(route.query.startMode || '') === 'voice') {
     const games = await listHostGames().catch(() => [])
     const id = String(route.query.id || games[0]?.id || '')
     const found: any = games.find((game: any) => game.id === id)

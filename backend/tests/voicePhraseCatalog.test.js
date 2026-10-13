@@ -12,7 +12,7 @@ describe('voice phrase catalog', () => {
     }
   });
 
-  it('resolves a phrase by id and falls back to the default', () => {
+  it('resolves a phrase by id and falls back to the default (used for the API echo)', () => {
     expect(catalog.getPhrase('start_the_game').label).toBe('start the game');
     expect(catalog.getPhrase('nope')).toBeNull();
     expect(catalog.getPhrase('')).toBeNull();

@@ -1,4 +1,4 @@
-// 「语音开始」WS 端点：/voice-trigger 的握手、ready/detected 协议、未知口令、
+// 「语音开始」WS 端点：/voice-trigger 的握手、ready/detected 协议、任意口令都能触发、
 // 远程会话拒绝，以及与 /bridge 在同一 http server 上按路径分发、互不干扰。
 //
 // 这里用真实 http server + 真实 ws 客户端跑，才能覆盖 noServer + upgrade 分发。
@@ -110,20 +110,19 @@ describe('voice trigger upgrade path', () => {
     expect(bridgeService.isBridgeUpgradePath('/voice-trigger')).toBe(false);
   });
 
-  it('reads the phrase id from the query string', () => {
-    expect(voiceTriggerWs.parsePhraseId('/voice-trigger?phrase=start_the_game')).toBe('start_the_game');
-    expect(voiceTriggerWs.parsePhraseId('/voice-trigger')).toBe('');
-    expect(voiceTriggerWs.parsePhraseId('')).toBe('');
-    expect(voiceTriggerWs.parsePhraseId('/voice-trigger?phrase=%E5%BC%80')).toBe('开');
+  it('has no per-connection phrase parameter any more', () => {
+    // 口令不用选：URL 上带不带 phrase 都无所谓，两条口令都生效
+    expect(voiceTriggerWs.parsePhraseId).toBeUndefined();
   });
 });
 
 describe('voice trigger websocket protocol', () => {
-  it('sends ready then detected for the requested phrase', async () => {
-    const ws = open('/voice-trigger?phrase=start_game');
+  it('sends ready with every phrase then detects the chinese one', async () => {
+    const ws = open('/voice-trigger');
     await waitOpen(ws);
     const ready = await waitMessage(ws, (m) => m.type === 'ready');
-    expect(ready.phrase).toEqual({ id: 'start_game', label: '开始游戏' });
+    expect(ready.phrases.map((p) => p.id)).toEqual(['start_game', 'start_the_game']);
+    expect(ready.phrases.map((p) => p.label)).toEqual(['开始游戏', 'start the game']);
 
     sendWav(ws, FIXTURE);
     const detected = await waitMessage(ws, (m) => m.type === 'detected');
@@ -132,16 +131,8 @@ describe('voice trigger websocket protocol', () => {
     await waitClosed(ws);
   });
 
-  it('honours the phrase chosen for this connection', async () => {
-    const ws = open('/voice-trigger?phrase=start_the_game');
-    await waitOpen(ws);
-    const ready = await waitMessage(ws, (m) => m.type === 'ready');
-    expect(ready.phrase).toEqual({ id: 'start_the_game', label: 'start the game' });
-    ws.close();
-  });
-
-  it('detects the english phrase on its own connection', async () => {
-    const ws = open('/voice-trigger?phrase=start_the_game');
+  it('detects the english phrase on the same endpoint', async () => {
+    const ws = open('/voice-trigger');
     await waitOpen(ws);
     await waitMessage(ws, (m) => m.type === 'ready');
     sendWav(ws, path.join(__dirname, 'fixtures', 'voice', 'start-the-game.wav'));
@@ -151,28 +142,20 @@ describe('voice trigger websocket protocol', () => {
     await waitClosed(ws);
   });
 
-  it('falls back to the default phrase for an unknown id', async () => {
-    const ws = open('/voice-trigger?phrase=zhimakaimen');
+  it('ignores a stale phrase id in the query string', async () => {
+    // 老版本前端可能还带着 phrase=start_challenge，现在一律不理会
+    const ws = open('/voice-trigger?phrase=start_challenge');
     await waitOpen(ws);
     const ready = await waitMessage(ws, (m) => m.type === 'ready');
-    expect(ready.phrase).toEqual({ id: 'start_game', label: '开始游戏' });
-    ws.close();
-  });
-
-  it('falls back to the default for phrase ids removed from the catalog', async () => {
-    // 老版本前端 / 用户 localStorage 里可能还留着已删除的口令 id
-    for (const stale of ['start_challenge', 'launch_game']) {
-      const ws = open(`/voice-trigger?phrase=${stale}`);
-      await waitOpen(ws);
-      const ready = await waitMessage(ws, (m) => m.type === 'ready');
-      expect(ready.phrase).toEqual({ id: 'start_game', label: '开始游戏' });
-      ws.close();
-      await waitClosed(ws);
-    }
+    expect(ready.phrases.map((p) => p.id)).toEqual(['start_game', 'start_the_game']);
+    sendWav(ws, FIXTURE);
+    const detected = await waitMessage(ws, (m) => m.type === 'detected');
+    expect(detected.phraseId).toBe('start_game');
+    await waitClosed(ws);
   });
 
   it('ignores non-binary and empty frames', async () => {
-    const ws = open('/voice-trigger?phrase=start_game');
+    const ws = open('/voice-trigger');
     await waitOpen(ws);
     await waitMessage(ws, (m) => m.type === 'ready');
     ws.send('{"hello":"world"}');
@@ -185,7 +168,7 @@ describe('voice trigger websocket protocol', () => {
 
   it('refuses the connection during a remote operator session', async () => {
     remoteSession.isOperatorRemoteMode.mockReturnValue(true);
-    const ws = open('/voice-trigger?phrase=start_game');
+    const ws = open('/voice-trigger');
     await waitOpen(ws);
     const error = await waitMessage(ws, (m) => m.type === 'error');
     expect(error.code).toBe('REMOTE_LOCKED');
@@ -199,12 +182,12 @@ describe('voice trigger shares the http server with the bridge', () => {
     await waitOpen(bridge);
     // 两个带 path 的 WebSocketServer 会互相 abortHandshake(400)，改成 noServer 后
     // 两条 upgrade 都必须成功握手。
-    const voice = open('/voice-trigger?phrase=start_the_game');
+    const voice = open('/voice-trigger');
     await waitOpen(voice);
     expect(bridge.readyState).toBe(bridge.OPEN);
 
     const ready = await waitMessage(voice, (m) => m.type === 'ready');
-    expect(ready.phrase).toEqual({ id: 'start_the_game', label: 'start the game' });
+    expect(ready.phrases.map((p) => p.id)).toEqual(['start_game', 'start_the_game']);
 
     // 桥连接还开着时，语音链路照样能识别并回 detected
     sendWav(voice, path.join(__dirname, 'fixtures', 'voice', 'start-the-game.wav'));
@@ -219,7 +202,7 @@ describe('voice trigger shares the http server with the bridge', () => {
   it('leaves the bridge connection untouched by voice traffic', async () => {
     const bridge = open('/bridge');
     await waitOpen(bridge);
-    const voice = open('/voice-trigger?phrase=start_game');
+    const voice = open('/voice-trigger');
     await waitOpen(voice);
     await waitMessage(voice, (m) => m.type === 'ready');
     voice.close();
