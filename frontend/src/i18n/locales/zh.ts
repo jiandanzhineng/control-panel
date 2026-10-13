@@ -1019,7 +1019,9 @@ const zh = {
     kickFailed: '移出房间失败',
   },
   gameRuntime: {
-    title: '气压突变寸止',
+    // 兜底标题：具体游戏名以运行时快照的 title 为准（见 GameRuntimeView 的 gameTitle）
+    title: '玩法运行中',
+    waitingTitle: '等待启动',
     reconnecting: '连接中断，正在重连。游戏不会因此停止。',
     waitAuth: '等待主机授权后才能控制',
     empty: '当前没有正在运行的游戏',

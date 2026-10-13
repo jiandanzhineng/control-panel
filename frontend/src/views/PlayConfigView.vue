@@ -493,7 +493,8 @@
       <p class="button-start-hint">{{ t('playConfig.pickVoiceTriggerHint') }}</p>
       <el-form label-width="88px">
         <el-form-item :label="t('playConfig.voicePhrase')">
-          <el-select v-model="voicePhraseId" style="width: 100%">
+          <!-- 同上：挂弹窗内，避免被后加的 el-overlay 盖住 -->
+          <el-select v-model="voicePhraseId" :teleported="false" style="width: 100%">
             <el-option
               v-for="p in voicePhrases"
               :key="p.id"
@@ -503,10 +504,13 @@
           </el-select>
         </el-form-item>
         <el-form-item :label="t('playConfig.voiceMic')">
+          <!-- 挂到弹窗内：默认挂 body 时，弹层会被后加的 el-overlay 压住，
+               虽然能点但看不见（真机第一次打开列表就是空白的）。 -->
           <el-select
             v-model="voiceMicId"
             :placeholder="t('playConfig.pickMic')"
             :loading="voiceMicLoading"
+            :teleported="false"
             style="width: 100%"
           >
             <el-option

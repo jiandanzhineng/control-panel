@@ -1,5 +1,14 @@
 # 开发测试记录
 
+- 2026-10-13 语音开始（分支 feat/voice-start）：配置页「设备按键开始」旁新增「语音开始」，固定口令 + 指定麦克风，测试通过后才能确认，进等待页后识别到口令直接开始；远程会话隐藏入口且后端拒连；只对游戏（game 载体）提供。
+  - **模型来源与位置**：sherpa-onnx KWS 预训练模型 `sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01-mobile`（官方 `kws-models` release），只留运行所需文件在 `backend/voice-kws/`：`encoder-*.int8.onnx`(4.0MB)、`decoder-*.onnx`(675KB)、`joiner-*.int8.onnx`(65KB)、`tokens.txt`、`keywords.txt`。识别跑在 `backend/voice/voiceTriggerService.js`（sherpa-onnx 1.13.8 的 Node/WASM 版；懒加载，进程内复用同一 KeywordSpotter，每条 WS 连接一条 stream）；WS 端点在 `backend/services/voiceTriggerWs.js`（`/voice-trigger?phrase=<id>`，协议 `ready`/`detected`/`error`，与 `/bridge` 共用同一 http server，两边都 noServer、在 upgrade 里按路径分发）；口令目录 `backend/voice/voicePhraseCatalog.js` 是唯一事实来源，前端从 `GET /api/voice/phrases` 取。打包：模型走 package.json 的 extraResources → `resources/voice-kws`，`sherpa-onnx` 走 asarUnpack。
+  - **改口令时用 text2token 生成建模单元**：`pip install sherpa-onnx click sentencepiece pypinyin`，然后 `from sherpa_onnx import text2token; text2token(['开始游戏'], tokens='backend/voice-kws/tokens.txt', tokens_type='ppinyin')`，输出形如 `k āi sh ǐ y óu x ì` 的 ppinyin 写进 `voicePhraseCatalog.js` 的 `tokens`；`buildKeywordsText()` 会拼成 `k āi sh ǐ y óu x ì @开始游戏` 交给模型（模型返回的 keyword 就是 `@` 后的原文）。
+  - **选型结论**：移动版（3.3M mobile）最好；大模型（非 mobile）误触发更多。「芝麻开门」两种模型都漏检，故换成「启动游戏」；最终三个口令（开始游戏/开始挑战/启动游戏）在 -4..+4 九档语速、干净与 SNR 15/10dB 噪声下均 9/9 命中、0 误触发（12 条负样本 + 静音）。
+  - **参数**：`keywordsScore=2.0`、`keywordsThreshold=0.15`、`maxActivePaths=4`、`numTrailingBlanks=1`、`featConfig 16kHz/80 维`、`modelingUnit=cjkchar`。参数扫描脚本 `tmp/voice-probe/scripts/robust.py`（临时目录，不入库）。
+  - **测试音频生成**：`pwsh -File tools/gen-voice-wav.ps1 -TextFile <UTF-8文本，一行一句> -OutDir <目录> -Prefix <前缀> [-Rate n] [-PadSeconds n]`。用 Windows SAPI（默认语音 Microsoft Huihui Desktop）出 16k 单声道 wav，`-PadSeconds` 前后补静音、默认峰值归一化到 0.84（KWS 对响度敏感）。中文文本必须放外部 UTF-8 文件，直接写在命令行会被 PowerShell 的 GBK 读坏。
+  - **E2E 假麦克风**：`node tools/electron-dev.js --local-registry --remote-debugging-port=9224 --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --use-file-for-fake-audio-capture=<wav绝对路径>`（`tools/electron-dev.js` 会把额外参数透传给 electron）。假音频**循环播放**，所以 wav 里口令前后必须留几秒静音（上面的 `-PadSeconds 2`），否则口令连播会在第一次识别后继续触发。假设备在麦克风列表里显示为 `Fake Audio Input`。
+  - 单测：`backend/tests/voicePhraseCatalog.test.js`、`backend/tests/voiceTriggerService.test.js`（fixture wav 在 `backend/tests/fixtures/voice/`）、`backend/tests/voiceTriggerWs.test.js`（真实 http server + ws 客户端，覆盖 `/bridge` 与 `/voice-trigger` 共存）。
+
 - 2026-10-07 远程会话模式端到端验收（分支 feat/remote-session-mode，生产房间服务 api.undersilicon.cn + 生产 EMQX，双隔离 Electron，仅虚拟设备）：被控端 A 前端/后端/CDP `5303/5301/9234`，主控端 B `5304/5302/9225`，harness 在 `.tmp/remote-session-e2e-1007/`（`lib.js` 提供 ev/api/pageFetch/shootBoth/waitButton，`session-lib.js` 用 token 直连建会话，`sniff.js` 常驻订阅本机 EMQX `/drecv/#` 抓设备下行帧）。7 项场景全过；修 9 处缺陷（详见报告 §5）。报告 `docs/test/remote-session-e2e-2026-10-07.md`（54 张内嵌截图）。
 
   复用要点：

@@ -1019,7 +1019,9 @@ const en = {
     kickFailed: 'Failed to remove the member',
   },
   gameRuntime: {
-    title: 'Surge edging',
+    // Fallback only: the running game's own title comes from the runtime snapshot
+    title: 'Play running',
+    waitingTitle: 'Waiting to start',
     reconnecting: 'Connection lost. Reconnecting. The game will keep running.',
     waitAuth: 'Waiting for the host to authorize control',
     empty: 'No game is running',

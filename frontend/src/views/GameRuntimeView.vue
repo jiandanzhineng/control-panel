@@ -5,7 +5,7 @@
         <el-alert type="warning" :closable="false" :title="t('gameRuntime.reconnecting')" show-icon />
       </div>
       <div v-if="waiting" class="wait-card">
-        <span class="eyebrow">{{ t('gameRuntime.title') }}</span>
+        <span class="eyebrow">{{ gameTitle }}</span>
         <h2 v-if="voiceWaiting">{{ t('gameRun.sayToStart', { phrase: voicePhraseLabel }) }}</h2>
         <h2 v-else>{{ t('gameRuntime.waitingButton') }}</h2>
         <p v-if="voiceWaiting && voiceError" class="wait-error">{{ voiceError }}</p>
@@ -94,6 +94,14 @@ const voiceWaiting = ref(false)
 const voiceLevel = ref(0)
 const voiceError = ref('')
 const voicePhraseLabel = ref('')
+// 等待页顶部标题：用宿主游戏清单里的标题（query 只有 id）。原来的固定文案
+// 会把任何托管游戏都写成「气压突变寸止」。
+const hostTitle = ref('')
+const gameTitle = computed(() => {
+  const fromSnapshot = String((localSnapshot.value as any)?.title || '').trim()
+  if (fromSnapshot) return fromSnapshot
+  return hostTitle.value || t('gameRuntime.waitingTitle')
+})
 const pagePath = ref('')
 const pageResolving = ref(false)
 const pageError = ref('')
@@ -228,7 +236,9 @@ onMounted(async () => {
   if (String(route.query.startMode || '') === 'voice' && String(route.query.voicePhraseId || '')) {
     const games = await listHostGames().catch(() => [])
     const id = String(route.query.id || games[0]?.id || '')
-    schema.value = games.find((game: any) => game.id === id)?.params || []
+    const found: any = games.find((game: any) => game.id === id)
+    schema.value = found?.params || []
+    hostTitle.value = String(found?.title || '')
     waiting.value = true
     startVoiceWaiting()
     return
@@ -236,7 +246,9 @@ onMounted(async () => {
   if (String(route.query.startMode || '') === 'button') {
     const games = await listHostGames().catch(() => [])
     const id = String(route.query.id || games[0]?.id || '')
-    schema.value = games.find((game: any) => game.id === id)?.params || []
+    const found: any = games.find((game: any) => game.id === id)
+    schema.value = found?.params || []
+    hostTitle.value = String(found?.title || '')
     waiting.value = true
     const trigger = String(route.query.startTriggerDeviceId || '')
     if (trigger) stopWait = listenDeviceButtonPress(trigger, () => { void beginDeferred() })
