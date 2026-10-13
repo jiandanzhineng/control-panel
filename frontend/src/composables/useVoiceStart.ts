@@ -12,16 +12,11 @@ import {
   micConstraintsFor,
   smoothLevel,
   type MicOption,
+  type VoicePhrase,
 } from '../play/voiceStart'
 
 export { DEFAULT_MIC_ID }
-export type { MicOption }
-
-export interface VoicePhrase {
-  id: string
-  label: string
-  default: boolean
-}
+export type { MicOption, VoicePhrase }
 
 export interface ListenVoiceOptions {
   phraseId: string

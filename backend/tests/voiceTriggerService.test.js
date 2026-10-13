@@ -1,4 +1,4 @@
-// 「语音开始」识别引擎：用 fixture wav 验证三个固定口令都能触发、普通语句与静音不触发。
+// 「语音开始」识别引擎：用 fixture wav 验证中英两个固定口令都能触发、普通语句与静音不触发。
 // 真机（Node WASM）跑的是同一份模型与参数，因此这里直接加载 backend/voice-kws。
 const fs = require('fs');
 const os = require('os');
@@ -71,8 +71,7 @@ describe('voice trigger service', () => {
 
   it.each([
     ['开始游戏', 'start-game.wav'],
-    ['开始挑战', 'start-challenge.wav'],
-    ['启动游戏', 'launch-game.wav'],
+    ['start the game', 'start-the-game.wav'],
   ])('detects the phrase %s', async (label, file) => {
     session = await voiceTrigger.createSession();
     expect(feed(session, loadWav(file))).toContain(label);
@@ -88,6 +87,8 @@ describe('voice trigger service', () => {
     session = await voiceTrigger.createSession();
     expect(feed(session, loadWav('plain-speech.wav'))).toEqual([]);
     expect(feed(session, loadWav('plain-speech-2.wav'))).toEqual([]);
+    expect(feed(session, loadWav('plain-speech-en.wav'))).toEqual([]);
+    expect(feed(session, loadWav('plain-speech-en-2.wav'))).toEqual([]);
     expect(feed(session, loadWav('silence.wav'))).toEqual([]);
   });
 

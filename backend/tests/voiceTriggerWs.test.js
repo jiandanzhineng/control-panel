@@ -111,7 +111,7 @@ describe('voice trigger upgrade path', () => {
   });
 
   it('reads the phrase id from the query string', () => {
-    expect(voiceTriggerWs.parsePhraseId('/voice-trigger?phrase=launch_game')).toBe('launch_game');
+    expect(voiceTriggerWs.parsePhraseId('/voice-trigger?phrase=start_the_game')).toBe('start_the_game');
     expect(voiceTriggerWs.parsePhraseId('/voice-trigger')).toBe('');
     expect(voiceTriggerWs.parsePhraseId('')).toBe('');
     expect(voiceTriggerWs.parsePhraseId('/voice-trigger?phrase=%E5%BC%80')).toBe('开');
@@ -133,11 +133,22 @@ describe('voice trigger websocket protocol', () => {
   });
 
   it('honours the phrase chosen for this connection', async () => {
-    const ws = open('/voice-trigger?phrase=start_challenge');
+    const ws = open('/voice-trigger?phrase=start_the_game');
     await waitOpen(ws);
     const ready = await waitMessage(ws, (m) => m.type === 'ready');
-    expect(ready.phrase).toEqual({ id: 'start_challenge', label: '开始挑战' });
+    expect(ready.phrase).toEqual({ id: 'start_the_game', label: 'start the game' });
     ws.close();
+  });
+
+  it('detects the english phrase on its own connection', async () => {
+    const ws = open('/voice-trigger?phrase=start_the_game');
+    await waitOpen(ws);
+    await waitMessage(ws, (m) => m.type === 'ready');
+    sendWav(ws, path.join(__dirname, 'fixtures', 'voice', 'start-the-game.wav'));
+    const detected = await waitMessage(ws, (m) => m.type === 'detected');
+    expect(detected.phrase).toBe('start the game');
+    expect(detected.phraseId).toBe('start_the_game');
+    await waitClosed(ws);
   });
 
   it('falls back to the default phrase for an unknown id', async () => {
@@ -146,6 +157,18 @@ describe('voice trigger websocket protocol', () => {
     const ready = await waitMessage(ws, (m) => m.type === 'ready');
     expect(ready.phrase).toEqual({ id: 'start_game', label: '开始游戏' });
     ws.close();
+  });
+
+  it('falls back to the default for phrase ids removed from the catalog', async () => {
+    // 老版本前端 / 用户 localStorage 里可能还留着已删除的口令 id
+    for (const stale of ['start_challenge', 'launch_game']) {
+      const ws = open(`/voice-trigger?phrase=${stale}`);
+      await waitOpen(ws);
+      const ready = await waitMessage(ws, (m) => m.type === 'ready');
+      expect(ready.phrase).toEqual({ id: 'start_game', label: '开始游戏' });
+      ws.close();
+      await waitClosed(ws);
+    }
   });
 
   it('ignores non-binary and empty frames', async () => {
@@ -176,17 +199,17 @@ describe('voice trigger shares the http server with the bridge', () => {
     await waitOpen(bridge);
     // 两个带 path 的 WebSocketServer 会互相 abortHandshake(400)，改成 noServer 后
     // 两条 upgrade 都必须成功握手。
-    const voice = open('/voice-trigger?phrase=launch_game');
+    const voice = open('/voice-trigger?phrase=start_the_game');
     await waitOpen(voice);
     expect(bridge.readyState).toBe(bridge.OPEN);
 
     const ready = await waitMessage(voice, (m) => m.type === 'ready');
-    expect(ready.phrase).toEqual({ id: 'launch_game', label: '启动游戏' });
+    expect(ready.phrase).toEqual({ id: 'start_the_game', label: 'start the game' });
 
     // 桥连接还开着时，语音链路照样能识别并回 detected
-    sendWav(voice, path.join(__dirname, 'fixtures', 'voice', 'launch-game.wav'));
+    sendWav(voice, path.join(__dirname, 'fixtures', 'voice', 'start-the-game.wav'));
     const detected = await waitMessage(voice, (m) => m.type === 'detected');
-    expect(detected.phraseId).toBe('launch_game');
+    expect(detected.phraseId).toBe('start_the_game');
     expect(bridge.readyState).toBe(bridge.OPEN);
 
     bridge.close();

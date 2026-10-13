@@ -503,6 +503,8 @@
             />
           </el-select>
         </el-form-item>
+        <!-- 中英两个口令混在一个模型里，说明各用自己的语言念 -->
+        <p class="voice-phrase-hint">{{ t('playConfig.voicePhraseLangHint') }}</p>
         <el-form-item :label="t('playConfig.voiceMic')">
           <!-- 挂到弹窗内：默认挂 body 时，弹层会被后加的 el-overlay 压住，
                虽然能点但看不见（真机第一次打开列表就是空白的）。 -->
@@ -582,7 +584,7 @@ import {
   listMicrophones,
   type MicOption,
 } from '../composables/useVoiceStart';
-import { resolveMicId, voiceErrorKey } from '../play/voiceStart';
+import { resolveMicId, resolvePhraseId, voiceErrorKey } from '../play/voiceStart';
 import { useRemoteSession } from '../composables/useRemoteSession';
 import { friendlyMessage } from '../api/errorMessage';
 import { needsFrontendOccupy } from '../remote/remotePlay';
@@ -967,9 +969,9 @@ async function loadVoicePhrases() {
   try {
     const list = await fetchVoicePhrases();
     voicePhrases.value = list;
-    if (!voicePhraseId.value || !list.some((p) => p.id === voicePhraseId.value)) {
-      voicePhraseId.value = list.find((p) => p.default)?.id || list[0]?.id || '';
-    }
+    // localStorage 里可能存着已删除的口令 id（start_challenge / launch_game），
+    // 或本次是新装：统一回退到目录里的默认口令。
+    voicePhraseId.value = resolvePhraseId(voicePhraseId.value, list);
   } catch (e: any) {
     voiceDialogError.value = voiceErrorMessage(e);
   }
@@ -1305,6 +1307,7 @@ async function loadAll() {
       : pickDefaultTriggerDeviceId();
 
     const savedPhrase = String(saved?.voicePhraseId || '');
+    // 口令目录可能已经换过：旧 id 先记下来，等口令列表拉到后校验
     if (savedPhrase) voicePhraseId.value = savedPhrase;
     const savedMic = String(saved?.voiceMicId || '');
     if (savedMic) voiceMicId.value = savedMic;
@@ -1998,6 +2001,14 @@ onUnmounted(() => {
   line-height: 1.7;
   color: var(--el-text-color-regular);
   white-space: pre-line;
+}
+
+.voice-phrase-hint {
+  margin: -8px 0 16px;
+  padding-left: 88px;
+  line-height: 1.6;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 @media (max-width: 768px) {

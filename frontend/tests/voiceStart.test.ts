@@ -8,6 +8,7 @@ import {
   frameLevel,
   micConstraintsFor,
   resolveMicId,
+  resolvePhraseId,
   smoothLevel,
   voiceErrorKey,
 } from '../src/play/voiceStart.ts'
@@ -83,4 +84,22 @@ test('voiceErrorKey maps browser and backend failures to readable keys', () => {
   assert.equal(voiceErrorKey('TIMEOUT'), 'playConfig.voiceTimeout')
   assert.equal(voiceErrorKey('whatever'), 'playConfig.voiceFailed')
   assert.equal(voiceErrorKey(null), 'playConfig.voiceFailed')
+})
+
+const PHRASES = [
+  { id: 'start_game', label: '开始游戏', default: true },
+  { id: 'start_the_game', label: 'start the game', default: false },
+]
+
+test('resolvePhraseId keeps a saved phrase that is still in the catalog', () => {
+  assert.equal(resolvePhraseId('start_the_game', PHRASES), 'start_the_game')
+})
+
+test('resolvePhraseId falls back to the default for removed or missing ids', () => {
+  // 口令目录换过之后，localStorage 里可能还留着已删除的 id
+  assert.equal(resolvePhraseId('start_challenge', PHRASES), 'start_game')
+  assert.equal(resolvePhraseId('launch_game', PHRASES), 'start_game')
+  assert.equal(resolvePhraseId('', PHRASES), 'start_game')
+  assert.equal(resolvePhraseId(null, PHRASES), 'start_game')
+  assert.equal(resolvePhraseId(undefined, PHRASES), 'start_game')
 })

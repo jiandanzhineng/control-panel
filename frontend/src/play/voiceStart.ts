@@ -8,6 +8,13 @@ export interface MicOption {
   label: string
 }
 
+/** 后端口令目录返回的一项（前端不做自定义输入）。 */
+export interface VoicePhrase {
+  id: string
+  label: string
+  default: boolean
+}
+
 /** 麦克风列表：始终带上「系统默认」在最前，后面接真实设备（按 id 去重）。 */
 export function buildMicOptions(devices: Array<{ deviceId?: string; kind?: string; label?: string }> | null | undefined, defaultLabel: string): MicOption[] {
   const list: MicOption[] = [{ id: DEFAULT_MIC_ID, label: defaultLabel }]
@@ -57,6 +64,13 @@ export function smoothLevel(previous: number, next: number, weight = 0.35): numb
   const prev = Number.isFinite(previous) ? previous : 0
   const value = Number.isFinite(next) ? next : 0
   return prev * (1 - weight) + value * weight
+}
+
+/** 已保存的口令 id 还在不在（口令目录换过之后 localStorage 里可能留着旧 id）。 */
+export function resolvePhraseId(saved: string | null | undefined, phrases: VoicePhrase[]): string {
+  const id = String(saved || '')
+  if (id && phrases.some((phrase) => phrase.id === id)) return id
+  return phrases.find((phrase) => phrase.default)?.id || phrases[0]?.id || ''
 }
 
 /** 后端/浏览器错误 → 中文提示用的 i18n key。 */

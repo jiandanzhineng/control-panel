@@ -55,6 +55,10 @@ function handleConnection(ws, req) {
   const requested = parsePhraseId(req?.url);
   const phrase = phraseCatalog.getPhrase(requested) || phraseCatalog.getDefaultPhrase();
 
+  // 模型一次装全部口令（KeywordSpotter 不支持按流换词），所以这里拿到的命中可能是
+  // 另一个口令；只回本连接选定的那个，避免「选了英文口令却被中文口令触发」。
+  const wanted = phrase.label;
+
   let session = null;
   let closed = false;
   const timer = setTimeout(() => {
@@ -90,7 +94,7 @@ function handleConnection(ws, req) {
     const samples = new Float32Array(aligned.buffer, aligned.byteOffset, Math.floor(aligned.length / 4));
     try {
       const hit = session.accept(samples);
-      if (hit) {
+      if (hit && hit.label === wanted) {
         sendJson(ws, { type: 'detected', phrase: hit.label, phraseId: hit.id });
         ws.close();
       }

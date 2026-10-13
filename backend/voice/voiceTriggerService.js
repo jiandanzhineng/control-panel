@@ -11,7 +11,9 @@ const phraseCatalog = require('./voicePhraseCatalog');
 
 const SAMPLE_RATE = 16000;
 // 参数来自真机扫描：score=2.0 提高口令本身的路径分，threshold=0.15 抗噪。
-// 扫描结果见 docs/note.md（9 档语速 × 三个口令 9/9 命中，0 误触发）。
+// 中英双语模型（zh-en 3M）下扫过 score 1.5~2.5 × threshold 0.10~0.20：
+// 「开始游戏」与「start the game」在 9 档语速全部命中、324 条中英负样本 0 误触发。
+// 详见 docs/note.md。
 const KEYWORDS_SCORE = 2.0;
 const KEYWORDS_THRESHOLD = 0.15;
 
