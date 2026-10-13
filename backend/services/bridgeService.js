@@ -7,6 +7,7 @@ const virtualDeviceService = require('./virtualDeviceService');
 const { BRIDGE_INTERNAL_HEADER } = require('../constants/bridgeAccess');
 const externalGameAccessService = require('./externalGameAccessService');
 const browserDeviceGrantService = require('./browserDeviceGrantService');
+const wsUpgradeRouter = require('./wsUpgradeRouter');
 // 玩法载体事件（本机开始/退出一次玩法）：远程占用仲裁（remoteGameService）订阅
 const playCarrierBus = require('./playCarrierBus');
 
@@ -113,7 +114,8 @@ function isBridgeUpgradePath(url) {
 }
 
 // 同一 http server 上还挂着 /voice-trigger：两个带 path 的 WebSocketServer 会互相
-// abortHandshake(400)，所以改成 noServer + 由本模块在 upgrade 事件里按路径分发。
+// abortHandshake(400)，所以改成 noServer + 由 wsUpgradeRouter 统一分发。
+// 未认领的路径由分发器回 400 并销毁 socket，避免 upgrade 一直挂着。
 function handleUpgrade(req, socket, head) {
   wss.handleUpgrade(req, socket, head, (ws) => { wss.emit('connection', ws, req); });
 }
@@ -125,12 +127,8 @@ function init(server) {
   });
 
   // server 可能是不带事件能力的占位对象（单测直接 init({})），此时跳过 upgrade 挂载。
-  if (server && typeof server.on === 'function') {
-    server.on('upgrade', (req, socket, head) => {
-      if (!isBridgeUpgradePath(req.url)) return; // 交给其他 WS 端点
-      handleUpgrade(req, socket, head);
-    });
-  }
+  wsUpgradeRouter.register('bridge', isBridgeUpgradePath, handleUpgrade);
+  wsUpgradeRouter.attach(server);
 
   wss.on('connection', (ws, req) => {
     let session = null;

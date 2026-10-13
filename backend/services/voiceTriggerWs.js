@@ -13,6 +13,7 @@
 const { WebSocketServer } = require('ws');
 const logService = require('./logService');
 const bridgeService = require('./bridgeService');
+const wsUpgradeRouter = require('./wsUpgradeRouter');
 const remoteSession = require('./remoteSessionService');
 const phraseCatalog = require('../voice/voicePhraseCatalog');
 const voiceTrigger = require('../voice/voiceTriggerService');
@@ -112,12 +113,11 @@ function init(server) {
   });
   wss.on('connection', handleConnection);
 
-  if (server && typeof server.on === 'function') {
-    server.on('upgrade', (req, socket, head) => {
-      if (!isVoiceTriggerUpgradePath(req.url)) return;
-      wss.handleUpgrade(req, socket, head, (ws) => { wss.emit('connection', ws, req); });
-    });
-  }
+  // 与 /bridge 共用 wsUpgradeRouter：谁都不认领的路径由分发器回 400 并销毁 socket。
+  wsUpgradeRouter.register('voice-trigger', isVoiceTriggerUpgradePath, (req, socket, head) => {
+    wss.handleUpgrade(req, socket, head, (ws) => { wss.emit('connection', ws, req); });
+  });
+  wsUpgradeRouter.attach(server);
   return wss;
 }
 
