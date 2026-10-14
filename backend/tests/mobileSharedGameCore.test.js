@@ -5,6 +5,28 @@ const { MaidPunishmentCore } = require('../games/maid-punishment/game-core');
 const { PressureEdgingV2Core } = require('../game-runtime/cores/pressure-edging-v2-core');
 
 const plain = value => JSON.parse(JSON.stringify(value));
+
+test.each([
+  ['pressure-edging-v2', PressureEdgingV2Core],
+  ['surge-edging', SurgeEdgingCore],
+  ['maid-punishment', MaidPunishmentCore],
+])('%s generated bundle also loads in the CommonJS native host', (id, Ctor) => {
+  const ctx = vm.createContext({});
+  const module = { exports: {} };
+  const factory = vm.runInContext(`(function(module, exports, require) {\n${buildMobileCore(id)}\n})`, ctx);
+  factory(module, module.exports, () => { throw new Error('unexpected dependency'); });
+  const names = Object.keys(module.exports).filter(key => /Core$/.test(key) && typeof module.exports[key] === 'function');
+  expect(names).toHaveLength(1);
+  const params = { duration: 1, endCalmLock: 0, randomPercent: 0 };
+  const phone = new module.exports[names[0]]({ params });
+  const pc = new Ctor({ params });
+  expect(plain(phone.start(0))).toEqual(plain(pc.start(0)));
+  expect(plain(phone.step({ nowMs: 1000, events: [] }))).toEqual(plain(pc.step({ nowMs: 1000, events: [] })));
+  expect(plain(phone.pause(1100))).toEqual(plain(pc.pause(1100)));
+  expect(plain(phone.resume(1200))).toEqual(plain(pc.resume(1200)));
+  expect(plain(phone.stop(1300))).toEqual(plain(pc.stop(1300)));
+});
+
 function mobile(params) {
   const ctx = vm.createContext({});
   vm.runInContext(buildMobilePressureCore(), ctx);

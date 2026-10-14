@@ -22,6 +22,8 @@
 
 移动 WebView 加载这三款的 PC 原托管 renderer，动作发送到原生宿主，不运行页面设备循环。原阈值图、拖动、按钮、阶段语音和突变寸止倒计时语音均保留。`_shared/game-host-manifests.json` 从完整 HTML manifest 生成，远控主机列表与兜底配置读取该文件；`game-host-renderers.json` 指定原脚本和全部语音资源，避免另写配置或简化界面。
 
+与移动最新主干合并后，普通配置仍进入 `GameRunPage`，本地、远程观看及附着模式走现有 `HostGamePort` / `core/game_host`。自动生成 Core 同时导出 CommonJS 构造函数，并将 PC 的两个内置兜底 Core/manifest 同步到移动 `assets/games/cores/`。独立 `/games/remote` 工作区继续使用生成的 `GameCore.create/dispatch` 接口和 `_shared` 配置。按键开始、远程投影、版本校验和 iOS 资源落地采用主干实现。
+
 其他四款使用原 PC 自驱动页面。移动资源加载器内联 PC 共享国际化脚本并注入当前语言，设备 Bridge 仍由 Flutter 提供。
 
 移动宿主接入与 PC 事件契约一致：压力游戏读取映射传感器；女仆转发已映射设备的属性变化及锁按键，开局按钮带 `seed:true`，同值重报不触发违规，换映射和销毁时取消监听。女仆电击时限、TD01 延时及递增、手动开始和解锁来自 PC Core。所有本地宿主页面保持常亮，切后台或离页停止设备，结束保留最后统计快照。远控观看页不因离页停止远端主机。
@@ -42,9 +44,10 @@ npm --prefix backend test -- --runInBand tests/mobileSharedGameCore.test.js test
 
 ```powershell
 node --test test/game-js/*.test.cjs
-flutter test test/features/games test/core/remote
-flutter analyze --no-fatal-infos lib/features/games lib/core/remote test/features/games
-flutter build apk --debug
+node tools/game_core_golden/harness.js --pc-root E:/smart/project/control-panel
+flutter test test/features/games test/core/game_host test/core/remote test/core/remote_session
+flutter analyze --no-fatal-infos
+flutter build apk --debug --flavor direct --dart-define=APP_DISTRIBUTION=direct
 ```
 
 同步后分别提交两个仓库。移动 CI 校验 SHA256 并运行真实 JS Core、renderer 操作、语音和授权测试；PC 对照测试直接运行实际 PC Core 与生成的移动 bundle。
