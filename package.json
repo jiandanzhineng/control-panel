@@ -49,9 +49,20 @@
       "!backend/data",
       "!backend/tests",
       "!backend/test_*.js",
-      "!backend/.gitignore"
+      "!backend/.gitignore",
+      "!backend/voice-kws"
+    ],
+    "asarUnpack": [
+      "**/node_modules/sherpa-onnx/**"
     ],
     "extraResources": [
+      {
+        "from": "backend/voice-kws",
+        "to": "voice-kws",
+        "filter": [
+          "**/*"
+        ]
+      },
       {
         "from": "backend/inner-tools",
         "to": "inner-tools",

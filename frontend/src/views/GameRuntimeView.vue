@@ -5,9 +5,15 @@
         <el-alert type="warning" :closable="false" :title="t('gameRuntime.reconnecting')" show-icon />
       </div>
       <div v-if="waiting" class="wait-card">
-        <span class="eyebrow">{{ t('gameRuntime.title') }}</span>
-        <h2>{{ t('gameRuntime.waitingButton') }}</h2>
+        <span class="eyebrow">{{ gameTitle }}</span>
+        <h2 v-if="voiceWaiting">{{ t('gameRun.sayToStart', { phrase: voicePhraseText }) }}</h2>
+        <h2 v-else>{{ t('gameRuntime.waitingButton') }}</h2>
+        <p v-if="voiceWaiting && voiceError" class="wait-error">{{ voiceError }}</p>
+        <div v-if="voiceWaiting" class="voice-level-track">
+          <div class="voice-level-bar" :style="{ width: `${Math.round(voiceLevel * 100)}%` }"></div>
+        </div>
         <el-button type="primary" @click="beginDeferred">{{ t('gameRuntime.startNow') }}</el-button>
+        <el-button @click="cancelWait">{{ t('common.cancel') }}</el-button>
       </div>
       <template v-else>
         <div class="frame-wrap">
@@ -53,6 +59,8 @@ import PlayCarrierShell from '../components/PlayCarrierShell.vue'
 import PlayParamsForm from '../components/PlayParamsForm.vue'
 import { clearActivePlay, setActivePlay } from '../composables/useActivePlay'
 import { listenDeviceButtonPress } from '../composables/useButtonStart'
+import { listenVoicePhrase } from '../composables/useVoiceStart'
+import { DEFAULT_MIC_ID } from '../play/voiceStart'
 import { currentLocale } from '../i18n'
 import { localeTag } from '../i18n/locale'
 import { getGameRuntimeStatus, listHostGames, setGameRuntimeParams, startGameRuntime, stopGameRuntime, type GameRuntimeSnapshot } from '../api/gameRuntime'
@@ -82,6 +90,18 @@ const schema = ref<Array<Record<string, any>>>([])
 const draft = reactive<Record<string, any>>({})
 const waiting = ref(false)
 const stopping = ref(false)
+const voiceWaiting = ref(false)
+const voiceLevel = ref(0)
+const voiceError = ref('')
+const voicePhraseText = ref('')
+// 等待页顶部标题：用宿主游戏清单里的标题（query 只有 id）。原来的固定文案
+// 会把任何托管游戏都写成「气压突变寸止」。
+const hostTitle = ref('')
+const gameTitle = computed(() => {
+  const fromSnapshot = String((localSnapshot.value as any)?.title || '').trim()
+  if (fromSnapshot) return fromSnapshot
+  return hostTitle.value || t('gameRuntime.waitingTitle')
+})
 const pagePath = ref('')
 const pageResolving = ref(false)
 const pageError = ref('')
@@ -143,6 +163,7 @@ async function poll() {
 
 async function beginDeferred() {
   waiting.value = false; stopWait?.(); stopWait = null
+  voiceWaiting.value = false
   const id = String(route.query.id || 'surge-edging')
   const deviceMap = JSON.parse(String(route.query.deviceMap || '{}'))
   const params = JSON.parse(String(route.query.params || '{}'))
@@ -189,12 +210,44 @@ function finish(reason: string) {
   clearActivePlay(); if (reason && route.name === 'game_runtime') router.push('/plays')
 }
 
+// 取消等待：与「停止」不同，这里只是不启动游戏，同样要关掉语音监听。
+function cancelWait() {
+  waiting.value = false
+  voiceWaiting.value = false
+  stopWait?.(); stopWait = null
+  finish('cancel_wait')
+}
+
+function startVoiceWaiting() {
+  voiceWaiting.value = true
+  voiceError.value = ''
+  voicePhraseText.value = String(route.query.voicePhraseLabel || '') || t('playConfig.voiceStart')
+  stopWait = listenVoicePhrase({
+    micDeviceId: String(route.query.voiceMicId || '') || DEFAULT_MIC_ID,
+    onDetected: () => { void beginDeferred() },
+    onLevel: (level) => { voiceLevel.value = level },
+    onError: () => { voiceError.value = t('gameRun.voiceError') },
+  })
+}
+
 onMounted(async () => {
   if (props.source !== 'local') return
+  if (String(route.query.startMode || '') === 'voice') {
+    const games = await listHostGames().catch(() => [])
+    const id = String(route.query.id || games[0]?.id || '')
+    const found: any = games.find((game: any) => game.id === id)
+    schema.value = found?.params || []
+    hostTitle.value = String(found?.title || '')
+    waiting.value = true
+    startVoiceWaiting()
+    return
+  }
   if (String(route.query.startMode || '') === 'button') {
     const games = await listHostGames().catch(() => [])
     const id = String(route.query.id || games[0]?.id || '')
-    schema.value = games.find((game: any) => game.id === id)?.params || []
+    const found: any = games.find((game: any) => game.id === id)
+    schema.value = found?.params || []
+    hostTitle.value = String(found?.title || '')
     waiting.value = true
     const trigger = String(route.query.startTriggerDeviceId || '')
     if (trigger) stopWait = listenDeviceButtonPress(trigger, () => { void beginDeferred() })
@@ -213,7 +266,7 @@ onMounted(async () => {
   stream.start()
 })
 
-onBeforeUnmount(() => { stream?.stop(); stream = null; stopWait?.() })
+onBeforeUnmount(() => { stream?.stop(); stream = null; stopWait?.(); stopWait = null })
 </script>
 
 <style scoped>
@@ -222,6 +275,9 @@ onBeforeUnmount(() => { stream?.stop(); stream = null; stopWait?.() })
 .connection-alert { max-width: 600px; margin: 0 auto; padding: 16px 16px 0; width: 100%; box-sizing: border-box; }
 .wait-card { max-width: 600px; margin: auto; padding: 48px 20px; text-align: center; }
 .wait-card h2 { margin: 8px 0 16px; }
+.wait-error { margin: 0 0 12px; color: #f56c6c; font-size: 13px; }
+.voice-level-track { width: 100%; height: 8px; margin: 0 0 20px; border-radius: 4px; background: #e2e8f0; overflow: hidden; }
+.voice-level-bar { height: 100%; border-radius: 4px; background: #409eff; transition: width .08s linear; }
 .eyebrow { color: #64748b; font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; }
 .frame-wrap { flex: 1; position: relative; min-height: 0; }
 .runtime-view.embedded .frame-wrap { min-height: 520px; }
