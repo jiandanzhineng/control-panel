@@ -99,6 +99,7 @@
 - 2026-09-20：`drink-pee-unlock` 对外称「喝水/液体收集」，pee 模式是容器放秤上、秤变重。不要写憋尿/排尿/排泄，也不要写成站上秤、喝水变重。游戏版本 2.3.5。
 - 2026-09-16 游戏介绍页入口为 `game-intro.html?id=`（`game-detail.html` 同页保留）。介绍页跟站点深色主题、中英切换，本页可启动/缓存。
 - 2026-09-17 公开 `registry.json` 的社区游戏带 `authorName`（来自投稿署名）。介绍页读该字段；缺署名且非 builtin 才显示未知作者。生产重建：`game-platform rebuild-registry`（加载 `/etc/game-platform/game-platform.env`）。
+- 2026-10-14：qi 的 09-20 投稿 `sub_1a1b94c341415fc3ece8000ffba712aa` 已通过正式发布 API 上线 `pressure-edging-v2-calib` 2.3.9；资源目录 `games/pressure-edging-v2-calib/2.3.9-edf56292/`，正式包 SHA256 `edf562923213d13d481d82e3c1dbafbf1f7dfd4b8a06c024df27dd2124b5969e`。公开 ZIP 的9个文件与提供的原包一致，虚拟桥测试与截图报告见 `tmp/publish-calib239/report.md`，未做真机测试。审核权限须以 `/api/auth/me` 的 role 为准；导航昵称 admin 不表示管理员。国内账号中心当前 `ADMIN_EMAIL=hello@undersilicon.com`，密码及临时token不写入文档。
 
 - 2026-09-23 独立远程工作区路由 `/remote-game`；视觉验证使用 BrowserOS neo，前端 Vite 端口 5174，后端 `npm run dev:backend`。（当时的 Vue 重做 UI / `GameRuntimeSurface` 已于 09-29 删除，见首条。）
 - 2026-09-24 PC 双 Electron 实测：A/B 创建、加入、授权、远程启动 pressure-edging-v2、暂停/继续、运行中改参、B 断线后 A 继续、A 停止和设备复位均通过；仅虚拟设备与本机 MQTT，未验证真实硬件。
