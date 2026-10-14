@@ -1,4 +1,4 @@
-const VERSION = '1.4.1';
+const VERSION = '1.4.2';
 const TITLE = '气压突变寸止';
 const GAME_ID = 'surge-edging';
 

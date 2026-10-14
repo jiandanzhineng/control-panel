@@ -796,10 +796,10 @@
       playVoice('edging_takeoff', 'state', function () { return rt.running && rt.endCalmLocked; });
     } else if (!takeoffNow) hostUi.takeoffVoice = false;
     if (phase && phase !== hostUi.lastPhase) {
+      hostUi.lastPhase = phase;
       const voiceFor = { MIDDLE: 'edging_middle', EDGING: 'edging_peak', SUB_CALM: 'edging_calm', DELAY: 'edging_delay' };
       const key = takeoffNow && phase === 'SUB_CALM' ? '' : voiceFor[phase];
       if (key) playVoice(key, phase === 'EDGING' ? 'critical' : 'state', function () { return rt.running && hostUi.lastPhase === phase; });
-      hostUi.lastPhase = phase;
     }
     // 起飞期倒计时语音（快照 500ms 轮询，按 1s 步进到点即播）
     if (rt.endCalmLocked && rt.running && !rt.paused) {
