@@ -6,7 +6,7 @@ const gameDir = path.join(__dirname, '..', 'games', 'pushup-detection');
 const script = fs.readFileSync(path.join(gameDir, 'game.js'), 'utf8');
 const html = fs.readFileSync(path.join(gameDir, 'index.html'), 'utf8');
 
-function bootGame(physicalType) {
+function bootGame(mappedMotors = { vibrator: ['TD01'], pj01: ['PJ01'] }) {
   const calls = [];
   const callbacks = {};
   const timers = new Map();
@@ -16,7 +16,7 @@ function bootGame(physicalType) {
     insertBefore(node) { this.children.unshift(node); },
     removeChild() { this.children.pop(); },
   };
-  const mapped = { qtz: ['sensor'], vibrator: [physicalType] };
+  const mapped = { qtz: ['sensor'], ...mappedMotors };
   const context = {
     Date,
     Math,
@@ -60,20 +60,21 @@ function bootGame(physicalType) {
   return { calls, callbacks, timers, game: context.__game };
 }
 
-describe.each(['TD01', 'PJ01'])('pushup motor output mapped to %s', (physicalType) => {
-  test('uses configured intensity for punishment without a reward', async () => {
-    const { calls, timers, game } = bootGame(physicalType);
+describe('pushup original independent motor roles', () => {
+  test('idle punishment targets the back-pat role and leaves the vibrator alone', async () => {
+    const { calls, timers, game } = bootGame();
     await new Promise(setImmediate);
     game.rt.lastActionTs = Date.now() - 20000;
     game.loop();
-    expect(calls.filter((call) => call.id === 'vibrator').map((call) => call.params.value)).toEqual([37]);
-    timers.get(game.rt.punishMotorTimer)();
-    expect(calls.filter((call) => call.id === 'vibrator').map((call) => call.params.value)).toEqual([37, 0]);
+    expect(calls.filter((call) => call.id === 'vibrator')).toEqual([]);
+    expect(calls.filter((call) => call.id === 'pj01').map((call) => call.params.value)).toEqual([255]);
+    timers.get(game.rt.pj01Timer)();
+    expect(calls.filter((call) => call.id === 'pj01').map((call) => call.params.value)).toEqual([255, 0]);
     game.end();
   });
 
-  test('shares configured intensity across reward and punishment without stopping an overlapping action', async () => {
-    const { calls, callbacks, timers, game } = bootGame(physicalType);
+  test('reward and punishment retain separate devices, states and stop timers', async () => {
+    const { calls, callbacks, timers, game } = bootGame();
     await new Promise(setImmediate);
     expect(callbacks.qtz).toEqual(expect.any(Function));
 
@@ -85,23 +86,32 @@ describe.each(['TD01', 'PJ01'])('pushup motor output mapped to %s', (physicalTyp
 
     game.rt.lastActionTs = Date.now() - 20000;
     game.loop();
-    expect(calls.filter((call) => call.id === 'vibrator').map((call) => call.params.value)).toEqual([37, 37]);
-    timers.get(game.rt.punishMotorTimer)();
-    expect(calls.filter((call) => call.id === 'vibrator').map((call) => call.params.value)).toEqual([37, 37, 37]);
+    expect(calls.filter((call) => call.id === 'vibrator').map((call) => call.params.value)).toEqual([37]);
+    expect(game.view).toMatchObject({ vibratorOn: true, pj01On: true });
+    timers.get(game.rt.pj01Timer)();
+    expect(calls.filter((call) => call.id === 'pj01').map((call) => call.params.value)).toEqual([255, 0]);
+    expect(game.view).toMatchObject({ vibratorOn: true, pj01On: false });
     timers.get(game.rt.vibratorTimer)();
-    expect(calls.filter((call) => call.id === 'vibrator').map((call) => call.params.value)).toEqual([37, 37, 37, 0]);
+    expect(calls.filter((call) => call.id === 'vibrator').map((call) => call.params.value)).toEqual([37, 0]);
+    game.end();
+  });
+  test('mapping one physical motor to both roles does not overwrite its configured reward', async () => {
+    const { calls, callbacks, game } = bootGame({ vibrator: ['TD01'], pj01: ['TD01'] });
+    await new Promise(setImmediate);
+    callbacks.qtz({ method: 'low' }); callbacks.qtz({ method: 'high' });
+    game.rt.lastActionTs = Date.now() - 20000; game.loop();
+    expect(calls.filter((call) => call.id === 'vibrator').map((call) => call.params.value)).toEqual([37]);
     expect(calls.some((call) => call.id === 'pj01')).toBe(false);
     game.end();
   });
 });
 
-test('manifest exposes one motor slot for both actions', () => {
+test('manifest exposes both original motor roles and the back-pat status card', () => {
   const manifest = JSON.parse(html.match(/<script type="application\/json" id="game-manifest">([\s\S]*?)<\/script>/)[1]);
-  expect(manifest.version).toBe('2.1.4');
-  expect(manifest.devices.filter((device) => device.capabilities.includes('strength')).map((device) => device.id)).toEqual(['vibrator']);
-  expect(manifest.devices.find((device) => device.id === 'vibrator').maxDevices).toBe(1);
-  expect(manifest.params.find((param) => param.key === 'pj01Duration').device).toBe('vibrator');
+  expect(manifest.devices.filter((device) => device.capabilities.includes('strength')).map((device) => device.id)).toEqual(['vibrator', 'pj01']);
+  expect(manifest.params.find((param) => param.key === 'pj01Duration').device).toBe('pj01');
+  expect(html).toContain('data-bind="pj01OnText"');
   const game = require('../services/gameService').getGameById('pushup-detection');
-  expect(game.devices.find((device) => device.id === 'vibrator').maxDevices).toBe(1);
-  expect(game.i18n.en.devices.vibrator).toBe('Motor (TD01/PJ01)');
+  expect(game.devices.some((device) => device.id === 'pj01')).toBe(true);
+  expect(game.i18n.en.devices.pj01).toBe('Back-pat motor');
 });

@@ -656,8 +656,9 @@
     if (phase && phase !== hostUi.lastPhase) {
       const voiceFor = { MIDDLE: 'edging_middle', EDGING: 'edging_peak', SUB_CALM: 'edging_calm', DELAY: 'edging_delay' };
       const key = voiceFor[phase];
-      if (key) playVoice(key, phase === 'EDGING' ? 'critical' : 'state', function () { return rt.running && hostUi.lastPhase === phase; });
+      // 播放器会立即检查当前阶段；先更新阶段，避免新阶段语音被判为过期。
       hostUi.lastPhase = phase;
+      if (key) playVoice(key, phase === 'EDGING' ? 'critical' : 'state', function () { return rt.running && hostUi.lastPhase === phase; });
     }
     const takeoffMs = Math.max(0, Number(cfg.endCalmLock) || 0) * 1000;
     if (!hostUi.takeoffVoice && takeoffMs > 0 && rt.running && phase === 'SUB_CALM' && rt.endTime && (rt.endTime - Date.now()) <= takeoffMs) {

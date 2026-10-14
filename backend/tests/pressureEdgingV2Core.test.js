@@ -9,6 +9,16 @@ function sample(core, nowMs, value) {
 }
 
 describe('pressure edging v2 core', () => {
+  test('pause preserves the original intensity ramp and wall-clock deadline', () => {
+    const core = create({ duration: 1, endCalmLock: 0 });
+    core.start(1000); core.step({ nowMs: 6000, events: [] });
+    expect(core.snapshot().currentIntensity).toBe(10);
+    const paused = core.pause(6000);
+    expect(paused.snapshot.currentIntensity).toBe(10);
+    expect(paused.effects).toContainEqual({ type: 'device.stop-strength', role: 'motor' });
+    core.resume(8000);
+    expect(core.step({ nowMs: 8000, events: [] }).snapshot).toMatchObject({ currentIntensity: 14, endTimeMs: 61000 });
+  });
   test('defaults and numeric normalization follow the config form (min/max only)', () => {
     const core = create({ duration: 999, midPressure: 18.26, criticalPressure: 20.04 });
     expect(core.snapshot().params).toMatchObject({ duration: 180, midPressure: 18.26, criticalPressure: 20.04 });
@@ -53,7 +63,7 @@ describe('pressure edging v2 core', () => {
     expect(paused.effects).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'device.stop-strength' })]));
     const before = core.snapshot();
     sample(core, 62000, 25);
-    expect(core.snapshot()).toMatchObject({ paused: true, phase: before.phase, endTimeMs: before.endTimeMs, currentIntensity: 0 });
+    expect(core.snapshot()).toMatchObject({ paused: true, phase: before.phase, endTimeMs: before.endTimeMs, currentIntensity: before.currentIntensity });
     core.resume(65000);
     expect(core.snapshot().endTimeMs).toBe(60000);
     core.setParams({ duration: 2, midPressure: 18.5 });

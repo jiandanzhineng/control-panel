@@ -103,8 +103,7 @@ class PressureEdgingV2Core {
     if (!this.rt.running || this.rt.paused) return this.result(nowMs);
     this.rt.paused = true;
     this.rt.pauseStartedAt = nowMs;
-    // 原版暂停：电机置 0，不打断正在进行的电击
-    this.rt.currentIntensity = 0;
+    // 原版只停止设备输出，保留内部强度作为恢复爬升的起点；电击计时不被打断。
     this.effects.push({ type: 'device.stop-strength', role: 'motor' });
     this.log('info', '已暂停', nowMs);
     return this.result(nowMs);

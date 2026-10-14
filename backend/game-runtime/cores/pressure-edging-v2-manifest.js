@@ -1,5 +1,5 @@
 const GAME_ID = 'pressure-edging-v2';
-const VERSION = '2.2.1';
+const VERSION = '2.2.2';
 const TITLE = '气压寸止3阶段升级版';
 
 const DEVICES = [
