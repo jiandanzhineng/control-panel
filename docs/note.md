@@ -1,108 +1,54 @@
-# 开发测试记录
+# 速查索引
 
-- 2026-10-13 语音开始（分支 feat/voice-start）：配置页「设备按键开始」旁新增「语音开始」，固定口令 + 指定麦克风，测试通过后才能确认，进等待页后识别到口令直接开始；远程会话隐藏入口且后端拒连；只对游戏（game 载体）提供。口令为中文「开始游戏」与英文「start the game」各一条，**用户不用选口令——两条都生效，说中哪条都开始**（弹窗只留麦克风 + 说一遍测试，并列出两条口令说明任意一条都行）。
-  - **模型来源与位置**：sherpa-onnx KWS 预训练模型 `sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20`（官方 `kws-models` release，中英双语，一个模型同时识别中文 ppinyin 与英文 phone），只留运行所需文件在 `backend/voice-kws/`：`encoder-epoch-13-avg-2-chunk-16-left-64.int8.onnx`(4.6MB)、`decoder-epoch-13-avg-2-chunk-16-left-64.onnx`(760KB，该模型 decoder 无 int8)、`joiner-epoch-13-avg-2-chunk-16-left-64.int8.onnx`(87KB)、`tokens.txt`、`keywords.txt`。识别跑在 `backend/voice/voiceTriggerService.js`（sherpa-onnx 1.13.8 的 Node/WASM 版；懒加载，进程内复用同一 KeywordSpotter，每条 WS 连接一条 stream）；WS 端点在 `backend/services/voiceTriggerWs.js`（`/voice-trigger`，不带参数，目录内口令同时生效；协议 `ready`/`detected`/`error`）；口令目录 `backend/voice/voicePhraseCatalog.js` 是唯一事实来源，前端从 `GET /api/voice/phrases` 取。打包：模型走 package.json 的 extraResources → `resources/voice-kws`，`sherpa-onnx` 走 asarUnpack。
-  - **多个 WS 端点共用一个 http server**：`backend/services/wsUpgradeRouter.js` 是唯一的 `server.on('upgrade')` 入口，`/bridge` 与 `/voice-trigger` 各自 `register(name, match, handle)`；没有任何路由认领的路径回 400 并销毁 socket（与 ws 自带 WebSocketServer 对未知路径的行为一致），否则 upgrade 会一直挂着。挂载是进程级一次性的（`attach()` 幂等），单测里反复 `init()` 不会重复挂监听。
-  - **改口令时用 text2token 生成建模单元**：`pip install sherpa-onnx click sentencepiece pypinyin`。中文：`from sherpa_onnx import text2token; text2token(['开始游戏'], tokens='backend/voice-kws/tokens.txt', tokens_type='ppinyin')` → `k āi sh ǐ y óu x ì`。英文：`text2token(['START THE GAME'], tokens='backend/voice-kws/tokens.txt', tokens_type='phone+ppinyin', lexicon='<model>/en.phone')` → `S T AA1 R T DH AH0 G EY1 M`（**必须大写**，小写不在词典里会被跳过）。两者写进 `voicePhraseCatalog.js` 的 `tokens`；`buildKeywordsText()` 拼成 `<tokens> @<keyword>`。
-  - **英文口令的 keyword 必须用下划线**：官方文档要求关键词里不能有空格（`replace spaces with underscores`），`@` 后写 `start the game` 会让模型报 `Encode keywords failed` 而加载不出来。因此目录里 `keyword` 存 `START_THE_GAME`（模型返回的就是它），`label` 仍是给人看的 `start the game`。
-  - **选型结论（zh-en 模型，-4..+4 九档语速 + 4 个 piper 音色 × 3 语速 = 21 条正例，324 条中英负例）**：`start the game` 21/21 命中、0 误触发；`let's start the game` 同样 21/21、0 误触发（但更长）；`game start` 在 21 条负例上**全部**误触发（被 "the game starts now" 之类触发），弃用；`start game` 15/21（alan/lessac 全漏）；`start the game now` 16~18/21。按用户规则「先排除误触发、再选召回最高；同分优先 start the game」选定 `start the game`。中文「开始游戏」在新模型下 9/9 命中、0 误触发，与旧 wenetspeech 模型持平。
-  - **参数**：`keywordsScore=2.0`、`keywordsThreshold=0.15`、`maxActivePaths=4`、`numTrailingBlanks=1`、`featConfig 16kHz/80 维`、`modelingUnit=cjkchar`（该字段对本模型只是标签，英文按 phone 解码）。score 1.5~2.5 × threshold 0.10~0.20 全网格结果一致，故沿用旧值。扫描脚本 `tmp/voice-probe-en/scripts/`（临时目录，不入库；`measure.py` 单配置、`measure_all.py` 并行跑全部候选）。
-  - **一次装全部口令，命中哪条回哪条**：`KeywordSpotter` 不支持按流换关键词，所以模型里始终装着两条口令；`voiceTriggerWs` 不做过滤，命中即回 `{type:'detected',phrase,phraseId}`，`ready` 里带 `phrases` 列表。`/voice-trigger` 不再接收 `?phrase=`（带了也忽略），WS 地址上不带参数。一条 vs 两条口令的召回/误触发实测完全一致（9/9、21/21、0 误触发），单帧 decode 耗时也无差异（216ms vs 214ms / 6.4s 音频，约实时率的 3.4%）。
-  - **E2E 截图要关掉 fromSurface**：CDP 默认 `Page.captureScreenshot` 抓合成帧，而后台页里 Element Plus 的入场过渡（opacity 0→1）会卡住不推进，截图里「已识别口令」标签根本看不见（本轮排查掉的一个坑）。改成 `fromSurface:false`（渲染器直接出图）即可拍到瞬时状态；另外**不要在页面里 await requestAnimationFrame**，后台页 rAF 被节流会让 CDP 调用挂死。
-  - **测试音频生成**：`pwsh -File tools/gen-voice-wav.ps1 -TextFile <UTF-8文本，一行一句> -OutDir <目录> -Prefix <前缀> [-Rate n] [-PadSeconds n]`。用 Windows SAPI（默认语音 Microsoft Huihui Desktop）出 16k 单声道 wav，`-PadSeconds` 前后补静音、默认峰值归一化到 0.84（KWS 对响度敏感）。中文文本必须放外部 UTF-8 文件，直接写在命令行会被 PowerShell 的 GBK 读坏。**英文**：本机 SAPI 只有 `Microsoft Zira Desktop`（en-US 女声）一个英文音色；要更多英文音色用 piper VITS（`tmp/voice-probe-en/scripts/gen_piper.py`，sherpa_onnx 的 `OfflineTts` 直接加载 `vits-piper-en_US-*/` 模型，22.05kHz 需重采样到 16k）。
-  - **KWS 音频必须留尾巴**：喂完最后一块后要补 ~0.66s 静音（`numTrailingBlanks`），否则最后一个音素还没出结果就结束，会漏检。测试脚本与 fixture 生成都按这个来。
-  - **E2E 假麦克风**：`node tools/electron-dev.js --local-registry --remote-debugging-port=9224 --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --use-file-for-fake-audio-capture=<wav绝对路径>`（`tools/electron-dev.js` 会把额外参数透传给 electron）。假音频**循环播放**，所以 wav 里口令前后必须留几秒静音（上面的 `-PadSeconds 2`），否则口令连播会在第一次识别后继续触发。假设备在麦克风列表里显示为 `Fake Audio Input`。
-  - 单测：`backend/tests/voicePhraseCatalog.test.js`、`backend/tests/voiceTriggerService.test.js`（fixture wav 在 `backend/tests/fixtures/voice/`，用 `tmp/voice-probe-en/scripts/make_fixtures.py` 从探测音频裁出，每条 60~140KB）、`backend/tests/voiceTriggerWs.test.js`（真实 http server + ws 客户端，覆盖 `/bridge` 与 `/voice-trigger` 共存）、`backend/tests/wsUpgradeRouter.test.js`（未知路径 400）。
+agent 查到的事实、配置位置、命令、踩坑。按主题，详情在 `docs/note/`。
 
-- 2026-10-07 远程会话模式端到端验收（分支 feat/remote-session-mode，生产房间服务 api.undersilicon.cn + 生产 EMQX，双隔离 Electron，仅虚拟设备）：被控端 A 前端/后端/CDP `5303/5301/9234`，主控端 B `5304/5302/9225`，harness 在 `.tmp/remote-session-e2e-1007/`（`lib.js` 提供 ev/api/pageFetch/shootBoth/waitButton，`session-lib.js` 用 token 直连建会话，`sniff.js` 常驻订阅本机 EMQX `/drecv/#` 抓设备下行帧）。7 项场景全过；修 9 处缺陷（详见报告 §5）。报告 `docs/test/remote-session-e2e-2026-10-07.md`（54 张内嵌截图）。
+## 环境与工具
 
-  复用要点：
-  1. **房间码**由房间服务生成、区分大小写且含 `-`/`_`（如 `x_ny6g-l7uk`），前端不得 `toUpperCase` 或去连字符，只 strip 空白（`frontend/src/remote/remoteSessionFormat.ts` 的 `normalizeJoinCode`）。
-  2. **虚拟设备只订阅 `/dpub`**，设备真正收到的下行帧在 `/drecv/<id>`：验证钳制/看门狗要订阅本机 EMQX `/drecv/#`（`GET /api/virtual-devices/:id/commands` 只记宿主侧调用，不含投影写入，且被控端改投影设备时是远端写的，只有 `/drecv` 抓包能证明）。
-  3. **界面轮询会吞掉点击**：远程会话页状态 1–3s 轮询一次，脚本点「允许控制」前必须 `waitButton` 等按钮出现；授权后主控端「远程条」会自动跳一次 `/devices`（B 停在 `/home` 也会跳）。
-  4. **急停链路**：主控端点急停 = 主房间命令（被控端停它登记的输出）+ 主控端本机 `emergencyStopOperatorOutputs`（停投影链路输出）；只做前者实测要等 ~8.8s 看门狗。
-  5. **撤权/踢出**通过 events 通道的 `session.revoked {reason, forUserId}` 定向通知主控端；投影设备记录在收尾时删除（被控端设备在主控端是纯投影出来的）。
-  6. **SSE 帧数**统计要在页面脚本前注入钩子（CDP `Page.addScriptToEvaluateOnNewDocument` 包一层 `EventSource`），否则 `RemoteGamePanel` 的流在注入前就建好了；分离式游戏实测：运行中 10s 13 条 patch、活动 3s 5 条、停止后 10s 2 条。
-  7. 长跑/多脚本并发跑时**先 `powershell Stop-Process` 清掉上一轮同名脚本**，否则两个采样进程互相 reset 会话（本轮踩过一次，日志里会出现 `elapsedSec` 回跳）。
-  8. 会话建好后 `GET /api/game-runtime/status`（被控端）才有 `source: remote`；主控端 `/api/games/status` 恒为本机状态，别用它判断分离式游戏在哪跑。
+- 源码版本 1.0.34；版本更新流程 `docs/agent/update.md`；未打包安装版路径与测试端口见 [local-env](note/local-env.md)。
+- 一键检查 `npm run check`；各套件命令、worktree 的 node_modules 处理见 [dev-testing](note/dev-testing.md)。
+- 本机 MQTT 客户端查询、面板在线设备接口在 [local-env](note/local-env.md)。
 
-- 2026-10-06 远控加固（分支 fix/remote-control-hardening）：修复 10 分钟断线/离开卡死/残留房间挂死/断开谎报/首次启动无界面；新增 `backend/services/remoteOutputGuard.js`（逐字段限幅、未知拒绝、电刺激 10s/电机 60s 看门狗）、授权绑定 userId + 踢人、gameSessionId（不带则兼容放行）、5277/5278 只绑回环 + 远控路由 loopbackOnly、gameProxy 白名单、第三方 iframe sandbox。生产房间服务+EMQX 双端实测 13/13 通过，报告 `docs/test/remote-control-e2e-2026-10-06.md`（含截图），harness 在 `.tmp/remote-regression-1006/`。未做：服务端 joinCode 过期/踢线接线、四路写入统一仲裁、手机端适配。
+## 游戏运行时
 
-- 2026-10-06 远控回归（生产房间服务 api.undersilicon.cn + 生产 EMQX，双隔离 Electron，仅虚拟设备，脚本在 `.tmp/remote-regression-1006/`）：单局全链路通过（建房/加入/授权/选游戏/启动/原始 UI 渲染/暂停继续/改参/电击/forceEdge/停止复位/设备管理白名单/投影写与限幅）。失败：① 远程游戏 10 分钟凭据到期必断且无刷新（`Bad User Name or Password`）；② 操作方 `stop()` 向 `events` 发 `session.revoked` 被 ACL 拒→broker 135 踢线→publish 回调不返回，`leave`/二次 `join` 永久挂起、按钮无限 loading；③ 房主 presence 为 retained offline 的房间，`join` 静默挂死；④ `devices.disconnect` 返回成功但虚拟设备仍在线；⑤ 首次远程启动 surge-edging 时 B 请求 `/api/games/surge-edging` 404 不出 iframe，刷新恢复。9-30 审查报告各项均未修复；远程仅支持 surge-edging/pressure-edging-v2；手机端未实现远程游戏协议。后端 599/600、前端测试全过。
+- HostRuntime 模块、JS Core 契约、`/api/game-runtime` 与原始 UI 托管渲染见 [host-runtime](note/host-runtime.md)。
+- 远程游戏测试环境、虚拟设备检查路径、无头验证方法见 [remote-game-testing](note/remote-game-testing.md)。
 
-- 2026-10-06 创作者月度分成改为「管理员手工录入发放记录」（分支 `docs/creator-payout`，改自 `feat/creator-payout`）：
-  - **删掉自动统计**：不再拉 OpenPanel，删除 `generate` 接口、奖金池/门槛/排除名单/OpenPanel 全部配置与 `.env.example` 段落、`tools/fake-openpanel.js` 及相关测试（`payout_openpanel.go`、`payout_test.go` 一并删除）；`config.go` 的 `csv→csvList` 改名保留。
-  - 表 `payout_reports` 重建：`id` 自增主键、`month`、`game_id`、`author_id`、`author_name`、`valid_plays`（可空，管理员手抄参考数据）、`amount_cny`、`note`、`paid_at`、`paid_by`、`created_at`，唯一键 `(month, game_id)`。旧结构（`status`/`generated_at`、主键 `(month, game_id)`）从未上线生产，迁移时检测到就直接 DROP 重建（`database.go` 的 `dropLegacyPayoutReports`）。
-  - 接口：`POST /api/admin/payouts`（month、gameId、amountCny>0、validPlays?、note?；作者按 game_id 归属自动带出；非社区游戏中文报错；同月同游戏 409）、`GET /api/admin/payouts?month=YYYY-MM`（不带 month 返回全部按月份倒序，附作者邮箱与账号中心 ID）、`POST /api/admin/payouts/{id}/delete`、`GET /api/admin/community-games`（game_id/标题/版本/作者名/邮箱/账号中心 ID/状态 active|revoked）、`GET|POST /api/admin/game-owners`、作者端 `GET /api/payouts/mine`。
-  - game_id 归属补两条规则（`ownership.go`）：① 管理员投稿（`author_is_admin=1`）可以发布到**任何已存在的 game_id**（官方 id、他人社区游戏、指定归属的游戏），**归属不变**，版本仍须严格升高；② 新表 `game_owners(game_id 主键, author_id, author_name, set_by, set_at)` 手工指定归属，邮箱须已存在于 `identities`（否则「该邮箱尚未登录过投稿平台」）。最终优先级：`game_owners` 指定 > 最早的社区 release 作者 > 官方保留。被指定后该游戏视为社区游戏（可录入分成、作者本人可升版）。审核后台 `gameIdStatus` 新增 `admin`（管理员更新）。
-  - 前端：`admin.html`「月度分成」tab 改为社区游戏与作者列表 + 录入表单 + 记录列表（可删）+ 归属指定表单；`submission.js`「我的分成」改显示发放记录（月份/游戏/有效游玩/金额/发放时间/备注，无记录时友好提示）；`docs/contribute.html` 与站点 i18n 文案同步英文（不写具体金额与门槛）。
-  - 运营 guide：新增 `docs/guides/creator-payout-guide.md`（埋点字段与版本、OpenPanel 看板按月统计步骤、同设备同日去重的近似办法、刷量识别、找作者、商城 `/admin/reward` 发钱与备注格式、回投稿平台录入与删改、归属指定、每月检查清单）。
-  - 测试：`gofmt -l .` 干净、`go vet ./...` 通过、`go test ./... -count=1` 通过；play-registry `npm test` 29 通过、`npm run build` 通过。
-- 2026-10-01 托管核心对齐原版逻辑（ADR 草稿 host-runtime-keeps-game-logic）：pressure-edging-v2 2.2.1 恢复临界气压游戏内无上限、曲线拖动经新动作 `setThresholds` 提交宿主、+10 只抬本帧目标、原版强度下发/取整/刺激时长累计；surge-edging 1.4.1 以线上 1.3.6 页面为原版（f84b03e 的算法同步不回退）。两者：参数只限 min/max 不按步长取整、暂停不顺延结束时间也不打断电击、暂停中可电击；宿主开局读一次传感器当前气压，只在气压变化时推样本。仅 iframe 运行的游戏未受大改影响。验证：后端 600（599 过 1 跳过）、前端 16；隔离后端 `PORT=5391 BACKEND_DATA_DIR=.tmp/...` + 虚拟设备 + `PUT /api/dev-access {enabled:true}`，无头 Chrome CDP（需请求头 `x-control-panel-bridge-internal: 1` 才能加载桥脚本）实测拖曲线 20→23.7 宿主同步。
-- 2026-09-30 配置页设备映射卡片头部加「刷新设备」按钮（`refreshDevices`：保留仍有效映射、丢弃离线项、空位自动补第一台在线设备并 saveConfig）；托管运行页空状态加「游戏没加载出来？请刷新一下」提示与刷新按钮（本地重拉状态+重解析页面，远程重建 iframe）。前端 16 测试与构建通过。
-- 2026-09-29 托管游戏回归原始 UI（方向 A）：host 游戏运行页改回各游戏自己的页面。页面带 `?runtime=host|remote` 时进入托管渲染模式（共享桥脚本 `backend/public/game-runtime-bridge.js`）：host 轮询 `/api/game-runtime/status`、命令走 `/api/game-runtime/*`；remote 轮询 `/api/remote-game/status`、命令映射为 `/api/remote-game/command` 白名单。前端 `GameRuntimeView` 只是 iframe 壳（等待按键/重连提示/结束导航/运行中参数面板），页面路径解析器 `frontend/src/play/gamePagePath.ts`（内置游戏走 `/api/games/:id` 的 gamePath，注册表游戏走 `/api/game-cache/install/:id`）。`GameRuntimeSurface`/`gameSurfaces/*` 已删除，配置页不再有「配置预览」。版本：surge-edging 1.4.0（页面源码以线上 1.3.6 为准拉回仓库并加托管适配，core 重写为窗口最小值检测+midDelay）、pressure-edging-v2 2.2.0。验证：后端 596 通过、前端 16 通过、构建通过；无头 Chrome（`--headless=new --virtual-time-budget=6000 --dump-dom`）实测两个页面渲染真实快照、暂停/日志/阶段文字正确，`/api/game-runtime/sensor` 可注入气压触发边缘期。远程双端 MQTT 链路未回归（沿用既有单测覆盖）。移动端 `E:\develop\smart\control_panel_mobile` 有未提交的游戏运行层改动，本轮未同步页面过去。
-- 注意：`PUT /api/dev-access {"enabled":true}` 的状态会**持久化**到后端数据目录，开着它跑后端测试会让 `bridgeAccessGuards`/`browserApiAccess` 两个套件失败（WS 升级被放行）。手测完务必 `{"enabled":false}` 关回。
-- 2026-09-29 俯卧撑游戏：`backend/games/pushup-detection` 与移动端 `assets/games/pushup-detection` 同步；`vibrator` 是共用的电机输出槽，可接 TD01 或 PJ01，奖励与惩罚都使用 `vibratorIntensity`，各自保留时长参数。定向测试：`npm --prefix backend test -- --runInBand pushup-detection-output.test.js`。
+## 远程会话
 
-- 2026-09-23 三阶段远程启动回归：双隔离 Electron 的被控端前端/后端/CDP 为 `5303/5301/9224`，主控端为 `5304/5302/9225`；测试房间服务 `8787`、本机 MQTT `1883`。虚拟设备 `electron_qiya/electron_td01/electron_dianji/electron_lock` 在被控端 `POST /api/virtual-devices/batch` 创建。CDP 实测主控选择 `pressure-edging-v2`、自动设备映射、启动前参数 3 分钟、运行中改为 4 分钟、气压驱动中期/边缘、暂停/继续、电击一次及自动停止、强制边缘、阈值微调 19.2→19.3、停止；两端快照一致，结束 `remote-stop` 后 TD01/电击/锁/传感器收到复位命令。`npm run check`：后端 584 通过、1 跳过，前端 12 通过，构建通过。仅虚拟设备验证，未验证真实硬件输出。隔离后端 `/api/dev-access` 为 `enabled=true`，仅供本机手测。
+- 设备投影会话：房间码、`/drecv` 抓包、急停链路、SSE 统计等复用要点见 [remote-session](note/remote-session.md)。
+- 2026-10-06 加固内容与 5 个已知缺陷见 [remote-session-hardening](note/remote-session-hardening.md)。
 
-- 2026-09-23 CDP 双 Electron 回归：隔离前端 `5303/5304`、后端 `5301/5302`、房间服务 `8787`、CDP `9224/9225`，被控端虚拟设备 `electron_qiya/electron_td01/electron_dianji/electron_lock`。主控创建并加入房间、授权、启动 `surge-edging`，暂停/继续、强度、电击、强制边缘、参数 `duration 20→21`、停止均通过；停止快照为 `ENDED/remote-stop`，设备均安全复位。主控与被控端随后离开房间，最终 `remote-game.active=false`、`game-runtime.active=false`。隔离后端 `/api/dev-access` 保持 `enabled=true` 供手测，未改生产代码。
+## 语音
 
-- 2026-09-23 PC/手机双向远控方案：手机仓库 `docs/plans/2026-09-23-mobile-pc-remote-game-runtime.md` 为跨端 v2 交接规范，PC 草稿已补兼容要求。核对 PC 基线 `7ec92bb`；此记录为文档核对，非功能验收。设备管理需加入客户端远控，commands topic 应使用发送者 credential.userId；三阶段玩法为 `pressure-edging-v2`，不要与 `surge-edging` 混用。
+- 语音开始的入口、模型文件、WS 路由见 [voice-start](note/voice-start.md)。
+- 口令 tokens 生成、选型数据、识别参数见 [voice-start-phrase-model](note/voice-start-phrase-model.md)。
+- 测试音频、假麦克风、CDP 截图坑、单测清单见 [voice-start-testing](note/voice-start-testing.md)。
+- 语音渠道设置与客户端语音助手见 [voice-hub](note/voice-hub.md)。
 
-- 2026-09-23 双客户端远程游戏实测：使用隔离后端（被控端 `5301`、主控端 `5302`）、前端（`5303`/`5304`）、本机 EMQX `1883` 和临时房间服务 `8787`。被控端创建虚拟设备 `test_qiya(QIYA)`、`test_td01(TD01)`、`test_dianji(DIANJI)`、`test_lock(ZIDONGSUO)`，四个设备均在线。设备投影控制通过 MQTT 实测：TD01 `power=99`、电脉冲 `voltage=18/shock=1`、自动锁 `open=0`，均收到 `projection.write-result`。远程游戏房间使用 `gameId=remote-game`、容量 2；主控端加入并授权后，远程启动 `surge-edging` HostRuntime，改参数、暂停/继续、`forceEdge`（边缘次数 1/电击次数 1）、`shockOnce`（电击次数 2）和停止均成功；停止快照为 `ENDED/remote-stop`，虚拟 TD01/电脉冲/自动锁收到停止或复位指令。撤销授权后主控命令返回 `CONTROL_NOT_AUTHORIZED`。本次只验证本机虚拟设备和 MQTT，不代表真实硬件输出；测试临时服务和文件已清理。
+## 设备
 
-- 2026-09-23 远程游戏 HostRuntime：`surge-edging` 1.2.0 的逻辑在后端 `backend/game-runtime` 执行，页面只渲染快照。远程游戏房间 `gameId=remote-game`、容量 2，和设备投影房间分开。全量验证：后端 93 个测试套件 / 579 个测试通过（1 个既有跳过项），前端 11 个测试通过，`npm run build:frontend` 通过；品牌自动重连 12 个测试通过。本轮用 mock 设备验证停止/电击/远控授权、旧序列丢弃和客户端释放；没有做真实设备输出验证。已发布的 `packages/surge-edging-1.1.2-*.zip` 未重建，网站包仍是 iframe 版，直到下次 registry 构建。
+- 串口连接、握手身份、设备 ID 规则、烧录复位见 [devices-serial-flash](note/devices-serial-flash.md)。
+- 品牌 BLE（noble 直连）日志、自动连接设置、能力清单见 [brand-devices](note/brand-devices.md)。
+- 役次元、SOSEXY、GXP、郊狼、FJB 的 GATT 与帧格式见 [device-hardware](note/device-hardware.md)。
+- ESP32-C3 虚拟心率带部署、命令与坑见 [hrm-c3-mock](note/hrm-c3-mock.md)。
 
-- 2026-09-23 游戏运行层：用户要求游戏逻辑继续使用 JavaScript。新游戏应拆分为无浏览器依赖的 `game-core.js` 与 WebView 渲染层；移动端引擎评估见 `E:\smart\project\control_panel_mobile\docs\research\2026-09-23-js-game-core-runtime-feasibility.md`，当前不把锁屏持续运行写成已验证能力。
+## 游戏平台
 
-- 2026-09-05 桌面检查入口：仓库根目录 `npm run check`，依次运行后端 Jest、前端 Node 测试和前端类型检查/生产构建。CI 使用 Node 22 最新补丁版；前端 TypeScript 测试使用 Node 内置类型擦除，建议本地 Node 22.18+。
-- 前端组件按需导入使用 `unplugin-vue-components@29.2.0`，配置在 `frontend/vite.config.ts`。保留 Element Plus 全局样式以维持主题覆盖顺序，图标由各组件显式导入。
-- 设备上报保存窗口为 1 秒，异步写临时文件后替换设备记录；日志每 100ms 批量追加。后端退出、日志下载与诊断上传会等待相应队列完成。
+- 生产服务器、发版回滚、OSS 与缓存规则见 [game-platform-deploy](note/game-platform-deploy.md)。
+- 创作者分成表结构、接口、game_id 归属优先级见 [creator-payout](note/creator-payout.md)。
+- 站点页面入口、百度统计、游戏条目约定见 [site-games](note/site-games.md)。
 
-- 玩法统计（2026-09-09）：走 OpenPanel 看板 `https://op.shiroha.tech`，事件 `game_start`/`game_stop`（及插件对应事件）。属性含 version、source、device_types、device_macs、roles、duration_ms、end_reason。无 heartbeat，无登录态。上报 `https://op.shiroha.tech/api/track`。
-- 埋点数据读取（2026-10-06）：项目 slug `undersilicon-electron-pc`；导出要 read client（`openpanel-client-id` + `openpanel-client-secret` 头），凭证放 `E:\smart\.env` 的 `OPENPANEL_CLIENT_ID`/`OPENPANEL_CLIENT_SECRET`（read secret 不进仓库）。工具 `tools/op-stats.ps1`：`pwsh -File tools\op-stats.ps1 [-Days 30]`，输出事件计数、按游戏启动数、时长（duration 数据只有 1.0.36-beta.5+ 上报）。该实例 `/export/events` 忽略 start/end 且第 1 页只返回少量事件，必须按 `meta.pages` 翻页并本地按时间过滤；`/insights/*`、`/manage/*` 路由不存在。
-- 游戏平台生产 API（2026-09-05）：`https://game-api.undersilicon.cn` 部署在 `47.242.37.88`，systemd 服务 `game-platform` 仅监听 `127.0.0.1:8787`。程序 `/opt/game-platform/current/game-platform`，配置 `/etc/game-platform/game-platform.env`，SQLite `/var/lib/game-platform/game-platform.db`，Nginx `/etc/nginx/conf.d/game-api.undersilicon.cn.conf`。日志用 `journalctl -u game-platform`。
-- 2026-10-06 部署创作者分成 + game_id 归属（develop `45d93f1`）：release `/opt/game-platform/releases/20261006-155439`（Linux 构建：`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath`，scp 后 `ln -sfn` 切 current，`systemctl restart game-platform`）。回滚：current 指回 `releases/20260917-164315`（新表/新列向后兼容，旧程序不读）。部署前备份 `/var/lib/game-platform/game-platform.db.bak.20261006-155439-pre-creator-payout`。surge-edging 首个 release 是导入的官方包，已写 `game_owners` 指定给 DK（identity `01M0YHJE20QDX1V9VFJ020AA3S`）。注意：生产程序不带 `--help`，直接执行会以默认配置在 cwd 建 `data/` 并尝试监听 8787，别在服务器上裸跑。
-- 游戏平台 OSS：公开 bucket `ezs-games`；待审 bucket `ezs-game-submissions` 为 private，只允许 `https://game.undersilicon.cn` POST，`submissions/` 180 天（6 个月）清理，2026-10-06 由 7 天改为 180 天（曾因此丢掉 2 条待审投稿的源包）。ESA 站点 `undersilicon.cn` 的既有 API/admin 缓存规则已补 `no_cache`，全局 CORS 规则排除 `game-api.undersilicon.cn`，由源站返回精确 Origin。
-- 2026-09-05 生产验证：mobile `/me` 返回 `isAdmin: true`，game API 映射为 `admin`；ZIP 创建、OSS 直传、归档校验、待审、退回、批准发布和下架均通过。Electron 生产构建经 CDP 验证从 `/games/cache/` 运行已发布包，QA 页面进入 `ready`，无控制台或资源加载错误。
-- 游戏平台首次投产必须在发布新游戏前调用一次 `/api/admin/registry/import`。生产 `GAME_PLATFORM_EXISTING_REGISTRY_URL` 使用仍保留旧 8 个版本的 `https://game.undersilicon.com/registry.json`；2026-09-05 已完成导入并在 QA 下架后恢复原 8 个游戏。恢复前的环境文件和 SQLite 备份保留在服务器，后缀为 `.bak.20260905-registry-restore`。
-- ESA 缓存规则 `506125495674880` 仅匹配 `game.undersilicon.cn/registry.json`，浏览器与边缘均 `no_cache`、`bypass_all`；玩法页面和不可变游戏资源继续使用自动缓存。默认 registry 已验证为 `DYNAMIC`。
-- BrowserOS neo 使用系统代理 `127.0.0.1:7990` 时，Windows `ProxyOverride` 需包含 `*.undersilicon.cn`；否则 game API 请求可能断连。
-- 游戏投稿平台 Go 工具链（免安装）：`C:\Users\46907\AppData\Local\GoPortable\go1.27.0-full\go\bin\go.exe`。在 `game-platform/` 下执行 `go test ./...`；生产构建使用 `game-platform/Dockerfile`。
+## 客户端与桌面
 
-- 本地测更新用的未打包安装版：`E:\smart\project\control-panel\.tmp\1.0.34-beta.2-win\win-unpacked\UnderSilicon.exe`
-- 当前源码版本：1.0.34（正式渠道）
-- 查本机 MQTT 客户端：`C:\easysmart\tools\emqx\bin\emqx_ctl.cmd clients list`。虚拟网页设备 clientId 形如 `vweb_v-web-cunzhi_xxxxxx`，面板 clientId 形如 `fb-client-DESKTOP-...`。
-- 查面板在线设备：`GET http://127.0.0.1:5278/api/devices`（Electron 内置后端）。进程内虚拟设备另走 `GET /api/virtual-devices`。
-- 数字人本机应用清单：`LOCAL_APP_FEED` 默认走 OSS 源 `https://ezs-firmware.oss-cn-shanghai.aliyuncs.com/apps`。卡片「更新」和「启动」分开。安装校验/解压走后台线程，避免卡在 90%。启动会显示「等待服务就绪（已 N 秒）」。开发态安装目录 `%APPDATA%\Electron\data\apps\digital-human\current`。
-- 内置游戏 `index.html` 的 `game-manifest` 可带 `i18n.en`（title/description/howTo/devices/params/enumLabels/paramDescriptions/paramUnits）。面板列表和配置页按当前语言覆盖中文顶栏字段。游戏页内 UI 读 `DeviceAPI.locale`，静态文案用 `data-en`，JS 用中文当 key 调 `GameI18n.t()`，其它语言在游戏自己的 `i18n.js`。运行中不热切，重进再生效。
-- play-registry 用户页（首页/列表/控制/运行壳）中英跟随浏览器语言，右上角可手动切换，记在 `localStorage.site-locale`。开发文档正文可仍中文，导航与页脚随站点语言。
-- 百度统计（账号 ysy1997212，2026-09-04 接入）：`game.undersilicon.cn` siteId `23498945` hm `4ad0c770327c5e885bfd688a80ccac47`。`admin.html` 审核后台不接入。
-- Electron 窗口/托盘选择：`%APPDATA%\Electron\window-settings.json`（开发态）或 `%APPDATA%\undersilicon\window-settings.json`（安装包）。`closeToTray` 为 `null` 表示还没选过。语言偏好同文件字段 `locale`（`zh` / `en` / `system`）。
-- 小雅启动后由 Electron 开独立窗口（`electron/localAppWindow.js`），主窗口不跳 iframe。窗口标题尾部中文「按F11全屏 ESC退出全屏」、英文 `F11 fullscreen, Esc exit fullscreen`。未登录启动会确认。
-- 语音渠道在面板「设置 → 语音服务」。没改过默认官方。key 在 `BACKEND_DATA_DIR/voice-settings.json`。本机游戏打 `POST /v1/chat/completions`；状态 `GET /api/voice/status`。客户端「瑰夏大人」语音助手调研见 `docs/research/pc-voice-assistant-2026-08-31.md`。唤醒词引擎拟用 `sherpa-onnx-node`（Windows x64，无需预装 C++/Python），KWS 模型 `sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20`。
-- 国内账号/诊断库在 `47.116.46.164`（control_panel_mobile `.env` 的 SERVER_IP），SSH `root` + `~/.ssh/ci.pem`。容器 `undersilicon-cn-api-1` / `undersilicon-cn-postgres-1`，库 `undersilicon_api`。后台 `https://undersilicon-admin.pages.dev/telemetry` 打 `https://api.undersilicon.cn`，就是这台。查包：`docker exec undersilicon-cn-postgres-1 psql -U undersilicon -d undersilicon_api`，表 `diagnostic_log_bundles`。`GET /admin/telemetry/log-bundles` 带 `Cache-Control: max-age=86400`，浏览器会缓存列表一天。
-- 诊断日志上传：日志管理页「上传诊断日志」→ `POST /api/logs/upload-diagnostics` → 国内 `POST https://api.undersilicon.cn/telemetry/log-bundles`，`reason=user_report`。匿名 id 在 `BACKEND_DATA_DIR/diagnostic-anonymous-id.json`。页面「完整日志包」只拉最近 40 条。数字人 stdout 模块名 `DigitalHuman`，文件 `current/tmp_launch.log`。
-- 品牌设备相关测试：`cd backend; npm test -- --runInBand tests/brandDevices.test.js tests/webBle.test.js tests/dglabV2.test.js`
-- Windows 品牌蓝牙产品路径：后端 `@stoprocent/noble` 直连 WinRT。日志前缀 `[ble]`（scan start/found/done、connect、gatt、ready、write）。注入 `fetchImpl` 的测试仍走旧本机桥 HTTP（仅测试用，产品不经本机桥）。
-- ESP32-C3 模拟杯：COM17（CH343），芯片 MAC `60:55:f9:7c:34:2c`，BLE 地址 `60:55:f9:7c:34:2e`，广播名 `YCY-FJB-03`，GATT `FF40/FF41写/FF42通知`。固件 MicroPython `tools/ycy-c3-mock/main.py`。真机命令：`node tools/noble-ycy-e2e.js`。esptool 用 IDF 5.5 venv：`C:\Users\46907\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe -m esptool`。
-- 编桥（旧 Rust 本机桥，已被 noble 直连取代，仅留作参考）：`%USERPROFILE%\.cargo\bin\cargo.exe build --release --manifest-path bridge/Cargo.toml`，再 `npm run build:bridge`。Windows `PeripheralId` 用平台地址字符串，禁止当 UUID。
-- Vite 纯浏览器网页蓝牙只用于开发连 GATT，不保证登记进设备层，不能映射玩法。产品以 Electron 为准。本机蓝牙（noble 直连）连上后走 `/api/brands/connect` mode=native，控制仍走能力接口。
-- 品牌网页蓝牙自动连接设置：`GET/PUT /api/brands/settings`，名单 `GET /api/brands/saved-ble`，默认 autoConnect / autoConnectAll 均为 true。役次元 Chromium 设备 ID 会随 BLE 随机地址变，自动连按广播名静默扫描，沿用已保存设备 id。
-- 役次元杯真机：广播名 `YCY-FJB-03`，地址 `FF:26:02:28:4C:CD`。GATT `FF40/FF41写/FF42通知`。控制帧 6 字节 `35 12 旋转 震动 第三轴 校验`（旋转 0–40）。品牌页连上后有旋转/震动/第三轴滑条。产品路径是「蓝牙连接」（后端 noble 直连），不是网页蓝牙，也不经本机桥。
-- 繁野啵啵贝：广播名 `SOSEXY`，内部类型 `SOSEXY_PID0004`，品牌码 `sosexy`。GATT `EE01/EE02通知/EE03写`；`strength` 为 0–255 同时映射震动与吸吮，独立 `vibration`/`suction` 直接 0–100，`shock` 映射微电流。协议实现见 `backend/brands/protocols/sosexy.js`。页面展示品牌「繁野」、产品「啵啵贝」，不归入役次元。
-- GXP 艾萝机娘二代：广播名 `Xa9935`（部分匹配），内部类型 `GXP_XA9935`，品牌码 `gxp`。GATT 控制写 `FF03`、通知 `FF02`（不解析）。`strength` 0–255→电机 0–100%；震动模式 1–12 仅品牌页试控；震动强度字段未确认不发。协议见 `docs/device/brand/gxp-xa9935-ble-control.md`。
-- 2026-09-04 串口抢占真机验证：`COM17` 上的 `RT01` 先建立普通业务连接，再发起 merged 固件烧录。烧录会自动关闭原串口句柄、移除业务会话并加固件锁；到 100% 后释放锁，设备以同一 ID 和 `v1.1.40` 重新连接成功。
+- 窗口托盘、小雅窗口、更新、设备页行为见 [desktop-client](note/desktop-client.md)。
+- 数字人安装目录、更新启动、日志与打包见 [digital-human](note/digital-human.md)。
+- 面板与游戏 i18n 约定见 [i18n](note/i18n.md)。
 
-- 2026-09-15 游戏网站新增 game-detail.html 游戏介绍页、author.html 作者管理页；作者修改已发布投稿通过 POST /api/submissions/:id/update 回到待审核。
-- 2026-09-20：`drink-pee-unlock` 对外称「喝水/液体收集」，pee 模式是容器放秤上、秤变重。不要写憋尿/排尿/排泄，也不要写成站上秤、喝水变重。游戏版本 2.3.5。
-- 2026-09-16 游戏介绍页入口为 `game-intro.html?id=`（`game-detail.html` 同页保留）。介绍页跟站点深色主题、中英切换，本页可启动/缓存。
-- 2026-09-17 公开 `registry.json` 的社区游戏带 `authorName`（来自投稿署名）。介绍页读该字段；缺署名且非 builtin 才显示未知作者。生产重建：`game-platform rebuild-registry`（加载 `/etc/game-platform/game-platform.env`）。
-- 2026-10-14：qi 的 09-20 投稿 `sub_1a1b94c341415fc3ece8000ffba712aa` 已通过正式发布 API 上线 `pressure-edging-v2-calib` 2.3.9；资源目录 `games/pressure-edging-v2-calib/2.3.9-edf56292/`，正式包 SHA256 `edf562923213d13d481d82e3c1dbafbf1f7dfd4b8a06c024df27dd2124b5969e`。公开 ZIP 的9个文件与提供的原包一致，虚拟桥测试与截图报告见 `tmp/publish-calib239/report.md`，未做真机测试。审核权限须以 `/api/auth/me` 的 role 为准；导航昵称 admin 不表示管理员。国内账号中心当前 `ADMIN_EMAIL=hello@undersilicon.com`，密码及临时token不写入文档。
+## 其他
 
-- 2026-09-23 独立远程工作区路由 `/remote-game`；视觉验证使用 BrowserOS neo，前端 Vite 端口 5174，后端 `npm run dev:backend`。（当时的 Vue 重做 UI / `GameRuntimeSurface` 已于 09-29 删除，见首条。）
-- 2026-09-24 PC 双 Electron 实测：A/B 创建、加入、授权、远程启动 pressure-edging-v2、暂停/继续、运行中改参、B 断线后 A 继续、A 停止和设备复位均通过；仅虚拟设备与本机 MQTT，未验证真实硬件。
-- ESP32-C3 虚拟心率带（标准 BLE HRS 假设备，2026-10-07）：同一块 C3 板（COM17 / CH343，芯片 MAC `60:55:f9:7c:34:2c`，BLE 地址 `60:55:f9:7c:34:2e`），广播名 `HRM-Virtual`。固件 `tools/hrm-c3-mock/`（MicroPython `hrm.py` + 开机自启 `main.py`，部署 `pwsh tools/hrm-c3-mock/deploy.ps1`；mpremote 1.29.0 已装在 IDF 5.2 venv）。服务：标准 `0x180D`（`0x2A37` notify 1Hz / `0x2A38` / `0x2A39`）+ `0x180F` 电量 + `0x180A` 设备信息（序列号 = 基础 MAC）+ `0x00FF` 面板身份 `0xFF04` + `0xFFE0` 测试控制（`0xFFE1` 写文本命令）。命令：`hr=150` 立即固定、`mode=cycle/rest/fixed/nocontact/silent`、`contact=0`、`rr=0/1`、`battery=NN`、`noise=F`、`adv=on/off`。主机自测 `python tools/hrm-c3-mock/host_test.py`（21 项检查，实测全过；bleak 只装在 `C:\Users\46907\.espressif\python_env\idf5.2_py3.11_env\Scripts\python.exe`）。面板连着时改场景用 `python tools/hrm-c3-mock/serial_cmd.py "contact=0"`（走串口 REPL）。面板接入：品牌页自动连接，设备类型 `HRM`、能力 `heartRate`，设备 ID 取 0xFF04 = `6055f97c342c`。注意：① 写命令要占用设备唯一中央连接，panel/手机连着时脚本连不上；② 串口工具打开端口时 DTR/RTS 会把板子按在复位态，需同时置 False 才能读到输出；③ 该 main.py 覆盖了板上原来的 `ycy-c3-mock`，切回命令见 README。
+- 跨项目工具与备份（smart-backup、BLE 扫描工具、AlibabaProtect 守卫、memory-index）在 `E:/smart/tools/`，根层 `docs/note.md` 有索引。
 
-- git worktree 里跑 `npm run electron:debug`（2026-10-08）：worktree 不带 node_modules，需把主仓的 `node_modules`、`play-registry/node_modules` 用目录联接（`New-Item -ItemType Junction`）链进来，`backend`/`frontend` 的 node_modules 要单独 `npm install`。CDP 调游戏 iframe 时按 iframe 自己的 target（url 含 `5173/games/<id>`）连。
+## 统计与诊断
+
+- OpenPanel 事件、导出凭证位置、`tools/op-stats.ps1` 用法见 [analytics](note/analytics.md)。
+- 诊断日志上传链路、国内库查询见 [diagnostics](note/diagnostics.md)。

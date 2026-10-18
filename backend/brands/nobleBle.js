@@ -553,7 +553,7 @@ class NobleBle {
       logger.error('[ble] connect fail', { address: key, err: 'not found', ms: Date.now() - t0 });
       throw new Error(`未找到设备 ${address}`);
     }
-    // 心率带走独立分支：只订阅通知、不要求写特征（见方案 docs/plan/heart-rate-strap.md）。
+    // 心率带走独立分支：只订阅通知、不要求写特征（见方案 docs/plans/heart-rate-strap.md）。
     if (detectBrand(nameOf(p), p) === 'hrm') return await this._connectHrm(p, key, t0);
     await this._gattConnect(p, key, t0);
     let write = null;

@@ -1,5 +1,5 @@
 // 游戏卡片上的「远程延迟」标签判定（纯逻辑，便于 node 单测）。
-// 依据：docs/plan/2026-10-06-remote-session-mode.md §4.5 —— 分离式游戏（runtime: host）
+// 依据：docs/plans/2026-10-06-remote-session-mode.md §4.5 —— 分离式游戏（runtime: host）
 // 的逻辑跑在设备所在端，远程时设备反馈不经网络；页面式游戏在主控端跑，远程时有延迟。
 export interface RuntimeTag {
   /** i18n key：标签文案 */

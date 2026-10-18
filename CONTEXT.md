@@ -56,7 +56,7 @@ _Avoid_: 主设备、默认通道
 _Avoid_: 自动扫描（只描述发现动作，没有表达合法设备会保持连接）
 
 **激活配置 (Active Config)**：
-写在 `active-plugin.json` 的一次性**配置信箱**——只给 detector 传 pluginId + deviceMap + params，detector 启动时同步读取。它**不承担运行状态语义**："当前跑的是谁"的真相在 bridge 的活跃 session（见 [[0005-backend-authoritative-play-state]]），不看这个文件。
+写在 `active-plugin.json` 的一次性**配置信箱**——只给 detector 传 pluginId + deviceMap + params，detector 启动时同步读取。它**不承担运行状态语义**："当前跑的是谁"的真相在 bridge 的活跃 session（见 [[2026-07-02-backend-authoritative-play-state]]），不看这个文件。
 _Avoid_: 把它当"当前激活状态"的真相来源
 
 **设备复位 (Device Reset)**：
@@ -64,4 +64,4 @@ _Avoid_: 把它当"当前激活状态"的真相来源
 _Avoid_: close、关闭（口语可说"关掉设备"，但模型里是逐能力 stop）
 
 **退出信号 (Exit Signal)**：
-玩法正常退出时主动发给 bridge 的显式信号，是设备复位的主通道。插件由主进程监听 webview 销毁后发出，游戏由前端离开时发出。信号**不带 id**——含义为"复位当前活跃玩法"，靠全局唯一约束定位。与之互补的是 ws 断开后的 60 秒宽限期（仅兜底崩溃/断电等异常，不承担正常退出）。见 [[0005-backend-authoritative-play-state]]。
+玩法正常退出时主动发给 bridge 的显式信号，是设备复位的主通道。插件由主进程监听 webview 销毁后发出，游戏由前端离开时发出。信号**不带 id**——含义为"复位当前活跃玩法"，靠全局唯一约束定位。与之互补的是 ws 断开后的 60 秒宽限期（仅兜底崩溃/断电等异常，不承担正常退出）。见 [[2026-07-02-backend-authoritative-play-state]]。

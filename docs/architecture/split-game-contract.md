@@ -1,7 +1,7 @@
 # 分离式游戏标准（game-core 契约）
 
 > 状态：已实施（步骤 5 前半，2026-10-07）
-> 承接：[2026-10-06-remote-session-mode.md](../plan/2026-10-06-remote-session-mode.md) §4.5「游戏：逻辑跟着设备走」
+> 承接：[2026-10-06-remote-session-mode.md](../plans/2026-10-06-remote-session-mode.md) §4.5「游戏：逻辑跟着设备走」
 > 相关：[game-runtime-unified-design.md](game-runtime-unified-design.md)（页面式游戏）、ADR-0004/0005（玩法唯一性与权威状态）
 
 分离式游戏 = **逻辑文件 + 画面文件**。逻辑跑在设备所在端的后端（本机游玩时就是本机后端），

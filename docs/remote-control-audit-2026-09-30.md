@@ -45,7 +45,7 @@
 - `/games/proxy/<host>/...` 无白名单反向代理，且剥掉 `X-Frame-Options`/CSP（`backend/routes/gameProxy.js:39-41`）。
 - 游戏 iframe 无 `sandbox`（`frontend/src/views/GameCurrentView.vue:3-10`）：外部游戏页与面板同源，可读 localStorage 里的账号 token（`frontend/src/api/auth.ts:27`，key 与移动端共享）。
 - 组合后果：恶意/被注入的外部游戏页可静默自建房间、自授权、外发房间码。
-- `docs/adr/0001`「本机即可信」的前提在接入远控后已不成立——该 ADR 自己写明此时认证是第一优先级。
+- `docs/adr/2026-07-02-local-machine-is-trusted-no-bridge-auth.md`「本机即可信」的前提在接入远控后已不成立——该 ADR 自己写明此时认证是第一优先级。
 
 ## 3. P1 — 功能 bug
 

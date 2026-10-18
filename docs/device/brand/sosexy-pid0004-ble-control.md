@@ -27,7 +27,7 @@
 | Write | `0000ee03-0000-1000-8000-00805f9b34fb` | 下发控制报文 |
 | CCCD | `00002902-0000-1000-8000-00805f9b34fb` | 开启 EE02 通知 |
 
-BLE 地址不是稳定设备身份。扫描时优先用广播名和 PID 过滤；控制层只把地址当作本次连接定位信息。`control-panel` 的生产接入仍应遵守 `docs/adr/0008-single-control-connection-per-physical-device.md`：同一物理设备同一时间只允许一个下行控制连接。手机 APP 和 PC 工具同时连接时，连接抢占、通知缺失或写入失败都属于可能结果。
+BLE 地址不是稳定设备身份。扫描时优先用广播名和 PID 过滤；控制层只把地址当作本次连接定位信息。`control-panel` 的生产接入仍应遵守 `docs/adr/2026-08-06-single-control-connection-per-physical-device.md`：同一物理设备同一时间只允许一个下行控制连接。手机 APP 和 PC 工具同时连接时，连接抢占、通知缺失或写入失败都属于可能结果。
 
 ## 3. 连接流程
 
