@@ -2,7 +2,7 @@
 
 ## 当前版本与安装包
 
-- 源码版本 1.0.34（正式渠道）；版本号更新流程见 `docs/agent/update.md`。
+- 源码版本以仓库根 package.json 为准；版本号更新流程见 `docs/agent/update.md`。
 - 本地测更新用的未打包安装版：`E:\smart\project\control-panel\.tmp\1.0.34-beta.2-win\win-unpacked\UnderSilicon.exe`。
 
 ## MQTT

@@ -4,7 +4,7 @@ agent 查到的事实、配置位置、命令、踩坑。按主题，详情在 `
 
 ## 环境与工具
 
-- 源码版本 1.0.34；版本更新流程 `docs/agent/update.md`；未打包安装版路径与测试端口见 [local-env](note/local-env.md)。
+- 源码版本以根 package.json 为准；版本更新流程 `docs/agent/update.md`；未打包安装版路径与测试端口见 [local-env](note/local-env.md)。
 - 一键检查 `npm run check`；各套件命令、worktree 的 node_modules 处理见 [dev-testing](note/dev-testing.md)。
 - 本机 MQTT 客户端查询、面板在线设备接口在 [local-env](note/local-env.md)。
 

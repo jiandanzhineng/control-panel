@@ -1,6 +1,6 @@
 {
   "name": "backend",
-  "version": "1.0.36-beta.8",
+  "version": "1.0.36",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
