@@ -4,6 +4,9 @@
 
 - API `https://game-api.undersilicon.cn`，服务器 `47.242.37.88`。
 - systemd 服务 `game-platform` 仅监听 `127.0.0.1:8787`；程序 `/opt/game-platform/current/game-platform`；配置 `/etc/game-platform/game-platform.env`；SQLite `/var/lib/game-platform/game-platform.db`；Nginx `/etc/nginx/conf.d/game-api.undersilicon.cn.conf`。日志 `journalctl -u game-platform`。
+- 查投稿/待审（只读，不用登录审核后台）：`ssh -i ~/.ssh/id_rsa root@47.242.37.88` 后
+  `sqlite3 -header -column /var/lib/game-platform/game-platform.db "SELECT id,author_name,title,status,datetime(created_at,'unixepoch','localtime') FROM submissions ORDER BY created_at DESC LIMIT 20;"`。
+  审核后台「投稿审核」只列 `status='pending'`；`POST /api/submissions` 一落库就有行，所以没行=没人开始投稿。真实投稿尝试也可在 `/var/log/nginx/access.log` 里 grep `POST /api/submissions`。
 
 ## 发版与回滚
 
@@ -19,6 +22,7 @@
 - ESA 站点 `undersilicon.cn` 的既有 API/admin 缓存规则已补 `no_cache`，全局 CORS 规则排除 `game-api.undersilicon.cn`。
 - ESA 缓存规则 `506125495674880` 只匹配 `game.undersilicon.cn/registry.json`，浏览器与边缘均 `no_cache`、`bypass_all`；玩法页面和不可变资源用自动缓存。默认 registry 已验证为 `DYNAMIC`。
 - 公开 `registry.json` 的社区游戏带 `authorName`（投稿署名）；介绍页读该字段，缺署名且非 builtin 才显示未知作者。
+- 待审源包会过期：`sub_98042fefb077036af982bc100cef6284`（Gu，2026-09-21，三阶段寸止自动校准定时版）在库里仍是 `pending`，但 `ezs-game-submissions` 里的 `source.zip` 已被旧 7 天规则清掉（2026-10-25 查为 NoSuchKey），**这条投稿无法审核发布，只能让作者重传**。查源包是否存在：对 `ezs-game-submissions` 做 HEAD `submissions/<id>/source.zip`。
 
 ## 工具链
 
