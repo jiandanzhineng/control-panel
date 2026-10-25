@@ -15,10 +15,12 @@ function createQuitCoordinator({
   let allowQuit = false;
   let shutdownPromise = null;
 
-  function handleBeforeQuit(event) {
-    if (allowQuit) return;
-    event.preventDefault();
-    if (shutdownPromise) return;
+  function shutdownThen(onReadyToQuit = () => app.quit()) {
+    if (allowQuit) {
+      onReadyToQuit();
+      return shutdownPromise || Promise.resolve();
+    }
+    if (shutdownPromise) return shutdownPromise;
 
     let timeout;
     const deadline = new Promise((_, reject) => {
@@ -40,8 +42,16 @@ function createQuitCoordinator({
       .finally(() => {
         clearTimeout(timeout);
         allowQuit = true;
-        app.quit();
+        onReadyToQuit();
       });
+
+    return shutdownPromise;
+  }
+
+  function handleBeforeQuit(event) {
+    if (allowQuit) return;
+    event.preventDefault();
+    shutdownThen();
   }
 
   function handleWindowClose(event) {
@@ -54,7 +64,11 @@ function createQuitCoordinator({
     if (!shutdownPromise) app.quit();
   }
 
-  return { handleBeforeQuit, handleWindowClose };
+  return {
+    handleBeforeQuit,
+    handleWindowClose,
+    quitAfterShutdown: (onReadyToQuit) => shutdownThen(onReadyToQuit),
+  };
 }
 
 module.exports = { createQuitCoordinator };

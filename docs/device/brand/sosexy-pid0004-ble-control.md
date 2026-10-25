@@ -27,7 +27,7 @@
 | Write | `0000ee03-0000-1000-8000-00805f9b34fb` | 下发控制报文 |
 | CCCD | `00002902-0000-1000-8000-00805f9b34fb` | 开启 EE02 通知 |
 
-BLE 地址不是稳定设备身份。扫描时优先用广播名和 PID 过滤；控制层只把地址当作本次连接定位信息。`control-panel` 的生产接入仍应遵守 `docs/adr/0008-single-control-connection-per-physical-device.md`：同一物理设备同一时间只允许一个下行控制连接。手机 APP 和 PC 工具同时连接时，连接抢占、通知缺失或写入失败都属于可能结果。
+BLE 地址不是稳定设备身份。扫描时优先用广播名和 PID 过滤；控制层只把地址当作本次连接定位信息。`control-panel` 的生产接入仍应遵守 `docs/adr/2026-08-06-single-control-connection-per-physical-device.md`：同一物理设备同一时间只允许一个下行控制连接。手机 APP 和 PC 工具同时连接时，连接抢占、通知缺失或写入失败都属于可能结果。
 
 ## 3. 连接流程
 
@@ -402,4 +402,4 @@ python sosexy_test_gui.py
 - `suction`：单独写属性 `0007`，对外 0–100，直接下发，不换算。
 - `shock`：写微电流属性 `0003`，对外 0–100，模式写入 `0004`。
 
-设备类型定义在 `backend/devices/registry.js`，报文编码在 `backend/brands/protocols/sosexy.js`。Windows 本机桥接复用 `ycy_bridge` 的 `127.0.0.1:3001/api/send`，Electron Web Bluetooth 使用 EE01/EE02/EE03；两条路径都遵守设备层单控制连接和断开前 `stopAll` 复位。
+设备类型定义在 `backend/devices/registry.js`，报文编码在 `backend/brands/protocols/sosexy.js`。本机蓝牙由后端 noble 直连 EE01/EE02/EE03（不再经 `ycy_bridge` 本机桥），Electron Web Bluetooth 使用 EE01/EE02/EE03；两条路径都遵守设备层单控制连接和断开前 `stopAll` 复位。

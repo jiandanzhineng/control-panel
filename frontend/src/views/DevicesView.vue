@@ -11,38 +11,50 @@
           <el-statistic :title="t('devices.offline')" :value="disconnectedCount" class="offline-stat" />
         </div>
         <div class="actions">
-          <el-button
-            :icon="Connection"
-            :disabled="!bleSupported || bleBusy"
-            :loading="bleBusy"
-            @click="startBleConnect"
-          >
-            {{ bleBusy ? t('devices.bleConnecting') : t('devices.bleConnect') }}
-          </el-button>
-          <el-dropdown trigger="click" @command="handleDeviceToolCommand">
-            <el-button>
-              <el-icon><Tools /></el-icon>
-              {{ t('devices.tools') }}
-              <el-icon class="el-icon--right"><ArrowDown /></el-icon>
-            </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item
-                  command="provision"
-                  :icon="SetUp"
-                  :disabled="!provisionSupported || provisionBusy || bleBusy"
-                >
-                  {{ t('devices.provision') }}
-                </el-dropdown-item>
-                <el-dropdown-item command="serial" :icon="Link" :disabled="serialBusy">
-{{ serialBusy ? t('devices.serialConnecting') : t('devices.serialConnect') }}
-                </el-dropdown-item>
-                <el-dropdown-item command="firmware" :icon="Upload">
-                  {{ t('firmware.title') }}
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
+          <!-- 主控端远程模式：本机专属操作（蓝牙/配网/串口/批量/固件/清空）置灰，提示去被控端做 -->
+          <el-tooltip :disabled="!hostOnlyLocked" :content="t('remoteSession.lock.hostOnly')" placement="top">
+            <span class="action-wrap">
+              <el-button
+                :icon="Connection"
+                :disabled="hostOnlyLocked || !bleSupported || bleBusy"
+                :loading="bleBusy"
+                @click="startBleConnect"
+              >
+                {{ bleBusy ? t('devices.bleConnecting') : t('devices.bleConnect') }}
+              </el-button>
+            </span>
+          </el-tooltip>
+          <el-tooltip :disabled="!hostOnlyLocked" :content="t('remoteSession.lock.hostOnly')" placement="top">
+            <span class="action-wrap">
+              <el-dropdown trigger="click" :disabled="hostOnlyLocked" @command="handleDeviceToolCommand">
+                <el-button :disabled="hostOnlyLocked">
+                  <el-icon><Tools /></el-icon>
+                  {{ t('devices.tools') }}
+                  <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+                </el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      command="provision"
+                      :icon="SetUp"
+                      :disabled="!provisionSupported || provisionBusy || bleBusy"
+                    >
+                      {{ t('devices.provision') }}
+                    </el-dropdown-item>
+                    <el-dropdown-item command="serial" :icon="Link" :disabled="serialBusy">
+                      {{ serialBusy ? t('devices.serialConnecting') : t('devices.serialConnect') }}
+                    </el-dropdown-item>
+                    <el-dropdown-item command="batch" :icon="Operation">
+                      {{ t('devices.batch') }}
+                    </el-dropdown-item>
+                    <el-dropdown-item command="firmware" :icon="Upload">
+                      {{ t('firmware.title') }}
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </span>
+          </el-tooltip>
           <el-button 
             type="primary" 
             :icon="Refresh" 
@@ -51,14 +63,18 @@
           >
 {{ loading ? t('devices.refreshing') : t('devices.refreshList') }}
           </el-button>
-          <el-button 
-            type="danger" 
-            :icon="Delete"
-            :disabled="loading || devices.length === 0"
-            @click="clearAllDevices"
-          >
-            {{ t('devices.clear') }}
-          </el-button>
+          <el-tooltip :disabled="!hostOnlyLocked" :content="t('remoteSession.lock.hostOnly')" placement="top">
+            <span class="action-wrap">
+              <el-button
+                type="danger"
+                :icon="Delete"
+                :disabled="hostOnlyLocked || loading || devices.length === 0"
+                @click="clearAllDevices"
+              >
+                {{ t('devices.clear') }}
+              </el-button>
+            </span>
+          </el-tooltip>
         </div>
       </div>
     </el-card>
@@ -910,6 +926,13 @@
       :device-info="monitorDevice"
       @close="closeMonitorModal"
     />
+    <el-dialog
+      v-model="batchDialogVisible"
+      :title="t('devices.batch')"
+      width="min(720px, calc(100vw - 24px))"
+    >
+      <DeviceBatchControl :devices="devices" :type-configs="deviceTypeConfigs" />
+    </el-dialog>
       </el-tab-pane>
 
       <el-tab-pane :label="t('devices.brands')" name="brands">
@@ -917,7 +940,13 @@
       </el-tab-pane>
 
       <el-tab-pane :label="t('devices.remote')" name="remote">
-        <RemoteProjectionPanel />
+        <div class="remote-entry">
+          <div class="remote-entry__text">
+            <strong>{{ t('remoteSession.title') }}</strong>
+            <span>{{ t('remoteSession.entryDesc') }}</span>
+          </div>
+          <el-button type="primary" plain @click="router.push('/remote')">{{ t('remoteSession.entryOpen') }}</el-button>
+        </div>
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -927,13 +956,15 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Link, Loading, SetUp, Tools } from '@element-plus/icons-vue'
+import { Refresh, Delete, Edit, Check, Close, ArrowDown, Upload, Connection, Link, Loading, SetUp, Tools, Operation } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import DeviceMonitorModal from '../components/DeviceMonitorModal.vue'
-import RemoteProjectionPanel from '../components/RemoteProjectionPanel.vue'
 import BrandsPanel from '../components/BrandsPanel.vue'
+import DeviceBatchControl from '../components/DeviceBatchControl.vue'
 import { track } from '../analytics'
 import { listDevices, getDeviceTypes, getDeviceTypeConfigs } from '../api/devices'
+import { friendlyMessage } from '../api/errorMessage'
+import { useRemoteSession } from '../composables/useRemoteSession'
 
 interface DeviceData { [key: string]: any }
 type TransportType = 'mqtt' | 'serial' | 'ble' | 'remote' | 'brand' | 'brandBle';
@@ -996,6 +1027,9 @@ interface OtaStatus {
 
 const router = useRouter();
 const { t } = useI18n();
+// 主控端远程模式：设备表只有被控端设备，本机专属操作（蓝牙/串口/配网/批量/固件/清空）后端会 423，界面先置灰
+const remoteSession = useRemoteSession();
+const hostOnlyLocked = computed(() => remoteSession.isOperatorRemote.value === true);
 
 function deviceTypeName(type?: string) {
   if (!type) return '';
@@ -1011,7 +1045,8 @@ function opName(operation: { key?: string; name?: string }) {
   return translated === i18nKey ? (operation?.name || key) : translated;
 }
 
-const activeTab = ref<'devices' | 'remote'>('devices');
+const activeTab = ref<'devices' | 'brands' | 'remote'>('devices');
+const batchDialogVisible = ref(false);
 const devices = ref<Device[]>([]);
 const deviceTypeMap = ref<Record<string, string>>({});
 const deviceTypeConfigs = ref<Record<string, any>>({});
@@ -1252,7 +1287,10 @@ async function readJsonResponse(res: Response, fallback: string) {
   let data: any = null;
   try { data = await res.json(); } catch (_) {}
   if (!res.ok || data?.error) {
-    throw new Error(data?.message || data?.error?.message || fallback);
+    // 远程模式下的失败带后端错误码（REMOTE_LOCKED / 投影写入超时等）：给出可读文案
+    const error: any = new Error(data?.message || data?.error?.message || fallback);
+    error.code = data?.error?.code;
+    throw error;
   }
   return data;
 }
@@ -1282,14 +1320,21 @@ async function updateSerialAutoConnect(value: boolean | string | number) {
   }
 }
 
-function handleDeviceToolCommand(command: 'provision' | 'serial' | 'firmware') {
+function handleDeviceToolCommand(command: 'provision' | 'serial' | 'firmware' | 'batch') {
   if (command === 'provision') {
     openProvisionDialog();
   } else if (command === 'serial') {
     openSerialDialog();
   } else if (command === 'firmware') {
     router.push('/devices/firmware');
+  } else if (command === 'batch') {
+    openBatchDialog();
   }
+}
+
+function openBatchDialog() {
+  batchDialogVisible.value = true;
+  refreshDevices().catch(() => {});
 }
 
 async function openSerialDialog() {
@@ -1354,7 +1399,7 @@ async function setControlConnection(device: Device, type: TransportType) {
     await readJsonResponse(res, t('devices.controlFailed'));
     await refreshDevices();
   } catch (error: any) {
-    ElMessage.error(error?.message || t('devices.controlFailed'));
+    ElMessage.error(friendlyMessage(error, (key) => t(key), t('devices.controlFailed')));
   }
 }
 
@@ -1419,6 +1464,10 @@ watch(selectedDeviceId, (deviceId) => {
     loadFirmwareInfo(deviceId);
     setupOtaStatusConnection(deviceId);
   }
+});
+
+watch(batchDialogVisible, (open) => {
+  if (open) refreshDevices().catch(() => {});
 });
 
 function handleCurrentChange(currentRow: Device | null) {
@@ -1711,8 +1760,7 @@ async function saveChanges() {
         throw error;
       }
     }
-    const ok = await publishMessage(selectedDevice.value.id, updateData);
-    if (!ok) throw new Error(t('devices.publishFailed'));
+    await publishMessage(selectedDevice.value.id, updateData);
     // 更新本地数据与状态
     devices.value = devices.value.map(d => {
       if (d.id === selectedDevice!.value!.id) {
@@ -1727,7 +1775,7 @@ async function saveChanges() {
     cancelEdit();
     ElMessage.success(t('devices.dataUpdated'));
   } catch (e: any) {
-    ElMessage.error(e?.message || t('devices.saveFailed'));
+    ElMessage.error(friendlyMessage(e, (key) => t(key), t('devices.saveFailed')));
   }
 }
 
@@ -1742,7 +1790,12 @@ async function publishMessage(deviceId: string, message: any) {
     body: JSON.stringify({ message })
   });
   const data = await res.json();
-  if (!res.ok || data.error) return false;
+  if (!res.ok || data.error) {
+    // 远程模式下写入失败带错误码（投影超时 / 被控端拒绝）：交给调用方给可读文案
+    const error: any = new Error(data?.error?.message || data?.message || t('devices.publishFailed'));
+    error.code = data?.error?.code;
+    throw error;
+  }
   return true;
 }
 
@@ -1758,10 +1811,14 @@ async function executeOperation(operation: any) {
       method: 'POST'
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || t('devices.opExecFailed'));
+    if (!res.ok || data.error) {
+      const error: any = new Error(data?.error?.message || data?.message || t('devices.opExecFailed'));
+      error.code = data?.error?.code;
+      throw error;
+    }
     ElMessage.success(t('devices.opOk', { name: opName(operation) }));
   } catch (error: any) {
-    ElMessage.error(error?.message || t('devices.opFailed', { name: opName(operation) }));
+    ElMessage.error(friendlyMessage(error, (key) => t(key), t('devices.opFailed', { name: opName(operation) })));
   } finally {
     operationLoading.value[operationKey] = false;
   }
@@ -2078,15 +2135,36 @@ async function executeDeviceOperation(device: Device, operation: any) {
       method: 'POST'
     });
     const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data.message || t('devices.opExecFailed'));
+    if (!res.ok || data.error) {
+      const error: any = new Error(data?.error?.message || data?.message || t('devices.opExecFailed'));
+      error.code = data?.error?.code;
+      throw error;
+    }
     ElMessage.success(t('devices.opOk', { name: opName(operation) }));
   } catch (error: any) {
-    ElMessage.error(error?.message || t('devices.opFailed', { name: opName(operation) }));
+    ElMessage.error(friendlyMessage(error, (key) => t(key), t('devices.opFailed', { name: opName(operation) })));
   }
 }
 </script>
 
 <style scoped>
+.remote-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+.remote-entry__text { display: grid; gap: 3px; }
+.remote-entry__text strong { color: var(--text-primary); }
+.remote-entry__text span { color: var(--text-muted); font-size: 13px; }
+@media (max-width: 640px) {
+  .remote-entry { align-items: stretch; flex-direction: column; }
+}
 .devices-page {
   padding: 20px;
   width: 100%;
@@ -2129,6 +2207,11 @@ async function executeDeviceOperation(device: Device, operation: any) {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+/* 置灰按钮不触发鼠标事件，包一层 span 让提示能悬停出来 */
+.action-wrap {
+  display: inline-flex;
 }
 
 .serial-auto-control {
@@ -2415,7 +2498,9 @@ async function executeDeviceOperation(device: Device, operation: any) {
     gap: 8px;
   }
   
-  .actions .el-button {
+  .actions .el-button,
+  .actions .action-wrap,
+  .actions .action-wrap .el-dropdown {
     width: 100%;
   }
 

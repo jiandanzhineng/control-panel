@@ -1,5 +1,6 @@
 const fs = require('fs')
 const path = require('path')
+const { randomUUID } = require('crypto')
 
 const fallbackDir = path.resolve(__dirname, '../data')
 const dataDir = process.env.BACKEND_DATA_DIR ? path.resolve(process.env.BACKEND_DATA_DIR) : fallbackDir
@@ -51,4 +52,17 @@ function setItem(key, value) {
   }
 }
 
-module.exports = { getItem, setItem }
+async function setItemAsync(key, value) {
+  const filePath = getFilePathForKey(key)
+  const temporaryPath = `${filePath}.${randomUUID()}.tmp`
+  const content = typeof value === 'string' ? value : JSON.stringify(value)
+  await fs.promises.mkdir(dataDir, { recursive: true })
+  try {
+    await fs.promises.writeFile(temporaryPath, content, 'utf-8')
+    await fs.promises.rename(temporaryPath, filePath)
+  } finally {
+    await fs.promises.rm(temporaryPath, { force: true })
+  }
+}
+
+module.exports = { getItem, setItem, setItemAsync }

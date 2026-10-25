@@ -2,7 +2,7 @@
  * 渲染进程役次元 Web Bluetooth 客户端。
  * 发现可写特征后，接收 { op:'write', value:number[] } 下发 0x35 帧。
  */
-const WRITE_HINTS = ['ff41', 'ff31', 'ff71', 'ae01'];
+const WRITE_HINTS = ['ffb1', 'ff41', 'ff31', 'ff71', 'ae01'];
 
 function sameUuid(actual, expected) {
   return String(actual || '').toLowerCase().includes(expected);
@@ -24,10 +24,10 @@ async function writeCharacteristic(characteristic, value) {
 function resolveType(name) {
   const n = String(name || '');
   if (/灌肠|enema|glj|yisk/i.test(n)) return 'YCY_ENEMA';
-  if (/杯|cup|fjb/i.test(n)) return 'YCY_CUP';
-  if (/toy|玩具|tdd|电机/i.test(n)) return 'YCY_TOY';
+  if (/fjb-?03/i.test(n)) return 'YCY_CUP';
+  if (/fjb|tdd|跳蛋|toy|玩具|电机/i.test(n)) return 'YCY_TOY';
+  if (/杯|cup/i.test(n)) return 'YCY_CUP';
   if (/dj|ems|电击/i.test(n)) return 'YCY_EMS';
-  // 未知型号不能默认成带机械输出的杯，避免误发电机/泵帧；保守使用电击型能力。
   return 'YCY_EMS';
 }
 

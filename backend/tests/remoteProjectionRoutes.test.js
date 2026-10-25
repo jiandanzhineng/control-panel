@@ -3,6 +3,9 @@ jest.mock('../services/remoteProjectionService', () => ({
   create: jest.fn(async () => ({ active: true, role: 'owner' })),
   join: jest.fn(async () => ({ active: true, role: 'operator' })),
   stop: jest.fn(async () => ({ active: false })),
+  authorize: jest.fn(async () => ({ active: true, role: 'owner', authorized: true })),
+  revoke: jest.fn(async () => ({ active: true, role: 'owner', authorized: false })),
+  kick: jest.fn(async () => ({ active: true, role: 'owner', members: [] })),
 }));
 
 const express = require('express');
@@ -38,4 +41,25 @@ test('remote projection routes forward auth and room inputs', async () => {
 
   await request(app).post('/api/remote-projection/stop').expect(200, { active: false });
   expect(service.stop).toHaveBeenCalledTimes(1);
+});
+
+test('remote projection authorize/revoke/kick routes forward the target user', async () => {
+  const app = createApp();
+
+  await request(app)
+    .post('/api/remote-projection/authorize')
+    .send({ userId: 'user-1' })
+    .expect(200, { active: true, role: 'owner', authorized: true });
+  expect(service.authorize).toHaveBeenCalledWith('user-1');
+
+  await request(app)
+    .post('/api/remote-projection/revoke')
+    .expect(200, { active: true, role: 'owner', authorized: false });
+  expect(service.revoke).toHaveBeenCalledTimes(1);
+
+  await request(app)
+    .post('/api/remote-projection/kick')
+    .send({ userId: 'user-2' })
+    .expect(200, { active: true, role: 'owner', members: [] });
+  expect(service.kick).toHaveBeenCalledWith('user-2');
 });

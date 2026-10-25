@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#0e0d0c" />
+<title data-i18n-title="introTitle">游戏介绍 · 硅基之下游戏库</title>
+<meta name="description" content="查看玩法介绍、所需设备和操作步骤，再从本页启动。" />
+<link rel="stylesheet" href="assets/css/site.css?v=20260916" />
+<script src="assets/js/baidu-tongji.js"></script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff5b3a'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='%231a0a04'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-mark">⚡</span>
+      <span data-i18n="brand">硅基之下游戏库</span>
+    </a>
+    <div class="nav-links">
+      <a href="games.html" data-i18n="navGames" class="active">游戏</a>
+      <a href="control.html" data-i18n="navControl">设备控制</a>
+      <a href="docs/agent-guide.html" data-i18n="navDocs">开发文档</a>
+      <a href="docs/device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
+      <a href="submit.html" class="nav-cta" data-i18n="navContribute">投稿</a>
+      <div class="lang-switch">
+        <button type="button" data-set-locale="zh">中</button>
+        <button type="button" data-set-locale="en">EN</button>
+      </div>
+    </div>
+    <div class="nav-account" data-auth-slot></div>
+  </div>
+</nav>
+
+<main class="platform-page container">
+  <p id="detail-message" class="platform-message" aria-live="polite"></p>
+  <section id="detail-content">
+    <div class="skeleton detail-skeleton"></div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-links">
+      <a href="games.html" data-i18n="navGames">游戏</a>
+      <a href="control.html" data-i18n="navControl">设备控制</a>
+      <a href="docs/agent-guide.html" data-i18n="navDocs">开发文档</a>
+      <a href="docs/device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
+      <a href="docs/devices.html" data-i18n="footerDevices">设备清单</a>
+      <a href="submit.html" data-i18n="navContribute">投稿</a>
+    </div>
+    <div><span data-i18n="footerNoteGames">UnderSilicon 控制面板 · 远程玩法仓库 · 已发布内容由平台审核后同步</span></div>
+  </div>
+</footer>
+
+<div class="toast" id="toast"></div>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-game-title">
+  <div class="modal-panel">
+    <div class="modal-head">
+      <h3 id="modal-game-title" data-i18n="modalPlay">玩法</h3>
+      <button class="modal-close" aria-label="关闭" data-i18n-aria="close">✕</button>
+    </div>
+    <div class="modal-status" id="modal-status"></div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" id="modal-cancel" data-i18n="cancel">取消</button>
+      <button class="btn btn-primary" id="modal-start" disabled data-i18n="startPlay">启动玩法 →</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/js/i18n.js?v=20260916"></script>
+<script src="assets/js/platform-config.js?v=20260916"></script>
+<script src="assets/js/auth.js?v=20260916"></script>
+<script src="assets/js/play-launcher.js?v=20260916"></script>
+<script src="assets/js/game-detail.js?v=20260916"></script>
+</body>
+</html>

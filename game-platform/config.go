@@ -43,7 +43,7 @@ func loadConfig() (Config, error) {
 		DatabasePath:        envOr("GAME_PLATFORM_DATABASE_PATH", "./data/game-platform.db"),
 		StorageDriver:       strings.ToLower(envOr("GAME_PLATFORM_STORAGE_DRIVER", "filesystem")),
 		LocalStorageDir:     envOr("GAME_PLATFORM_LOCAL_STORAGE_DIR", "./data/objects"),
-		PublicSiteOrigins:   csv(envOr("GAME_PLATFORM_PUBLIC_SITE_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000")),
+		PublicSiteOrigins:   csvList(envOr("GAME_PLATFORM_PUBLIC_SITE_ORIGINS", "http://127.0.0.1:3000,http://localhost:3000")),
 		IdentityAPIBaseURL:  strings.TrimRight(strings.TrimSpace(envOr("GAME_PLATFORM_IDENTITY_API_BASE_URL", "http://127.0.0.1:3000")), "/"),
 		IdentityTimeout:     time.Duration(envInt64("GAME_PLATFORM_IDENTITY_TIMEOUT_SECONDS", 10)) * time.Second,
 		MaxUploadBytes:      envInt64("GAME_PLATFORM_MAX_UPLOAD_BYTES", 20*1024*1024),
@@ -109,7 +109,7 @@ func envInt64(name string, fallback int64) int64 {
 	return parsed
 }
 
-func csv(value string) []string {
+func csvList(value string) []string {
 	items := strings.Split(value, ",")
 	out := make([]string, 0, len(items))
 	for _, item := range items {

@@ -1,5 +1,5 @@
 <template>
-  <div class="play-config-page">
+  <div class="play-config-page game-config-surface">
     <el-card shadow="never" class="config-header-card">
       <template #header>
         <div class="card-header">
@@ -57,6 +57,9 @@
         <div class="card-header">
           <el-icon><Connection /></el-icon>
           <span>{{ t('playConfig.mapping') }}</span>
+          <el-button class="mapping-refresh" size="small" :icon="Refresh" :loading="loadingDevices" @click="refreshDevices">
+            {{ t('playConfig.refreshDevices') }}
+          </el-button>
         </div>
       </template>
       <div v-if="loadingDevices" class="loading-container">
@@ -386,6 +389,14 @@
           >
             {{ t('playConfig.buttonStart') }}
           </el-button>
+          <el-button
+            v-if="carrierType === 'game' && !remoteSession.isOperatorRemote.value"
+            :loading="startBusy && pendingStartMode === 'voice'"
+            :disabled="loadingAll || blocking.length > 0 || startBusy"
+            @click="openVoiceStartDialog"
+          >
+            {{ t('playConfig.voiceStart') }}
+          </el-button>
         </div>
       </div>
 
@@ -471,6 +482,78 @@
         >{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="voiceStartDialog.visible"
+      :title="t('playConfig.pickVoiceTrigger')"
+      width="480px"
+      append-to-body
+      @closed="onVoiceStartDialogClosed"
+    >
+      <p class="button-start-hint">{{ t('playConfig.pickVoiceTriggerHint') }}</p>
+      <!-- 口令不用选：目录里的口令全都生效，说中哪条都开始 -->
+      <p class="voice-phrase-list">{{ t('playConfig.voicePhrasesAny', { phrases: voicePhraseText }) }}</p>
+      <el-form label-width="88px">
+        <el-form-item :label="t('playConfig.voiceMic')">
+          <!-- 挂到弹窗内：默认挂 body 时，弹层会被后加的 el-overlay 压住，
+               虽然能点但看不见（真机第一次打开列表就是空白的）。 -->
+          <el-select
+            v-model="voiceMicId"
+            :placeholder="t('playConfig.pickMic')"
+            :loading="voiceMicLoading"
+            :teleported="false"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="m in voiceMicOptions"
+              :key="m.id"
+              :label="m.label"
+              :value="m.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item :label="t('playConfig.voiceTest')">
+          <div class="start-trigger-row">
+            <el-button
+              :disabled="voiceTestStatus === 'waiting'"
+              :loading="voiceTestStatus === 'waiting'"
+              @click="testVoicePhrase"
+            >{{ t('playConfig.sayOnce') }}</el-button>
+            <el-tag v-if="voiceTestStatus === 'ok'" type="success" size="small">{{ t('playConfig.voiceHeard') }}</el-tag>
+            <el-tag v-else-if="voiceTestStatus === 'fail'" type="danger" size="small">{{ t('playConfig.voiceNotHeard') }}</el-tag>
+            <el-tag v-else-if="voiceTestStatus === 'waiting'" type="warning" size="small">{{ t('playConfig.voiceListening') }}</el-tag>
+          </div>
+        </el-form-item>
+        <el-form-item v-if="voiceTestStatus === 'waiting' || voiceLevel > 0" :label="t('playConfig.voiceLevel')">
+          <div class="voice-level-track">
+            <div class="voice-level-bar" :style="{ width: `${Math.round(voiceLevel * 100)}%` }"></div>
+          </div>
+        </el-form-item>
+      </el-form>
+      <el-alert
+        v-if="voiceDialogError"
+        :title="voiceDialogError"
+        type="error"
+        :closable="false"
+        show-icon
+      />
+      <el-alert
+        v-else-if="voiceMicOptions.length <= 1 && !voiceMicLoading"
+        :title="t('playConfig.noMicDevice')"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+      <template #footer>
+        <el-button @click="closeVoiceStartDialog">{{ t('common.cancel') }}</el-button>
+        <el-button
+          type="primary"
+          :loading="startBusy"
+          :disabled="!canConfirmVoiceStart"
+          @click="confirmVoiceStart"
+        >{{ t('common.confirm') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -478,9 +561,22 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { track } from '../analytics';
+import { trackPlayStart } from '../playAnalytics';
+import { mappedDeviceCount, mappedDeviceMacs, mappedDeviceTypes, mappedRoles } from '../playSession';
 import { setActivePlay } from '../composables/useActivePlay';
+import { isHostRuntime, requestGameStart } from '../play/launchGame';
 import { listenDeviceButtonPress } from '../composables/useButtonStart';
+import {
+  DEFAULT_MIC_ID,
+  fetchVoicePhrases,
+  listenVoicePhrase,
+  listMicrophones,
+  type MicOption,
+} from '../composables/useVoiceStart';
+import { joinPhraseLabels, resolveMicId, voiceErrorKey } from '../play/voiceStart';
+import { useRemoteSession } from '../composables/useRemoteSession';
+import { friendlyMessage } from '../api/errorMessage';
+import { needsFrontendOccupy } from '../remote/remotePlay';
 import { currentLocale } from '../i18n';
 import { localeTag } from '../i18n/locale';
 import { localizePlay } from '../i18n/play';
@@ -493,7 +589,8 @@ import {
   DocumentChecked,
   VideoPlay,
   ArrowLeft,
-  Loading
+  Loading,
+  Refresh
 } from '@element-plus/icons-vue';
 
 interface PlayDevice {
@@ -501,6 +598,7 @@ interface PlayDevice {
   label?: string;
   capabilities?: string[];
   required?: boolean;
+  maxDevices?: number;
 }
 interface PlayParam {
   key: string;
@@ -575,8 +673,20 @@ const parameters = reactive<Record<string, any>>({});
 const startTriggerDeviceId = ref('');
 const triggerTestStatus = ref<'idle' | 'waiting' | 'ok' | 'fail'>('idle');
 let triggerTestCloser: null | (() => void) = null;
-const pendingStartMode = ref<'immediate' | 'button' | null>(null);
+const pendingStartMode = ref<'immediate' | 'button' | 'voice' | null>(null);
 const buttonStartDialog = reactive({ visible: false });
+
+// 语音开始：口令来自后端固定目录，麦克风来自 enumerateDevices，测试通过才能确认。
+const voiceStartDialog = reactive({ visible: false });
+const voicePhrases = ref<Array<{ id: string; label: string; default: boolean }>>([]);
+
+const voiceMicId = ref(DEFAULT_MIC_ID);
+const voiceMicOptions = ref<MicOption[]>([{ id: DEFAULT_MIC_ID, label: '' }]);
+const voiceMicLoading = ref(false);
+const voiceTestStatus = ref<'idle' | 'waiting' | 'ok' | 'fail'>('idle');
+const voiceLevel = ref(0);
+const voiceDialogError = ref('');
+let voiceTestCloser: null | (() => void) = null;
 
 const isMobile = ref(window.innerWidth <= 768);
 function onResize() { isMobile.value = window.innerWidth <= 768; }
@@ -679,10 +789,11 @@ const deviceMappings = computed(() => {
   return requiredDevices.value.map(rd => ({
     roleName: rd.id || t('playConfig.unknownRole'),
     roleLabel: deviceRoleLabel(rd),
-    deviceIds: deviceMapping[rdKey(rd)] || [],
+    deviceIds: [...(deviceMapping[rdKey(rd)] || [])],
     logicalId: rd.id,
     required: rd.required,
     capabilities: rdCapabilities(rd),
+    maxDevices: rd.maxDevices,
   }));
 });
 
@@ -818,6 +929,110 @@ const canConfirmButtonStart = computed(() => {
   return !!startTriggerDeviceId.value && triggerTestStatus.value === 'ok' && buttonInputDevices.value.length > 0 && !startBusy.value;
 });
 
+// ---------- 语音开始 ----------
+
+// 弹窗里展示「说哪条都行」，进等待页时也用它提示
+const voicePhraseText = computed(() => joinPhraseLabels(voicePhrases.value));
+
+function stopVoiceTest() {
+  if (voiceTestCloser) {
+    voiceTestCloser();
+    voiceTestCloser = null;
+  }
+}
+
+function resetVoiceTest() {
+  stopVoiceTest();
+  voiceTestStatus.value = 'idle';
+  voiceLevel.value = 0;
+}
+
+function voiceErrorMessage(error: any): string {
+  return t(voiceErrorKey(error?.code || error?.name));
+}
+
+async function loadVoicePhrases() {
+  if (voicePhrases.value.length > 0) return;
+  try {
+    voicePhrases.value = await fetchVoicePhrases();
+  } catch (e: any) {
+    voiceDialogError.value = voiceErrorMessage(e);
+  }
+}
+
+async function loadVoiceMics() {
+  voiceMicLoading.value = true;
+  try {
+    const list = await listMicrophones(t('playConfig.micDefault'));
+    voiceMicOptions.value = list;
+    voiceMicId.value = resolveMicId(voiceMicId.value, list);
+    voiceDialogError.value = '';
+  } catch (e: any) {
+    voiceDialogError.value = voiceErrorMessage(e);
+  } finally {
+    voiceMicLoading.value = false;
+  }
+}
+
+function testVoicePhrase() {
+  resetVoiceTest();
+  voiceDialogError.value = '';
+  voiceTestStatus.value = 'waiting';
+  voiceTestCloser = listenVoicePhrase({
+    micDeviceId: voiceMicId.value,
+    onDetected: () => {
+      voiceTestStatus.value = 'ok';
+      voiceTestCloser = null;
+    },
+    onLevel: (level) => { voiceLevel.value = level; },
+    onError: (error) => {
+      voiceTestStatus.value = 'fail';
+      voiceDialogError.value = voiceErrorMessage(error);
+      voiceTestCloser = null;
+    },
+    onTimeout: () => {
+      voiceTestStatus.value = 'fail';
+      voiceTestCloser = null;
+    },
+    timeoutMs: 15000,
+  });
+}
+
+const canConfirmVoiceStart = computed(() => {
+  return voiceTestStatus.value === 'ok' && !startBusy.value;
+});
+
+async function openVoiceStartDialog() {
+  startError.value = '';
+  if (loadingAll.value) {
+    startError.value = t('playConfig.loadingPlay');
+    return;
+  }
+  if (blocking.value.length > 0) {
+    startError.value = t('playConfig.hasBlocking');
+    return;
+  }
+  voiceDialogError.value = '';
+  resetVoiceTest();
+  voiceStartDialog.visible = true;
+  await Promise.all([loadVoicePhrases(), loadVoiceMics()]);
+}
+
+function closeVoiceStartDialog() {
+  voiceStartDialog.visible = false;
+}
+
+function onVoiceStartDialogClosed() {
+  resetVoiceTest();
+  voiceDialogError.value = '';
+}
+
+async function confirmVoiceStart() {
+  if (!canConfirmVoiceStart.value) return;
+  await start(false, 'voice');
+  if (!startError.value) closeVoiceStartDialog();
+}
+
 function buildDefaultParameters(meta: any) {
   const defaults: Record<string, any> = {};
   if (Array.isArray(meta?.params)) {
@@ -837,7 +1052,14 @@ function clearReactive(obj: Record<string, any>) {
 function updateMapping(row: any) {
   const key = String(row.logicalId ?? '');
   if (key) {
-    deviceMapping[key] = Array.isArray(row.deviceIds) ? row.deviceIds.slice() : [];
+    const selected = Array.isArray(row.deviceIds) ? row.deviceIds.slice() : [];
+    if (row.maxDevices === 1 && selected.length > 1) {
+      const previous = deviceMapping[key] || [];
+      const added = selected.find((id: string) => !previous.includes(id));
+      deviceMapping[key] = added ? [added] : selected.slice(-1);
+    } else {
+      deviceMapping[key] = selected;
+    }
   }
 }
 
@@ -875,6 +1097,7 @@ function loadSavedConfig(): {
   deviceMap?: Record<string, string[]>;
   params?: Record<string, any>;
   startTriggerDeviceId?: string;
+  voiceMicId?: string;
 } | null {
   try {
     const raw = localStorage.getItem(storageKey());
@@ -890,6 +1113,7 @@ function saveConfig() {
       deviceMap: { ...deviceMapping },
       params: { ...parameters },
       startTriggerDeviceId: startTriggerDeviceId.value,
+      voiceMicId: voiceMicId.value,
     }));
   } catch (_) {}
 }
@@ -1049,7 +1273,7 @@ async function loadAll() {
           const dev = getDevice(id);
           return dev && dev.connected && typeSupportsCapabilities(dev.type, capabilities);
         });
-        deviceMapping[key] = valid;
+        deviceMapping[key] = rd.maxDevices === 1 ? valid.slice(0, 1) : valid;
       } else {
         const candidate = devices.value.find(d => d.connected && typeSupportsCapabilities(d.type, capabilities));
         deviceMapping[key] = candidate ? [candidate.id] : [];
@@ -1060,10 +1284,48 @@ async function loadAll() {
     startTriggerDeviceId.value = buttonInputDevices.value.some((d) => d.id === savedTrigger)
       ? savedTrigger
       : pickDefaultTriggerDeviceId();
+
+    // 口令不再需要保存/回填：目录里的口令全都生效
+    const savedMic = String(saved?.voiceMicId || '');
+    if (savedMic) voiceMicId.value = savedMic;
   } catch (e: any) {
     error.value = e?.message || t('playConfig.loadFailed');
   } finally {
     loadingAll.value = false;
+    loadingDevices.value = false;
+  }
+}
+
+// 刷新设备列表：不重载整页，保留仍有效的映射，空位按能力自动补第一台在线设备
+async function refreshDevices() {
+  if (loadingDevices.value) return;
+  loadingDevices.value = true;
+  deviceError.value = '';
+  try {
+    const res = await fetch('/api/devices');
+    const devs = await res.json();
+    if (!res.ok) throw new Error(devs?.message || t('playConfig.loadDevicesFailed'));
+    devices.value = Array.isArray(devs) ? devs : [];
+    for (const rd of requiredDevices.value) {
+      const key = rdKey(rd);
+      if (!key) continue;
+      const capabilities = rdCapabilities(rd);
+      const current = Array.isArray(deviceMapping[key]) ? deviceMapping[key] : [];
+      const valid = current.filter(id => {
+        const dev = getDevice(id);
+        return dev && dev.connected && typeSupportsCapabilities(dev.type, capabilities);
+      });
+      if (valid.length) {
+        deviceMapping[key] = rd.maxDevices === 1 ? valid.slice(0, 1) : valid;
+      } else {
+        const candidate = devices.value.find(d => d.connected && typeSupportsCapabilities(d.type, capabilities));
+        deviceMapping[key] = candidate ? [candidate.id] : [];
+      }
+    }
+    saveConfig();
+  } catch (e: any) {
+    deviceError.value = e?.message || t('playConfig.loadDevicesFailed');
+  } finally {
     loadingDevices.value = false;
   }
 }
@@ -1189,10 +1451,27 @@ function onCarrierConfirmClosed() {
   if (carrierConfirm.resolve) resolveCarrierConfirm(false);
 }
 
+const remoteSession = useRemoteSession();
 const startBusy = ref(false);
 const startError = ref('');
 
-async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate') {
+// 主控端远程模式：玩法跑在本机，被控端要登记一次远程占用；被控端本地玩法运行中会被拒。
+// 只对被控端「看不到载体」的玩法在这里登记（插件、外部代理游戏）；页面式游戏与
+// HostRuntime 由后端的 /api/games/:id/start、/api/game-runtime/start 在启动前登记，
+// 保证「被拒 ⇒ 一定没启动」（失败可见），不依赖前端先失败。
+async function occupyRemotePlayIfNeeded(): Promise<boolean> {
+  if (!remoteSession.isOperatorRemote.value) return true;
+  if (!needsFrontendOccupy(carrierType.value)) return true;
+  try {
+    await remoteSession.occupyPlay(playId.value, title.value);
+    return true;
+  } catch (error: any) {
+    startError.value = friendlyMessage(error, (key) => t(key), t('playConfig.startFailed'));
+    return false;
+  }
+}
+
+async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'immediate') {
   startError.value = '';
   pendingStartMode.value = mode;
   // meta/设备列表还在加载时禁止启动：此时 play 为空，会以空 deviceMap/params 启动，
@@ -1219,6 +1498,13 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
       return;
     }
   }
+  if (mode === 'voice') {
+    if (voiceTestStatus.value !== 'ok') {
+      startError.value = t('playConfig.testFirst');
+      pendingStartMode.value = null;
+      return;
+    }
+  }
 
   const externalUrl = String(route.query.externalUrl || '') || (play.value as any)?.externalUrl || '';
   // 外部游戏 / 插件：进入外部载体确认（合流）
@@ -1237,13 +1523,50 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
     saveConfig();
     const installedGamePath = await installRemoteGameIfNeeded();
     await savePlayedGame(installedGamePath);
+    if (!(await occupyRemotePlayIfNeeded())) return;
     const playTitle = title.value;
 
     if (carrierType.value === 'game') {
-      track('game_start', {
-        game_id: playId.value || externalUrl || 'unknown',
-        device_count: Object.keys(deviceMapping).length,
+      trackPlayStart({
+        carrier: 'game',
+        id: playId.value || externalUrl || 'unknown',
+        version: String(play.value?.version || ''),
+        source: String(play.value?.source || route.query.source || ''),
+        device_types: mappedDeviceTypes(deviceMapping, devices.value),
+        device_macs: mappedDeviceMacs(deviceMapping),
+        roles: mappedRoles(deviceMapping),
+        device_count: mappedDeviceCount(deviceMapping),
       });
+      const started = await requestGameStart(
+        playId.value,
+        { ...deviceMapping },
+        { ...parameters },
+        mode !== 'immediate',
+        {
+          gamePath: installedGamePath || (play.value as any)?.gamePath || String(route.query.gamePath || ''),
+          externalUrl,
+        },
+      );
+      if (isHostRuntime(started)) {
+        const hostQuery: Record<string, string> = { id: playId.value };
+        const hostGamePath = installedGamePath || (play.value as any)?.gamePath || String(route.query.gamePath || '');
+        if (hostGamePath) hostQuery.gamePath = hostGamePath;
+        hostQuery.locale = currentLocale();
+        hostQuery.localeTag = localeTag(currentLocale());
+        if (started.deferred) {
+          hostQuery.startMode = mode;
+          hostQuery.deviceMap = JSON.stringify({ ...deviceMapping });
+          hostQuery.params = JSON.stringify({ ...parameters });
+          if (startTriggerDeviceId.value) hostQuery.startTriggerDeviceId = startTriggerDeviceId.value;
+          if (mode === 'voice') {
+            hostQuery.voicePhraseLabel = voicePhraseText.value;
+            hostQuery.voiceMicId = voiceMicId.value;
+          }
+        }
+        setActivePlay({ carrierType: 'game', id: playId.value, title: playTitle, resume: { name: 'game_runtime', query: hostQuery } });
+        router.push({ name: 'game_runtime', query: hostQuery });
+        return;
+      }
       const resumeQuery: Record<string, string> = {
         id: playId.value,
         deviceMap: JSON.stringify({ ...deviceMapping }),
@@ -1257,6 +1580,10 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
       if (mode === 'button' && startTriggerDeviceId.value) {
         resumeQuery.startMode = 'button';
         resumeQuery.startTriggerDeviceId = startTriggerDeviceId.value;
+      } else if (mode === 'voice') {
+        resumeQuery.startMode = 'voice';
+        resumeQuery.voicePhraseLabel = voicePhraseText.value;
+        resumeQuery.voiceMicId = voiceMicId.value;
       }
       setActivePlay({ carrierType: 'game', id: playId.value, title: playTitle, resume: { name: 'game_current', query: resumeQuery } });
       router.push({ name: 'game_current', query: resumeQuery });
@@ -1272,16 +1599,31 @@ async function start(force: boolean, mode: 'immediate' | 'button' = 'immediate')
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(apiErrorMessage(data, t('playConfig.pluginStartFailed')));
-      track('plugin_start', {
-        plugin_id: playId.value,
-        device_count: Object.keys(deviceMapping).length,
+      if (!res.ok) {
+        // 错误码透出：远程模式下被控端本地玩法在跑时会以 HOST_PLAY_ACTIVE 拒绝启动
+        const error: any = new Error(apiErrorMessage(data, t('playConfig.pluginStartFailed')));
+        error.code = data?.error?.code;
+        throw error;
+      }
+      trackPlayStart({
+        carrier: 'plugin',
+        id: playId.value,
+        version: String(play.value?.version || ''),
+        source: String(play.value?.source || 'plugin'),
+        device_types: mappedDeviceTypes(deviceMapping, devices.value),
+        device_macs: mappedDeviceMacs(deviceMapping),
+        roles: mappedRoles(deviceMapping),
+        device_count: mappedDeviceCount(deviceMapping),
       });
       setActivePlay({ carrierType: 'plugin', id: playId.value, title: playTitle, resume: { name: 'plugin_run', params: { id: playId.value } } });
       router.push({ name: 'plugin_run', params: { id: playId.value } });
     }
   } catch (e: any) {
-    startError.value = e?.message || t('playConfig.startFailed');
+    startError.value = friendlyMessage(e, (key) => t(key), t('playConfig.startFailed'));
+    // 插件启动失败：释放刚登记的占用，避免挂在被控端（页面式/HostRuntime 由后端启动接口负责）
+    if (remoteSession.isOperatorRemote.value && needsFrontendOccupy(carrierType.value)) {
+      await remoteSession.releasePlay(playId.value).catch(() => {});
+    }
   } finally {
     startBusy.value = false;
     pendingStartMode.value = null;
@@ -1333,6 +1675,7 @@ watch(locale, () => { void loadAll().then(() => recomputeBlocking()); });
 onUnmounted(() => {
   window.removeEventListener('resize', onResize);
   stopTriggerTest();
+  stopVoiceTest();
 });
 </script>
 
@@ -1343,6 +1686,42 @@ onUnmounted(() => {
   max-width: 1200px;
   margin: 0 auto;
   box-sizing: border-box;
+}
+
+/* 游戏配置沿用游戏运行页的窄容器、白色卡片和圆角节奏，避免配置和游玩像两个产品。 */
+.game-config-surface {
+  max-width: 900px;
+  padding: 20px 16px 40px;
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+.game-config-surface .el-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .05);
+  background: #fff;
+}
+
+.game-config-surface .el-card__header {
+  padding: 16px 20px;
+  border-bottom-color: #f1f5f9;
+}
+
+.game-config-surface .el-card__body {
+  padding: 20px;
+}
+
+.game-config-surface .param-section-title {
+  border-radius: 8px;
+  background: #f1f5f9;
+}
+
+.game-config-surface .action-section {
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fff;
 }
 
 .config-header-card,
@@ -1357,6 +1736,10 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   font-weight: 600;
+}
+
+.mapping-refresh {
+  margin-left: auto;
 }
 
 .carrier-type-tag,
@@ -1548,6 +1931,22 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
+/* 语音测试的音量条：宽度按实时响度走，给用户「麦克风在工作」的反馈。 */
+.voice-level-track {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.voice-level-bar {
+  height: 100%;
+  border-radius: 4px;
+  background: #409eff;
+  transition: width .08s linear;
+}
+
 .action-buttons {
   display: flex;
   gap: 12px;
@@ -1572,6 +1971,15 @@ onUnmounted(() => {
   line-height: 1.7;
   color: var(--el-text-color-regular);
   white-space: pre-line;
+}
+
+.voice-phrase-list {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  line-height: 1.6;
+  border-radius: 6px;
+  background: var(--el-fill-color-light);
+  color: var(--el-text-color-regular);
 }
 
 @media (max-width: 768px) {

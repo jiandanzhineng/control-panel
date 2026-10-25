@@ -9,14 +9,20 @@ const mqttService = require('./services/mqttService');
 const mdnsService = require('./services/mdnsService');
 const logService = require('./services/logService');
 const bridgeService = require('./services/bridgeService');
+const voiceTriggerWs = require('./services/voiceTriggerWs');
 const gameService = require('./services/gameService');
 const gameCacheService = require('./services/gameCacheService');
 const localAppProcessService = require('./services/localAppProcessService');
 const { BRIDGE_INTERNAL_HEADER } = require('./constants/bridgeAccess');
 const { browserApiCors } = require('./middleware/browserApiAccess');
+const { loopbackOnly } = require('./middleware/loopbackOnly');
 const externalGameAccessService = require('./services/externalGameAccessService');
 const serialConnectionService = require('./services/serialConnectionService');
 const remoteProjectionService = require('./services/remoteProjectionService');
+const remoteGameService = require('./services/remoteGameService');
+const remoteSessionService = require('./services/remoteSessionService');
+const { remoteSessionFilter } = require('./middleware/remoteSessionFilter');
+const gameHostService = require('./game-runtime/gameHostService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -140,13 +146,18 @@ function shutdownBackend(reason = 'backend-shutdown', {
   backendShutdownPromise = (async () => {
     await deviceWatchdogService.shutdown(reason);
     await localAppProcessService.stopAll().catch(() => ({ ok: false }));
+    await remoteSessionService.shutdown();
+    await remoteGameService.shutdown();
+    await gameHostService.shutdown();
     await remoteProjectionService.shutdown();
+    voiceTriggerWs.closeAll();
     if (typeof beforeTransportShutdown === 'function') {
       await beforeTransportShutdown();
     }
     await stopRuntimeServices();
-    deviceService.cleanup();
+    await deviceService.cleanup();
     if (closeServer) await closeHttpServer();
+    await logService.flush();
   })().finally(() => {
     backendShutdownPromise = null;
   });
@@ -181,6 +192,8 @@ app.use('/games/cache', express.static(gameCacheService.getCacheRoot()));
 app.use('/games', express.static(gameService.getGameRoot()));
 
 // Routes
+// 主控端远程模式过滤：设备接口只返回本会话投影来的设备、本机专属接口 423（不在远程模式时直接放行）
+app.use('/api', remoteSessionFilter);
 app.use('/api/mqtt', require('./routes/mqtt'));
 app.use('/api/network', require('./routes/network'));
 app.use('/api/mdns', require('./routes/mdns'));
@@ -201,7 +214,11 @@ app.use('/api/test', require('./routes/test'));
 app.use('/api/virtual-devices', require('./routes/virtualDevices'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/voice', require('./routes/voice'));
-app.use('/api/remote-projection', require('./routes/remoteProjection'));
+// 远控接口只服务本机（审查报告 §2.4 的纵深防御；后端本身也已只绑回环）。
+app.use('/api/remote-projection', loopbackOnly, require('./routes/remoteProjection'));
+app.use('/api/game-runtime', require('./routes/gameRuntime'));
+app.use('/api/remote-game', loopbackOnly, require('./routes/remoteGame'));
+app.use('/api/remote-session', loopbackOnly, require('./routes/remoteSession'));
 app.use('/api/dev-access', require('./routes/devAccess'));
 app.use('/api/brands', require('./routes/brands'));
 
@@ -215,6 +232,8 @@ app.use((err, req, res, next) => {
 
 const server = http.createServer(app);
 bridgeService.init(server);
+// 「语音开始」WS 与 /bridge 共用同一 server：各自 noServer，在 upgrade 里按路径分发
+voiceTriggerWs.init(server);
 server.on('listening', () => {
   startRuntimeServices();
 });
@@ -226,8 +245,11 @@ server.on('close', () => {
 
 if (require.main === module) {
   logService.cleanOldLogs();
-  server.listen(PORT, () => {
-    logger.info(`Backend server running at http://localhost:${PORT}`);
+  // 只绑回环：局域网/公网不能直达未鉴权的 /api 与 /bridge（审查报告 §2.4）。
+  // 需要局域网访问时显式设 BACKEND_HOST=0.0.0.0。
+  const HOST = process.env.BACKEND_HOST || '127.0.0.1';
+  server.listen(PORT, HOST, () => {
+    logger.info(`Backend server running at http://${HOST}:${PORT}`);
   });
 }
 
@@ -238,6 +260,7 @@ async function handleTerminationSignal(signal) {
     process.exit(0);
   } catch (error) {
     logger.error('Backend shutdown failed', error?.message || error);
+    await logService.flush().catch(() => {});
     process.exit(1);
   }
 }

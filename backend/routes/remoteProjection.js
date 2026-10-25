@@ -54,4 +54,30 @@ router.post('/stop', async (req, res) => {
   }
 });
 
+// 房主显式授权某个成员（userId）。未授权成员拿不到设备清单，写入被拒。
+router.post('/authorize', async (req, res) => {
+  try {
+    res.json(await remoteProjection.authorize(req.body?.userId));
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+router.post('/revoke', async (req, res) => {
+  try {
+    res.json(await remoteProjection.revoke());
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+// 移出房间：服务端踢人 + 本地立即拒绝（服务端踢线未接线）。
+router.post('/kick', async (req, res) => {
+  try {
+    res.json(await remoteProjection.kick(req.body?.userId));
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
 module.exports = router;

@@ -26,6 +26,20 @@ router.delete('/all', async (req, res) => {
   }
 });
 
+router.post('/batch/operations', (req, res) => {
+  try {
+    const result = deviceService.batchExecuteOperation({
+      type: req.body?.type,
+      operationKey: req.body?.operationKey,
+      deviceIds: req.body?.deviceIds,
+      params: (req.body && req.body.params) || {},
+    });
+    res.json(result);
+  } catch (e) {
+    sendError(res, e.code || 'DEVICE_BATCH_OPERATION_FAILED', e.message || String(e), e.status || 500);
+  }
+});
+
 function getBatchFirmwareDevices(scope = 'online') {
   const rows = deviceService.listDevicesForApi();
   if (scope === 'all') return rows;
@@ -435,7 +449,7 @@ router.get('/:id/monitor-stream', (req, res) => {  const deviceId = req.params.i
     const initialData = { deviceId, type: device.type, data: device.data || {} };
     res.write(`event: history\ndata: ${JSON.stringify(initialData)}\n\n`);
 
-    deviceService.notifyDeviceUpdate(deviceId, { report_delay_ms: 250 });
+    deviceService.notifyDeviceUpdate(deviceId, { report_delay_ms: 100 });
 
     const dataChangeHandler = (eventData) => {
       if (eventData.deviceId === deviceId) {

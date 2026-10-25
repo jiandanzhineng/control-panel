@@ -1,5 +1,11 @@
 const request = require('supertest');
 
+jest.mock('../services/mqttClientService', () => ({
+  init: jest.fn(),
+  onMessage: jest.fn(),
+  publish: jest.fn(),
+}));
+
 jest.mock('../services/mqttService', () => ({
   start: jest.fn(async ({ port = 1883, bind = '0.0.0.0' } = {}) => ({
     running: true,
@@ -14,11 +20,11 @@ jest.mock('../services/mqttService', () => ({
 jest.mock('../services/mdnsService', () => {
   let current = { running: false };
   return {
-    publish: jest.fn(() => {
+    publish: jest.fn(async () => {
       current = { pid: 12345, running: true };
       return current;
     }),
-    unpublish: jest.fn(() => {
+    unpublish: jest.fn(async () => {
       current = { running: false };
       return current;
     }),
@@ -36,6 +42,10 @@ function pickCandidateIp(rows) {
 }
 
 describe('Backend API (Express)', () => {
+  afterAll(async () => {
+    await app.shutdownBackend('test-cleanup');
+  });
+
   it('GET /api should be OK', async () => {
     const res = await request(app).get('/api');
     expect(res.status).toBe(200);

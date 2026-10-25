@@ -95,6 +95,15 @@
                 <el-tag v-if="isCachedGame(item)" size="small" type="success">{{ t('plays.cached') }}</el-tag>
                 <el-tag size="small" type="success">{{ t('plays.lastPlayed', { time: formatLastPlayed(item.lastPlayed) }) }}</el-tag>
                 <el-tag v-if="item.arguments" size="small">{{ t('plays.params', { value: item.arguments }) }}</el-tag>
+                <el-tooltip v-if="runtimeTagOf(item)" :content="t(runtimeTagOf(item)!.tipKey)" placement="top">
+                  <el-tag
+                    size="small"
+                    effect="plain"
+                    :class="runtimeTagOf(item)!.accent ? 'runtime-tag-accent' : 'runtime-tag-muted'"
+                  >
+                    {{ t(runtimeTagOf(item)!.key) }}
+                  </el-tag>
+                </el-tooltip>
               </template>
             </div>
             <div v-if="devicesOf(item).length" class="devices">
@@ -118,10 +127,13 @@ import { ref, computed, onMounted, watch, markRaw } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { track } from '../analytics';
-import { useActivePlay, clearActivePlay } from '../composables/useActivePlay';
+import { trackPlayEnd } from '../playAnalytics';
+import { useActivePlay, clearActivePlay, setActivePlay } from '../composables/useActivePlay';
 import LocalAppCard from '../components/LocalAppCard.vue';
 import { currentLocale } from '../i18n';
 import { localizePlay } from '../i18n/play';
+import { useRemoteSession } from '../composables/useRemoteSession';
+import { runtimeTagFor, type RuntimeTag } from '../play/runtimeTag';
 import {
   Close, Delete, Operation, Reading, Refresh, Search, Upload, VideoPlay,
 } from '@element-plus/icons-vue';
@@ -155,10 +167,13 @@ interface PlayItem {
 const router = useRouter();
 const { t, locale } = useI18n();
 const { activePlay } = useActivePlay();
+const remoteSession = useRemoteSession();
 
 const games = ref<PlayItem[]>([]);
 const plugins = ref<PlayItem[]>([]);
 const localApps = ref<Record<string, any>[]>([]);
+/** 分离式（runtime: host）游戏 id：逻辑在被控端跑，卡片标「远程无延迟」 */
+const hostGameIds = ref<Set<string>>(new Set());
 const search = ref('');
 const error = ref('');
 const busy = ref({ refresh: false, upload: false, stop: false });
@@ -185,12 +200,19 @@ watch(locale, () => { void loadAll(); });
 
 async function loadAll() {
   error.value = '';
-  const [gRes, pRes, aRes] = await Promise.all([
+  const [gRes, pRes, aRes, rRes] = await Promise.all([
     fetch('/api/games').then((r) => r.json()).catch(() => null),
     fetch('/api/plugins').then((r) => r.json()).catch(() => null),
     fetch('/api/local-apps').then((r) => r.json()).catch(() => null),
+    // 分离式游戏清单：只用来给卡片加「远程无延迟」标签，失败就当没有（不报错、不影响列表）
+    fetch('/api/game-runtime/games').then((r) => r.json()).catch(() => null),
   ]);
   localApps.value = Array.isArray(aRes) ? aRes : [];
+  hostGameIds.value = new Set(
+    (Array.isArray(rRes) ? rRes : [])
+      .filter((row: any) => row?.runtimeMode === 'host' && row?.id)
+      .map((row: any) => String(row.id)),
+  );
 
   try {
     const localGames: PlayItem[] = (gRes && Array.isArray(gRes))
@@ -209,6 +231,17 @@ async function loadAll() {
   } catch (e: any) {
     error.value = e?.message || t('plays.loadPluginsFailed');
   }
+  try {
+    const status = await fetch('/api/games/status').then((r) => r.json());
+    if (status?.running && status.runtimeMode === 'host') {
+      setActivePlay({
+        carrierType: 'game',
+        id: status.gameId,
+        title: status.snapshot?.title || status.gameId,
+        resume: { name: 'game_runtime', query: { id: status.gameId } },
+      });
+    }
+  } catch (_) {}
 }
 
 function openDevGuide() {
@@ -268,7 +301,7 @@ async function stopCurrent() {
       }
       const result = await window.pluginApi.stopCurrent();
       if (result?.ok === false) throw new Error(result.error || t('plays.stopPluginFailed'));
-      track('plugin_stop', { plugin_id: current.id });
+      trackPlayEnd('user_stop');
     } else {
       const res = await fetch('/api/games/stop-current', { method: 'POST' });
       const data = await res.json().catch(() => ({}));
@@ -277,7 +310,7 @@ async function stopCurrent() {
         return;
       }
       if (!res.ok || data.error) throw new Error(data?.message || t('plays.stopFailed'));
-      track('game_stop');
+      trackPlayEnd('user_stop');
     }
     if (current?.carrierType === 'local-app') {
       await window.localAppWindowApi?.close();
@@ -335,6 +368,14 @@ function isCachedGame(item: PlayItem) {
 }
 function devicesOf(item: PlayItem): PlayDevice[] {
   return Array.isArray(item.devices) ? item.devices : [];
+}
+/** 卡片上的远程延迟标签（§4.5）：判定逻辑在 play/runtimeTag.ts 里，便于单测 */
+function runtimeTagOf(item: PlayItem): RuntimeTag | null {
+  return runtimeTagFor({
+    isGame: item.carrierType === 'game',
+    isHostRuntime: hostGameIds.value.has(String(item.id)),
+    isOperatorRemote: remoteSession.isOperatorRemote.value === true,
+  });
 }
 function iconOf(item: PlayItem) {
   // markRaw 避免 Vue 把图标对象做成响应式代理
@@ -496,6 +537,18 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+/* 远程延迟标签（§4.5）：强调色 = 逻辑跟着设备走、无延迟；弱化色 = 页面式游戏远程时有延迟 */
+.runtime-tag-accent {
+  --el-tag-text-color: var(--accent);
+  --el-tag-border-color: var(--accent);
+  --el-tag-bg-color: var(--accent-glow);
+}
+
+.runtime-tag-muted {
+  color: var(--el-text-color-secondary);
+  border-color: var(--el-border-color);
 }
 
 .devices {

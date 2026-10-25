@@ -3,57 +3,51 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>投稿工作台 · 硅基之下游戏库</title>
+<title data-i18n-title="submitTitle">登录投稿 · 硅基之下游戏库</title>
 <meta name="description" content="向硅基之下游戏库提交 ZIP 游戏包或公开 Git 地址。" />
+<meta name="theme-color" content="#0e0d0c" />
 <link rel="stylesheet" href="assets/css/site.css" />
+<script src="assets/js/baidu-tongji.js"></script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff5b3a'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='%231a0a04'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
 </head>
 <body>
 <nav class="nav">
   <div class="nav-inner">
-    <a class="brand" href="index.html"><span class="brand-mark">⚡</span><span>硅基之下游戏库</span></a>
+    <a class="brand" href="index.html"><span class="brand-mark">⚡</span><span data-i18n="brand">硅基之下游戏库</span></a>
     <div class="nav-links">
-      <a href="games.html">游戏</a>
-      <a href="control.html">设备控制</a>
-      <a href="docs/agent-guide.html">开发文档</a>
-      <a href="submit.html" class="nav-cta">投稿</a>
+      <a href="games.html" data-i18n="navGames">游戏</a>
+      <a href="control.html" data-i18n="navControl">设备控制</a>
+      <a href="docs/agent-guide.html" data-i18n="navDocs">开发文档</a>
+      <a href="docs/device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
+      <a href="submit.html" class="nav-cta" data-i18n="navContribute">投稿</a>
+      <div class="lang-switch">
+        <button type="button" data-set-locale="zh">中</button>
+        <button type="button" data-set-locale="en">EN</button>
+      </div>
     </div>
+    <div class="nav-account" data-auth-slot></div>
   </div>
 </nav>
 
-<main class="platform-page container narrow">
-  <header class="platform-head">
-    <p class="eyebrow">GAME SUBMISSION</p>
-    <h1>投稿工作台</h1>
-    <p>可直接上传 ZIP 游戏包，或提交公开 Git 地址。投稿进入人工审核，通过后自动发布到玩法库。</p>
-  </header>
-
+<main class="platform-page container">
   <p id="platform-message" class="platform-message" aria-live="polite"></p>
 
-  <section id="auth-view" class="platform-panel">
-    <div class="auth-tabs">
-      <button type="button" data-auth-mode="login" class="active">登录</button>
-      <button type="button" data-auth-mode="register">注册</button>
-    </div>
-    <form id="login-form" class="platform-form">
-      <label>邮箱<input name="email" type="email" autocomplete="email" required /></label>
-      <label>密码<input name="password" type="password" autocomplete="current-password" minlength="8" required /></label>
-      <button class="btn btn-primary" type="submit">登录</button>
-    </form>
-    <form id="register-form" class="platform-form" hidden>
-      <label>邮箱<input name="email" type="email" autocomplete="email" required /></label>
-      <label>密码<input name="password" type="password" minlength="8" maxlength="128" autocomplete="new-password" required /></label>
-      <button class="btn btn-primary" type="submit">创建账号</button>
-    </form>
-  </section>
-
   <section id="dashboard" hidden>
-    <div class="platform-account">
-      <span id="account-name"></span>
-      <span class="platform-actions"><a id="admin-link" href="admin.html" hidden>审核后台</a><button id="logout" type="button" class="icon-button" title="退出登录">退出</button></span>
-    </div>
-
+    <header class="dash-head">
+      <div>
+        <h1 data-i18n="dashHeadH1">投稿工作台</h1>
+        <p id="dash-email"></p>
+      </div>
+      <div class="platform-actions">
+        <a id="author-link" href="author.html" class="btn btn-ghost" data-i18n="authorAdmin">作者管理</a>
+        <a id="admin-link" href="admin.html" class="btn btn-ghost" hidden data-i18n="adminLink">审核后台</a>
+      </div>
+    </header>
     <section class="platform-panel">
-      <div class="panel-title"><div><h2>提交游戏</h2><p>ZIP 根目录必须有 <code>index.html</code> 与 <code>game-manifest</code>。公开 Git 仓库根目录须满足相同结构。</p></div></div>
+      <div class="panel-title"><div>
+        <h2 data-i18n="dashSubmitH2">提交游戏</h2>
+        <p data-i18n="dashSubmitLead">ZIP 根目录必须有 index.html 与 game-manifest。公开 Git 仓库根目录须满足相同结构。</p>
+      </div></div>
       <form id="submission-form" class="platform-form">
         <label>作者名<input name="authorName" type="text" minlength="2" maxlength="40" autocomplete="nickname" required /><span>仅作为本次投稿的署名，不会公开邮箱。</span></label>
         <label>游戏名称<input name="title" type="text" minlength="2" maxlength="100" required /></label>
@@ -67,16 +61,38 @@
         <button class="btn btn-primary" type="submit">提交审核</button>
       </form>
     </section>
-
     <section class="platform-panel">
-      <div class="panel-title"><div><h2>我的投稿</h2><p>审核进度与意见会显示在这里。</p></div></div>
+      <div class="panel-title"><div>
+        <h2 data-i18n="dashMineH2">我的投稿</h2>
+        <p data-i18n="dashMineLead">审核进度与意见会显示在这里。</p>
+      </div></div>
       <div id="submission-list" class="submission-list"></div>
+    </section>
+    <section class="platform-panel">
+      <div class="panel-title"><div>
+        <h2 data-i18n="dashPayoutH2">我的分成</h2>
+        <p data-i18n="dashPayoutLead">每月由平台人工统计游玩表现并人工发放奖励金到商城账号；发放后在这里可以看到发放记录。需先用同一账号登录过一次商城。</p>
+      </div></div>
+      <div id="payout-list" class="submission-list"></div>
     </section>
   </section>
 </main>
 
-<footer class="footer"><div class="container">硅基之下游戏库 · 所有已发布游戏由 OSS/CDN 提供</div></footer>
+<footer class="footer">
+  <div class="container">
+    <div class="footer-links">
+      <a href="games.html" data-i18n="navGames">游戏</a>
+      <a href="control.html" data-i18n="navControl">设备控制</a>
+      <a href="docs/agent-guide.html" data-i18n="navDocs">开发文档</a>
+      <a href="docs/device-api.html" data-i18n="navDeviceApi">DeviceAPI</a>
+      <a href="submit.html" data-i18n="navContribute">投稿</a>
+    </div>
+    <div><span data-i18n="footerNote">硅基之下游戏库 · UnderSilicon 控制面板 · 已发布内容由平台审核后同步</span></div>
+  </div>
+</footer>
+<script src="assets/js/i18n.js"></script>
 <script src="assets/js/platform-config.js"></script>
+<script src="assets/js/auth.js"></script>
 <script src="assets/js/submission.js"></script>
 </body>
 </html>

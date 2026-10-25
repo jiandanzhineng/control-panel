@@ -47,7 +47,25 @@ Body: { "params": { ... } }   // params 可选
 - 成功返回 `{ "success": true, "message": "操作执行成功" }`。
 - 设备不存在返回 `DEVICE_NOT_FOUND`（404）；操作失败返回 `DEVICE_OPERATION_FAILED`（500）。
 
-实现：[routes/devices.js:298](../../backend/routes/devices.js)、[deviceService.js:392](../../backend/services/deviceService.js)、[baseDeviceType.js:131](../../backend/devices/baseDeviceType.js)。
+实现：[routes/devices.js](../../backend/routes/devices.js)、[deviceService.js](../../backend/services/deviceService.js)、[baseDeviceType.js](../../backend/devices/baseDeviceType.js)。
+
+### 按类型批量执行操作
+
+```
+POST /api/devices/batch/operations
+Content-Type: application/json
+Body: { "type": "ZIDONGSUO", "operationKey": "unlock", "deviceIds": ["id1"], "params": {} }
+```
+
+- `type`、`operationKey` 必填。`deviceIds` 省略则该类型全部在线设备。
+- 离线记 `skipped` 且不下发；单台失败不影响其余。HTTP 始终 200（参数错误除外）。
+- 类型不支持该操作或指定设备类型不符时 400。
+
+```bash
+curl -X POST http://127.0.0.1:3000/api/devices/batch/operations \
+  -H "Content-Type: application/json" \
+  -d '{"type":"ZIDONGSUO","operationKey":"unlock"}'
+```
 
 ### 直接调用能力动作
 

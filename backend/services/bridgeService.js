@@ -7,6 +7,9 @@ const virtualDeviceService = require('./virtualDeviceService');
 const { BRIDGE_INTERNAL_HEADER } = require('../constants/bridgeAccess');
 const externalGameAccessService = require('./externalGameAccessService');
 const browserDeviceGrantService = require('./browserDeviceGrantService');
+const wsUpgradeRouter = require('./wsUpgradeRouter');
+// 玩法载体事件（本机开始/退出一次玩法）：远程占用仲裁（remoteGameService）订阅
+const playCarrierBus = require('./playCarrierBus');
 
 let wss = null;
 const sessions = new Map();
@@ -69,40 +72,63 @@ class GameSession {
   }
 }
 
+const BRIDGE_WS_PATH = '/bridge';
+
+// 只放行控制台同机来源（同 hostname，忽略端口）。外部游戏经 /games/proxy 同源化后
+// Origin 即控制台自身。无 Origin（原生客户端 / Electron）放行。
+// 注意：前端 dev/Electron 经代理转发时 changeOrigin 会改写 Host，故只比 hostname。
+// 同一 server 上的其他 WS 端点（语音触发）复用同一套规则。
+function verifyBridgeClient(info) {
+  const origin = info.origin || info.req.headers.origin;
+  if (!origin) return true;
+  // 开发者放行开关：受信开发 origin（本地任意端口 / 白名单）免内部头直连。
+  // 浏览器 WS 握手无法附加自定义头，故这里是外部本地游戏试玩的关键放行点。
+  try {
+    if (externalGameAccessService.isTrustedDevOrigin(origin)) return true;
+  } catch (_) {}
+  // 已通过 DeviceAPI 授权（electron 内置浏览器弹窗，当天有效）的 origin 受信。
+  // 与 HTTP /api 侧 browserApiAccess 的 grant 放行对称：远程游戏页经授权后，
+  // 其 WS 桥订阅（onValue/subscribeValue）才能建立，否则重量等能力值无法同步。
+  try {
+    if (browserDeviceGrantService.isGranted(origin)) return true;
+  } catch (_) {}
+  try {
+    if (info.req.headers[BRIDGE_INTERNAL_HEADER] !== '1') return false;
+    const originHost = new URL(origin).hostname;
+    const hostHeader = info.req.headers.host || '';
+    const reqHost = hostHeader.split(':')[0];
+    const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
+    if (localHosts.has(originHost) && localHosts.has(reqHost)) return true;
+    return !!reqHost && originHost === reqHost;
+  } catch (_) {
+    return false;
+  }
+}
+
+/** 升级请求是否属于本端点（忽略 query，与 ws 的 shouldHandle 同规则）。 */
+function isBridgeUpgradePath(url) {
+  const raw = String(url || '');
+  const index = raw.indexOf('?');
+  const pathname = index === -1 ? raw : raw.slice(0, index);
+  return pathname === BRIDGE_WS_PATH;
+}
+
+// 同一 http server 上还挂着 /voice-trigger：两个带 path 的 WebSocketServer 会互相
+// abortHandshake(400)，所以改成 noServer + 由 wsUpgradeRouter 统一分发。
+// 未认领的路径由分发器回 400 并销毁 socket，避免 upgrade 一直挂着。
+function handleUpgrade(req, socket, head) {
+  wss.handleUpgrade(req, socket, head, (ws) => { wss.emit('connection', ws, req); });
+}
+
 function init(server) {
   wss = new WebSocketServer({
-    server,
-    path: '/bridge',
-    // 只放行控制台同机来源（同 hostname，忽略端口）。外部游戏经 /games/proxy 同源化后
-    // Origin 即控制台自身。无 Origin（原生客户端 / Electron）放行。
-    // 注意：前端 dev/Electron 经代理转发时 changeOrigin 会改写 Host，故只比 hostname。
-    verifyClient: (info) => {
-      const origin = info.origin || info.req.headers.origin;
-      if (!origin) return true;
-      // 开发者放行开关：受信开发 origin（本地任意端口 / 白名单）免内部头直连。
-      // 浏览器 WS 握手无法附加自定义头，故这里是外部本地游戏试玩的关键放行点。
-      try {
-        if (externalGameAccessService.isTrustedDevOrigin(origin)) return true;
-      } catch (_) {}
-      // 已通过 DeviceAPI 授权（electron 内置浏览器弹窗，当天有效）的 origin 受信。
-      // 与 HTTP /api 侧 browserApiAccess 的 grant 放行对称：远程游戏页经授权后，
-      // 其 WS 桥订阅（onValue/subscribeValue）才能建立，否则重量等能力值无法同步。
-      try {
-        if (browserDeviceGrantService.isGranted(origin)) return true;
-      } catch (_) {}
-      try {
-        if (info.req.headers[BRIDGE_INTERNAL_HEADER] !== '1') return false;
-        const originHost = new URL(origin).hostname;
-        const hostHeader = info.req.headers.host || '';
-        const reqHost = hostHeader.split(':')[0];
-        const localHosts = new Set(['localhost', '127.0.0.1', '::1']);
-        if (localHosts.has(originHost) && localHosts.has(reqHost)) return true;
-        return !!reqHost && originHost === reqHost;
-      } catch (_) {
-        return false;
-      }
-    },
+    noServer: true,
+    verifyClient: verifyBridgeClient,
   });
+
+  // server 可能是不带事件能力的占位对象（单测直接 init({})），此时跳过 upgrade 挂载。
+  wsUpgradeRouter.register('bridge', isBridgeUpgradePath, handleUpgrade);
+  wsUpgradeRouter.attach(server);
 
   wss.on('connection', (ws, req) => {
     let session = null;
@@ -136,6 +162,7 @@ function init(server) {
         activeSession = session;
         pendingDisconnect = null;
         session.send({ id: msg.id, result: { sessionId: session.id, ready: true } });
+        notifyCarrierStart();
         return;
       }
 
@@ -618,6 +645,7 @@ function replaceActiveSession() {
     }
   } catch (_) {}
   removeSession(activeSession);
+  notifyCarrierExit('replaced');
 }
 
 function isSameSessionConfig(session, config) {
@@ -639,6 +667,7 @@ function resetActiveSession(reason) {
     }
   } catch (_) {}
   removeSession(session);
+  notifyCarrierExit(reason || 'exit');
 }
 
 function scheduleGracefulClose(session) {
@@ -649,6 +678,7 @@ function scheduleGracefulClose(session) {
     if (!session.active) return;
     resetSessionDevices(session);
     removeSession(session);
+    notifyCarrierExit('grace-expired');
   }, DISCONNECT_GRACE_MS);
 }
 
@@ -871,6 +901,16 @@ function emitSystemLog(session, level, message, meta) {
   session.send({ event: 'systemLog', level, message, meta: meta || {} });
 }
 
+// 本机（页面式游戏 / 插件）开始与退出玩法：广播给远程占用仲裁。
+// bridge 的 init 就是「本机开始一次玩法」；复位路径（显式退出 / 被顶替 / 宽限超时）即退出。
+function notifyCarrierStart() {
+  playCarrierBus.emitPlayCarrierStart({ kind: 'bridge' });
+}
+
+function notifyCarrierExit(reason) {
+  playCarrierBus.emitPlayCarrierExit({ kind: 'bridge', reason });
+}
+
 function getActiveSessions() {
   return Array.from(sessions.values()).filter((s) => s.active);
 }
@@ -890,4 +930,9 @@ module.exports = {
   exitBrowserOrigin,
   getAllDeviceMap,
   listDevicesWithCapabilities,
+  // 同机其他 WS 端点（语音触发）复用本模块的访问控制与路径分发
+  BRIDGE_WS_PATH,
+  verifyBridgeClient,
+  isBridgeUpgradePath,
+  handleUpgrade,
 };

@@ -5,6 +5,7 @@ jest.mock('../services/mqttClientService', () => ({
 jest.mock('../utils/fileStorage', () => ({
   getItem: jest.fn(() => null),
   setItem: jest.fn(),
+  setItemAsync: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../services/logService', () => ({
@@ -252,5 +253,17 @@ describe('device transport routing', () => {
     await expect(deleting).resolves.toBe(true);
     expect(deviceService.getDeviceById('serial-device')).toBeUndefined();
     expect(deviceService.getDeviceForApi('serial-device')).toBeNull();
+  });
+  it('removes the right devices when several remote devices are deleted at once', async () => {
+    deviceService.addDevice({ id: 'local-1', name: 'local', type: 'TD01' });
+    const ids = ['r1', 'r2', 'r3', 'r4', 'r5', 'r6'];
+    for (const id of ids) {
+      deviceService.connectTransportDevice({ id, name: id, type: 'TD01', connectionType: 'remote' }, {
+        kind: 'remote', send() {},
+      });
+    }
+    // 投影收尾：同时删多台（不逐个 await），曾因 await 前取的下标过期删错、漏删 r2/r4/r6
+    await Promise.all(ids.map((id) => deviceService.deleteDeviceById(id)));
+    expect(deviceService.state.devices.map((device) => device.id)).toEqual(['local-1']);
   });
 });

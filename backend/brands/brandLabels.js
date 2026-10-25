@@ -6,6 +6,7 @@ const BRAND_LABEL = {
   ycy: '遥控蓝牙设备',
   sosexy: '繁野设备',
   gxp: 'GXP',
+  hrm: '心率带',
 };
 
 const TYPE_LABEL = {
@@ -17,6 +18,7 @@ const TYPE_LABEL = {
   YCY_ENEMA: '灌肠型设备',
   SOSEXY_PID0004: '啵啵贝',
   GXP_XA9935: 'gxp艾萝机娘二代',
+  HRM: '心率带',
 };
 
 function brandLabel(brand) {

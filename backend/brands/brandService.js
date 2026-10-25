@@ -11,6 +11,9 @@ const { YcyWebBleConnection } = require('./ycyWebBleConnection');
 const { SosexyWebBleConnection } = require('./sosexyWebBleConnection');
 const { GxpWebBleConnection } = require('./gxpWebBleConnection');
 const { NativeBridgeConnection } = require('./nativeBridgeConnection');
+const { NobleBleConnection } = require('./nobleConnection');
+const { HrmConnection } = require('./hrmConnection');
+const nobleBle = require('./nobleBle');
 const dglabV2 = require('./protocols/dglabV2');
 const discovery = require('./discovery');
 const ycyProto = require('./protocols/ycy');
@@ -18,7 +21,7 @@ const { brandLabel, typeLabel } = require('./brandLabels');
 const logger = require('../utils/logger');
 const fileStorage = require('../utils/fileStorage');
 
-const SUPPORTED = ['dglab', 'ycy', 'sosexy', 'gxp'];
+const SUPPORTED = ['dglab', 'ycy', 'sosexy', 'gxp', 'hrm'];
 const connections = new Map(); // deviceId -> connection adapter
 // 连接状态机（基础连接状态管理，轻量）：
 //   connecting | connected | disconnected | error
@@ -65,6 +68,7 @@ function getConnection(deviceId) {
 
 /** 设备类型推断：根据品牌与发现的型号决定 registry 中的 type */
 function resolveDeviceType(brand, { model, mode, type } = {}) {
+  if (brand === 'hrm') return 'HRM';
   if (brand === 'dglab') return 'DGLAB';
   if (brand === 'sosexy' || type === 'SOSEXY_PID0004' || /SOSEXY/i.test(String(model || ''))) {
     return 'SOSEXY_PID0004';
@@ -75,15 +79,8 @@ function resolveDeviceType(brand, { model, mode, type } = {}) {
   if (brand === 'ycy') {
     // 前端显式选择优先（杯 / 灌肠机 / 电击器 / 玩具 等）
     if (type) return type;
-    if (mode === 'ble') {
-      if (model && /灌肠|enema|glj|yisk/i.test(model)) return 'YCY_ENEMA';
-      if (model && /杯|cup|fjb/i.test(model)) return 'YCY_CUP';
-      if (model && /toy|玩具|电机/i.test(model)) return 'YCY_TOY';
-      return 'YCY_EMS';
-    }
-    // 桥接模式默认按电击器；若名称暗示杯/灌肠则细分
-    if (model && /灌肠|enema|glj|yisk/i.test(model)) return 'YCY_ENEMA';
-    if (model && /杯|cup|fjb/i.test(model)) return 'YCY_CUP';
+    const named = ycyProto.classifyYcyName(model);
+    if (named) return named;
     return 'YCY_EMS';
   }
   return 'base';
@@ -101,6 +98,9 @@ async function discover(brand, opts = {}) {
     const found = (await discovery.listNativeBle({ brand, port: opts.port, fetchImpl: opts.fetchImpl }))
       .filter((d) => {
         const n = String(d.name || '').toUpperCase();
+        if (brand === 'hrm') {
+          return nobleBle.isHrmPeripheral({ advertisement: { localName: d.name, serviceUuids: d.serviceUuids } });
+        }
         if (brand === 'dglab') return ['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k));
         if (brand === 'sosexy') return n.includes('SOSEXY');
         if (brand === 'gxp') return n.includes('XA9935') || n.includes('GXP');
@@ -183,6 +183,9 @@ async function connect(brand, opts = {}) {
   let finalName;
   let kind = 'brand';
 
+  // 心率带：连接前只认广播地址，连接后再用 0xFF04 身份确定设备 ID（ADR 0009/0010）。
+  if (brand === 'hrm') return connectHrm(opts);
+
   if (opts.mode === 'native') {
     if (!opts.address) throw new Error('本机桥接需要 address');
     finalDeviceId = normalizeMacDeviceId(opts.address);
@@ -194,10 +197,17 @@ async function connect(brand, opts = {}) {
     type = brand === 'dglab'
       ? 'DGLAB'
       : resolveDeviceType(brand, { model: name, mode: 'ble', type: opts.type });
-    connection = new NativeBridgeConnection({
-      brand, deviceId: finalDeviceId, address: opts.address,
-      port: opts.port || (brand === 'dglab' ? 3002 : 3001), type,
-      fetchImpl: opts.fetchImpl,
+    connection = opts.fetchImpl
+      ? new NativeBridgeConnection({
+        brand, deviceId: finalDeviceId, address: opts.address,
+        port: opts.port || (brand === 'dglab' ? 3002 : 3001), type,
+        fetchImpl: opts.fetchImpl,
+      })
+      : new NobleBleConnection({
+        brand, deviceId: finalDeviceId, address: opts.address, type, name: finalName,
+      });
+    logger.info('[ble] brand connect start', {
+      brand, address: opts.address, type, deviceId: finalDeviceId, via: opts.fetchImpl ? 'rust' : 'noble',
     });
   } else if (brand === 'dglab') {
     const host = opts.host;
@@ -323,10 +333,17 @@ function scheduleReconnect(deviceId, kind, error) {
 }
 
 // 依据既有 metadata 重建一个同类适配器（用于无原生 reconnect 的连接）。
+// 心率带不在此列：它的断线走 handleHrmDisconnect（置离线 + 交给自动连接 tick），
+// 且 hrm 适配器 mode 为 native，isReconnectable 恒为 false，永远到不了这里。
 function rebuildConnection(deviceId, meta) {
   if (meta.mode === 'native') {
-    return new NativeBridgeConnection({
-      brand: meta.brand, deviceId, address: meta.address, port: meta.port, type: meta.type,
+    if (meta.kind === 'native-bridge') {
+      return new NativeBridgeConnection({
+        brand: meta.brand, deviceId, address: meta.address, port: meta.port, type: meta.type,
+      });
+    }
+    return new NobleBleConnection({
+      brand: meta.brand, deviceId, address: meta.address, type: meta.type, name: meta.name,
     });
   }
   if (meta.brand === 'dglab') {
@@ -336,6 +353,102 @@ function rebuildConnection(deviceId, meta) {
     return new YCYConnection({ deviceId, mode: meta.mode });
   }
   return new DGLabV2WebBleConnection({ deviceId, send: () => {} });
+}
+
+// ============ 心率带（标准 BLE HRS） ============
+
+/**
+ * 连接标准蓝牙心率带：先按广播地址连，再读 0xFF04 身份确定设备 ID。
+ * 身份特征缺失（第三方心率带）→ 回退规范化 BLE 地址；存在但非法 → 拒绝连接（ADR 0011）。
+ */
+async function connectHrm(opts = {}) {
+  const address = opts.address || opts.deviceId;
+  if (!address) throw new Error('心率带连接需要 address');
+  const fallbackId = normalizeMacDeviceId(address);
+  if (!fallbackId) throw new Error('心率带连接需要有效 BLE 地址');
+  const name = opts.name || address;
+  disposeHrmConnections(address, fallbackId);
+  const connection = new HrmConnection({
+    deviceId: fallbackId,
+    address,
+    name,
+    ble: opts.ble,
+    onData: (props) => {
+      // 身份可能在连接过程中才确定，设备 ID 以连接后的 resolvedDeviceId 为准。
+      const id = connection.resolvedDeviceId || fallbackId;
+      try {
+        deviceService.handleTransportMessage(id, { method: 'update', ...props }, 'brand');
+      } catch (e) {
+        logger.warn('Brand', `心率上报失败: ${e?.message || String(e)}`);
+      }
+    },
+  });
+  await connection.connect();
+  const finalDeviceId = connection.resolvedDeviceId || fallbackId;
+  const finalName = name || `心率带 ${finalDeviceId.slice(-4)}`;
+  setState(finalDeviceId, STATUS.CONNECTED, { userClosed: false, reconnecting: false, error: null });
+  connection.onStatus((status, detail = {}) => {
+    if (status === 'close') handleHrmDisconnect(finalDeviceId, detail.error);
+    else if (status === 'error') setState(finalDeviceId, STATUS.ERROR, { error: detail.error });
+  });
+  deviceService.connectTransportDevice(
+    {
+      id: finalDeviceId,
+      name: finalName,
+      type: 'HRM',
+      connectionType: 'brand',
+      transportMetadata: connection.toMetadata(),
+      firmwareVersion: connection.firmwareVersion || undefined,
+    },
+    {
+      kind: 'brand',
+      send: (msg) => connection.send(msg),
+      disconnect: () => connection.disconnect(),
+    },
+  );
+  connections.set(finalDeviceId, connection);
+  connection.flushInitial();
+  logger.info('[ble] hrm registered', { address, deviceId: finalDeviceId, viaIdentity: !!connection.identity });
+  return {
+    device: deviceService.getDeviceById(finalDeviceId),
+    connection: connection.toMetadata(),
+    brand: 'hrm',
+    type: 'HRM',
+  };
+}
+
+/**
+ * 同一台心率带重复连接：先摘掉旧适配器的 onHrmEvent 监听（不断开物理链路，
+ * 新旧适配器共用同一条 GATT 会话）。否则一帧会被两个适配器各上报一次。
+ */
+function disposeHrmConnections(address, fallbackId) {
+  const addr = String(address || '').toLowerCase();
+  for (const [deviceId, conn] of [...connections.entries()]) {
+    if (conn?.brand !== 'hrm') continue;
+    const sameAddr = String(conn.address || '').toLowerCase() === addr;
+    const sameId = deviceId === fallbackId || conn.deviceId === fallbackId || conn.resolvedDeviceId === fallbackId;
+    if (!sameAddr && !sameId) continue;
+    connections.delete(deviceId);
+    try { conn.dispose?.(); } catch (_) { /* 监听已摘 */ }
+    if (deviceId !== fallbackId) {
+      try { deviceService.disconnectTransportDevice(deviceId, 'brand'); } catch (_) { /* 已离线 */ }
+    }
+  }
+}
+
+/**
+ * 心率带掉线：清会话（连接适配器内部已清 noble 会话），置离线，
+ * 交给已有自动连接 tick（10s 一轮）重连；不在此处抢占式重连。
+ */
+function handleHrmDisconnect(deviceId, error) {
+  const st = getState(deviceId);
+  if (st.userClosed) {
+    setState(deviceId, STATUS.DISCONNECTED, { error });
+    return;
+  }
+  connections.delete(deviceId);
+  try { deviceService.disconnectTransportDevice(deviceId, 'brand'); } catch (_) { /* 已离线 */ }
+  setState(deviceId, STATUS.DISCONNECTED, { error: error || '心率带已断开' });
 }
 
 // ============ 控制 ============
@@ -495,6 +608,7 @@ function list() {
       lastChange: st.lastChange || 0,
       reconnecting: st.reconnecting || false,
       metadata: meta,
+      // 设备 data 属性（心率带的心率/状态/电量），前端卡片直接读这里。
       data: dev?.data || {},
     };
   });
@@ -567,6 +681,7 @@ function isMacDeviceId(id) {
 function isBrandBleRecord(d) {
   if (browserIdFromDeviceId(d.id)) return true;
   return isMacDeviceId(d.id) && (d.type === 'DGLAB'
+    || d.type === 'HRM'
     || String(d.type || '').startsWith('YCY_')
     || d.type === 'SOSEXY_PID0004'
     || d.type === 'GXP_XA9935');
@@ -620,10 +735,13 @@ function listSavedBleDevices() {
 }
 
 let autoTimer = null;
+let autoStartTimer = null;
 let autoBusy = false;
+let autoGeneration = 0;
 const AUTO_MS = 10000;
 
 async function tickAutoConnect() {
+  const generation = autoGeneration;
   if (autoBusy) return;
   const settings = getSettings();
   if (!settings.autoConnect && !settings.autoConnectAll) return;
@@ -631,24 +749,27 @@ async function tickAutoConnect() {
   try {
     const on = new Set(listSavedBleDevices().filter((d) => d.connected && d.name).map((d) => d.name.trim().toUpperCase()));
     const saved = listSavedBleDevices();
-    for (const brand of SUPPORTED) {
-      let found = [];
-      try { found = await discover(brand, { mode: 'native' }); } catch (_) { continue; }
-      for (const d of found) {
-        const name = String(d.name || '').trim().toUpperCase();
-        if (name && on.has(name)) continue;
-        const savedHit = saved.some((s) => bleNamesMatch(s.name, d.name));
-        if (!settings.autoConnectAll && !(settings.autoConnect && savedHit)) continue;
-        try {
-          await connect(brand, { mode: 'native', address: d.address, name: d.name, deviceId: d.deviceId });
-          if (name) on.add(name);
-        } catch (_) { /* 下一轮 */ }
-      }
+    let found = [];
+    try { found = await nobleBle.scan({ quiet: true }); } catch (_) { found = []; }
+    if (generation !== autoGeneration) return;
+    for (const d of found) {
+      const brand = nobleBle.detectBrand(d.name, { advertisement: { localName: d.name, serviceUuids: d.serviceUuids } });
+      if (!brand) continue;
+      const name = String(d.name || '').trim().toUpperCase();
+      if (name && on.has(name)) continue;
+      const savedHit = saved.some((s) => bleNamesMatch(s.name, d.name));
+      if (!settings.autoConnectAll && !(settings.autoConnect && savedHit)) continue;
+      try {
+        await connect(brand, { mode: 'native', address: d.address, name: d.name });
+        if (name) on.add(name);
+      } catch (_) { /* 下一轮 */ }
     }
   } finally { autoBusy = false; }
 }
 
 function stopAutoConnect() {
+  autoGeneration += 1;
+  if (autoStartTimer) { clearTimeout(autoStartTimer); autoStartTimer = null; }
   if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
 }
 
@@ -659,7 +780,11 @@ function startAutoConnect() {
     return settings;
   }
   if (!autoTimer) {
-    tickAutoConnect().catch(() => {});
+    const generation = autoGeneration;
+    autoStartTimer = setTimeout(() => {
+      autoStartTimer = null;
+      if (generation === autoGeneration) tickAutoConnect().catch(() => {});
+    }, 0);
     autoTimer = setInterval(() => { tickAutoConnect().catch(() => {}); }, AUTO_MS);
   }
   return settings;

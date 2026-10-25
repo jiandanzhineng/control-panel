@@ -1,5 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { resolve } from 'path'
 import { readFileSync } from 'fs'
 
@@ -8,7 +10,9 @@ const BRIDGE_INTERNAL_HEADER = 'x-control-panel-bridge-internal'
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => {
-  const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://localhost:3000'
+  // 后端默认只绑 127.0.0.1（审查报告 §2.4），代理目标固定用回环 IP，
+  // 避免 localhost 解析到 ::1 时连不上。
+  const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:3000'
 
   return {
     base: command === 'build' ? './' : '/',
@@ -22,6 +26,10 @@ export default defineConfig(({ command }) => {
           isCustomElement: (tag) => tag === 'webview',
         },
       },
+    }), Components({
+      dirs: [],
+      dts: false,
+      resolvers: [ElementPlusResolver({ importStyle: false })],
     })],
     resolve: {
       alias: {
@@ -52,6 +60,17 @@ export default defineConfig(({ command }) => {
           },
         },
         '/bridge': {
+          target: apiProxyTarget,
+          changeOrigin: true,
+          ws: true,
+          configure: (proxy) => {
+            proxy.on('proxyReqWs', (proxyReq) => {
+              proxyReq.setHeader(BRIDGE_INTERNAL_HEADER, '1')
+            })
+          },
+        },
+        // 语音开始：前端采集的 PCM 经 WS 发到后端做关键词检测
+        '/voice-trigger': {
           target: apiProxyTarget,
           changeOrigin: true,
           ws: true,

@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title data-en="Drink / hold-pee unlock">喝水/憋尿解锁玩法</title>
+<title data-en="Drink / liquid-collection unlock">喝水/液体收集解锁玩法</title>
 <script type="application/json" id="game-manifest">
 {
   "id": "drink-pee-unlock",
-  "title": "喝水/憋尿解锁玩法",
-  "description": "站上称重设备，保持提肛与踮脚，同时按模式持续变重（喝水）或变轻（憋尿）。达成目标重量变化或超时后自动解锁。踮脚可用 QTZ 双脚踏或 CUNZHI01 压力检测。",
-  "howTo": "1. 映射称重设备（必需）\n2. 可选：气压传感器、踮脚检测、电击、振动、自动锁\n3. 选择喝水/憋尿模式与目标重量\n4. 开始后按提示保持动作，达标或超时解锁",
-  "version": "2.3.4",
+  "title": "喝水/液体收集解锁玩法",
+  "description": "把水瓶或容器放电子秤上，喝水变轻或收集液体变重，达到目标重量变化或超时即自动解锁。可叠加提肛、踮脚监测。踮脚可用 QTZ 双脚踏或 CUNZHI01 压力检测。",
+  "howTo": "1. 映射电子秤（必需）\n2. 可选：气压传感器、踮脚检测、电击、振动、自动锁\n3. 选择喝水/液体收集模式与目标重量\n4. 开始后按提示保持动作，达标或超时解锁",
+  "version": "2.3.5",
   "devices": [
     {
       "id": "scale",
@@ -82,11 +82,11 @@
         "pee"
       ],
       "enumLabels": {
-        "drink": "喝水（变重）",
-        "pee": "憋尿（变轻）"
+        "drink": "喝水（变轻）",
+        "pee": "液体收集（变重）"
       },
       "label": "玩法模式",
-      "description": "喝水：体重增加达标；憋尿：体重减轻达标",
+      "description": "喝水：秤变轻达标；液体收集：秤变重达标",
       "group": "core"
     },
     {
@@ -108,7 +108,7 @@
       "default": 500,
       "label": "目标重量变化",
       "unit": "g",
-      "description": "相对起始体重需要变化的克数，达到即成功",
+      "description": "相对起始重量需要变化的克数，达到即成功",
       "group": "core",
       "min": 50,
       "max": 5000,
@@ -134,7 +134,7 @@
       "default": 30,
       "label": "历史窗口",
       "unit": "秒",
-      "description": "用于平滑体重趋势的历史采样窗口",
+      "description": "用于平滑重量趋势的历史采样窗口",
       "group": "advanced",
       "min": 5,
       "max": 120,
@@ -274,9 +274,9 @@
   ],
   "i18n": {
     "en": {
-      "title": "Drink / hold-pee unlock",
-      "description": "Stand on a scale, keep pelvic squeeze and tiptoe, and get heavier (drink) or lighter (hold pee) by mode. Unlock after the target weight change or timeout. Tiptoe can use QTZ dual pedals or CUNZHI01 pressure.",
-      "howTo": "1. Map a scale (required)\n2. Optional: air-pressure sensor, tiptoe, shock, vibe, lock\n3. Choose drink/hold-pee mode and target weight\n4. Keep the pose; unlock on target or timeout",
+      "title": "Drink / liquid-collection unlock",
+      "description": "Keep a bottle or container on the scale. Drink to make it lighter, or collect liquid to make it heavier. Unlock after the target weight change or timeout. Tiptoe can use QTZ dual pedals or CUNZHI01 pressure.",
+      "howTo": "1. Map a scale (required)\n2. Optional: air-pressure sensor, tiptoe, shock, vibe, lock\n3. Choose drink / liquid-collection mode and target weight\n4. Follow the prompts; unlock on target or timeout",
       "devices": {
         "scale": "Scale",
         "sensor": "Pelvic air-pressure sensor",
@@ -305,12 +305,12 @@
       },
       "enumLabels": {
         "mode": {
-          "drink": "Drink (get heavier)",
-          "pee": "Hold pee (get lighter)"
+          "drink": "Drink (get lighter)",
+          "pee": "Liquid collection (get heavier)"
         }
       },
       "paramDescriptions": {
-        "mode": "Drink: gain weight to the target. Hold pee: lose weight to the target.",
+        "mode": "Drink: scale gets lighter to the target. Liquid collection: scale gets heavier to the target.",
         "durationSec": "Auto-end and unlock after timeout. 1800s = 30 minutes.",
         "targetWeight": "Grams of change from start weight needed to succeed.",
         "changeThreshold": "Changes below this are treated as noise.",
@@ -387,7 +387,7 @@
 <body>
   <div class="hud-container">
     <header class="hud-header">
-      <h1 class="hud-title" data-bind="title">喝水/憋尿解锁玩法</h1>
+      <h1 class="hud-title" data-bind="title">喝水/液体收集解锁玩法</h1>
       <div class="hud-status-bar">
         <div class="status-tag"><span data-en="Status:">状态:</span> <b data-bind="statusText">初始化</b></div>
         <div class="status-tag"><span data-en="Left:">剩余:</span> <b data-bind="remainingSec">-</b>s</div>

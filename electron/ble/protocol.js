@@ -12,6 +12,7 @@ const FLOAT_PROPERTIES = new Set([
   'pressure1',
   'temperature',
   'distance',
+  'height',
   'game_p1_thresh',
   'game_p2_thresh',
 ]);
@@ -20,6 +21,10 @@ const STRING_PROPERTIES = new Set([
   'device_type',
   'line1_text',
   'line2_text',
+  'accel',
+  'gyro',
+  'mag',
+  'quat',
 ]);
 
 function asFourBytes(bytes) {

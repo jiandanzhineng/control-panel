@@ -89,6 +89,11 @@
       || (g.description || '').toLowerCase().indexOf(q) >= 0;
   }
 
+  function authorOf(g) {
+    if (!g.authorName) return '';
+    return t('introAuthor') + ': ' + g.authorName;
+  }
+
   function cardHtml(g) {
     var caps = capabilityChips(g);
     var reqDevices = (g.devices || []).filter(function (d) { return d.required; }).map(function (d) { return d.id; });
@@ -96,6 +101,7 @@
     if (reqDevices.length) {
       badges += '<span class="badge required">' + t('required') + ': ' + esc(reqDevices.join(', ')) + '</span>';
     }
+    var author = authorOf(g);
     return '<article class="game-card">'
       + '<div class="game-card-head">'
         + '<div class="game-icon">' + iconFor(g.id) + '</div>'
@@ -106,10 +112,12 @@
         + '<span class="badge ver">v' + esc(g.version || '0.0.0') + '</span>'
       + '</div>'
       + '<p class="game-desc">' + esc(g.description || t('noDesc')) + '</p>'
+      + (author ? '<div class="game-author">' + esc(author) + '</div>' : '')
       + '<div class="game-meta">' + badges + '</div>'
       + '<div class="game-card-foot">'
         + '<span class="game-size">' + (g.sha256 ? ('sha ' + g.sha256.slice(0, 8)) : '') + (g.size ? ' · ' + fmtSize(g.size) : '') + '</span>'
         + '<span class="game-actions">'
+          + '<a class="play-link ghost" href="game-intro.html?id=' + encodeURIComponent(g.id) + '">' + t('intro') + '</a>'
           + '<button class="play-link ghost" type="button" data-cache="' + esc(g.id) + '">' + t('cache') + '</button>'
           + '<button class="play-link" type="button" data-launch="' + esc(g.id) + '">' + t('launch') + '</button>'
         + '</span>'
@@ -205,3 +213,4 @@
     setTimeout(tryOpen, 300);
   }
 })();
+

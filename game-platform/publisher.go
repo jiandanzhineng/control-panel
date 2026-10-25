@@ -57,18 +57,16 @@ func (a *App) publishSubmission(ctx context.Context, submission Submission, revi
 	a.publishMu.Lock()
 	defer a.publishMu.Unlock()
 
-	var source []byte
-	var err error
-	if submission.Kind == "zip" {
-		source, err = a.store.Get(ctx, submission.ZipKey, a.config.MaxUploadBytes)
-	} else {
-		source, err = a.downloadGitArchive(ctx, submission.GitURL)
-	}
+	source, err := a.submissionArchive(ctx, submission)
 	if err != nil {
 		return RegistryEntry{}, err
 	}
 	game, err := prepareGameArchive(source, a.config)
 	if err != nil {
+		return RegistryEntry{}, err
+	}
+	// 提前校验：早点告诉审核员这次发布注定会被拒，省掉下面已发布文件的无用写入。
+	if _, err := a.checkGameIDOwnership(ctx, a.db, submission.UserID, submission.AuthorIsAdmin, game.ID, game.Version); err != nil {
 		return RegistryEntry{}, err
 	}
 	hashPrefix := game.PackageHash[:8]
@@ -86,6 +84,7 @@ func (a *App) publishSubmission(ctx context.Context, submission Submission, revi
 		ID:             game.ID,
 		Title:          game.Title,
 		Description:    game.Description,
+		AuthorName:     strings.TrimSpace(submission.AuthorName),
 		Version:        game.Version,
 		Source:         "community",
 		Devices:        game.Devices,
@@ -103,10 +102,6 @@ func (a *App) publishSubmission(ctx context.Context, submission Submission, revi
 		PackageSize:    int64(len(game.Package)),
 		Cacheable:      true,
 	}
-	entryJSON, err := json.Marshal(entry)
-	if err != nil {
-		return RegistryEntry{}, err
-	}
 	releaseID, err := randomID("rel_")
 	if err != nil {
 		return RegistryEntry{}, err
@@ -116,6 +111,20 @@ func (a *App) publishSubmission(ctx context.Context, submission Submission, revi
 		return RegistryEntry{}, err
 	}
 	defer transaction.Rollback()
+	// 归属校验必须在同一事务里再跑一次：投稿进入待审后归属可能已变，并发发布也不能绕过。
+	ownership, err := a.checkGameIDOwnership(ctx, transaction, submission.UserID, submission.AuthorIsAdmin, entry.ID, entry.Version)
+	if err != nil {
+		return RegistryEntry{}, err
+	}
+	// 前台署名跟归属走：非归属人（管理员代发、或归属被指定给别人）发布时，玩家站显示归属人的署名，
+	// 不用这次投稿的署名，否则署名会随「最后一次是谁发布的」变化。官方保留 ID 由管理员发布时保持原行为。
+	if submission.UserID != ownership.OwnerAuthorID && ownership.OwnerAuthorID != "" && ownership.OwnerAuthorName != "" {
+		entry.AuthorName = ownership.OwnerAuthorName
+	}
+	entryJSON, err := json.Marshal(entry)
+	if err != nil {
+		return RegistryEntry{}, err
+	}
 	if _, err := transaction.ExecContext(ctx, `UPDATE releases SET status = 'superseded' WHERE game_id = ? AND status = 'active'`, entry.ID); err != nil {
 		return RegistryEntry{}, err
 	}
@@ -183,20 +192,23 @@ func (a *App) rebuildRegistry(ctx context.Context) error {
 }
 
 func (a *App) activeEntries(ctx context.Context) ([]RegistryEntry, error) {
-	rows, err := a.db.QueryContext(ctx, `SELECT entry_json FROM releases WHERE status = 'active' ORDER BY game_id ASC`)
+	rows, err := a.db.QueryContext(ctx, `SELECT r.entry_json, COALESCE(s.author_name, ''), COALESCE(s.status, '') FROM releases r LEFT JOIN submissions s ON s.id = r.submission_id WHERE r.status = 'active' ORDER BY r.game_id ASC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	entries := []RegistryEntry{}
 	for rows.Next() {
-		var raw string
-		if err := rows.Scan(&raw); err != nil {
+		var raw, authorName, status string
+		if err := rows.Scan(&raw, &authorName, &status); err != nil {
 			return nil, err
 		}
 		var entry RegistryEntry
 		if err := json.Unmarshal([]byte(raw), &entry); err != nil {
 			return nil, fmt.Errorf("stored registry entry is invalid: %w", err)
+		}
+		if entry.AuthorName == "" && status == "published" {
+			entry.AuthorName = strings.TrimSpace(authorName)
 		}
 		entries = append(entries, entry)
 	}

@@ -22,11 +22,22 @@ export interface ProjectionStatus {
   expired?: boolean;
   controlTtlSec?: number;
   controlExpiresAt?: string;
-  limits?: { voltage: number; power: number };
+  limits?: { voltage: number; power: number; intensity?: number };
   devices?: ProjectionDevice[];
   operatorCount?: number;
+  authorized?: boolean;
+  authorizedUserId?: string | null;
+  members?: ProjectionMember[];
   lastError?: string | null;
   apiBaseUrl?: string | null;
+}
+
+export interface ProjectionMember {
+  userId: string;
+  role?: string;
+  status?: string;
+  online?: boolean;
+  authorized?: boolean;
 }
 
 export class ProjectionApiError extends Error {
@@ -58,7 +69,7 @@ export const getProjectionStatus = () => request('/status');
 
 export const createProjection = (input: {
   controlTtlSec: number;
-  limits: { voltage: number; power: number };
+  limits: { voltage: number; power: number; intensity?: number };
 }) => request('/create', { method: 'POST', body: input });
 
 export const joinProjection = (joinCode: string) => (
@@ -66,3 +77,15 @@ export const joinProjection = (joinCode: string) => (
 );
 
 export const stopProjection = () => request('/stop', { method: 'POST' });
+
+// 房主显式授权某个成员（userId）。授权前该成员看不到设备清单也写不了。
+export const authorizeProjection = (userId: string) => (
+  request('/authorize', { method: 'POST', body: { userId } })
+);
+
+export const revokeProjection = () => request('/revoke', { method: 'POST' });
+
+// 移出房间：调服务端踢人，并在本地立即拒绝该成员。
+export const kickProjectionMember = (userId: string) => (
+  request('/kick', { method: 'POST', body: { userId } })
+);

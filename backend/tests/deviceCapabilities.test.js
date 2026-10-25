@@ -18,7 +18,26 @@ describe('device capability registry', () => {
     expect(registry.hasCapability('ZIDONGSUO', 'buttonInput')).toBe(true);
     expect(registry.hasCapabilities('CUNZHI01', ['strength', 'sphincterPressure', 'shock'])).toBe(true);
     expect(registry.hasCapabilities('QIYA', ['sphincterPressure', 'reporting'])).toBe(true);
+    expect(registry.hasCapabilities('DAN01', ['attitude', 'buttonInput', 'reporting'])).toBe(true);
     expect(registry.getTypesByCapability('strength')).toEqual(expect.arrayContaining(['TD01', 'PJ01', 'CUNZHI01']));
+  });
+
+  it('exposes DAN01 attitude monitoring and calibration operations', () => {
+    const dan01 = registry.getDeviceType('DAN01');
+    expect(dan01.getMonitorData()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: 'quat', visualization: 'attitude' }),
+      expect.objectContaining({ key: 'accel' }),
+      expect.objectContaining({ key: 'button0', name: '板载按键' }),
+    ]));
+    expect(dan01.getMonitorData().some((item) => item.key === 'button1')).toBe(false);
+
+    const sent = [];
+    dan01.invokeOperation('dan01', 'magCalStart', {}, (_id, message) => sent.push(message));
+    dan01.invokeOperation('dan01', 'magCalEnd', {}, (_id, message) => sent.push(message));
+    expect(sent).toEqual([
+      { method: 'action', action: 'mag_cal_start' },
+      { method: 'action', action: 'mag_cal_end' },
+    ]);
   });
 
   it('resolves tiptoe pressure through each device value contract', () => {

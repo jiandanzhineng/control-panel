@@ -168,6 +168,27 @@ const weight = {
   },
 };
 
+// 心率：纯上行，无动作、无需 stop（心率带是传感器，停不下来也不该被停）。
+const heartRate = {
+  key: 'heartRate',
+  name: '心率',
+  value: {
+    source: { op: 'prop', key: 'heart_rate' },
+    watch: ['heart_rate'],
+  },
+  actions: {},
+  events: {
+    heartRateChange: {
+      watch: [{ type: 'prop', key: 'heart_rate' }],
+      trigger: () => true,
+    },
+    statusChange: {
+      watch: [{ type: 'prop', key: 'hr_status' }],
+      trigger: () => true,
+    },
+  },
+};
+
 const reporting = {
   key: 'reporting',
   name: '上报频率控制',
@@ -179,6 +200,24 @@ const reporting = {
     start: (ctx) => ctx.writeProps({ report_delay_ms: 100 }),
     loop: [],
     stop: (ctx) => ctx.writeProps({ report_delay_ms: 5000 }),
+  },
+};
+const attitude = {
+  key: 'attitude',
+  name: '姿态感知',
+  value: {
+    source: { op: 'prop', key: 'quat' },
+    watch: ['quat'],
+  },
+  actions: {
+    startMagCalibration: (ctx) => ctx.sendMessage({ method: 'action', action: 'mag_cal_start' }),
+    endMagCalibration: (ctx) => ctx.sendMessage({ method: 'action', action: 'mag_cal_end' }),
+  },
+  events: {
+    attitudeChange: {
+      watch: [{ type: 'prop', key: 'quat' }],
+      trigger: () => true,
+    },
   },
 };
 
@@ -223,7 +262,9 @@ const capabilityDefinitions = {
   distance,
   buttonInput,
   weight,
+  heartRate,
   reporting,
+  attitude,
   motors,
   estim,
   pump,
@@ -268,7 +309,9 @@ module.exports = {
   distance,
   buttonInput,
   weight,
+  heartRate,
   reporting,
+  attitude,
   motors,
   estim,
   pump,

@@ -82,8 +82,53 @@
             <span class="meta-label">{{ t('remote.powerLimit') }}</span>
             <span class="meta-value">{{ status.limits?.power ?? '-' }}</span>
           </div>
+          <div v-if="status.role === 'owner'" class="meta-item">
+            <span class="meta-label">{{ t('remote.intensityLimit') }}</span>
+            <span class="meta-value">{{ status.limits?.intensity ?? '-' }}</span>
+          </div>
         </div>
         <el-button type="danger" plain :icon="CircleClose" :loading="busy" class="action-btn" @click="stopRoom">{{ t('remote.end') }}</el-button>
+      </div>
+
+      <!-- 授权绑定到具体账号：新成员默认无权限，房主在这里显式授权/撤权/移出房间。 -->
+      <div v-if="status.role === 'owner'" class="card">
+        <div class="section-head">
+          <div class="card-title">{{ t('remote.members') }}</div>
+          <span class="section-count">{{ members.length }}</span>
+        </div>
+        <p class="card-desc">
+          {{ status.authorizedUserId
+            ? t('remote.authorizedHint', { name: authorizedName })
+            : t('remote.waitingAuthHint') }}
+        </p>
+        <el-empty v-if="members.length === 0" :description="t('remote.noMembers')" :image-size="72" />
+        <div v-for="member in members" :key="member.userId" class="member-row">
+          <div class="member-name">
+            <strong>{{ member.userId }}</strong>
+            <el-tag :type="member.online ? 'success' : 'info'" size="small" effect="plain">
+              {{ member.online ? t('remote.memberOnline') : t('remote.memberOffline') }}
+            </el-tag>
+            <el-tag v-if="member.authorized" type="warning" size="small">{{ t('remote.authorized') }}</el-tag>
+          </div>
+          <div class="member-actions">
+            <el-button
+              v-if="!member.authorized"
+              type="primary"
+              size="small"
+              :disabled="busy"
+              @click="authorize(member.userId)"
+            >{{ t('remote.authorize') }}</el-button>
+            <el-button
+              v-else
+              size="small"
+              :disabled="busy"
+              @click="revoke"
+            >{{ t('remote.revoke') }}</el-button>
+            <el-button type="danger" plain size="small" :disabled="busy" @click="kick(member.userId)">
+              {{ t('remote.kick') }}
+            </el-button>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -122,11 +167,15 @@ import { ElMessage } from 'element-plus';
 const { t } = useI18n();
 import { getToken } from '../api/auth';
 import {
+  authorizeProjection,
   createProjection,
   getProjectionStatus,
   joinProjection,
+  kickProjectionMember,
+  revokeProjection,
   stopProjection,
   type ProjectionDevice,
+  type ProjectionMember,
   type ProjectionStatus,
 } from '../api/remoteProjection';
 
@@ -232,6 +281,50 @@ async function copyCode() {
   ElMessage.success(t('remote.copied'));
 }
 
+const members = computed<ProjectionMember[]>(() => status.value.members || []);
+const authorizedName = computed(() => (
+  status.value.members?.find((member) => member.userId === status.value.authorizedUserId)?.userId
+  || status.value.authorizedUserId
+  || ''
+));
+
+async function authorize(userId: string) {
+  busy.value = true;
+  error.value = '';
+  try {
+    status.value = await authorizeProjection(userId);
+  } catch (e: any) {
+    error.value = e?.message || t('remote.authorizeFailed');
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function revoke() {
+  busy.value = true;
+  error.value = '';
+  try {
+    status.value = await revokeProjection();
+  } catch (e: any) {
+    error.value = e?.message || t('remote.revokeFailed');
+  } finally {
+    busy.value = false;
+  }
+}
+
+async function kick(userId: string) {
+  busy.value = true;
+  error.value = '';
+  try {
+    status.value = await kickProjectionMember(userId);
+    ElMessage.success(t('remote.kickDone'));
+  } catch (e: any) {
+    error.value = e?.message || t('remote.kickFailed');
+  } finally {
+    busy.value = false;
+  }
+}
+
 onMounted(() => {
   void refresh();
   pollTimer = setInterval(() => {
@@ -293,6 +386,9 @@ onUnmounted(() => {
 
 .section-head { display: flex; align-items: center; justify-content: space-between; }
 .section-count { color: var(--text-muted); font-size: 13px; }
+.member-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border-subtle, var(--el-border-color-lighter)); }
+.member-name { display: flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.member-actions { display: flex; gap: 8px; }
 .device-name { color: var(--text-primary); font-weight: 600; }
 .device-id { color: var(--text-muted); font: 11px/1.5 ui-monospace, monospace; overflow-wrap: anywhere; }
 

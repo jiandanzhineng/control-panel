@@ -143,6 +143,7 @@ function getBridgeUrl() {
   if (process.env.PLUGIN_BRIDGE_URL) return process.env.PLUGIN_BRIDGE_URL;
   if (process.env.FRONTEND_URL) return backendUrlToBridgeUrl(process.env.FRONTEND_URL);
   if (process.env.BACKEND_URL) return backendUrlToBridgeUrl(process.env.BACKEND_URL);
+  // 后端默认只绑回环（审查报告 §2.4），固定用回环 IP，避免 localhost 解析到 ::1 时连不上。
   const port = process.env.PORT || '3000';
   return `ws://127.0.0.1:${port}/bridge`;
 }

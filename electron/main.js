@@ -1,3 +1,7 @@
+const { installStdioErrorGuards } = require('./stdioErrorGuard.js');
+
+installStdioErrorGuards();
+
 const path = require('path');
 const { app, BrowserWindow, dialog, ipcMain, shell, webContents } = require('electron');
 
@@ -43,6 +47,12 @@ let brandBleMainIntegration = null;
 let appTray = null;
 let closeAskInFlight = false;
 let localAppWindow = null;
+
+function quitAndInstallUpdate() {
+  void quitCoordinator.quitAfterShutdown(() => {
+    autoUpdater.quitAndInstall(true, true);
+  });
+}
 
 function getUpdateSettingsPath() {
   return path.join(app.getPath('userData'), 'update-settings.json');
@@ -265,10 +275,9 @@ function getAppRoot() {
   return app.isPackaged ? app.getAppPath() : path.join(__dirname, '..');
 }
 
-// 监管原生桥进程：Electron 在 app 启动时拉起 ycy_bridge / dglab_bridge，崩溃后 1s 自动重启。
-// 这样"本机桥接"通道对所有用户、所有平台开箱即稳定——由主进程统一监管，
-// 不再依赖开发机专属的 launchd plist（launchd 是 macOS 专属，无法覆盖 Windows / Linux）。
-// 二进制由跨平台 Rust 桥(bridge/)构建：macOS 为 tools/ycy_bridge，Windows 为 tools/ycy_bridge.exe。
+// 监管原生桥进程：macOS 启动时拉起 ycy_bridge / dglab_bridge，崩溃后 1s 自动重启。
+// Windows 产品路径是 noble，不拉桥，避免和 WinRT 扫描抢适配器。
+// 二进制由跨平台 Rust 桥(bridge/)构建：macOS 为 tools/ycy_bridge。
 // 路径解析复用 getResourcePath：开发环境走项目 tools/，打包后走 resources/tools/。
 function superviseBridge(name, binaryRelBase) {
   if (process.platform !== 'darwin' && process.platform !== 'win32') return;
@@ -311,6 +320,8 @@ function superviseBridge(name, binaryRelBase) {
 }
 
 function superviseBridges() {
+  // Windows 品牌蓝牙走 noble。Rust 桥会另开 WinRT 扫描，面板就收不到 47L 等广播。
+  if (process.platform === 'win32') return;
   superviseBridge('ycy_bridge', 'tools/ycy_bridge');
   superviseBridge('dglab_bridge', 'tools/dglab_bridge');
 }
@@ -836,10 +847,10 @@ async function initAutoUpdate() {
           defaultId: 0,
         })
         .then(({ response }) => {
-          if (response === 0) autoUpdater.quitAndInstall();
+          if (response === 0) quitAndInstallUpdate();
         });
     } catch {
-      autoUpdater.quitAndInstall();
+      quitAndInstallUpdate();
     }
   });
 
@@ -903,6 +914,19 @@ function startFrontendServer(callback) {
     },
   });
   frontendApp.use('/bridge', bridgeWsProxy);
+
+  // 语音开始 WS 转发：与 /bridge 同规则（upgrade 里直接 .upgrade()，不加 pathRewrite）。
+  const voiceTriggerWsProxy = createProxyMiddleware({
+    target: backendTarget,
+    changeOrigin: true,
+    ws: true,
+    on: {
+      proxyReqWs(proxyReq) {
+        proxyReq.setHeader(BRIDGE_INTERNAL_HEADER, '1');
+      },
+    },
+  });
+  frontendApp.use('/voice-trigger', voiceTriggerWsProxy);
   
   frontendApp.use(express.static(distPath));
   frontendApp.get('/*path', (req, res) => {
@@ -910,15 +934,20 @@ function startFrontendServer(callback) {
   });
   
   const FRONTEND_PORT = 5277;
-  frontendServer = frontendApp.listen(FRONTEND_PORT, () => {
+  // 只绑回环：本机面板/后端不对外提供任何服务（审查报告 §2.4）。
+  frontendServer = frontendApp.listen(FRONTEND_PORT, '127.0.0.1', () => {
     process.env.FRONTEND_URL = `http://127.0.0.1:${FRONTEND_PORT}`;
     console.log(`[electron] frontend server started: ${process.env.FRONTEND_URL}`);
     callback();
   });
-  // 将 /bridge 的 WebSocket 升级请求转发到后端
+  // 将 /bridge 与 /voice-trigger 的 WebSocket 升级请求转发到后端
   frontendServer.on('upgrade', (req, socket, head) => {
     if (req.url && req.url.startsWith('/bridge')) {
       bridgeWsProxy.upgrade(req, socket, head);
+      return;
+    }
+    if (req.url && req.url.startsWith('/voice-trigger')) {
+      voiceTriggerWsProxy.upgrade(req, socket, head);
     }
   });
 }
@@ -946,7 +975,8 @@ function startBackendThenWindow() {
     // 必须 listen 后端导出的 server（已挂 /bridge WS），不能对 app 重新 listen——
     // 否则会新建一个不带 WS 的 server，插件 bridge 握手 404。回退到 app 仅为兼容旧导出。
     const backendServer = backendApp.server || backendApp;
-    server = backendServer.listen(BACKEND_PORT, () => {
+    // 只绑回环：局域网不能直达未鉴权的 /api（审查报告 §2.4）。
+    server = backendServer.listen(BACKEND_PORT, '127.0.0.1', () => {
       process.env.BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`;
       console.log(`[electron] backend started: ${process.env.BACKEND_URL}`);
       

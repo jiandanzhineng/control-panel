@@ -4,6 +4,7 @@
       v-if="iframeSrc"
       :src="iframeSrc"
       class="game-frame"
+      :sandbox.attr="iframeSandbox"
       allow="fullscreen; autoplay; gyroscope; accelerometer; microphone"
       allowfullscreen
     ></iframe>
@@ -13,6 +14,21 @@
         <h2>{{ t('gameRun.soon') }}</h2>
         <p class="wait-desc">{{ t('gameRun.pressToStart', { label: triggerLabel }) }}</p>
         <p class="wait-hint">{{ t('gameRun.afterStart') }}</p>
+        <div class="wait-actions">
+          <el-button @click="cancelWait">{{ t('common.cancel') }}</el-button>
+          <el-button type="primary" @click="beginGame">{{ t('gameRun.forceStart') }}</el-button>
+        </div>
+      </div>
+    </div>
+
+    <div v-else-if="waitingForVoice" class="wait-overlay">
+      <div class="wait-card">
+        <h2>{{ t('gameRun.soon') }}</h2>
+        <p class="wait-desc">{{ t('gameRun.sayToStart', { phrase: voicePhraseText }) }}</p>
+        <p class="wait-hint">{{ voiceError || t('gameRun.afterStart') }}</p>
+        <div class="voice-level-track">
+          <div class="voice-level-bar" :style="{ width: `${Math.round(voiceLevel * 100)}%` }"></div>
+        </div>
         <div class="wait-actions">
           <el-button @click="cancelWait">{{ t('common.cancel') }}</el-button>
           <el-button type="primary" @click="beginGame">{{ t('gameRun.forceStart') }}</el-button>
@@ -35,9 +51,12 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
-import { track } from '../analytics';
+import { trackPlayEnd } from '../playAnalytics';
 import { clearActivePlay } from '../composables/useActivePlay';
 import { listenDeviceButtonPress } from '../composables/useButtonStart';
+import { listenVoicePhrase } from '../composables/useVoiceStart';
+import { DEFAULT_MIC_ID } from '../play/voiceStart';
+import { iframeSandboxFor } from '../play/gameIframeSandbox';
 import PlayCarrierShell from '../components/PlayCarrierShell.vue';
 
 const { t } = useI18n();
@@ -48,10 +67,20 @@ const stopping = ref(false);
 const triggerId = String(route.query.startTriggerDeviceId || '');
 const waitingForButton = ref(String(route.query.startMode || '') === 'button' && !!triggerId);
 const triggerLabel = ref('');
+// 语音开始：口令目录里的口令全都生效，识别到任意一条即开始（不加倒计时）
+const voicePhraseText = ref(String(route.query.voicePhraseLabel || '') || t('playConfig.voiceStart'));
+const voiceMicId = String(route.query.voiceMicId || '') || DEFAULT_MIC_ID;
+const waitingForVoice = ref(String(route.query.startMode || '') === 'voice');
+const voiceLevel = ref(0);
+const voiceError = ref('');
 let stopped = false;
 let stopWait: null | (() => void) = null;
 
-const stoppable = computed(() => !!iframeSrc.value || waitingForButton.value);
+const stoppable = computed(() => !!iframeSrc.value || waitingForButton.value || waitingForVoice.value);
+
+// 第三方（经 /games/proxy 代理的外部网页）游戏跑在独立 origin 里，读不到面板
+// localStorage 的账号 token（审查报告 §2.4）。第一方游戏不加 sandbox，行为不变。
+const iframeSandbox = computed(() => iframeSandboxFor(iframeSrc.value));
 
 function buildSrc(): string {
   const q = route.query;
@@ -79,6 +108,7 @@ function beginGame() {
   if (stopped || iframeSrc.value) return;
   stopWaiting();
   waitingForButton.value = false;
+  waitingForVoice.value = false;
   iframeSrc.value = buildSrc();
 }
 
@@ -102,18 +132,19 @@ async function stopCurrentBridge() {
   } catch (_) {}
 }
 
-async function stopGame() {
+async function stopGame(reason = 'user_stop') {
   stopping.value = true;
-  track('game_stop', { game_id: String(route.query.id || 'unknown') });
+  trackPlayEnd(reason);
   await stopCurrentBridge();
   clearActivePlay();
   iframeSrc.value = '';
   waitingForButton.value = false;
+  waitingForVoice.value = false;
   router.push('/plays');
 }
 
 function cancelWait() {
-  void stopGame();
+  void stopGame('cancel_wait');
 }
 
 async function startWaiting(deviceId: string) {
@@ -133,7 +164,22 @@ async function startWaiting(deviceId: string) {
   });
 }
 
+function startVoiceWaiting() {
+  waitingForVoice.value = true;
+  voiceError.value = '';
+  stopWait = listenVoicePhrase({
+    micDeviceId: voiceMicId,
+    onDetected: () => { beginGame(); },
+    onLevel: (level) => { voiceLevel.value = level; },
+    onError: () => { voiceError.value = t('gameRun.voiceError'); },
+  });
+}
+
 onMounted(() => {
+  if (waitingForVoice.value) {
+    startVoiceWaiting();
+    return;
+  }
   if (waitingForButton.value && triggerId) {
     void startWaiting(triggerId);
     return;
@@ -142,6 +188,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  trackPlayEnd('leave');
   stopCurrentBridge();
 });
 </script>
@@ -195,5 +242,22 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: center;
   gap: 12px;
+}
+
+/* 等待页的音量条：让用户看到麦克风在工作。 */
+.voice-level-track {
+  width: 100%;
+  height: 8px;
+  margin: 0 0 24px;
+  border-radius: 4px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.voice-level-bar {
+  height: 100%;
+  border-radius: 4px;
+  background: #409eff;
+  transition: width .08s linear;
 }
 </style>

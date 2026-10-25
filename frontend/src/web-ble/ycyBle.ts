@@ -27,6 +27,7 @@ const YCY_NAME_KEYWORDS = ['YCY', 'YYC', 'YSKJ', 'YOKO', 'YOKONEX', 'YISK', 'DJ-
 // 灌肠机 YISK:    FF70 写 / FF72 通知
 // AE00 系统通道:  AE01 写 / AE02 通知（疑似第二通道/泵）
 const KNOWN_WRITE_UUIDS = [
+  '0000ffb1-0000-1000-8000-00805f9b34fb',
   '0000ff31-0000-1000-8000-00805f9b34fb',
   '0000ff41-0000-1000-8000-00805f9b34fb',
   '0000ff71-0000-1000-8000-00805f9b34fb',
@@ -41,6 +42,7 @@ const KNOWN_NOTIFY_UUIDS = [
 // requestDevice 的 optionalServices：列出役次元各型号服务 + 标准电池/设备信息服务，
 // 确保即便设备名不匹配前缀也能连接并枚举特征。
 const OPTIONAL_SERVICES = [
+  '0000ffb0-0000-1000-8000-00805f9b34fb',
   '0000ff30-0000-1000-8000-00805f9b34fb',
   '0000ff40-0000-1000-8000-00805f9b34fb',
   '0000ff70-0000-1000-8000-00805f9b34fb',
@@ -143,13 +145,28 @@ class WebBluetoothYcyClient {
       try { this.device.gatt?.disconnect(); } catch (_) {}
       throw new Error('未找到可写特征，设备可能不支持 BLE 直控');
     }
-
     // 订阅通知（状态/电量回传）。
     if (notify) {
       try {
         await notify.startNotifications();
-        notify.addEventListener('characteristicvaluechanged', () => { /* 暂仅记录，解析待协议补充 */ });
+        notify.addEventListener('characteristicvaluechanged', (event: Event) => {
+          const v = (event.target as BluetoothRemoteGATTCharacteristic).value;
+          if (!v || v.byteLength < 5) return;
+          const bytes = Array.from(new Uint8Array(v.buffer, v.byteOffset, v.byteLength));
+          const sum = bytes.slice(0, -1).reduce((s, x) => (s + x) & 0xff, 0);
+          if (bytes[0] === 0x35 && bytes[1] === 0x13 && bytes[2] === 0x01 && sum === bytes[bytes.length - 1]) this.emitBattery(bytes[3]);
+        });
       } catch (_) { /* 部分设备不支持 notify */ }
+    }
+
+    // FJB-01 产品信息查询：必须先订阅通知再查询，否则设备回包会丢；
+    // 查询失败只丢产品信息，不能让连接整体失败。
+    if (/FJB-01/i.test(this.device.name || '')) {
+      try {
+        const query = new Uint8Array([0x35, 0x10, 0x45]);
+        if (this.writeChar.properties?.writeWithoutResponse) await this.writeChar.writeValueWithoutResponse(query);
+        else await this.writeChar.writeValueWithResponse(query);
+      } catch (_) { /* 查询失败忽略，不影响控制 */ }
     }
 
     // 电量：尝试标准 Battery Service 0x2A19。役次元多数机型无此服务，找不到则电量留空。

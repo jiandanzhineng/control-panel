@@ -3,9 +3,11 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#0e0d0c" />
 <title>设备与能力 · 玩法开发文档</title>
 <link rel="stylesheet" href="../assets/css/site.css" />
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='white'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
+<script src="../assets/js/baidu-tongji.js"></script>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff5b3a'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='%231a0a04'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
 </head>
 <body>
 <nav class="nav">
@@ -22,6 +24,7 @@
         <button type="button" data-set-locale="en">EN</button>
       </div>
     </div>
+    <div class="nav-account" data-auth-slot></div>
     </div>
   </nav>
 
@@ -62,6 +65,7 @@
   <tr><td><code>QTZ</code></td><td>测距及脚踏传感器</td><td><code>distance</code>、<code>buttonInput</code>、<code>tiptoePressure</code>、<code>reporting</code></td></tr>
   <tr><td><code>DZC01</code></td><td>电子秤</td><td><code>weight</code>、<code>reporting</code></td></tr>
   <tr><td><code>CUNZHI01</code></td><td>寸止玩法设备</td><td><code>sphincterPressure</code>、<code>tiptoePressure</code>、<code>strength</code>、<code>shock</code>、<code>reporting</code></td></tr>
+  <tr><td><code>HRM</code></td><td>心率带</td><td><code>heartRate</code></td></tr>
 </table>
 <p>未知设备类型会返回基础设备类型（显示名为类型本身，无能力、无操作、无监控字段）。</p>
 
@@ -77,6 +81,7 @@
   <tr><td><code>buttonInput</code></td><td>按钮输入</td><td>—</td><td><code>pressed</code>、<code>pushDown</code>、<code>pushUp</code></td><td>QTZ</td></tr>
   <tr><td><code>weight</code></td><td>重量</td><td>—</td><td><code>weightChange</code></td><td>DZC01</td></tr>
   <tr><td><code>reporting</code></td><td>上报频率</td><td><code>setReportDelay(ms)</code></td><td>—</td><td>QIYA, QTZ, DZC01, CUNZHI01</td></tr>
+  <tr><td><code>heartRate</code></td><td>心率</td><td>—</td><td><code>heartRateChange</code>、<code>statusChange</code></td><td>HRM</td></tr>
 </table>
 
 <h2>能力详解</h2>
@@ -96,6 +101,15 @@ DeviceAPI.device('punish').invoke('shock', 'stop');</code></pre>
 <pre><code>const initial = await DeviceAPI.device('sensor').readValue('tiptoePressure');
 DeviceAPI.device('sensor').onValue('tiptoePressure', (value, oldValue) =&gt; {
   console.log('踮脚压力:', oldValue, '-&gt;', value);
+});</code></pre>
+
+<h3>heartRate — 心率</h3>
+<p>纯上行，无下行动作。通过 <code>readValue('heartRate')</code> / <code>onValue('heartRate')</code> 读取实时心率（bpm），
+<code>0</code> 表示当前无有效读数（未接触或超时无数据）。事件 <code>heartRateChange</code>（心率变化）、
+<code>statusChange</code>（读数状态变化，属性 <code>hr_status</code> 取 <code>ok</code> / <code>no_contact</code> / <code>stale</code>）。</p>
+<pre><code>const bpm = await DeviceAPI.device('hrm').readValue('heartRate');
+DeviceAPI.device('hrm').onValue('heartRate', (value) =&gt; {
+  if (value &gt; 150) punish();
 });</code></pre>
 
 <h3>buttonInput — 按钮输入</h3>
@@ -132,5 +146,7 @@ DeviceAPI.device('lock').invoke('lock', 'setOpen', { open: false }); // 关锁</
 </div>
 </div>
 <script src="../assets/js/i18n.js"></script>
+<script src="../assets/js/platform-config.js"></script>
+<script src="../assets/js/auth.js"></script>
 </body>
 </html>

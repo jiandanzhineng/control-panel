@@ -1,9 +1,12 @@
 {
   "name": "undersilicon",
   "private": true,
-  "version": "1.0.35",
+  "version": "1.0.36-beta.8",
   "main": "electron/main.js",
   "scripts": {
+    "test:backend": "npm --prefix backend test -- --runInBand",
+    "test:frontend": "npm --prefix frontend test",
+    "check": "npm run test:backend && npm run test:frontend && npm run build:frontend",
     "dev:all": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\"",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
@@ -46,9 +49,20 @@
       "!backend/data",
       "!backend/tests",
       "!backend/test_*.js",
-      "!backend/.gitignore"
+      "!backend/.gitignore",
+      "!backend/voice-kws"
+    ],
+    "asarUnpack": [
+      "**/node_modules/sherpa-onnx/**"
     ],
     "extraResources": [
+      {
+        "from": "backend/voice-kws",
+        "to": "voice-kws",
+        "filter": [
+          "**/*"
+        ]
+      },
       {
         "from": "backend/inner-tools",
         "to": "inner-tools",

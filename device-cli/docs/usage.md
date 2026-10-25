@@ -2,9 +2,12 @@
 
 设备管理命令行工具，通过 HTTP API 对设备进行查询、配置和 MQTT 消息发送。
 
+工具无状态：每次执行只发起一次请求并退出，不写本地配置、不缓存设备列表、不复用命令间上下文，每条命令可独立重试。
+
 ## 环境要求
 
 - Node.js >= 18
+- 后端服务已运行
 
 ## 快速开始
 
@@ -18,7 +21,7 @@ node cli.js help
 | 选项 | 缩写 | 说明 | 默认值 |
 |------|------|------|--------|
 | `--format=<table\|json>` | `-f` | 输出格式 | `table` |
-| `--base-url=<url>` | `-b` | API 地址 | `http://127.0.0.1:3000/api` |
+| `--base-url=<url>` | `-b` | API 地址（可不带 `/api`） | `http://127.0.0.1:3000/api` |
 | `--help` | `-h` | 显示帮助 | - |
 
 API 地址也可通过环境变量设置：`DEVICE_CLI_BASE_URL` 或 `API_BASE_URL`。
@@ -105,6 +108,8 @@ dev01 | 卧室设备 | osr6 | true   | 192.168.1.100 | AA:BB:CC:DD:EE:FF
 ```bash
 node cli.js devices:list --format=json | jq '.rows[].id'
 ```
+
+`--payload` 非 JSON 时按字符串发送。命令失败时返回 `error` 字段并以非 0 退出。
 
 ## 测试
 

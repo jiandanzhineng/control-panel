@@ -11,6 +11,22 @@ const monitorSpecByCapability = {
     { key: 'button0', name: '脚踏1', unit: '状态' },
     { key: 'button1', name: '脚踏2', unit: '状态' },
   ],
+  attitude: [
+    { key: 'quat', name: '四元数', unit: '', visualization: 'attitude', chart: false },
+    { key: 'accel', name: '加速度', unit: 'm/s²', chart: false },
+    { key: 'gyro', name: '角速度', unit: '°/s', chart: false },
+    { key: 'mag', name: '磁场', unit: 'μT', chart: false },
+    { key: 'temperature', name: '温度', unit: '℃' },
+    { key: 'height', name: '高度', unit: 'm' },
+    { key: 'mag_accuracy', name: '磁力计精度', unit: '', chart: false },
+  ],
+  heartRate: [
+    { key: 'heart_rate', name: '心率', unit: 'bpm' },
+    { key: 'hr_status', name: '状态', unit: '', chart: false },
+    { key: 'hr_contact', name: '接触', unit: '', chart: false },
+    { key: 'rr_interval', name: 'RR 间期', unit: 'ms', chart: false },
+    { key: 'battery', name: '电量', unit: '%', chart: false },
+  ],
 };
 
 function getMonitorSpec(capabilityKey) {

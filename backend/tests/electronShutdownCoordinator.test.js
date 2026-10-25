@@ -58,6 +58,32 @@ describe('Electron quit coordinator', () => {
     jest.useRealTimers();
   });
 
+  it('starts the update installer only after application shutdown has finished', async () => {
+    const pending = deferred();
+    const app = { quit: jest.fn() };
+    const installUpdate = jest.fn();
+    const coordinator = createQuitCoordinator({
+      app,
+      shutdown: () => pending.promise,
+      timeoutMs: 5000,
+    });
+
+    coordinator.quitAfterShutdown(installUpdate);
+
+    expect(installUpdate).not.toHaveBeenCalled();
+    expect(app.quit).not.toHaveBeenCalled();
+
+    pending.resolve();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(installUpdate).toHaveBeenCalledTimes(1);
+    expect(app.quit).not.toHaveBeenCalled();
+
+    const updaterQuitEvent = { preventDefault: jest.fn() };
+    coordinator.handleBeforeQuit(updaterQuitEvent);
+    expect(updaterQuitEvent.preventDefault).not.toHaveBeenCalled();
+  });
+
   it('keeps the window alive until application shutdown has finished', async () => {
     const pending = deferred();
     const app = { quit: jest.fn() };

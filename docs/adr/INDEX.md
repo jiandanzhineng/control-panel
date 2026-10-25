@@ -1,0 +1,83 @@
+# ADR 索引
+
+> 自动生成，勿手改。更新：`python E:\smart\tools\memory-index\memory_index.py --path <本层级目录>`
+
+- 2026-10-13 [语音开始：口令触发玩法启动](2026-10-13-voice-start-trigger.md) — 新增「语音开始」，中英固定口令直接开始，PC 与手机都做
+- 2026-10-08 [控制面板支持心率带并新增心率能力](2026-10-08-heart-rate-capability.md) — control-panel 支持标准蓝牙心率带并新增心率能力
+- 2026-10-07 [虚拟心率带用 ESP32-C3 假设备](2026-10-07-virtual-hrm-c3-mock.md) — 用 ESP32-C3 做标准 BLE 心率带假设备供测试
+- 2026-10-06 [创作者分成每月手工统计与发放](2026-10-06-creator-payout-manual.md) — 创作者分成每月由管理员手工统计发放，不做自动拉取
+- 2026-10-06 [游戏上传禁止重复 game_id](2026-10-06-game-id-no-duplicate.md) — 游戏上传禁止重复 game_id，首个发布者拥有该 id，官方 id 保留
+- 2026-10-06 [投稿源包保留 6 个月](2026-10-06-submission-source-retention.md) — 投稿源包桶 submissions/ 自动清理周期改为 180 天
+- 2026-10-01 [托管运行只改运行方式，不改游戏逻辑](2026-10-01-host-runtime-keeps-game-logic.md) — 游戏迁到后端托管只改运行方式，玩法逻辑须与原版逐条一致
+- 2026-09-30 [品牌 BLE 统一走 noble 直连](2026-09-30-brand-ble-native-noble.md) — 品牌 BLE 统一由后端 noble 直连系统蓝牙，不再经本机桥
+- 2026-09-29 [游戏使用原始 UI，不另做通用界面](2026-09-29-game-original-ui.md) — 游戏运行与配置界面沿用各游戏原始 UI，不另做通用界面
+- 2026-09-29 [俯卧撑游戏共用一个电机输出槽](2026-09-29-pushup-single-motor-output.md) — 俯卧撑游戏的跳蛋与捶背器共用一个电机输出槽
+- 2026-09-23 [游戏逻辑继续使用 JS](2026-09-23-js-game-core-outside-webview.md) — 游戏逻辑继续用 JS，核心与 WebView 解耦，PC 与移动端复用
+- 2026-09-23 [远程游戏：设备所在端执行，两端互为执行端与控制端](2026-09-23-remote-game-client-control.md) — 游戏在设备所在端执行，PC 与手机互为执行端/控制端
+- 2026-09-15 [自动蓝牙扫描不打 info 日志](2026-09-15-ble-auto-scan-quiet-logs.md) — 后台自动扫描静默不打 info，手动扫描才记 start/found/done
+- 2026-09-15 [郊狼品牌页提供分通道电击](2026-09-15-dglab-brand-estim.md) — 品牌页郊狼 shock 双通道 0–100，estim 分通道 A/B 0–255
+- 2026-09-15 [郊狼 3.0 走独立 BLE 协议](2026-09-15-dglab-v3-ble.md) — 47L 按 Coyote 3.0 独立 BLE 协议控制，设备类型不变
+- 2026-09-15 [FJB-01 与灌肠机一代按官方帧控制](2026-09-15-fjb01-enema-official-frames.md) — FJB-01 等走官方三路速度帧，灌肠机一代写 FFB1 带时长
+- 2026-09-15 [作者修改游戏需审核](2026-09-15-game-author-edit-review.md) — 作者可改已发布游戏的名称说明署名，改后重新审核
+- 2026-09-14 [品牌页主按钮叫「扫描蓝牙设备」](2026-09-14-brand-ble-scan-button.md) — 品牌页主按钮文案「扫描蓝牙设备」，选择时有连接中反馈
+- 2026-09-14 [品牌蓝牙一次扫描、扫到即停](2026-09-14-brand-ble-scan-once.md) — 品牌本机蓝牙四品牌共用一次扫描，扫到第一台即停
+- 2026-09-12 [设备管理按类型批量控制](2026-09-12-device-batch-control.md) — 设备工具提供按类型批量控制，打开时自动刷新设备
+- 2026-09-09 [玩法统计走 OpenPanel，不做 heartbeat](2026-09-09-play-stats-openpanel.md) — 玩法统计用 OpenPanel 看板，不上报 heartbeat，MAC 也上报
+- 2026-09-05 [应用内更新自动关闭当前客户端](2026-09-05-app-update-auto-closes-running-client.md) — 应用内更新不得要求用户手动关闭客户端
+- 2026-09-05 [DAN01 姿态监控](2026-09-05-dan01-attitude-monitor.md) — DAN01 在数据监控中实时显示长方体姿态与解算姿态数据
+- 2026-09-05 [桌面性能与发布检查](2026-09-05-desktop-performance-and-release-checks.md) — 减少设备上报与日志同步写盘，优化启动加载，自动测试接入发布流程
+- 2026-09-05 [游戏 API 与 Shop 隔离同机部署](2026-09-05-game-platform-shop-cohost-isolated.md) — game API 部署到 Shop 服务器，独立服务目录端口数据，不影响 Shop
+- 2026-09-05 [游戏页内与官网中英](2026-09-05-i18n-p2-site-and-game-ui.md) — 内置游戏页内 UI 与 play-registry 用户页做中英，日志协议值不翻译
+- 2026-09-05 [数据监控实时刷新](2026-09-05-monitor-refresh-on-change.md) — 数据监控期间 report_delay_ms 设 100，收到变化立即刷新不做防抖
+- 2026-09-04 [游戏站接入百度统计，审核后台不接入](2026-09-04-baidu-tongji-game-no-admin.md) — 游戏网站接入百度统计，审核后台不接入
+- 2026-09-04 [游戏 JS 翻译用中文当 key](2026-09-04-game-i18n-zh-as-key.md) — 游戏页内 JS 动态文案用中文原文当 key，宿主只注入 locale
+- 2026-09-04 [游戏投稿平台首期形态](2026-09-04-game-platform-first-phase.md) — 游戏投稿平台首期无审核 Worker，ZIP 直传 OSS 或 Git 地址，SQLite，无 SSR
+- 2026-09-04 [游戏平台复用 mobile 账号](2026-09-04-game-platform-mobile-auth.md) — 投稿平台复用 mobile 账号体系，保留宽松 CORS，昵称只作署名
+- 2026-09-04 [首页分栏与正式登录页](2026-09-04-game-site-home-and-login.md) — 投稿登录页做成正式登录页，首页一半推荐游戏一半投稿说明
+- 2026-08-31 [第三方蓝牙设备 gxp 艾萝机娘二代](2026-08-31-gxp-ailuo2-third-party-ble.md) — 接入 gxp 艾萝机娘二代为第三方蓝牙设备，展示名照写
+- 2026-08-31 [语音助手是客户端模块，唤醒词瑰夏大人](2026-08-31-voice-assistant-client-module.md) — PC 客户端加「瑰夏大人」唤醒的语音助手，作为客户端模块而非游戏
+- 2026-08-30 [插线烧录行为：最高优先级与自动复位](2026-08-30-wired-flash-behavior.md) — 固件更新占串口最高优先级，插线烧录对齐 Flash Tool 自动复位
+- 2026-08-29 [设备按键开始流程](2026-08-29-event-start-via-lock-button.md) — 配置页底部「启动」旁放「设备按键开始」，测通后才能确认待命
+- 2026-08-29 [面板 i18n 分期与游戏语言](2026-08-29-i18n-p0-p1-and-game-locale.md) — 面板 i18n 先中英，游戏用同一 locale code 与同一包，运行中不热切
+- 2026-08-28 [SOSEXY 归属繁野啵啵贝](2026-08-28-sosexy-is-fanye-bobobei.md) — SOSEXY PID 0004 属繁野啵啵贝，不归役次元，内部码不变
+- 2026-08-28 [SOSEXY PID 0004 能力映射](2026-08-28-sosexy-pid0004-capability-mapping.md) — SOSEXY PID 0004 提供 strength、vibration、suction、shock 四能力
+- 2026-08-28 [支持设备不写网页蓝牙](2026-08-28-support-list-no-webble.md) — 支持设备清单按产品实际连接方式写，不写网页蓝牙
+- 2026-08-27 [品牌页自动连接所有支持的设备](2026-08-27-brand-ble-auto-connect-all.md) — 品牌页自动连接所有支持设备默认开启，与已保存设备开关独立
+- 2026-08-27 [品牌网页蓝牙自动连接已保存设备](2026-08-27-brand-ble-auto-connect-saved.md) — 品牌页自动连接已保存设备默认开启，按广播名认同随机地址设备
+- 2026-08-27 [品牌本机蓝牙设备 ID 只用 MAC](2026-08-27-brand-ble-mac-device-id.md) — 品牌本机蓝牙设备 ID 只用 12 位小写基础 MAC，无前缀无冒号
+- 2026-08-27 [蓝牙连接一次扫描混合列表](2026-08-27-brand-ble-unified-scan.md) — 品牌页蓝牙连接不先选品牌，一次扫描出混合设备列表
+- 2026-08-27 [品牌页统一连接与支持清单](2026-08-27-brand-tab-unified-connect.md) — 品牌设备 tab 不再按品牌分栏，只留蓝牙连接、更多连接方式与支持清单
+- 2026-08-26 [品牌网页蓝牙身份回退浏览器设备 id](2026-08-26-brand-ble-identity-browser-id.md) — 品牌网页蓝牙无基础 MAC 时用「品牌前缀:浏览器设备 id」
+- 2026-08-26 [品牌设备按物理效果挂能力](2026-08-26-brand-capability-inventory.md) — 品牌设备按物理效果挂能力：strength/motors、shock/estim、pump
+- 2026-08-26 [品牌页连接后保留试控](2026-08-26-brand-page-keeps-test-control.md) — 品牌页连上设备后保留试控，方便当场验证功能
+- 2026-08-26 [品牌 strength 对齐老设备 0-255](2026-08-26-brand-strength-align-0-255.md) — 品牌 strength.set 对外与老设备一致取 0–255，内部再换算
+- 2026-08-26 [杯单独一类并兼 strength，连接走品牌页](2026-08-26-cup-own-type-and-strength.md) — 杯型设备单独成类并同时抽象 strength，连接仍由品牌页负责
+- 2026-08-26 [杯 strength 同时映射旋转和震动](2026-08-26-cup-strength-maps-stroke-and-vibe.md) — 杯 strength.set 同时驱动旋转（只正转）和震动，第三轴不改
+- 2026-08-26 [FJB-03 用 6 字节三通道电机帧](2026-08-26-fjb03-six-byte-motor-frame.md) — YCY-FJB-03 写 FF41 的 6 字节三通道电机帧，不用玩具帧或泵帧
+- 2026-08-18 [设备列表默认自动刷新](2026-08-18-device-list-always-auto-refresh.md) — 设备管理页去掉自动刷新开关，默认每 3 秒刷新且不可关闭
+- 2026-08-18 [数字人输出进入日志管理](2026-08-18-digital-human-output-in-logs.md) — 数字人输出导入日志管理，便于 debug
+- 2026-08-18 [数字人打包说明写入更新文档](2026-08-18-digital-human-pack-in-update-doc.md) — 更新文档补数字人打包说明，重新打包并验证更新启动与版本号
+- 2026-08-18 [首次关闭询问托盘或退出](2026-08-18-first-close-asks-tray-or-quit.md) — 首次点关闭询问最小化到托盘还是退出，之后可在设置页改
+- 2026-08-18 [数字人启动只隔离环境](2026-08-18-local-app-env-isolation.md) — 修复数字人启动「进程提前退出(1)」时只隔离环境，不影响正常用户
+- 2026-08-18 [安装进度卡死与启动进度具象化](2026-08-18-local-app-progress-and-ui-freeze.md) — 修复安装到 90% 窗口卡死，启动进度要具象到每一步
+- 2026-08-18 [数字人更新和启动分开](2026-08-18-local-app-update-start-split.md) — 客户端把数字人的更新与启动分开，可直接启动本地旧版本
+- 2026-08-18 [MQTT 日志去掉重复的收到消息](2026-08-18-mqtt-log-merge-topic.md) — 删掉「收到MQTT消息」日志，把 topic 并进解析消息那条
+- 2026-08-18 [串口自动连接开关放进串口连接页](2026-08-18-serial-auto-connect-in-dialog.md) — 串口自动连接开关移到「设备工具 → 串口连接」对话框内
+- 2026-08-18 [日志管理上传诊断日志](2026-08-18-upload-diagnostic-logs.md) — 日志管理增加上传诊断日志按钮，参考移动端上传最近日志
+- 2026-08-18 [语音渠道归控制面板，一次配置多游戏共用](2026-08-18-voice-hub-in-panel.md) — 语音渠道设置整块放 control-panel，主控中转，配置一次多游戏共用
+- 2026-08-18 [小雅启动后单独开窗口](2026-08-18-xiaoya-separate-window.md) — 小雅启动后由 Electron 单独开窗口，不在主窗口内启动
+- 2026-08-18 [小雅窗口标题与未登录确认](2026-08-18-xiaoya-window-title-and-login.md) — 小雅窗口标题加全屏提示；未登录时提示并询问是否继续
+- 2026-08-17 [检查更新要有反馈，测试渠道可推荐更高正式版](2026-08-17-check-update-feedback-and-stable-on-test.md) — 检查更新必须给出可见结果，测试渠道也推荐更高的正式版
+- 2026-08-17 [数字人嵌入面板并一点安装启动](2026-08-17-digital-human-embedded-one-click.md) — 把 digital-human 嵌入主客户端，点一下自动安装并启动
+- 2026-08-17 [向本机数字人提供已登录账号](2026-08-17-local-account-for-digital-human.md) — 面板提供授权验证接口，让本机数字人复用已登录账号走 mimo relay
+- 2026-08-06 [后端设备层持有串口连接](2026-08-06-backend-owns-serial-connections.md) — 串口连接由后端设备层统一持有，页面只走 REST
+- 2026-08-06 [基础 MAC 是跨连接统一设备 ID](2026-08-06-base-mac-is-the-device-id.md) — 基础 MAC 是跨连接统一设备 ID，BLE 地址只作连接信息
+- 2026-08-06 [BLE 身份特征返回设备 ID 和固件版本](2026-08-06-ble-identity-exposes-mac-and-firmware-version.md) — BLE 0xFF04 身份特征返回设备 ID 和固件版本
+- 2026-08-06 [旧 BLE 固件回退到浏览器设备标识](2026-08-06-legacy-ble-falls-back-to-browser-device-id.md) — 旧 BLE 固件回退到浏览器设备标识
+- 2026-08-06 [串口握手返回统一设备身份](2026-08-06-serial-handshake-device-identity.md) — 串口握手返回基础 MAC 与固件版本，旧固件必须拒绝
+- 2026-08-06 [每台物理设备只有一个控制连接](2026-08-06-single-control-connection-per-physical-device.md) — 每台物理设备只有一个控制连接，命令不广播
+- 2026-07-02 [运行状态权威：bridge 连接即真相](2026-07-02-backend-authoritative-play-state.md) — 以 bridge 的 ws 连接为唯一真相，唯一性与复位收敛到 session 生命周期
+- 2026-07-02 [detector 注入：一次挂载 + detector 自决，浏览环境与内置浏览器共用](2026-07-02-detector-injection-once-and-self-gating.md) — detector 一次挂载并自决是否检测，与内置浏览器共用登录环境
+- 2026-07-02 [信任边界：本机即可信，bridge 不做连接认证](2026-07-02-local-machine-is-trusted-no-bridge-auth.md) — 本机即可信，bridge 不做连接认证，不引入激活 token
+- 2026-07-02 [插件发现：扫描多目录（内置 + 用户）](2026-07-02-plugin-discovery-multi-directory.md) — 插件发现扫描内置与用户多目录，为未来 zip 安装留位
+- 2026-07-02 [玩法运行唯一性：全局只有一个玩法，游戏与插件互斥](2026-07-02-single-active-play-carrier.md) — 全局同时只有一个玩法在跑，游戏与插件互斥，退出必复位设备

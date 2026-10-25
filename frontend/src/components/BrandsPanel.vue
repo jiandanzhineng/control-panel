@@ -42,10 +42,16 @@
         <div v-if="ycyWebbleCandidates.length" class="candidate-list">
           <div v-for="c in ycyWebbleCandidates" :key="c.id" class="candidate-item">
             <div class="candidate-info">
-              <span class="candidate-name">{{ brandLabel(classifyBleBrand(c.name), c.name) }}</span>
-              <span class="candidate-meta">{{ BRAND_LABEL[classifyBleBrand(c.name)] || t('brands.ycy') }} · {{ c.name }}</span>
+              <span class="candidate-name">{{ brandLabel(candidateBrand(c), c.name) }}</span>
+              <span class="candidate-meta">{{ BRAND_LABEL[candidateBrand(c)] || t('brands.ycy') }} · {{ c.name }}</span>
             </div>
-            <el-button size="small" type="primary" @click="ycyWebblePick(c)">{{ t('brands.select') }}</el-button>
+            <el-button
+              size="small"
+              type="primary"
+              :loading="connectingId === c.id"
+              :disabled="!!connectingId"
+              @click="ycyWebblePick(c)"
+            >{{ connectingId === c.id ? t('brands.connectingNamed', { name: c.name }) : t('brands.select') }}</el-button>
           </div>
         </div>
 
@@ -55,19 +61,39 @@
             <div class="device-card__head">
               <div>
                 <span class="device-card__name">{{ brandLabel(dev.brand, dev.name) }}</span>
-                <el-tag size="small" class="tag-brand">{{ BRAND_LABEL[dev.brand] || dev.brand }}</el-tag>
-                <el-tag v-if="dev.type" size="small" type="warning">{{ TYPE_LABEL[dev.type] || ycyPanelType(dev) }}</el-tag>
+                <el-tag size="small" class="tag-brand">{{ brandTagText(dev) }}</el-tag>
+                <el-tag v-if="showTypeTag(dev)" size="small" type="warning">{{ typeTagText(dev) }}</el-tag>
               </div>
               <el-button size="small" :icon="Close" @click="disconnectDevice(dev)">{{ t('brands.disconnect') }}</el-button>
             </div>
-            <div v-if="dev.brand === 'dglab'" class="control-grid">
+            <div v-if="dev.brand === 'hrm'" class="control-grid">
               <div class="control-field">
-                <label>{{ t('brands.intensity', { n: ctl(dev).intensity }) }}</label>
-                <el-slider v-model="ctl(dev).intensity" :min="0" :max="100" />
+                <label>{{ t('brands.heartRateLive') }}</label>
+                <span class="hrm-value">{{ hrmValue(dev) }} bpm</span>
               </div>
-              <div class="control-actions">
-                <el-button type="primary" size="small" :loading="opLoading[`dglabApply:${dev.deviceId}`]" @click="dglabApply(dev)">{{ t('brands.apply') }}</el-button>
-                <el-button size="small" :loading="opLoading[`dglabStop:${dev.deviceId}`]" @click="dglabStop(dev)">{{ t('brands.stop') }}</el-button>
+              <div class="control-field">
+                <label>{{ t('brands.hrStatusLabel') }}</label>
+                <span class="hrm-value">{{ hrStatusText(dev) }}</span>
+              </div>
+              <div class="control-field" v-if="hrBattery(dev) !== null">
+                <label>{{ t('brands.battery') }}</label>
+                <span class="hrm-value">{{ hrBattery(dev) }}%</span>
+              </div>
+            </div>
+            <div v-else-if="dev.brand === 'dglab'" class="control-stack">
+              <div class="control-row">
+                <div class="control-field"><label>{{ t('brands.intensity', { n: ctl(dev).intensity }) }}</label><el-slider v-model="ctl(dev).intensity" :min="0" :max="100" /></div>
+                <div class="control-actions">
+                  <el-button type="primary" size="small" :loading="opLoading[`dglabApply:${dev.deviceId}`]" @click="dglabApply(dev)">{{ t('brands.apply') }}</el-button>
+                  <el-button size="small" :loading="opLoading[`dglabStop:${dev.deviceId}`]" @click="dglabStop(dev)">{{ t('brands.stop') }}</el-button>
+                </div>
+              </div>
+              <div class="control-row">
+                <div class="control-field"><label>{{ t('brands.channelA', { n: ctl(dev).aStrength }) }}</label><el-slider v-model="ctl(dev).aStrength" :min="0" :max="255" /></div>
+                <div class="control-field"><label>{{ t('brands.channelB', { n: ctl(dev).bStrength }) }}</label><el-slider v-model="ctl(dev).bStrength" :min="0" :max="255" /></div>
+                <div class="control-actions">
+                  <el-button type="primary" size="small" :loading="opLoading[`dglabEstim:${dev.deviceId}`]" @click="dglabEstimApply(dev)">{{ t('brands.applyShock') }}</el-button>
+                </div>
               </div>
             </div>
             <div v-else-if="ycyPanelType(dev) === 'SOSEXY_PID0004'" class="control-stack">
@@ -244,6 +270,7 @@ const BRAND_LABEL = computed<Record<string, string>>(() => ({
   ycy: t('brands.brandYcy'),
   sosexy: t('brands.brandSosexy'),
   gxp: t('brands.brandGxp'),
+  hrm: t('brands.brandHrm'),
 }))
 const TYPE_LABEL = computed<Record<string, string>>(() => ({
   DGLAB: t('brands.typeDglab'),
@@ -254,7 +281,36 @@ const TYPE_LABEL = computed<Record<string, string>>(() => ({
   YCY_ENEMA: t('brands.typeEnema'),
   SOSEXY_PID0004: t('brands.typeBobobei'),
   GXP_XA9935: t('brands.typeAiluo'),
+  HRM: t('brands.typeHrm'),
 }))
+
+// 心率带卡片：数据来自 /api/brands 已连接列表里的 dev.data（后端上行走 deviceService）。
+function hrmValue(dev: BrandDevice) {
+  const v = Number(dev.data?.heart_rate)
+  return Number.isFinite(v) ? v : 0
+}
+function hrBattery(dev: BrandDevice) {
+  const v = Number(dev.data?.battery)
+  return Number.isFinite(v) ? v : null
+}
+function hrStatusText(dev: BrandDevice) {
+  const s = String(dev.data?.hr_status || '')
+  if (s === 'ok') return t('brands.hrStatusOk')
+  if (s === 'no_contact') return t('brands.hrStatusNoContact')
+  if (s === 'stale') return t('brands.hrStatusStale')
+  return s || t('brands.hrStatusStale')
+}
+
+// 卡片头部两个标签：品牌标签与类型标签文案相同时（如心率带），不重复显示类型标签。
+function brandTagText(dev: BrandDevice): string {
+  return BRAND_LABEL.value[dev.brand] || dev.brand
+}
+function typeTagText(dev: BrandDevice): string {
+  return TYPE_LABEL.value[dev.type || ''] || ycyPanelType(dev)
+}
+function showTypeTag(dev: BrandDevice): boolean {
+  return !!dev.type && typeTagText(dev) !== brandTagText(dev)
+}
 
 // 设备名映射为友好中文名（仅显示层，不改连接/电量逻辑）
 function brandLabel(brand: string, rawName?: string | null): string {
@@ -267,6 +323,7 @@ function brandLabel(brand: string, rawName?: string | null): string {
   }
   if (brand === 'sosexy') return t('brands.bobobei')
   if (brand === 'gxp') return t('brands.ailuo')
+  if (brand === 'hrm') return name || t('brands.brandHrm')
   if (brand === 'ycy') {
     if (/FJB/i.test(name)) return t('brands.cup')
     if (/(YISK|灌肠|ENEMA|GLJ|GLS)/i.test(name)) return t('brands.enema')
@@ -454,8 +511,9 @@ function ycyPanelType(dev: { type?: string; name?: string }) {
   if (/SOSEXY|啵啵贝/i.test(n)) return 'SOSEXY_PID0004'
   if (/XA9935|GXP|艾萝/i.test(n)) return 'GXP_XA9935'
   if (/灌肠|enema|glj|yisk/i.test(n)) return 'YCY_ENEMA'
-  if (/杯|cup|fjb/i.test(n)) return 'YCY_CUP'
-  if (/toy|玩具|tdd/i.test(n)) return 'YCY_TOY'
+  if (/fjb-?03/i.test(n)) return 'YCY_CUP'
+  if (/fjb|tdd|跳蛋|toy|玩具/i.test(n)) return 'YCY_TOY'
+  if (/杯|cup/i.test(n)) return 'YCY_CUP'
   if (/dj|ems|电击/i.test(n)) return 'YCY_EMS'
   return 'YCY_EMS'
 }
@@ -815,15 +873,25 @@ const ycyWebbleDevices = ref<YcyWebbleDevice[]>([])
 const ycyWebbleCandidates = ref<Array<{ id: string; name: string; address?: string; deviceId?: string; brand?: string }>>([])
 let ycyScanUnsub: (() => void) | null = null
 const scanningYcyWebble = ref(false)
+const connectingId = ref('')
 function ycyWebbleCancelScan() {
   brandBle.cancelSelection().catch(() => {})
 }
-function classifyBleBrand(name?: string): 'dglab' | 'ycy' | 'sosexy' | 'gxp' {
+function classifyBleBrand(name?: string): 'dglab' | 'ycy' | 'sosexy' | 'gxp' | 'hrm' {
   const n = String(name || '').toUpperCase()
+  // 标准蓝牙心率带：广播名关键字（服务 0x180D 由后端识别，此处只按名字兜底）
+  if (/HRM|HEART|PULSE|心率/.test(n)) return 'hrm'
   if (['D-LAB', 'DG-LAB', 'COYOTE', '47L', 'ESTIM'].some((k) => n.includes(k))) return 'dglab'
   if (n.includes('SOSEXY') || name?.includes('啵啵贝') || name?.includes('繁野')) return 'sosexy'
   if (n.includes('XA9935') || n.includes('GXP') || name?.includes('艾萝')) return 'gxp'
   return 'ycy'
+}
+// 候选行的品牌：后端按广播服务识别出的 brand 优先（Polar H10 这类名字无关键字的心率带），
+// 只在后端没给 brand 时才退回按名字分类。
+function candidateBrand(c: { name?: string; brand?: string }): 'dglab' | 'ycy' | 'sosexy' | 'gxp' | 'hrm' {
+  const b = c.brand
+  if (b === 'dglab' || b === 'ycy' || b === 'sosexy' || b === 'gxp' || b === 'hrm') return b
+  return classifyBleBrand(c.name)
 }
 function cancelBleScan() {
   dglabWebbleCancelScan()
@@ -833,13 +901,14 @@ async function startBleConnect() {
   scanningYcyWebble.value = true
   ycyWebbleCandidates.value = []
   try {
-    const [y, d, s, g] = await Promise.all([
+    const [y, d, s, g, h] = await Promise.all([
       brandsApi.discover('ycy', { mode: 'native' }),
       brandsApi.discover('dglab', { mode: 'native' }),
       brandsApi.discover('sosexy', { mode: 'native' }),
       brandsApi.discover('gxp', { mode: 'native' }),
+      brandsApi.discover('hrm', { mode: 'native' }),
     ])
-    const list = [...(y.devices || []), ...(d.devices || []), ...(s.devices || []), ...(g.devices || [])]
+    const list = [...(y.devices || []), ...(d.devices || []), ...(s.devices || []), ...(g.devices || []), ...(h.devices || [])]
     ycyWebbleCandidates.value = list.map((c) => ({
       id: c.address || c.deviceId || '',
       name: c.name || c.suggestedName || '',
@@ -863,20 +932,24 @@ function openMoreConnect(kind: string | number) {
   }
 }
 async function ycyWebblePick(c: { id: string; name: string; address?: string; deviceId?: string; brand?: string }) {
+  connectingId.value = c.id
+  ElMessage.info(t('brands.connectingNamed', { name: c.name }))
   try {
-    const brand = classifyBleBrand(c.name)
+    // 心率带由后端按广播服务/名字识别；连接后设备 ID 由 0xFF04 身份决定，前端不指定 type。
+    const brand = (c.brand as any) || classifyBleBrand(c.name)
     await brandsApi.connect({
       brand,
       mode: 'native',
       address: c.address || c.id,
       name: c.name,
       deviceId: c.deviceId,
-      ...(brand === 'dglab' ? {} : { type: ycyPanelType({ name: c.name }) }),
+      ...(brand === 'dglab' || brand === 'hrm' ? {} : { type: ycyPanelType({ name: c.name }) }),
     })
     ycyWebbleCandidates.value = []
     await refreshConnected()
     ElMessage.success(t('brands.connectedNamed', { name: brandLabel(brand, c.name) }))
   } catch (e: any) { ElMessage.error(e?.message || t('brands.connectFailed')) }
+  finally { connectingId.value = '' }
 }
 const ycyWebbleUnlisten = new Map<string, () => void>()
 const ycyWebbleHint = computed(() => {
@@ -928,6 +1001,15 @@ async function dglabStop(dev: BrandDevice) {
   await withLoading(`dglabStop:${dev.deviceId}`, async () => {
     await devicesApi.invokeCapability(dev.deviceId, 'shock', 'stop', {})
   }).catch((e: any) => { ElMessage.error(e?.message || t('brands.stopFailed')) })
+}
+
+async function dglabEstimApply(dev: BrandDevice) {
+  const s = ctl(dev)
+  await withLoading(`dglabEstim:${dev.deviceId}`, async () => {
+    await devicesApi.invokeCapability(dev.deviceId, 'estim', 'set', { channel: 'A', intensity: s.aStrength })
+    await devicesApi.invokeCapability(dev.deviceId, 'estim', 'set', { channel: 'B', intensity: s.bStrength })
+    ElMessage.success(t('brands.sent'))
+  }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
 }
 
 async function ycyTrigger(dev: BrandDevice) {
@@ -1044,7 +1126,7 @@ async function ycyFjbStop(dev: BrandDevice) {
 async function ycyPumpApply(dev: BrandDevice) {
   const s = ctl(dev)
   await withLoading(`ycyPump:${dev.deviceId}`, async () => {
-    await devicesApi.invokeCapability(dev.deviceId, 'pump', 'start', { scene: s.scene || 'guan' })
+    await devicesApi.invokeCapability(dev.deviceId, 'pump', 'start', { scene: s.scene || 'guan', ss: 60 })
     ElMessage.success(t('brands.sent'))
   }).catch((e: any) => { ElMessage.error(e?.message || t('brands.sendFailed')) })
 }

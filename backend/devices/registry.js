@@ -115,6 +115,36 @@ const registeredTypes = [
     close: (ctx) => ctx.writeProps({ shock: 0, voltage: 0, power: 0 }),
   }),
 
+  new BaseDeviceType({
+    type: 'DAN01',
+    name: '十轴姿态传感器',
+    capabilities: {
+      attitude: {},
+      reporting: {},
+      buttonInput: {
+        monitorData: [{ key: 'button0', name: '板载按键', unit: '状态', chart: false }],
+      },
+    },
+    operations: [
+      {
+        key: 'magCalStart', name: '开始磁场校准',
+        capability: 'attitude', action: 'startMagCalibration', input: {},
+      },
+      {
+        key: 'magCalEnd', name: '结束磁场校准',
+        capability: 'attitude', action: 'endMagCalibration', input: {},
+      },
+    ],
+    close: (ctx) => ctx.writeProps({ report_delay_ms: 200 }),
+  }),
+
+  // 标准蓝牙心率带：纯上行传感器，无动作、无 close（心率不归零，只标记 stale）。
+  new BaseDeviceType({
+    type: 'HRM',
+    name: '心率带',
+    capabilities: ['heartRate'],
+  }),
+
   // 郊狼：shock=双通道同强度；estim=分通道+波形预设。
   new BaseDeviceType({
     type: 'DGLAB',
@@ -264,7 +294,7 @@ const registeredTypes = [
             brand: 'ycy', cmd: 'pump',
             protocol: params?.protocol || 'v1',
             scene: params?.scene || 'guan',
-            rate: params?.rate, ss: params?.ss,
+            rate: params?.rate, ss: params?.ss ?? 60,
           }),
           stop: (ctx, params) => ctx.sendMessage({
             brand: 'ycy', cmd: 'pump',
@@ -280,7 +310,7 @@ const registeredTypes = [
           brand: 'ycy', cmd: 'pump',
           protocol: params?.protocol || 'v1',
           scene: params?.scene || 'guan',
-          rate: params?.rate, ss: params?.ss,
+          rate: params?.rate, ss: params?.ss ?? 60,
         }),
       },
       {
@@ -298,7 +328,7 @@ const registeredTypes = [
       },
       {
         key: 'stop', name: '全部停止',
-        invoke: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'stopAll' }),
+        invoke: (ctx) => ctx.sendMessage({ brand: 'ycy', cmd: 'pump', protocol: 'v1', scene: 'stop' }),
       },
     ],
     // 灌肠机的输出通道是泵；stopAll 仅是电刺激帧，不能保证泵停止。

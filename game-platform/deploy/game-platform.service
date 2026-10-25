@@ -1,0 +1,24 @@
+[Unit]
+Description=UnderSilicon Game Platform API
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=game-platform
+Group=game-platform
+UMask=0027
+EnvironmentFile=/etc/game-platform/game-platform.env
+WorkingDirectory=/var/lib/game-platform
+ExecStart=/opt/game-platform/current/game-platform
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/game-platform
+
+[Install]
+WantedBy=multi-user.target

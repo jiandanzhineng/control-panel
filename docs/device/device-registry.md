@@ -16,6 +16,7 @@
 | `DZC01` | 电子秤 | `weight`、`reporting` | close |
 | `CUNZHI01` | 寸止玩法设备 | `sphincterPressure`、`tiptoePressure`、`strength`、`shock`、`reporting` | start/stop + close |
 | `GXP_XA9935` | gxp艾萝机娘二代 | `strength` | start/stop + close |
+| `HRM` | 心率带 | `heartRate` | 无（纯上行，无 close） |
 
 ## 能力总表
 
@@ -30,9 +31,12 @@
 | `buttonInput` | 按钮输入 | — | pressed, pushDown, pushUp | QTZ, ZIDONGSUO |
 | `weight` | 重量 | — | weightChange | DZC01 |
 | `reporting` | 上报频率 | setReportDelay(ms) | — | QIYA, QTZ, DZC01, CUNZHI01 |
+| `heartRate` | 心率 | — | heartRateChange, statusChange | HRM |
 
 ## 能力值映射
 
 `sphincterPressure`、`tiptoePressure`、`distance`、`weight` 提供可读标量值。CUNZHI01 的 `tiptoePressure` 默认读取真实 `pressure1`；QTZ 则通过设备 override 从 `button0/button1` 派生，任一按钮为数值 `1`（含字符串 `"1"`）时返回 200，否则返回 0。
 
 QTZ 的 0/200 是兼容玩法阈值判断的模拟状态值，不是 kPa 测量值，也不会在 BLE 属性目录中伪造 `pressure1` 特征。
+
+HRM 的心率值来自 `heart_rate`，`hr_status` 记录读数状态（`ok` / `no_contact` / `stale`）；监控字段还含 `hr_contact`、`rr_interval`、`battery`。

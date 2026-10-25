@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +25,14 @@ func (a *App) routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/registry/rebuild", a.handleAdminRebuildRegistry)
 	mux.HandleFunc("GET /api/admin/releases", a.handleAdminReleases)
 	mux.HandleFunc("POST /api/admin/releases/", a.handleAdminReleaseAction)
+	mux.HandleFunc("GET /api/admin/payouts", a.handleAdminPayoutList)
+	mux.HandleFunc("POST /api/admin/payouts", a.handleAdminPayoutCreate)
+	mux.HandleFunc("POST /api/admin/payouts/", a.handleAdminPayoutAction)
+	mux.HandleFunc("GET /api/admin/community-games", a.handleAdminCommunityGames)
+	mux.HandleFunc("GET /api/admin/game-owners", a.handleAdminGameOwners)
+	mux.HandleFunc("POST /api/admin/game-owners", a.handleAdminSetGameOwner)
+	mux.HandleFunc("POST /api/admin/game-owners/", a.handleAdminGameOwnerAction)
+	mux.HandleFunc("GET /api/payouts/mine", a.handleMyPayouts)
 	return a.withCORS(mux)
 }
 
@@ -172,6 +181,30 @@ func (a *App) handleSubmissionAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch parts[1] {
+	case "update":
+		var input struct {
+			AuthorName  string `json:"authorName"`
+			Title       string `json:"title"`
+			Description string `json:"description"`
+		}
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		if strings.TrimSpace(input.Title) == "" || len([]rune(input.Title)) > 100 {
+			writeError(w, http.StatusBadRequest, "SUBMISSION_INVALID", "title is required")
+			return
+		}
+		_, err = a.db.ExecContext(r.Context(), `UPDATE submissions SET author_name = ?, title = ?, description = ?, status = 'pending', review_note = '', reviewed_by = NULL, updated_at = ? WHERE id = ? AND author_id = ? AND status IN ('published','changes_requested','rejected')`, strings.TrimSpace(input.AuthorName), strings.TrimSpace(input.Title), strings.TrimSpace(input.Description), nowUnix(), submission.ID, user.ID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "UPDATE_FAILED", "could not update submission")
+			return
+		}
+		submission, err = a.submissionByID(r.Context(), submission.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "UPDATE_FAILED", "could not read submission")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"submission": submission})
 	case "complete":
 		submission, err = a.completeZipSubmission(r.Context(), submission)
 		if err != nil {
@@ -224,7 +257,28 @@ func (a *App) handleAdminSubmissions(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "SUBMISSIONS_FAILED", "could not list submissions")
 		return
 	}
+	a.annotateGameID(r.Context(), submissions)
 	writeJSON(w, http.StatusOK, map[string]any{"submissions": submissions})
+}
+
+// annotateGameID 给待审投稿补上 manifest 里的 game_id 与归属状态，供审核后台显示标记。
+// 只读 ZIP 投稿：源包在私有桶里，读取便宜；Git 投稿要现场克隆，不在这里做。
+func (a *App) annotateGameID(ctx context.Context, submissions []Submission) {
+	for index := range submissions {
+		if submissions[index].Status != "pending" || submissions[index].Kind != "zip" || submissions[index].ZipKey == "" {
+			continue
+		}
+		source, err := a.store.Get(ctx, submissions[index].ZipKey, a.config.MaxUploadBytes)
+		if err != nil {
+			continue
+		}
+		game, err := prepareGameArchive(source, a.config)
+		if err != nil {
+			continue
+		}
+		submissions[index].GameID = game.ID
+		submissions[index].GameIDStatus = a.gameIDStatus(ctx, a.db, submissions[index].UserID, submissions[index].AuthorIsAdmin, game.ID, game.Version)
+	}
 }
 
 func (a *App) handleAdminSubmissionAction(w http.ResponseWriter, r *http.Request) {

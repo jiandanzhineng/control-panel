@@ -33,7 +33,7 @@ curl http://127.0.0.1:8787/healthz
 - Method：`POST`
 - Allowed Header：`Content-Type`
 - Max Age：600 秒
-- 生命周期：`submissions/` 下未完成投稿在 7 天后删除
+- 生命周期：`submissions/` 下未完成投稿在 180 天（6 个月）后删除（2026-10-06 由 7 天改为 180 天，规则 ID `expire-unreviewed-submissions`）
 
 `OSS_BUCKET` 的 `registry.json` 使用 `no-cache` 或较短缓存；`games/`、`packages/` 使用长缓存。服务的发布顺序是先写不可变游戏文件与 ZIP，最后写 registry。
 
@@ -52,6 +52,42 @@ curl -X POST https://game-api.undersilicon.cn/api/admin/registry/import \
 4. 导入会自动重建公开 `registry.json`；检查导入数量和 OSS 内容后，再发布新的静态站壳。
 
 导入只用于切换，之后不应再调用。下架或重建 registry 仍通过管理员 API 操作。
+
+## 创作者月度分成（手工发放记录）
+
+OpenPanel 数据不进前台，也不由服务端拉取：管理员每月自己在 OpenPanel 看板统计游玩表现，
+到商城后台手工发奖励金，然后回到投稿平台把发放记录录进来，作者在「我的分成」里看到。
+分成没有自动计算、没有奖金池和门槛参数，金额完全由管理员填。操作步骤见
+`docs/guides/creator-payout-guide.md`。
+
+管理员接口：
+
+- `POST /api/admin/payouts`：录入一条发放记录，body `{month, gameId, amountCny, validPlays?, note?}`。
+  作者按 `game_id` 归属自动带出；不是社区游戏（没有归属作者）返回中文错误；
+  同月同游戏重复录入返回 409。
+- `GET /api/admin/payouts?month=YYYY-MM`：列出该月记录（附作者邮箱与账号中心 ID）；
+  不带 `month` 返回全部，按月份倒序。
+- `POST /api/admin/payouts/{id}/delete`：删除录错的记录。
+- `GET /api/admin/community-games`：所有社区游戏（`gameId`、标题、当前版本、作者名、
+  作者邮箱、账号中心 ID、`status` 为 `active` / `revoked`），供找人发钱和录入时选择。
+- `GET /api/admin/game-owners` / `POST /api/admin/game-owners`：查看与手工指定 `game_id` 归属，
+  body `{gameId, email, authorName}`；邮箱必须已经在投稿平台登录过（`identities` 里有记录）。
+- `GET /api/payouts/mine`：作者只读自己的发放记录。
+
+数据表 `payout_reports`：`id` 自增主键、`month`(YYYY-MM)、`game_id`、`author_id`、
+`author_name`、`valid_plays`（可空，管理员手抄的参考数据）、`amount_cny`、`note`、
+`paid_at`、`paid_by`、`created_at`，唯一键 `(month, game_id)`。
+
+### game_id 归属判定
+
+优先级：`game_owners` 手工指定 > 最早的社区 release 作者 > 官方保留。
+
+- 社区作者更新自己的游戏：版本必须严格高于线上版本（semver）。
+- 管理员投稿可以发布到任何已存在的 `game_id`（官方 ID、他人的社区游戏、指定归属的游戏），
+  方便团队继续维护已上线的社区游戏；**归属不变**，版本同样必须升高。
+- 其他作者用已存在的 `game_id`：拒绝。
+- `game_owners` 用于把导入时没有投稿记录、实际是社区作者的游戏指定给作者；被指定后
+  该游戏视为社区游戏，可录入分成，作者本人也能升版更新。
 
 ## 本地开发
 

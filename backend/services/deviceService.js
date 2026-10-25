@@ -13,6 +13,11 @@ const deviceConnections = require('./deviceConnectionService');
 const nicknameService = require('./nicknameService');
 const firmwareOtaService = require('./firmwareOtaService');
 
+const SAVE_DELAY_MS = 1000;
+let saveTimer = null;
+let savePending = false;
+let savePromise = null;
+
 const state = {
   devices: [],
   selectedDeviceId: null,
@@ -77,18 +82,29 @@ function addDevice(deviceData) {
   saveDevices();
 }
 
-async function disconnectDeviceConnections(deviceId) {
-  const connections = deviceConnections.listConnectionRecords(deviceId);
+async function disconnectDeviceConnections(deviceId, connectionType = null) {
+  const connections = deviceConnections.listConnectionRecords(deviceId)
+    .filter((connection) => connectionType == null || connection.type === connectionType);
   await Promise.allSettled(connections.map(async (connection) => {
     await connection.adapter.disconnect?.();
     deviceConnections.unregisterConnection(deviceId, connection.type, connection.adapter);
   }));
+  const device = getDeviceById(deviceId);
+  if (device && connections.length) {
+    refreshDeviceRuntimeState(device);
+    device.lastReport = Date.now();
+    saveDevices();
+    emitDeviceListChange('disconnected', deviceId);
+  }
 }
 
 async function removeDevice(deviceId) {
-  const index = state.devices.findIndex(device => device.id === deviceId);
-  if (index !== -1) {
+  if (state.devices.some(device => device.id === deviceId)) {
     await disconnectDeviceConnections(deviceId);
+    // 等待断开期间设备表可能被并发删除改动过（投影收尾会同时删多台）：
+    // 必须在 await 之后重新定位，用旧下标 splice 会删错设备、漏删本该删的那台。
+    const index = state.devices.findIndex(device => device.id === deviceId);
+    if (index === -1) return;
     state.devices.splice(index, 1);
     saveDevices();
 
@@ -129,7 +145,7 @@ function updateDeviceData(deviceId, data) {
   device.data = { ...prevData, ...incoming };
   device.lastReport = Date.now();
   refreshDeviceRuntimeState(device);
-  saveDevices();
+  scheduleSaveDevices();
 
   // 若有差异则触发回调
   if (changed && state.dataChangeHandlers.length) {
@@ -188,23 +204,65 @@ function selectDevice(deviceId) {
 }
 
 function saveDevices() {
-  try {
-    const persisted = state.devices.map((device) => ({
-      id: device.id,
-      name: device.name,
-      type: device.type,
-      lastReport: device.lastReport || null,
-      data: device.data || {},
-    }));
-    fileStorage.setItem('devices', JSON.stringify(persisted));
-  } catch (error) {
-    console.error('Failed to save devices to fileStorage:', error);
-  }
+  savePending = true;
+  void flushDevices().catch(reportSaveError);
 }
 
-function cleanup() {
+function reportSaveError(error) {
+  console.error('Failed to save devices to fileStorage:', error);
+  scheduleSaveDevices();
+}
+
+function scheduleSaveDevices() {
+  savePending = true;
+  if (saveTimer) return;
+  // A fixed window also saves under continuous reporting; it is not a debounce.
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void flushDevices().catch(reportSaveError);
+  }, SAVE_DELAY_MS);
+  saveTimer.unref?.();
+}
+
+function flushDevices() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  if (savePromise) return savePromise;
+  if (!savePending) return Promise.resolve();
+
+  // Serialize snapshots so an older write cannot restore a deleted device.
+  savePromise = (async () => {
+    while (savePending) {
+      const persisted = state.devices.map((device) => ({
+        id: device.id,
+        name: device.name,
+        type: device.type,
+        lastReport: device.lastReport || null,
+        data: device.data || {},
+      }));
+      savePending = false;
+      try {
+        await fileStorage.setItemAsync('devices', JSON.stringify(persisted));
+      } catch (error) {
+        savePending = true;
+        throw error;
+      }
+    }
+  })().finally(() => {
+    savePromise = null;
+  });
+  return savePromise;
+}
+
+async function cleanup() {
   stopOfflineCheck();
   deviceConnections.clear();
+  try {
+    await flushDevices();
+  } catch (error) {
+    console.error('Failed to save devices to fileStorage:', error);
+    throw error;
+  }
 }
 
 function refreshDeviceRuntimeState(device) {
@@ -537,7 +595,7 @@ function handleTransportMessage(deviceId, payload, connectionType) {
   });
   device.lastReport = Date.now();
   refreshDeviceRuntimeState(device);
-  saveDevices();
+  scheduleSaveDevices();
   emitRawMessage(deviceId, payload);
   if (device.type !== previousType) emitDeviceListChange('type-changed', deviceId);
   return true;
@@ -582,7 +640,10 @@ function executeDeviceOperation(deviceId, operationKey, params = {}) {
   }
   const deviceType = deviceRegistry.getDeviceType(device.type);
   try {
-    deviceType.invokeOperation(deviceId, operationKey, params, devicePublishFn);
+    deviceType.invokeOperation(deviceId, operationKey, params, (id, message) => {
+      if (_interceptVirtualWrite(id, message)) return message;
+      return devicePublishFn(id, message);
+    });
     return { success: true, message: '操作执行成功' };
   } catch (error) {
     const wrappedError = new Error(`操作执行失败: ${error.message}`);
@@ -774,6 +835,61 @@ function deviceHasCapabilities(deviceId, capabilities = []) {
   return device ? deviceRegistry.hasCapabilities(device.type, capabilities) : false;
 }
 
+function _batchThrow(code, message, status = 400) {
+  const error = new Error(message);
+  error.code = code;
+  error.status = status;
+  throw error;
+}
+
+function _batchResolveTargets(typeKey, deviceIds) {
+  const ofType = listDevicesForApi().filter((d) => d.type === typeKey);
+  const requested = Array.isArray(deviceIds)
+    ? [...new Set(deviceIds.map((id) => String(id || '').trim()).filter(Boolean))]
+    : [];
+  if (requested.length === 0) return ofType.filter((d) => d.connected);
+  const targets = requested.map((id) => ofType.find((d) => d.id === id) || getDeviceForApi(id) || { id, missing: true });
+  const mismatch = targets.find((d) => !d.missing && d.type !== typeKey);
+  if (mismatch) _batchThrow('DEVICE_TYPE_MISMATCH', `设备 ${mismatch.id} 不是类型 ${typeKey}`);
+  return targets;
+}
+
+function batchExecuteOperation({ type, operationKey, deviceIds, params = {} } = {}) {
+  const typeKey = String(type || '').trim();
+  const opKey = String(operationKey || '').trim();
+  if (!typeKey) _batchThrow('DEVICE_TYPE_REQUIRED', '缺少设备类型');
+  if (!opKey) _batchThrow('DEVICE_OPERATION_REQUIRED', '缺少操作');
+  const deviceType = deviceRegistry.getDeviceType(typeKey);
+  const supported = (deviceType.operations || []).some((op) => op && op.key === opKey);
+  if (!supported) _batchThrow('DEVICE_OPERATION_NOT_SUPPORTED', `设备类型 ${typeKey} 不支持操作: ${opKey}`);
+  const results = [];
+  let ok = 0;
+  let failed = 0;
+  let skipped = 0;
+  for (const device of _batchResolveTargets(typeKey, deviceIds)) {
+    const id = device.id;
+    if (device.missing) {
+      results.push({ id, ok: false, error: { code: 'DEVICE_NOT_FOUND', message: '设备不存在' } });
+      failed += 1;
+      continue;
+    }
+    if (!device.connected) {
+      results.push({ id, ok: false, skipped: true });
+      skipped += 1;
+      continue;
+    }
+    try {
+      executeDeviceOperation(id, opKey, params);
+      results.push({ id, ok: true });
+      ok += 1;
+    } catch (error) {
+      results.push({ id, ok: false, error: { code: error.code || 'OPERATION_FAILED', message: error.message } });
+      failed += 1;
+    }
+  }
+  return { type: typeKey, operationKey: opKey, total: results.length, ok, failed, skipped, results };
+}
+
 module.exports = {
   // 状态与快照
   state,
@@ -786,6 +902,7 @@ module.exports = {
   initDeviceList,
   addDevice,
   removeDevice,
+  disconnectDeviceConnections,
   clearAllDevices,
   updateDeviceData,
   markDeviceOffline,
@@ -794,6 +911,7 @@ module.exports = {
   stopOfflineCheck,
   selectDevice,
   saveDevices,
+  flushDevices,
   cleanup,
   // 数据变更回调
   onDeviceDataChange,
@@ -823,6 +941,7 @@ module.exports = {
   // 设备操作和监控数据相关
   executeDeviceOperation,
   executeDeviceOperationAndWait,
+  batchExecuteOperation,
   invokeDeviceCapability,
   invokeDeviceCapabilityAndWait,
   invokeDeviceClose,
