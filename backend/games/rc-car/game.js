@@ -525,6 +525,8 @@
       ast.textContent = state;
       ast.style.color = bad ? 'var(--danger)' : (addon.ok === true ? 'var(--ok)' : '');
     }
+    var warn = $('#addonWarn');
+    if (warn) warn.classList.toggle('show', addon.state === 'no-sensor');
   }
   function renderPrompt(s) {
     var banner = $('#promptBanner');
@@ -533,8 +535,8 @@
     if (!s) msg = t('等待宿主连接');
     else if (s.ended) msg = t('游戏结束') + ' · ' + t(END_LABEL[s.endReason] || '已停止');
     else if (s.paused) msg = t('已暂停');
+    else if (s.phase === 'CALIBRATING') msg = t(s.calibRetries > 0 ? '检测到移动，重新校准' : '校准中');
     else if (s.prompt && PROMPT_TEXT[s.prompt.key]) msg = t(PROMPT_TEXT[s.prompt.key]);
-    else if (s.phase === 'CALIBRATING') msg = t('校准中');
     else msg = t('等待指令');
     if (text) text.textContent = msg;
     if (banner) banner.classList.toggle('violating', !!(s && s.command && s.command.status === 'violating'));
@@ -601,7 +603,7 @@
       ui.cmdKey = '';
     }
     lastSnapshot = snapshot;
-    voiceEnabled = snapshot.voiceEnabled !== false && !(snapshot.params && snapshot.params.voiceEnabled === false);
+    voiceEnabled = snapshot.voiceEnabled !== false;
     voicePlayer.setEnabled(voiceEnabled);
     handleVoice(snapshot);
     handleShockFlash(snapshot);
@@ -629,6 +631,7 @@
   function press(cmd, source, key, pointerId) {
     if (!bridge || !authorized) return;
     if (!lastSnapshot || !lastSnapshot.running || lastSnapshot.ended) return;
+    if (lastSnapshot.phase === 'CALIBRATING' || lastSnapshot.paused) return;
     if (active.cmd) {
       if (active.cmd === cmd && active.source === source && active.pointerId === pointerId) return;
       release();
@@ -661,8 +664,10 @@
   function updateControls(s) {
     var can = !!bridge && authorized;
     var running = !!s && !!s.running && !s.ended;
-    if (!can || !running) { if (active.cmd) release(); }
-    $$('[data-cmd]').forEach(function (btn) { btn.disabled = !can || !running; });
+    // 校准中方向键不可用（core 也会忽略）
+    var steer = running && s.phase !== 'CALIBRATING' && !s.paused;
+    if (!can || !steer) { if (active.cmd) release(); }
+    $$('[data-cmd]').forEach(function (btn) { btn.disabled = !can || !steer; });
     var shock = $('#shockBtn');
     if (shock) {
       var readyAt = Number(s && s.manualShockReadyAtMs) || 0;

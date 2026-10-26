@@ -117,3 +117,11 @@
 
 ### 语音 key（`voices/zh/<key>.mp3`、`voices/en/<key>.mp3`，按 locale 选）
 `calib_start` `calib_done` `cmd_forward` `cmd_backward` `cmd_left` `cmd_right` `cmd_stop` `violation` `level_up` `level_down` `pelvic_remind` `edging_peak` `sensor_lost` `game_end`。core 只发 prompt，页面按 `prompt.seq` 变化播放，只在 host 模式播。
+
+## 评审后修订（2026-10-27）
+
+- 完成判定：前进/后退须至少通过一次动作判定，且松开后在 stopGraceSec 内停下才算完成；松开时还在爬判 not-stopped，不算完成。首次判定前就松开、被新指令取代或按住超时的指令为中性（不算完成也不算违规，连续完成不变）。转向转够角度才算完成；按住转向中途违规过的不算完成。服从率 = 完成 /（完成 + 违规指令数），降档只看真实完成。
+- 校准：校准中方向键被忽略、页面禁用；校准中动作超过阈值（绝对值）就重新校准并重播 `calib_start`，快照带 `calibRetries`；校准中 IMU 断线则恢复后重新采满 calibSec。
+- 附加规则：开局对 `sensor` 下发 100ms 上报间隔；校准后才来的压力收约 1 秒样本再定基线；快照 `addon.state` 为 off/waiting/active/no-sensor，no-sensor（校准结束 3 秒仍无压力）时页面显示「附加规则未生效：没有压力数据」。
+- 寸止附加规则在压力回到 edgingMid 以下才重新武装（与 pressure-edging-v2 在临界以下即可再触发不同）。
+- 暂停中方向键返回 PAUSED，手动电击仍可用。起始电压高于最高电压按最高电压算；每档增量为 0 时只有 1 档。

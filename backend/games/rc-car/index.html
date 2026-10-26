@@ -145,7 +145,7 @@
       "default": 10,
       "label": "起始电压",
       "unit": "V",
-      "description": "1 档电击电压",
+      "description": "1 档电击电压；高于最高电压时按最高电压算",
       "group": "punish",
       "min": 0,
       "max": 100,
@@ -158,7 +158,7 @@
       "default": 5,
       "label": "每档增量",
       "unit": "V",
-      "description": "每升一档增加的电压",
+      "description": "每升一档增加的电压；0 表示不升压，只有 1 档",
       "group": "punish",
       "min": 0,
       "max": 50,
@@ -348,8 +348,8 @@
         "motionGyroDps": "Mean gyro above baseline counts as moving.",
         "headingTolerance": "Allowed heading drift while moving forward or backward.",
         "stopGraceSec": "How long movement is still allowed after stop.",
-        "shockVoltage": "Voltage at level 1.",
-        "voltageStep": "Voltage added per level.",
+        "shockVoltage": "Voltage at level 1; capped at the max voltage.",
+        "voltageStep": "Voltage added per level; 0 means a single level.",
         "maxVoltage": "Voltage cap; also decides the number of levels.",
         "shockDurationMs": "Duration of one shock.",
         "escalation": "Violations raise the level, a streak of completed orders lowers it.",
@@ -493,6 +493,8 @@ body::after{
 .addon-bar .mark{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--amber)}
 .addon-meta{display:flex;gap:14px;flex-wrap:wrap;font:11px var(--mono);color:var(--dim)}
 .addon-meta b{color:var(--text);font-weight:500}
+.addon-warn{display:none;margin-top:8px;font:12px var(--mono);color:var(--amber)}
+.addon-warn.show{display:block}
 details.dir{padding:0}
 details.dir summary{cursor:pointer;list-style:none;padding:11px 12px;font:11px var(--mono);letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
 details.dir summary::-webkit-details-marker{display:none}
@@ -672,6 +674,7 @@ kbd{font:10px var(--mono);color:var(--text);border:1px solid rgba(45,226,230,.25
           <span><span data-en="TARGET">目标</span> <b id="addonTarget">--</b></span>
           <span><span data-en="STATE">状态</span> <b id="addonState">--</b></span>
         </div>
+        <div class="addon-warn" id="addonWarn" role="status" data-en="Add-on inactive: no pressure data">附加规则未生效：没有压力数据</div>
       </section>
 
       <details class="panel dir" id="dirPanel">

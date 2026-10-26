@@ -6,6 +6,8 @@
       "等待宿主连接": "Awaiting host",
       "等待指令": "Standing by",
       "校准中": "Calibrating",
+      "检测到移动，重新校准": "Movement detected, recalibrating",
+      "附加规则未生效：没有压力数据": "Add-on inactive: no pressure data",
       "待命": "Standing by",
       "移动中": "Moving",
       "转向中": "Turning",

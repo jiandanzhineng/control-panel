@@ -183,15 +183,22 @@ describe('开局与校准', () => {
     expect(snap.sensorOnline).toBe(true);
   });
 
-  test('校准期间有动作也不判违规（含 seed 事件）', () => {
+  test('校准期间有动作：不判违规，重新校准并再次提示保持不动', () => {
     const core = new RcCarCore();
     core.start(0);
     core.step({ nowMs: 1, events: [...imuEvents(crawling(1)), prop('pressure', 2, true)] });
     stepLoop(core, 50, CALIB_END_MS, (t) => crawling(t, { pressure: 2 }));
-    const snap = core.snapshot();
-    expect(snap.phase).toBe('STOPPED');
+    let snap = core.snapshot();
+    expect(snap.phase).toBe('CALIBRATING');
+    expect(snap.calibRetries).toBeGreaterThan(0);
+    expect(snap.prompt.key).toBe('calib_start');
     expect(snap.stats.violations).toBe(0);
     expect(snap.stats.shocks).toBe(0);
+    // 静下来后满 calibSec（外加 1s 动作窗口清空）才完成，基线来自静止样本
+    stepLoop(core, CALIB_END_MS + 50, CALIB_END_MS + 5000, () => still({ pressure: 2 }));
+    snap = core.snapshot();
+    expect(snap.phase).toBe('STOPPED');
+    expect(snap.motion.moving).toBe(false);
   });
 
   test('校准后补发的 seed 压力不立刻判违规', () => {
@@ -268,7 +275,7 @@ describe('前进 / 后退', () => {
     expect(effectsOf(runs, 'device.shock')).toEqual([]);
   });
 
-  test('新指令取代旧指令：旧指令按完成计，发新口令', () => {
+  test('新指令取代旧指令：旧指令不算完成也不算违规，发新口令', () => {
     const core = calibrated();
     core.action('press', { cmd: 'forward' }, 3500);
     stepLoop(core, 3550, 4500, (t) => crawling(t), { refill: { cmd: 'forward', nextAt: 3900 } });
@@ -276,7 +283,8 @@ describe('前进 / 后退', () => {
     expect(switched.snapshot.prompt.key).toBe('cmd_left');
     expect(switched.snapshot.phase).toBe('TURNING');
     expect(switched.snapshot.stats.commands).toBe(2);
-    expect(switched.snapshot.stats.completed).toBe(1);
+    expect(switched.snapshot.stats.completed).toBe(0);
+    expect(switched.snapshot.stats.violatedCommands).toBe(0);
   });
 });
 
@@ -789,5 +797,132 @@ describe('暂停', () => {
     });
     expect(core.snapshot().lastViolation.reason).toBe('no-start');
     expect(effectsOf(runs, 'device.shock')).toHaveLength(1);
+  });
+});
+
+// ---- 评审修复（2026-10-27） ----
+
+describe('评审修复', () => {
+  test('按下前进 2 秒就松开且没动：中性，不算完成、不算违规、不降档', () => {
+    const core = calibrated({ deescalateAfter: 1 });
+    core.rt.level = 3;
+    core.action('press', { cmd: 'forward' }, 3500);
+    stepLoop(core, 3550, 5400, () => still(), { refill: { cmd: 'forward', nextAt: 3900 } });
+    core.action('release', { cmd: 'forward' }, 5450);
+    stepLoop(core, 5500, 8000, () => still());
+    const snap = core.snapshot();
+    expect(snap.stats.completed).toBe(0);
+    expect(snap.stats.violations).toBe(0);
+    expect(snap.stats.violatedCommands).toBe(0);
+    expect(snap.level).toBe(3);
+  });
+
+  test('爬过判定后松开但还在爬：not-stopped 违规，不算完成', () => {
+    const core = calibrated();
+    core.action('press', { cmd: 'forward' }, 3500);
+    stepLoop(core, 3550, 8000, (t) => crawling(t), { refill: { cmd: 'forward', nextAt: 3900 } });
+    core.action('release', { cmd: 'forward' }, 8050);
+    stepLoop(core, 8100, 10500, (t) => crawling(t));
+    const snap = core.snapshot();
+    expect(snap.lastViolation.reason).toBe('not-stopped');
+    expect(snap.stats.completed).toBe(0);
+    expect(snap.stats.violatedCommands).toBe(1);
+    expect(snap.stats.compliance).toBe(0);
+  });
+
+  test('爬过判定后松开并停下：完成', () => {
+    const core = calibrated();
+    core.action('press', { cmd: 'forward' }, 3500);
+    stepLoop(core, 3550, 8000, (t) => crawling(t), { refill: { cmd: 'forward', nextAt: 3900 } });
+    core.action('release', { cmd: 'forward' }, 8050);
+    stepLoop(core, 8100, 11000, () => still());
+    const snap = core.snapshot();
+    expect(snap.stats.completed).toBe(1);
+    expect(snap.stats.violations).toBe(0);
+    expect(snap.stats.compliance).toBe(100);
+  });
+
+  test('校准期间按方向键被忽略，校准照常完成', () => {
+    const core = new RcCarCore();
+    core.start(0);
+    stepLoop(core, 50, 1000, () => still());
+    const res = core.action('press', { cmd: 'left' }, 1050);
+    expect(res.ok).toBe(true);
+    expect(res.snapshot.phase).toBe('CALIBRATING');
+    expect(res.snapshot.command).toBeNull();
+    stepLoop(core, 1100, CALIB_END_MS + 100, () => still());
+    expect(core.snapshot().phase).toBe('STOPPED');
+  });
+
+  test('校准期间 IMU 断线：顺延到恢复后再采满 calibSec', () => {
+    const core = new RcCarCore();
+    core.start(0);
+    stepLoop(core, 50, 300, () => still());
+    stepLoop(core, 350, 3000, () => null); // 断线
+    expect(core.snapshot().sensorOnline).toBe(false);
+    expect(core.snapshot().phase).toBe('CALIBRATING');
+    stepLoop(core, 3050, 5000, () => still());
+    expect(core.snapshot().phase).toBe('CALIBRATING');
+    stepLoop(core, 5050, 6200, () => still());
+    expect(core.snapshot().phase).toBe('STOPPED');
+  });
+
+  test('附加规则开启时开局把 sensor 上报间隔调到 100ms', () => {
+    const core = new RcCarCore({ params: { addonMode: 1 } });
+    const res = core.start(0);
+    expect(res.effects).toContainEqual({ type: 'device.set-report-delay', role: 'sensor', ms: 100 });
+    const off = new RcCarCore().start(0);
+    expect(off.effects.filter((e) => e.role === 'sensor')).toHaveLength(0);
+  });
+
+  test('校准后才来的压力：收约 1 秒样本后定基线，提肛规则生效', () => {
+    const core = calibrated({ addonMode: 1, pelvicDelta: 3, pelvicGraceSec: 1 });
+    expect(core.snapshot().addon.state).toBe('waiting');
+    stepLoop(core, 3050, 4500, () => still({ pressure: 5 }));
+    let snap = core.snapshot();
+    expect(snap.addon.state).toBe('active');
+    expect(snap.addon.baseline).toBeCloseTo(5, 1);
+    stepLoop(core, 4550, 7000, () => still({ pressure: 5 }));
+    snap = core.snapshot();
+    expect(snap.stats.violations).toBeGreaterThan(0);
+    expect(snap.lastViolation.reason).toBe('pelvic');
+  });
+
+  test('一直没有压力数据：addon.state = no-sensor，不电击', () => {
+    const core = calibrated({ addonMode: 1 });
+    stepLoop(core, 3050, 7000, () => still());
+    const snap = core.snapshot();
+    expect(snap.addon.state).toBe('no-sensor');
+    expect(snap.stats.shocks).toBe(0);
+  });
+
+  test('暂停中按方向键返回 PAUSED，手动电击仍可用', () => {
+    const core = calibrated();
+    core.pause(3100);
+    const res = core.action('press', { cmd: 'forward' }, 3200);
+    expect(res.ok).toBe(false);
+    expect(res.code).toBe('PAUSED');
+    const shock = core.action('shock', {}, 3300);
+    expect(shock.ok).toBe(true);
+    expect(shock.effects.some((e) => e.type === 'device.shock')).toBe(true);
+  });
+
+  test('附加规则违规后，动作判定通过也不把指令状态改回 ok', () => {
+    const core = calibrated();
+    core.action('press', { cmd: 'forward' }, 3500);
+    core.rt.command.violated = true;
+    core.rt.command.status = 'violating';
+    stepLoop(core, 3550, 7000, (t) => crawling(t), { refill: { cmd: 'forward', nextAt: 3900 } });
+    expect(core.snapshot().command.status).toBe('violating');
+  });
+
+  test('参数组合：起始电压高于最高电压按最高算；每档增量 0 只有 1 档', () => {
+    const a = new RcCarCore({ params: { shockVoltage: 50, maxVoltage: 20 } });
+    a.start(0);
+    expect(a.snapshot().maxLevel).toBe(1);
+    expect(a.snapshot().voltage).toBe(20);
+    const b = new RcCarCore({ params: { voltageStep: 0 } });
+    b.start(0);
+    expect(b.snapshot().maxLevel).toBe(1);
   });
 });

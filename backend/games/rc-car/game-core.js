@@ -20,6 +20,8 @@ const MOTION_WINDOW_MS = 1000;      // 动作能量统计窗口
 const HOLD_KEEPALIVE_MS = 1200;     // 按住指令重发超时（契约 1200ms）
 const IMU_OFFLINE_MS = 2000;        // IMU 无数据多久视为离线
 const SENSOR_WAIT_MS = 2000;        // 附加规则开启后等 sensor 数据的额外时长（calibSec 之后）
+const PRESSURE_BASELINE_MS = 1000;  // 校准后才有压力数据时，用这段时长内的样本平均作基线
+const ADDON_NO_SENSOR_MS = 3000;    // 校准结束后多久仍无压力数据 → addon.state = no-sensor
 const MAX_YAW_JUMP_DEG = 90;        // 单帧转角超过这个值视为跳变，忽略
 const GRAVITY_LP_ALPHA = 0.2;       // 传感器系加速度低通系数
 const MAX_MOTION_SAMPLES = 240;     // 约 12 秒 @50ms
@@ -57,8 +59,8 @@ const PARAMS = [
   { key: 'motionGyroDps', type: 'number', default: 20, min: 2, max: 200, label: '动作角速度阈值', unit: '°/s', group: 'difficulty', description: '角速度均值超过基线多少算在动' },
   { key: 'headingTolerance', type: 'number', default: 35, min: 10, max: 90, label: '朝向容差', unit: '°', group: 'difficulty', description: '前进/后退时允许偏离起始朝向的角度' },
   { key: 'stopGraceSec', type: 'number', default: 1.5, min: 0.5, max: 5, label: '停止缓冲', unit: '秒', group: 'difficulty', description: '喊停后仍允许动的缓冲时间' },
-  { key: 'shockVoltage', type: 'number', default: 10, min: 0, max: 100, label: '起始电压', unit: 'V', group: 'punish', description: '1 档电击电压' },
-  { key: 'voltageStep', type: 'number', default: 5, min: 0, max: 50, label: '每档增量', unit: 'V', group: 'punish', description: '每升一档增加的电压' },
+  { key: 'shockVoltage', type: 'number', default: 10, min: 0, max: 100, label: '起始电压', unit: 'V', group: 'punish', description: '1 档电击电压；高于最高电压时按最高电压算' },
+  { key: 'voltageStep', type: 'number', default: 5, min: 0, max: 50, label: '每档增量', unit: 'V', group: 'punish', description: '每升一档增加的电压；0 表示不升压，只有 1 档' },
   { key: 'maxVoltage', type: 'number', default: 40, min: 0, max: 100, label: '最高电压', unit: 'V', group: 'punish', description: '电压上限，同时决定档位数量' },
   { key: 'shockDurationMs', type: 'number', default: 1000, min: 100, max: 5000, label: '电击时长', unit: 'ms', group: 'punish', description: '每次电击持续时间' },
   { key: 'escalation', type: 'boolean', default: true, label: '逐级加强', group: 'punish', description: '违规升档、连续完成降档' },
@@ -229,6 +231,11 @@ class RcCarCore {
     rt.level = 1;
     rt.manualShockReadyAtMs = nowMs;
     this._effects.push({ type: 'device.set-report-delay', role: 'imu', ms: 50 });
+    if (this.cfg.addonMode > 0) {
+      // 附加规则读括约肌压力：与 pressure-edging-v2 一致把上报间隔压到 100ms。
+      // 没映射 sensor 角色时宿主 _invokeMapped 拿到空列表直接返回，不会报错。
+      this._effects.push({ type: 'device.set-report-delay', role: 'sensor', ms: 100 });
+    }
     this._effects.push({ type: 'device.shock-stop', role: 'punish' });
     this._emitPrompt('calib_start', nowMs);
     this._log('info', '遥控车启动，校准请保持不动', nowMs);
@@ -313,6 +320,13 @@ class RcCarCore {
     if (name === 'press') {
       const cmd = String(data.cmd || '');
       if (!CMD_SET.has(cmd)) return this._fail('INVALID_ACTION', '未知指令');
+      // 暂停中不接受方向键（手动电击仍然可用，与既有先例一致）
+      if (this.rt.paused) return this._fail('PAUSED', '游戏已暂停');
+      // 校准期间按方向键忽略：不建指令、不发口令（否则校准永远不会完成）
+      if (this.rt.phase === PHASE.CALIBRATING) {
+        this._log('info', '校准中，忽略方向指令', nowMs);
+        return this._ok(nowMs);
+      }
       this._onPress(nowMs, cmd);
     } else if (name === 'release') {
       const cmd = String(data.cmd || '');
@@ -394,16 +408,22 @@ class RcCarCore {
       maxLevel,
       voltage: this._levelVoltage(),
       compliantStreak: rt.compliantStreak,
+      calibRetries: rt.calibRetries,
       stats: {
         commands: stats.commands,
         completed: stats.completed,
         violations: stats.violations,
+        // 被判不服从的指令数（同一条指令多次违规只算一次），服从率的分母用它，中性指令不参与
+        violatedCommands: stats.violatedCommands,
         shocks: stats.shocks,
         manualShocks: stats.manualShocks,
-        compliance: stats.commands ? Math.round((stats.completed / stats.commands) * 100) : 100,
+        compliance: stats.completed + stats.violatedCommands
+          ? Math.round((stats.completed / (stats.completed + stats.violatedCommands)) * 100)
+          : 100,
       },
       addon: {
         mode: this.cfg.addonMode,
+        state: this._addonState(),
         pressure: rt.pressure == null ? null : round1(rt.pressure),
         // 基线：提肛/寸止都显示校准采样到的压力；target 按模式解释（提肛=基线+增量，寸止=临界值）
         baseline: this.cfg.addonMode === 0 || rt.baseline.pressure == null
@@ -489,6 +509,9 @@ class RcCarCore {
       lastUpdateTs: nowMs || 0,
       phase: PHASE.STOPPED,
       calibEndMs: 0,
+      calibDoneAtMs: 0,
+      hasImuDropout: false,
+      calibRetries: 0,
       calibAccel: [],
       calibGyro: [],
       calibPressure: [],
@@ -496,6 +519,9 @@ class RcCarCore {
       pressurePending: false,
       sensorWaitUntilMs: 0,
       sensorWarned: false,
+      pressureLateStartMs: 0,
+      pressureLateSamples: [],
+      addonNoSensor: false,
       hasPressure: false,
       pressure: null,
       quat: null,
@@ -509,10 +535,11 @@ class RcCarCore {
       sensorOnline: false,
       motionSamples: [],
       command: null,
+      pendingCheck: null,
       stopCheckAtMs: 0,
       level: 1,
       compliantStreak: 0,
-      stats: { commands: 0, completed: 0, violations: 0, shocks: 0, manualShocks: 0 },
+      stats: { commands: 0, completed: 0, violations: 0, violatedCommands: 0, shocks: 0, manualShocks: 0 },
       lastViolation: null,
       addonOk: null,
       addonBelowSinceMs: 0,
@@ -536,16 +563,23 @@ class RcCarCore {
     rt.pressurePending = this.cfg.addonMode === 1 && rt.baseline.pressure == null;
     rt.sensorWaitUntilMs = rt.pressurePending ? (nowMs || rt.lastUpdateTs || 0) + SENSOR_WAIT_MS : 0;
     rt.sensorWarned = false;
+    rt.pressureLateStartMs = 0;
+    rt.pressureLateSamples = [];
+    rt.addonNoSensor = false;
   }
 
-  // 档位：1..maxLevel，电压封顶 maxVoltage；voltageStep 为 0 时按 1 算（避免除零）
+  // 档位：1..maxLevel。起始电压取 min(shockVoltage, maxVoltage)；增量为 0 时只有 1 档
   _maxLevel() {
-    const step = Math.max(1, this.cfg.voltageStep);
-    return Math.max(1, Math.floor((this.cfg.maxVoltage - this.cfg.shockVoltage) / step) + 1);
+    const start = Math.min(this.cfg.shockVoltage, this.cfg.maxVoltage);
+    const step = this.cfg.voltageStep;
+    if (!(step > 0)) return 1;
+    return Math.max(1, Math.floor((this.cfg.maxVoltage - start) / step) + 1);
   }
 
   _levelVoltage() {
-    const raw = this.cfg.shockVoltage + (this.rt.level - 1) * this.cfg.voltageStep;
+    const start = Math.min(this.cfg.shockVoltage, this.cfg.maxVoltage);
+    const step = this.cfg.voltageStep > 0 ? this.cfg.voltageStep : 0;
+    const raw = start + (this.rt.level - 1) * step;
     return Math.round(clamp(Math.min(raw, this.cfg.maxVoltage), 0, 100));
   }
 
@@ -563,6 +597,16 @@ class RcCarCore {
     }
     if (this.cfg.addonMode === 2) return round1(this.cfg.edgingCritical);
     return null;
+  }
+
+  // 附加规则状态：off 未开 / waiting 等数据或基线 / active 生效 / no-sensor 校准后 3 秒仍无数据
+  _addonState() {
+    const rt = this.rt;
+    if (this.cfg.addonMode === 0) return 'off';
+    if (rt.addonNoSensor) return 'no-sensor';
+    if (!rt.hasPressure) return 'waiting';
+    if (this.cfg.addonMode === 1 && rt.baseline.pressure == null) return 'waiting';
+    return 'active';
   }
 
   // 朝向用「转向反向」参数翻转符号，判定与显示统一走这里
@@ -720,16 +764,17 @@ class RcCarCore {
     const rt = this.rt;
     rt.pressure = value;
     rt.hasPressure = true;
+    rt.addonNoSensor = false; // 压力数据到了，附加规则可以从 no-sensor 回到 active
     if (rt.phase === PHASE.CALIBRATING) {
       rt.calibPressure.push(value);
       if (rt.calibPressure.length > MAX_CALIB_SAMPLES) rt.calibPressure.shift();
     }
-    // 附加规则等待基线：第一份压力当作基线（对齐页面版 readValue）
-    if (rt.pressurePending && rt.baseline.pressure == null) {
-      rt.baseline.pressure = value;
-      rt.pressurePending = false;
-      rt.sensorWaitUntilMs = 0;
-      this._log('info', `提肛压力基线 ${round1(value)}kPa`, nowMs);
+    // 校准后才有第一份压力：不要拿单份抖动样本定死基线，先收 ~1 秒样本再取平均
+    if (rt.baseline.pressure == null && rt.phase !== PHASE.CALIBRATING) {
+      if (!rt.pressureLateStartMs) rt.pressureLateStartMs = nowMs;
+      rt.pressureLateSamples.push(value);
+      if (rt.pressureLateSamples.length > MAX_CALIB_SAMPLES) rt.pressureLateSamples.shift();
+      this._settlePressureBaseline(nowMs);
     }
     if (this.cfg.addonMode === 2) {
       rt.edgingPhase = this._edgingPhaseFor(value);
@@ -738,6 +783,23 @@ class RcCarCore {
     }
     if (seed) return;
     // 违规判定统一在 _advance 里推进（同一 tick 也走那里），这里只更新状态
+  }
+
+  // 校准后补到的压力样本收满 PRESSURE_BASELINE_MS 才定基线（传感器只在变化时上报也能收口）
+  _settlePressureBaseline(nowMs) {
+    const rt = this.rt;
+    if (rt.baseline.pressure != null || !rt.pressureLateStartMs) return;
+    if (nowMs - rt.pressureLateStartMs < PRESSURE_BASELINE_MS) return;
+    if (!rt.pressureLateSamples.length) {
+      rt.pressureLateStartMs = 0;
+      return;
+    }
+    rt.baseline.pressure = mean(rt.pressureLateSamples);
+    rt.pressureLateSamples = [];
+    rt.pressureLateStartMs = 0;
+    rt.pressurePending = false;
+    rt.sensorWaitUntilMs = 0;
+    this._log('info', `提肛压力基线 ${round1(rt.baseline.pressure)}kPa`, nowMs);
   }
 
   // 动作能量：1 秒滑动窗口内的 |accel| 标准差与 |gyro| 均值。
@@ -782,8 +844,8 @@ class RcCarCore {
     }
     this._updateSensorOnline(nowMs);
     if (rt.phase === PHASE.CALIBRATING) {
-      if (nowMs < rt.calibEndMs) return;
-      this._finishCalibration(nowMs);
+      this._checkCalibration(nowMs);
+      if (rt.phase === PHASE.CALIBRATING) return;
     }
     this._checkAddonDeadline(nowMs);
     this._checkKeepalive(nowMs);
@@ -799,6 +861,7 @@ class RcCarCore {
     if (rt.sensorOnline && !online) {
       this._emitPrompt('sensor_lost', nowMs);
       this._log('warn', 'IMU 数据中断，暂停判定', nowMs);
+      rt.hasImuDropout = true;
       this._pushMotionSample(nowMs, null, null); // 断档：避免旧样本继续算在动
       rt.motionSamples = [];
       rt.addonBelowSinceMs = 0;
@@ -813,6 +876,11 @@ class RcCarCore {
         rt.command.deadlineMs = nowMs + Math.max(0, this.cfg.reactionSec) * 1000;
       } else if (rt.phase === PHASE.STOPPED) {
         rt.stopCheckAtMs = nowMs + Math.max(0, this.cfg.stopGraceSec) * 1000;
+      } else if (rt.phase === PHASE.CALIBRATING && rt.hasImuDropout) {
+        // 校准期间断线：恢复后重新采满 calibSec，避免拿断档前的旧样本当基线（开局首包不算断线）
+        rt.calibEndMs = nowMs + Math.max(1, this.cfg.calibSec) * 1000;
+        rt.calibAccel = [];
+        rt.calibGyro = [];
       }
       rt.addonBelowSinceMs = 0;
       this._log('info', 'IMU 数据恢复', nowMs);
@@ -820,8 +888,27 @@ class RcCarCore {
     rt.sensorOnline = online;
   }
 
+  // 校准期间：IMU 断线就顺延到数据恢复；检测到动作就重新校准；
+  // 静止满 calibSec 才采基线（校准时还没有基线，阈值直接和绝对值比）。
+  _checkCalibration(nowMs) {
+    const rt = this.rt;
+    if (!rt.sensorOnline) return;
+    const motion = this._motionStats(nowMs);
+    if (motion.accelStd > this.cfg.motionAccelStd || motion.gyroMean > this.cfg.motionGyroDps) {
+      rt.calibRetries += 1;
+      rt.calibEndMs = nowMs + Math.max(1, this.cfg.calibSec) * 1000;
+      rt.calibAccel = [];
+      rt.calibGyro = [];
+      this._emitPrompt('calib_start', nowMs);
+      this._log('warn', `检测到移动，重新校准（第 ${rt.calibRetries} 次）`, nowMs);
+      return;
+    }
+    if (nowMs >= rt.calibEndMs) this._finishCalibration(nowMs);
+  }
+
   _finishCalibration(nowMs) {
     const rt = this.rt;
+    rt.calibDoneAtMs = nowMs;
     rt.baseline.accelStd = stdDev(rt.calibAccel);
     rt.baseline.gyroMean = rt.calibGyro.length ? mean(rt.calibGyro) : 0;
     if (rt.calibPressure.length) rt.baseline.pressure = mean(rt.calibPressure);
@@ -842,6 +929,13 @@ class RcCarCore {
 
   _checkAddonDeadline(nowMs) {
     const rt = this.rt;
+    this._settlePressureBaseline(nowMs);
+    // 校准结束 ADDON_NO_SENSOR_MS 后仍没有任何压力数据 → 附加规则判为未生效（只提示，不电）
+    if (this.cfg.addonMode !== 0 && !rt.hasPressure && rt.calibDoneAtMs
+      && nowMs >= rt.calibDoneAtMs + ADDON_NO_SENSOR_MS && !rt.addonNoSensor) {
+      rt.addonNoSensor = true;
+      this._log('warn', '附加规则未生效：没有压力数据', nowMs);
+    }
     if (!rt.pressurePending) return;
     if (rt.hasPressure) {
       rt.pressurePending = false;
@@ -929,6 +1023,11 @@ class RcCarCore {
     if (rt.command) {
       rt.command.status = 'violating';
       rt.command.violated = true;
+      // 服从率按「指令」算：同一条指令反复被判只计一次
+      if (!rt.command.violationCounted) {
+        rt.command.violationCounted = true;
+        rt.stats.violatedCommands += 1;
+      }
     }
     this._emitPrompt(options.prompt || 'violation', nowMs);
     if (this._turnViolated) {
@@ -968,6 +1067,8 @@ class RcCarCore {
 
   _startCommand(nowMs, cmd) {
     const rt = this.rt;
+    // 上一条指令松开后还没到停止检查就被新指令取代：按当前动作当场结算
+    if (rt.pendingCheck) this._resolveStopCheck(nowMs);
     if (rt.command) this._endCommand(nowMs, 'replaced');
     const reactionMs = Math.max(0, this.cfg.reactionSec) * 1000;
     const heading = this._heading();
@@ -981,6 +1082,8 @@ class RcCarCore {
       lastPressMs: nowMs,
       status: 'pending',
       violated: false,
+      violationCounted: false,
+      judged: false,
       everMoved: false,
     };
     rt.stats.commands += 1;
@@ -991,27 +1094,66 @@ class RcCarCore {
     this._log('info', `指令：${CMD_TEXT[cmd]}`, nowMs);
   }
 
-  // 指令结束：整条没被判违规就记完成（连续完成可降档）
+  // 真正完成一条指令：只有这里能加连续完成并降档（规则：只有真完成才降档）
+  _completeCommand(nowMs) {
+    const rt = this.rt;
+    rt.stats.completed += 1;
+    rt.compliantStreak += 1;
+    if (this.cfg.escalation && rt.compliantStreak >= Math.max(1, Math.round(this.cfg.deescalateAfter))) {
+      rt.compliantStreak = 0;
+      if (rt.level > 1) {
+        rt.level -= 1;
+        this._emitPrompt('level_down', nowMs);
+        this._log('info', `降到 ${rt.level} 档`, nowMs);
+      }
+    }
+    this._log('debug', '指令完成', nowMs);
+  }
+
+  // 指令结束但没有完成：违规过的清零连续完成；没违规的算中性，连续完成不变
   _endCommand(nowMs, reason) {
     const rt = this.rt;
     const command = rt.command;
     if (!command) return;
-    if (!command.violated) {
-      rt.stats.completed += 1;
-      rt.compliantStreak += 1;
-      if (this.cfg.escalation && rt.compliantStreak >= Math.max(1, Math.round(this.cfg.deescalateAfter))) {
-        rt.compliantStreak = 0;
-        if (rt.level > 1) {
-          rt.level -= 1;
-          this._emitPrompt('level_down', nowMs);
-          this._log('info', `降到 ${rt.level} 档`, nowMs);
-        }
-      }
-    } else {
-      rt.compliantStreak = 0;
-    }
     rt.command = null;
-    if (reason !== 'completed') this._log('debug', `指令结束（${reason}）`, nowMs);
+    if (command.violated) {
+      rt.compliantStreak = 0;
+      this._log('debug', `指令结束（${reason}），未完成`, nowMs);
+      return;
+    }
+    this._log('debug', `指令结束（${reason}），未完成也不是违规`, nowMs);
+  }
+
+  // 前进/后退松开（含按住超时）：只有经过动作判定的指令才进入「待完成」，
+  // 完成与否由之后的停止检查决定（还在爬 = not-stopped，永不完成）
+  _releaseDrive(nowMs, command, reason) {
+    const rt = this.rt;
+    if (!command) return;
+    rt.command = null;
+    if (command.violated) {
+      this._log('debug', `指令结束（${reason}），违规不算完成`, nowMs);
+      return;
+    }
+    if (!command.judged) {
+      this._log('debug', `指令结束（${reason}），未进入动作判定，中性`, nowMs);
+      return;
+    }
+    rt.pendingCheck = { cmd: command.cmd, reason };
+  }
+
+  // 停止检查：静止 = 待完成的指令真正完成；还在爬 = not-stopped 违规，永不完成
+  _resolveStopCheck(nowMs) {
+    const rt = this.rt;
+    const pending = rt.pendingCheck;
+    rt.pendingCheck = null;
+    if (this._motionStats(nowMs).moving) {
+      if (pending) rt.stats.violatedCommands += 1;
+      this._violate(nowMs, 'not-stopped');
+      rt.stopCheckAtMs = nowMs + Math.max(0, this.cfg.reactionSec) * 1000;
+      return;
+    }
+    if (pending) this._completeCommand(nowMs);
+    rt.stopCheckAtMs = nowMs + MOTION_WINDOW_MS;
   }
 
   _enterStopped(nowMs) {
@@ -1027,7 +1169,7 @@ class RcCarCore {
     command.held = false;
     command.lastPressMs = 0;
     if (TURN_CMDS.has(cmd)) return; // 转向：等本窗口到点再判，完成/超时才结束指令
-    this._endCommand(nowMs, 'release');
+    this._releaseDrive(nowMs, command, 'release');
     this._enterStopped(nowMs);
     this._emitPrompt('cmd_stop', nowMs);
     this._log('info', '停', nowMs);
@@ -1042,7 +1184,7 @@ class RcCarCore {
     command.held = false;
     command.lastPressMs = 0;
     if (TURN_CMDS.has(command.cmd)) return;
-    this._endCommand(nowMs, 'keepalive');
+    this._releaseDrive(nowMs, command, 'keepalive');
     this._enterStopped(nowMs);
     this._emitPrompt('cmd_stop', nowMs);
     this._log('warn', '按住超时未收到重发，按松开处理', nowMs);
@@ -1075,7 +1217,9 @@ class RcCarCore {
       command.deadlineMs = nowMs + Math.max(0, this.cfg.reactionSec) * 1000;
       command.status = 'violating';
     } else {
-      command.status = 'ok';
+      // 通过一次动作判定：松开后才有资格算完成；附加规则判过违规的不能改回 ok
+      command.judged = true;
+      if (!command.violated) command.status = 'ok';
       command.deadlineMs = nowMs + MOTION_WINDOW_MS;
     }
   }
@@ -1090,11 +1234,16 @@ class RcCarCore {
     if (nowMs < command.deadlineMs) return;
     const progress = this._commandProgress();
     if (progress >= this.cfg.turnDeg) {
-      command.status = 'ok';
+      if (!command.violated) command.status = 'ok';
       if (command.held) {
         this._beginTurnWindow(nowMs);
+      } else if (command.violated) {
+        // 按住转向时前面的窗口违规过：这条指令不算完成
+        this._endCommand(nowMs, 'turned-after-violation');
+        this._enterStopped(nowMs);
       } else {
-        this._endCommand(nowMs, 'completed');
+        rt.command = null;
+        this._completeCommand(nowMs);
         this._enterStopped(nowMs);
       }
       return;
@@ -1120,12 +1269,7 @@ class RcCarCore {
     const rt = this.rt;
     if (rt.command) return;
     if (!rt.stopCheckAtMs || nowMs < rt.stopCheckAtMs) return;
-    if (this._motionStats(nowMs).moving) {
-      this._violate(nowMs, 'not-stopped');
-      rt.stopCheckAtMs = nowMs + Math.max(0, this.cfg.reactionSec) * 1000;
-    } else {
-      rt.stopCheckAtMs = nowMs + MOTION_WINDOW_MS;
-    }
+    this._resolveStopCheck(nowMs);
   }
 
   // ---- 内部：手动电击 / 重新校准 / 结束 ----
@@ -1154,6 +1298,7 @@ class RcCarCore {
   _recalibrate(nowMs) {
     const rt = this.rt;
     rt.command = null;
+    rt.pendingCheck = null;
     rt.phase = PHASE.CALIBRATING;
     rt.calibEndMs = nowMs + Math.max(1, this.cfg.calibSec) * 1000;
     rt.calibAccel = [];
@@ -1176,6 +1321,7 @@ class RcCarCore {
     rt.endReason = reason || 'stop';
     rt.endedAtMs = nowMs;
     rt.command = null;
+    rt.pendingCheck = null;
     rt.stopCheckAtMs = 0;
     rt.addonBelowSinceMs = 0;
     rt.pressurePending = false;
