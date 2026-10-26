@@ -90,6 +90,7 @@ class GameHostService {
     logger = null,
     outputGuard = null,
     outputLimits = DEFAULT_REMOTE_LIMITS,
+    outputLimitsProvider = null,
     outputLogHook = null,
   } = {}) {
     this.devices = devices || require('../services/deviceService');
@@ -107,6 +108,8 @@ class GameHostService {
     // 刻意没有「加载失败就放行」的降级分支：这是电击类硬件的最后一道限幅，必须 fail-closed。
     this.outputGuard = outputGuard || remoteOutputGuard;
     this.outputLimits = outputLimits || DEFAULT_REMOTE_LIMITS;
+    // 持有方在远程设置里设的电压上限（可实时变化）：每次远程意图都重新取，改完下一条就生效
+    this.outputLimitsProvider = typeof outputLimitsProvider === 'function' ? outputLimitsProvider : null;
     // 被钳制/被拒绝的意图写进远程会话操作记录（remoteSessionService 注入，可选）
     this.outputLogHook = outputLogHook;
     this.outputWatchdog = this.outputGuard.createOutputWatchdog({
@@ -133,6 +136,21 @@ class GameHostService {
 
   isHostGame(gameId) {
     return isHostGame(gameId);
+  }
+
+  /** 远程输出当前生效的上限：持有方改完设置，下一条核心意图就用新值（读不到按默认收紧）。 */
+  getRemoteOutputLimits() {
+    if (this.outputLimitsProvider) {
+      try {
+        const limits = this.outputLimitsProvider();
+        if (limits) return limits;
+      } catch (_) { /* 设置文件读失败：退回默认上限，fail-closed */ }
+    }
+    return this.outputLimits;
+  }
+
+  setRemoteOutputLimitsProvider(provider) {
+    this.outputLimitsProvider = typeof provider === 'function' ? provider : null;
   }
 
   getStatus() {
@@ -439,12 +457,14 @@ class GameHostService {
    */
   _invokeRemoteMapped(session, ids, effect) {
     if (!ids.length) return;
+    // 一次意图取一次上限：持有方改设置后，下一条意图立即生效
+    const limits = this.getRemoteOutputLimits();
     for (const id of ids) {
       const device = this.devices.getDeviceById?.(id);
       const sanitized = this.outputGuard.sanitizeHostIntent({
         device,
         effect,
-        limits: this.outputLimits,
+        limits,
       });
       if (!sanitized || sanitized.ok === false) {
         const message = sanitized?.message || '设备意图被安全层拒绝';
@@ -705,6 +725,11 @@ const gameHostService = new GameHostService();
 
 // 远程游戏服务（被控端）注入：核心设备意图被限幅/被拒绝时写进被控端操作记录
 gameHostService.setRemoteOutputLogHook = (hook) => { gameHostService.outputLogHook = hook; };
+
+// 持有方在「远程连接」里设的电压上限：常驻单例实时读取（只走本机设置文件，A 改不了）
+gameHostService.setRemoteOutputLimitsProvider(
+  () => require('../services/remoteOutputSettingsService').getLimits(),
+);
 
 module.exports = gameHostService;
 module.exports.GameHostService = GameHostService;

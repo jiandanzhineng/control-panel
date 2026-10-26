@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title data-en="RC Car">遥控车</title>
+<script type="application/json" id="game-manifest">
+{
+  "id": "rc-car",
+  "title": "遥控车",
+  "description": "A 端发出前进、后退、左右转口令，B 端戴 DAN01 照做；不服从时 CUNZHI01 电击，档位逐级加强。",
+  "howTo": "1. 映射 DAN01 姿态传感器（必需）\n2. 映射电击设备（必需）\n3. 附加规则开启时再映射提肛压力传感器\n4. 开始后静止完成校准，A 端按住方向键指挥",
+  "version": "1.0.0",
+  "runtime": "host",
+  "core": "game-core.js",
+  "events": "v2",
+  "devices": [
+    {
+      "id": "imu",
+      "label": "DAN01 姿态传感器",
+      "capabilities": ["attitude"],
+      "required": true
+    },
+    {
+      "id": "punish",
+      "label": "电击设备",
+      "capabilities": ["shock"],
+      "required": true
+    },
+    {
+      "id": "sensor",
+      "label": "提肛压力传感器",
+      "capabilities": ["sphincterPressure"],
+      "required": false
+    }
+  ],
+  "params": [
+    {
+      "key": "durationMin",
+      "type": "number",
+      "default": 15,
+      "label": "游戏时长",
+      "unit": "分钟",
+      "description": "0 表示不限时",
+      "group": "core",
+      "min": 0,
+      "max": 180,
+      "step": 1
+    },
+    {
+      "key": "reactionSec",
+      "type": "number",
+      "default": 3,
+      "label": "反应时间",
+      "unit": "秒",
+      "description": "按下后给多久起步；转向窗口长度",
+      "group": "core",
+      "min": 1,
+      "max": 10,
+      "step": 0.5
+    },
+    {
+      "key": "turnDeg",
+      "type": "number",
+      "default": 20,
+      "label": "转向角度",
+      "unit": "°",
+      "description": "一个窗口内须累计转过的角度",
+      "group": "core",
+      "min": 5,
+      "max": 90,
+      "step": 1
+    },
+    {
+      "key": "calibSec",
+      "type": "number",
+      "default": 3,
+      "label": "校准时长",
+      "unit": "秒",
+      "description": "开局保持静止采集基线的时长",
+      "group": "core",
+      "min": 2,
+      "max": 10,
+      "step": 1
+    },
+    {
+      "key": "voiceEnabled",
+      "type": "boolean",
+      "default": true,
+      "label": "语音播报",
+      "description": "执行端是否播放口令语音",
+      "group": "core"
+    },
+    {
+      "key": "motionAccelStd",
+      "type": "number",
+      "default": 0.8,
+      "label": "动作加速度阈值",
+      "unit": "m/s²",
+      "description": "加速度模长标准差超过基线多少算在动",
+      "group": "difficulty",
+      "min": 0.1,
+      "max": 5,
+      "step": 0.1
+    },
+    {
+      "key": "motionGyroDps",
+      "type": "number",
+      "default": 20,
+      "label": "动作角速度阈值",
+      "unit": "°/s",
+      "description": "角速度均值超过基线多少算在动",
+      "group": "difficulty",
+      "min": 2,
+      "max": 200,
+      "step": 1
+    },
+    {
+      "key": "headingTolerance",
+      "type": "number",
+      "default": 35,
+      "label": "朝向容差",
+      "unit": "°",
+      "description": "前进/后退时允许偏离起始朝向的角度",
+      "group": "difficulty",
+      "min": 10,
+      "max": 90,
+      "step": 1
+    },
+    {
+      "key": "stopGraceSec",
+      "type": "number",
+      "default": 1.5,
+      "label": "停止缓冲",
+      "unit": "秒",
+      "description": "喊停后仍允许动的缓冲时间",
+      "group": "difficulty",
+      "min": 0.5,
+      "max": 5,
+      "step": 0.5
+    },
+    {
+      "key": "shockVoltage",
+      "type": "number",
+      "default": 10,
+      "label": "起始电压",
+      "unit": "V",
+      "description": "1 档电击电压",
+      "group": "punish",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "device": "punish"
+    },
+    {
+      "key": "voltageStep",
+      "type": "number",
+      "default": 5,
+      "label": "每档增量",
+      "unit": "V",
+      "description": "每升一档增加的电压",
+      "group": "punish",
+      "min": 0,
+      "max": 50,
+      "step": 1,
+      "device": "punish"
+    },
+    {
+      "key": "maxVoltage",
+      "type": "number",
+      "default": 40,
+      "label": "最高电压",
+      "unit": "V",
+      "description": "电压上限，同时决定档位数量",
+      "group": "punish",
+      "min": 0,
+      "max": 100,
+      "step": 1,
+      "device": "punish"
+    },
+    {
+      "key": "shockDurationMs",
+      "type": "number",
+      "default": 1000,
+      "label": "电击时长",
+      "unit": "ms",
+      "description": "每次电击持续时间",
+      "group": "punish",
+      "min": 100,
+      "max": 5000,
+      "step": 100,
+      "device": "punish"
+    },
+    {
+      "key": "escalation",
+      "type": "boolean",
+      "default": true,
+      "label": "逐级加强",
+      "description": "违规升档、连续完成降档",
+      "group": "punish",
+      "device": "punish"
+    },
+    {
+      "key": "deescalateAfter",
+      "type": "number",
+      "default": 5,
+      "label": "降档完成数",
+      "unit": "条",
+      "description": "连续完成多少条指令降一档",
+      "group": "punish",
+      "min": 1,
+      "max": 50,
+      "step": 1,
+      "device": "punish"
+    },
+    {
+      "key": "addonMode",
+      "type": "enum",
+      "default": 0,
+      "enum": [0, 1, 2],
+      "enumLabels": {
+        "0": "无",
+        "1": "提肛",
+        "2": "寸止"
+      },
+      "label": "附加规则",
+      "description": "二选一或不开：提肛要求压力高于基线，寸止到临界即电击",
+      "group": "addon"
+    },
+    {
+      "key": "pelvicDelta",
+      "type": "number",
+      "default": 3,
+      "label": "提肛压力增量",
+      "unit": "kPa",
+      "description": "压力须高于基线多少",
+      "group": "addon",
+      "min": 0.5,
+      "max": 30,
+      "step": 0.5,
+      "device": "sensor"
+    },
+    {
+      "key": "pelvicGraceSec",
+      "type": "number",
+      "default": 2,
+      "label": "提肛宽限",
+      "unit": "秒",
+      "description": "压力不达标多久判违规",
+      "group": "addon",
+      "min": 0.5,
+      "max": 10,
+      "step": 0.5,
+      "device": "sensor"
+    },
+    {
+      "key": "pelvicOnlyMoving",
+      "type": "boolean",
+      "default": false,
+      "label": "仅移动时要求",
+      "description": "只在移动/转向时检查提肛压力",
+      "group": "addon",
+      "device": "sensor"
+    },
+    {
+      "key": "edgingMid",
+      "type": "number",
+      "default": 8,
+      "label": "寸止中间压力",
+      "unit": "kPa",
+      "description": "达到即进入中段",
+      "group": "addon",
+      "min": 0,
+      "max": 100,
+      "step": 0.5,
+      "device": "sensor"
+    },
+    {
+      "key": "edgingCritical",
+      "type": "number",
+      "default": 15,
+      "label": "寸止临界压力",
+      "unit": "kPa",
+      "description": "达到即电击",
+      "group": "addon",
+      "min": 0,
+      "max": 150,
+      "step": 0.5,
+      "device": "sensor"
+    },
+    {
+      "key": "turnInvert",
+      "type": "boolean",
+      "default": false,
+      "label": "转向反向",
+      "description": "左右转向反了时打开",
+      "group": "advanced"
+    }
+  ],
+  "i18n": {
+    "en": {
+      "title": "RC Car",
+      "description": "The controller sends forward, backward, left and right orders. The wearer follows with a DAN01; disobeying triggers a CUNZHI01 shock that escalates level by level.",
+      "howTo": "1. Map a DAN01 attitude sensor (required)\n2. Map a shock device (required)\n3. If an addon rule is on, also map a pelvic pressure sensor\n4. Stay still for calibration, then hold the direction keys to command",
+      "devices": {
+        "imu": "DAN01 attitude sensor",
+        "punish": "Shock device",
+        "sensor": "Pelvic pressure sensor"
+      },
+      "params": {
+        "durationMin": "Duration",
+        "reactionSec": "Reaction time",
+        "turnDeg": "Turn angle",
+        "calibSec": "Calibration time",
+        "voiceEnabled": "Voice prompts",
+        "motionAccelStd": "Motion accel threshold",
+        "motionGyroDps": "Motion gyro threshold",
+        "headingTolerance": "Heading tolerance",
+        "stopGraceSec": "Stop grace",
+        "shockVoltage": "Start voltage",
+        "voltageStep": "Voltage per level",
+        "maxVoltage": "Max voltage",
+        "shockDurationMs": "Shock duration",
+        "escalation": "Progressive levels",
+        "deescalateAfter": "Steps to downshift",
+        "addonMode": "Addon rule",
+        "pelvicDelta": "Pelvic pressure delta",
+        "pelvicGraceSec": "Pelvic grace",
+        "pelvicOnlyMoving": "Only while moving",
+        "edgingMid": "Edging mid pressure",
+        "edgingCritical": "Edging critical pressure",
+        "turnInvert": "Invert turn direction"
+      },
+      "enumLabels": {
+        "addonMode": {
+          "0": "None",
+          "1": "Pelvic squeeze",
+          "2": "Edging"
+        }
+      },
+      "paramDescriptions": {
+        "durationMin": "0 means no time limit.",
+        "reactionSec": "Time to start after an order; also the turn window length.",
+        "turnDeg": "Degrees to turn within one window.",
+        "calibSec": "Stay still this long at start to capture baselines.",
+        "voiceEnabled": "Whether the executor side plays voice prompts.",
+        "motionAccelStd": "Accel magnitude std above baseline counts as moving.",
+        "motionGyroDps": "Mean gyro above baseline counts as moving.",
+        "headingTolerance": "Allowed heading drift while moving forward or backward.",
+        "stopGraceSec": "How long movement is still allowed after stop.",
+        "shockVoltage": "Voltage at level 1.",
+        "voltageStep": "Voltage added per level.",
+        "maxVoltage": "Voltage cap; also decides the number of levels.",
+        "shockDurationMs": "Duration of one shock.",
+        "escalation": "Violations raise the level, a streak of completed orders lowers it.",
+        "deescalateAfter": "Completed orders in a row needed to drop one level.",
+        "addonMode": "Pick one or none: pelvic squeeze holds pressure above baseline; edging shocks at the critical pressure.",
+        "pelvicDelta": "Pressure must stay above baseline by this much.",
+        "pelvicGraceSec": "How long pressure may stay low before a violation.",
+        "pelvicOnlyMoving": "Check pelvic pressure only while moving or turning.",
+        "edgingMid": "Pressure that enters the mid stage.",
+        "edgingCritical": "Pressure that triggers a shock.",
+        "turnInvert": "Turn this on if left and right are reversed."
+      },
+      "paramUnits": {
+        "durationMin": "min",
+        "reactionSec": "s",
+        "turnDeg": "°",
+        "calibSec": "s",
+        "motionAccelStd": "m/s²",
+        "motionGyroDps": "°/s",
+        "headingTolerance": "°",
+        "stopGraceSec": "s",
+        "shockVoltage": "V",
+        "voltageStep": "V",
+        "maxVoltage": "V",
+        "shockDurationMs": "ms",
+        "pelvicDelta": "kPa",
+        "pelvicGraceSec": "s",
+        "edgingMid": "kPa",
+        "edgingCritical": "kPa"
+      }
+    }
+  }
+}
+</script>
+<script src="/bridge-api/device-api-bridge.js"></script>
+<script src="/bridge-api/game-runtime-bridge.js"></script>
+<script src="/bridge-api/game-i18n.js"></script>
+<style>
+:root{
+  --bg:#070b12; --panel:rgba(10,18,30,.78); --line:rgba(45,226,230,.18); --line-strong:rgba(45,226,230,.4);
+  --cyan:#2de2e6; --amber:#ffb020; --danger:#ff3b5c; --ok:#3dff9a; --text:#d7e3f4; --dim:#6b7a90;
+  --mono:ui-monospace,"JetBrains Mono",Consolas,"Courier New",monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{
+  margin:0;color:var(--text);font-family:var(--sans);line-height:1.4;
+  background:radial-gradient(1200px 620px at 50% -12%,rgba(45,226,230,.10),transparent 62%),var(--bg);
+}
+body::before{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background-image:linear-gradient(rgba(45,226,230,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(45,226,230,.045) 1px,transparent 1px);
+  background-size:24px 24px;
+}
+body::after{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:1;opacity:.035;
+  background:repeating-linear-gradient(0deg,rgba(255,255,255,.7) 0 1px,transparent 1px 3px);
+}
+.shell{position:relative;z-index:2;max-width:1280px;margin:0 auto;padding:max(14px,env(safe-area-inset-top)) 16px max(28px,env(safe-area-inset-bottom));display:grid;gap:14px}
+.hud-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand b{font-size:17px;letter-spacing:.22em;color:#eaf7ff;text-shadow:0 0 14px rgba(45,226,230,.35)}
+.brand span{font:11px var(--mono);color:var(--dim);letter-spacing:.18em}
+.pills{display:flex;gap:8px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:4px 10px;border:1px solid var(--line);border-radius:2px;background:rgba(45,226,230,.04);font:11px var(--mono);letter-spacing:.08em;color:var(--dim)}
+.pill strong{color:var(--text);font-weight:500}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--dim);box-shadow:0 0 6px currentColor;color:var(--dim)}
+.pill[data-tone="ok"] .dot{background:var(--ok);color:var(--ok)}
+.pill[data-tone="warn"] .dot{background:var(--amber);color:var(--amber)}
+.pill[data-tone="danger"] .dot{background:var(--danger);color:var(--danger)}
+.pill[data-tone="cyan"] .dot{background:var(--cyan);color:var(--cyan)}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px;align-items:start}
+@media(max-width:900px){.layout{grid-template-columns:1fr}}
+.panel{position:relative;background:var(--panel);border:1px solid var(--line);padding:12px}
+.panel::before,.panel::after{content:"";position:absolute;width:14px;height:14px;border-color:var(--line-strong);border-style:solid;pointer-events:none}
+.panel::before{top:-1px;left:-1px;border-width:1px 0 0 1px}
+.panel::after{bottom:-1px;right:-1px;border-width:0 1px 1px 0}
+.panel h3{margin:0 0 10px;font:11px var(--mono);font-weight:500;letter-spacing:.18em;color:var(--dim);text-transform:uppercase}
+.stack{display:grid;gap:12px;align-content:start}
+.stage{display:grid;grid-template-columns:minmax(0,1fr) 70px;gap:12px}
+@media(max-width:560px){.stage{grid-template-columns:minmax(0,1fr) 54px}}
+.compass-panel{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 8px 10px}
+#compass{width:100%;max-width:430px;height:auto;display:block}
+.compass-meta{display:flex;gap:20px;justify-content:center;font:11px var(--mono);color:var(--dim);letter-spacing:.08em}
+.compass-meta b{color:var(--text);font-weight:500}
+.ring-base{fill:none;stroke:rgba(45,226,230,.16);stroke-width:1}
+.tick{stroke:rgba(45,226,230,.3);stroke-width:1.2}
+.tick.major{stroke:rgba(45,226,230,.65);stroke-width:2}
+.tick-label{fill:var(--dim);font:10px var(--mono);text-anchor:middle;dominant-baseline:middle}
+.target-arc{fill:none;stroke:rgba(255,176,32,.5);stroke-width:11}
+.progress-arc{fill:none;stroke:var(--ok);stroke-width:11;filter:drop-shadow(0 0 5px rgba(61,255,154,.45))}
+.ref-mark{fill:var(--dim)}
+.needle{stroke:var(--cyan);stroke-width:3;stroke-linecap:round;filter:drop-shadow(0 0 5px rgba(45,226,230,.55))}
+.needle-tip{fill:var(--cyan)}
+.compass-center{fill:rgba(45,226,230,.07);stroke:rgba(45,226,230,.35)}
+#cmdGlyph{fill:var(--cyan);font:700 32px var(--mono);text-anchor:middle;dominant-baseline:middle}
+#countdownText{fill:var(--dim);font:11px var(--mono);text-anchor:middle}
+#countdownRing .track{fill:none;stroke:rgba(45,226,230,.14);stroke-width:4}
+#countdownRing .value{fill:none;stroke:var(--cyan);stroke-width:4;stroke-linecap:round}
+#countdownRing.warn .value{stroke:var(--amber)}
+#countdownRing.danger .value{stroke:var(--danger)}
+.energy{display:flex;flex-direction:column;align-items:center;gap:8px;padding:10px 6px}
+.energy-track{display:flex;flex-direction:column-reverse;gap:4px;flex:1;justify-content:flex-start;min-height:210px}
+.energy-seg{width:32px;height:13px;border:1px solid rgba(45,226,230,.25);background:rgba(45,226,230,.05)}
+.energy-seg.on{background:var(--cyan);border-color:var(--cyan);box-shadow:0 0 8px rgba(45,226,230,.4)}
+.energy.moving .energy-seg.on{background:var(--amber);border-color:var(--amber);box-shadow:0 0 8px rgba(255,176,32,.4)}
+.energy-label{font:11px var(--mono);color:var(--dim);text-align:center;letter-spacing:.06em}
+.energy-label b{color:var(--text);font-weight:500}
+.prompt{display:flex;align-items:center;gap:10px;min-height:48px;padding:10px 12px;border-left:2px solid var(--cyan);background:rgba(45,226,230,.06)}
+.prompt .tag{font:10px var(--mono);letter-spacing:.16em;color:var(--dim);text-transform:uppercase}
+#promptText{font-size:15px;letter-spacing:.04em}
+.prompt.violating{border-color:var(--danger);background:rgba(255,59,92,.10)}
+.prompt.violating #promptText{color:#ffd5dc}
+.level{display:grid;gap:9px}
+.level-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;font:11px var(--mono);color:var(--dim);letter-spacing:.08em}
+.level-top b{font-size:15px;color:var(--text);font-weight:600}
+.level-top .volt{color:var(--amber);font-size:13px}
+.segs{display:grid;grid-template-columns:repeat(auto-fit,minmax(8px,1fr));gap:4px}
+.seg{height:14px;border:1px solid rgba(45,226,230,.2);background:rgba(45,226,230,.05)}
+.seg.on{background:var(--amber);border-color:var(--amber);box-shadow:0 0 7px rgba(255,176,32,.35)}
+.seg.current{background:var(--danger);border-color:var(--danger);box-shadow:0 0 9px rgba(255,59,92,.5)}
+.telemetry{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:8px}
+.tile{border:1px solid rgba(45,226,230,.12);background:rgba(45,226,230,.03);padding:8px 10px}
+.tile .k{display:block;font:10px var(--mono);letter-spacing:.13em;color:var(--dim);text-transform:uppercase}
+.tile .v{display:block;margin-top:4px;font:600 18px var(--mono);color:var(--text)}
+.tile .v small{font-size:11px;color:var(--dim);font-weight:400;margin-left:3px}
+.tile .v.ok{color:var(--ok)}
+.tile .v.ok small{color:var(--ok)}
+.tile .v.ok::before,.tile .v.bad::before{content:"";display:inline-block;width:7px;height:7px;margin-right:6px;border-radius:50%;vertical-align:middle;background:var(--ok);box-shadow:0 0 7px var(--ok)}
+.tile .v.bad{color:var(--danger)}
+.tile .v.bad small{color:var(--danger)}
+.tile .v.bad::before{background:var(--danger);box-shadow:0 0 7px var(--danger)}
+.tile .v.warn{color:var(--amber)}
+#cmdGlyph{font-size:26px}
+.addon{display:none}
+.addon.show{display:grid;gap:8px}
+.addon-bar{position:relative;height:9px;background:rgba(45,226,230,.07);border:1px solid rgba(45,226,230,.15);overflow:hidden}
+.addon-bar i{position:absolute;left:0;top:0;bottom:0;width:0;background:var(--cyan);box-shadow:0 0 8px rgba(45,226,230,.4)}
+.addon-bar i.bad{background:var(--danger);box-shadow:0 0 8px rgba(255,59,92,.4)}
+.addon-bar .mark{position:absolute;top:-2px;bottom:-2px;width:1px;background:var(--amber)}
+.addon-meta{display:flex;gap:14px;flex-wrap:wrap;font:11px var(--mono);color:var(--dim)}
+.addon-meta b{color:var(--text);font-weight:500}
+details.dir{padding:0}
+details.dir summary{cursor:pointer;list-style:none;padding:11px 12px;font:11px var(--mono);letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
+details.dir summary::-webkit-details-marker{display:none}
+details.dir summary::after{content:"+";float:right;color:var(--cyan)}
+details.dir[open] summary::after{content:"−"}
+.dir-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(124px,1fr));gap:9px;padding:0 12px 12px;font:11px var(--mono);color:var(--dim)}
+.dir-grid b{display:block;margin-top:2px;color:var(--text);font-weight:500;word-break:break-all}
+.dir-hint{padding:0 12px 12px;font:11px var(--mono);color:var(--dim)}
+.controls{position:sticky;top:14px;display:grid;gap:12px;align-content:start}
+@media(max-width:900px){.controls{position:static}}
+.dpad{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:8px;width:100%;max-width:308px;margin:0 auto}
+.dpad button{
+  position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  aspect-ratio:1;min-height:72px;padding:0;border:1px solid var(--line-strong);border-radius:2px;
+  background:rgba(45,226,230,.05);color:var(--text);cursor:pointer;user-select:none;touch-action:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.dpad button .glyph{font:22px var(--mono);color:var(--cyan)}
+.dpad button .lbl{font:9px var(--mono);letter-spacing:.14em;color:var(--dim)}
+.dpad button:active,.dpad button.pressed{background:rgba(45,226,230,.2);border-color:var(--cyan);box-shadow:0 0 18px rgba(45,226,230,.28),inset 0 0 12px rgba(45,226,230,.15)}
+.dpad button:active .lbl,.dpad button.pressed .lbl{color:#eaffff}
+.dpad button[data-cmd="forward"]{grid-area:1/2/2/3}
+.dpad button[data-cmd="left"]{grid-area:2/1/3/2}
+.dpad button[data-cmd="right"]{grid-area:2/3/3/4}
+.dpad button[data-cmd="backward"]{grid-area:3/2/4/3}
+.dpad .hub{grid-area:2/2/3/3;display:grid;place-items:center;border:1px dashed rgba(45,226,230,.2);font:9px var(--mono);letter-spacing:.16em;color:var(--dim)}
+button:focus-visible,summary:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.shock-wrap{position:relative;width:118px;height:118px;margin:8px auto 0;display:grid;place-items:center}
+.shock-wrap svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);pointer-events:none}
+#shockRing .track{fill:none;stroke:rgba(255,59,92,.18);stroke-width:5}
+#shockRing .value{fill:none;stroke:var(--danger);stroke-width:5;stroke-linecap:round;filter:drop-shadow(0 0 5px rgba(255,59,92,.45))}
+#shockBtn{
+  position:relative;width:92px;height:92px;border-radius:50%;border:1px solid rgba(255,59,92,.65);
+  background:radial-gradient(circle at 50% 38%,rgba(255,59,92,.28),rgba(255,59,92,.08) 68%);
+  color:#ffe9ee;font:600 12px var(--mono);letter-spacing:.14em;cursor:pointer;
+  box-shadow:0 0 22px rgba(255,59,92,.18),inset 0 0 16px rgba(255,59,92,.12);
+  user-select:none;-webkit-tap-highlight-color:transparent;
+}
+#shockBtn:active{background:radial-gradient(circle at 50% 38%,rgba(255,59,92,.55),rgba(255,59,92,.16) 70%);box-shadow:0 0 30px rgba(255,59,92,.35)}
+#shockBtn:disabled{opacity:.42;cursor:not-allowed;box-shadow:none}
+.utils{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.utils button{
+  padding:8px 14px;border:1px solid var(--line-strong);border-radius:2px;background:rgba(45,226,230,.05);
+  color:var(--text);font:11px var(--mono);letter-spacing:.08em;cursor:pointer;
+}
+.utils button:active{background:rgba(45,226,230,.18);border-color:var(--cyan)}
+.utils button:disabled{opacity:.4;cursor:not-allowed}
+.hint{margin:0;font:10px var(--mono);line-height:1.7;color:var(--dim);text-align:center;letter-spacing:.04em}
+kbd{font:10px var(--mono);color:var(--text);border:1px solid rgba(45,226,230,.25);border-bottom-width:2px;padding:0 3px;border-radius:2px}
+#flash{position:fixed;inset:0;z-index:9;pointer-events:none;opacity:0;box-shadow:inset 0 0 90px 24px rgba(255,59,92,.55);transition:opacity .18s}
+#flash.on{opacity:1}
+.hidden{display:none!important}
+@media(prefers-reduced-motion:reduce){
+  body::after{display:none}
+  #flash{display:none}
+  *{transition:none!important;animation:none!important}
+}
+@media(max-width:900px){
+  /* 竖屏/窄屏：HUD 与遥控按操作顺序交错排列，控制器在首屏内可见 */
+  .layout{display:contents}
+  .stack{display:contents}
+  .shell{gap:10px;padding-top:max(10px,env(safe-area-inset-top));padding-bottom:max(18px,env(safe-area-inset-bottom))}
+  .stage{order:1}
+  .prompt{order:2}
+  .controls{order:3;position:static;grid-template-columns:minmax(0,1fr) 104px;grid-template-areas:"pad shock" "pad utils";gap:8px;align-content:start;align-items:start}
+  .level{order:4}
+  .telemetry{order:5}
+  .addon{order:6}
+  .dir{order:7}
+  .controls > section:nth-child(1){grid-area:pad}
+  .controls > section:nth-child(2){grid-area:shock}
+  .controls > section:nth-child(3){grid-area:utils}
+  .controls .panel{padding:6px}
+  .controls h3{margin-bottom:4px}
+  .controls .hint{display:none}
+  .dpad{max-width:300px}
+  .shock-wrap{width:92px;height:92px;margin-top:2px}
+  #shockBtn{width:76px;height:76px;font-size:11px}
+}
+@media(max-width:560px){
+  .stage{grid-template-columns:minmax(0,1fr) 50px;gap:10px}
+  .compass-panel{padding:4px 6px 6px}
+  #compass{max-width:270px}
+  .compass-meta{gap:14px;font-size:10px}
+  .energy{padding:6px 4px}
+  .energy-track{min-height:170px}
+  .energy-seg{width:28px;height:11px}
+  .prompt{min-height:42px;padding:8px 10px}
+  .telemetry{grid-template-columns:repeat(auto-fit,minmax(80px,1fr))}
+  .tile .v{font-size:16px}
+}
+@media(max-width:360px){
+  .controls{grid-template-columns:1fr;grid-template-areas:"pad" "shock" "utils"}
+  .dpad{max-width:232px}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="hud-head">
+    <div class="brand"><b>RC CAR</b><span>REMOTE VEHICLE TELEMETRY</span></div>
+    <div class="pills">
+      <span class="pill" data-tone="warn"><i class="dot"></i><span data-en="LINK">链路</span> <strong id="connText" data-en="WAIT">等待</strong></span>
+      <span class="pill" data-tone="cyan"><i class="dot"></i><span data-en="ROLE">角色</span> <strong id="modeText">-</strong></span>
+      <span class="pill" data-tone="ok"><i class="dot"></i><span data-en="PHASE">阶段</span> <strong id="phaseText">-</strong></span>
+      <span class="pill"><span data-en="MISSION">任务</span> <strong id="missionTime">00:00</strong></span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="stack">
+      <div class="stage">
+        <section class="panel compass-panel" aria-label="航向罗盘">
+          <svg id="compass" viewBox="0 0 320 320" role="img" aria-label="Heading compass">
+            <circle class="ring-base" cx="160" cy="160" r="132"></circle>
+            <circle class="ring-base" cx="160" cy="160" r="84"></circle>
+            <g id="compassTicks"></g>
+            <path id="targetArc" class="target-arc" d=""></path>
+            <path id="progressArc" class="progress-arc" d=""></path>
+            <path class="ref-mark" d="M160 20 L154 32 L166 32 Z"></path>
+            <g id="needle" transform="rotate(0 160 160)">
+              <line class="needle" x1="160" y1="160" x2="160" y2="70"></line>
+              <path class="needle-tip" d="M160 58 L152 76 L168 76 Z"></path>
+            </g>
+            <circle class="compass-center" cx="160" cy="160" r="50"></circle>
+            <g id="countdownRing" transform="rotate(-90 160 160)">
+              <circle class="track" cx="160" cy="160" r="42"></circle>
+              <circle class="value" id="countdownValue" cx="160" cy="160" r="42" stroke-dasharray="263.9" stroke-dashoffset="263.9"></circle>
+            </g>
+            <text id="cmdGlyph" x="160" y="152">·</text>
+            <text id="countdownText" x="160" y="184">--</text>
+          </svg>
+          <div class="compass-meta">
+            <span><span data-en="HDG">航向</span> <b id="headingValue">0.0°</b></span>
+            <span><span data-en="DELTA">偏差</span> <b id="headingDelta">0.0°</b></span>
+          </div>
+        </section>
+        <section class="panel energy" id="energy" aria-label="动作能量">
+          <h3 data-en="MOT">动作</h3>
+          <div class="energy-track" id="energyTrack"></div>
+          <div class="energy-label"><b id="energyPct">0%</b><br><span id="motionState">静止</span></div>
+        </section>
+      </div>
+
+      <div class="prompt" id="promptBanner" role="status" aria-live="polite">
+        <span class="tag" data-en="ORDER">口令</span>
+        <span id="promptText" data-en="Awaiting host">等待宿主连接</span>
+      </div>
+
+      <section class="panel level" aria-label="惩罚档位">
+        <h3 data-en="PUNISHMENT">惩罚</h3>
+        <div class="level-top">
+          <span>LV <b id="levelText">1 / 1</b></span>
+          <span class="volt"><b id="voltageText">0 V</b></span>
+          <span><span data-en="STREAK">连续完成</span> <b id="streakText">0</b></span>
+        </div>
+        <div class="segs" id="levelSegs"></div>
+      </section>
+
+      <div class="telemetry">
+        <div class="tile"><span class="k" data-en="PHASE">阶段</span><span class="v" id="tilePhase">-</span></div>
+        <div class="tile"><span class="k" data-en="ELAPSED">已用</span><span class="v" id="tileElapsed">00:00</span></div>
+        <div class="tile"><span class="k" data-en="REMAIN">剩余</span><span class="v" id="tileRemain">--:--</span></div>
+        <div class="tile"><span class="k" data-en="COMPLIANCE">服从率</span><span class="v" id="tileCompliance">100<small>%</small></span></div>
+        <div class="tile"><span class="k" data-en="ORDERS">指令</span><span class="v" id="tileCommands">0</span></div>
+        <div class="tile"><span class="k" data-en="VIOLATIONS">违规</span><span class="v" id="tileViolations">0</span></div>
+        <div class="tile"><span class="k" data-en="SHOCKS">电击</span><span class="v" id="tileShocks">0</span></div>
+        <div class="tile"><span class="k" data-en="IMU">传感器</span><span class="v" id="tileSensor"><small id="sensorText">--</small></span></div>
+      </div>
+
+      <section class="panel addon" id="addonPanel" aria-label="附加规则">
+        <h3 data-en="ADDON">附加规则</h3>
+        <div class="addon-bar"><i id="addonBar"></i><span class="mark" id="addonMark"></span></div>
+        <div class="addon-meta">
+          <span><span data-en="PRESSURE">压力</span> <b id="addonPressure">--</b></span>
+          <span><span data-en="BASE">基线</span> <b id="addonBaseline">--</b></span>
+          <span><span data-en="TARGET">目标</span> <b id="addonTarget">--</b></span>
+          <span><span data-en="STATE">状态</span> <b id="addonState">--</b></span>
+        </div>
+      </section>
+
+      <details class="panel dir" id="dirPanel">
+        <summary data-en="DIRECTION TEST">方向测试 / 真机标定</summary>
+        <div class="dir-hint" id="dirHint" data-en="Heading should increase when turning left; if reversed, enable Invert turn direction.">左转时累计转角应增大；方向反了就打开「转向反向」。</div>
+        <div class="dir-grid">
+          <span><span data-en="HEADING">累计转角</span><b id="dtHeading">--</b></span>
+          <span><span data-en="DELTA">相对偏差</span><b id="dtDelta">--</b></span>
+          <span><span data-en="ENERGY">动作能量</span><b id="dtEnergy">--</b></span>
+          <span><span data-en="ACCEL STD">加速度标准差</span><b id="dtAccel">--</b></span>
+          <span><span data-en="GYRO MEAN">角速度均值</span><b id="dtGyro">--</b></span>
+          <span><span data-en="RAW">原始</span><b id="dtRaw">--</b></span>
+        </div>
+      </details>
+    </div>
+
+    <aside class="controls">
+      <section class="panel">
+        <h3 data-en="CONTROL">遥控</h3>
+        <div class="dpad" id="dpad">
+          <button type="button" data-cmd="forward" aria-label="前进 Forward"><span class="glyph">▲</span><span class="lbl">W</span></button>
+          <button type="button" data-cmd="left" aria-label="左转 Left"><span class="glyph">◀</span><span class="lbl">A</span></button>
+          <div class="hub">HOLD</div>
+          <button type="button" data-cmd="right" aria-label="右转 Right"><span class="glyph">▶</span><span class="lbl">D</span></button>
+          <button type="button" data-cmd="backward" aria-label="后退 Backward"><span class="glyph">▼</span><span class="lbl">S</span></button>
+        </div>
+      </section>
+      <section class="panel">
+        <h3 data-en="MANUAL SHOCK">手动电击</h3>
+        <div class="shock-wrap">
+          <svg id="shockRing" viewBox="0 0 118 118" aria-hidden="true">
+            <circle class="track" cx="59" cy="59" r="54"></circle>
+            <circle class="value" id="shockValue" cx="59" cy="59" r="54" stroke-dasharray="339.3" stroke-dashoffset="0"></circle>
+          </svg>
+          <button type="button" id="shockBtn" aria-label="手动电击 Manual shock" data-en="SHOCK">电击</button>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="utils">
+          <button type="button" id="pauseBtn" disabled data-en="Pause">暂停</button>
+          <button type="button" id="recalBtn" disabled data-en="Recalibrate">重新校准</button>
+        </div>
+        <p class="hint">
+          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> <span data-en="Hold to drive">按住行驶</span> · <kbd>SPACE</kbd> <span data-en="Shock">电击</span><br>
+          <span data-en="Tap to turn · Hold to keep turning">点按转向 · 按住持续转向</span>
+        </p>
+      </section>
+    </aside>
+  </div>
+</div>
+<div id="flash"></div>
+<script src="i18n.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

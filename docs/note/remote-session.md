@@ -2,6 +2,10 @@
 
 主控端远控被控端设备：被控端创建/加入会话，主控端授权后控制投影设备。与远程游戏（`remote-game`）是独立房间类型。
 
+## 远程输出上限（持有方自设）
+
+- 被控端「远程连接」页（`RemoteSessionView` 被控端卡片）设电压上限：`GET/PUT /api/remote-session/output-limits`，存 `BACKEND_DATA_DIR/remote-output-settings.json`（`{voltage}`，默认 20、范围 0–100）；A 改不了（不在远程命令白名单）。远控游戏、远程手动设备输出、未显式传 limits 的投影房间共用这一份。
+
 ## 端到端验收环境（2026-10-07）
 
 生产房间服务 api.undersilicon.cn + 生产 EMQX，双隔离 Electron，仅虚拟设备。被控端 A 前端/后端/CDP `5303/5301/9234`，主控端 B `5304/5302/9225`。harness 在 `.tmp/remote-session-e2e-1007/`：`lib.js`（ev/api/pageFetch/shootBoth/waitButton）、`session-lib.js`（用 token 直连建会话）、`sniff.js`（常驻订阅本机 EMQX `/drecv/#` 抓设备下行帧）。报告 `docs/test/remote-session-e2e-2026-10-07.md`（54 张内嵌截图）。

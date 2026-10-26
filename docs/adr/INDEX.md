@@ -2,6 +2,7 @@
 
 > 自动生成，勿手改。更新：`python E:\smart\tools\memory-index\memory_index.py --path <本层级目录>`
 
+- 2026-10-26 [遥控车游戏规则](2026-10-26-rc-car-game-rules.md) — 新游戏遥控车：A 按键指挥，B 戴 DAN01 照做，不照做 CUNZHI01 电击
 - 2026-10-13 [语音开始：口令触发玩法启动](2026-10-13-voice-start-trigger.md) — 新增「语音开始」，中英固定口令直接开始，PC 与手机都做
 - 2026-10-08 [控制面板支持心率带并新增心率能力](2026-10-08-heart-rate-capability.md) — control-panel 支持标准蓝牙心率带并新增心率能力
 - 2026-10-07 [虚拟心率带用 ESP32-C3 假设备](2026-10-07-virtual-hrm-c3-mock.md) — 用 ESP32-C3 做标准 BLE 心率带假设备供测试

@@ -7,6 +7,7 @@
 用法:
   python generate_voices.py              # 生成喝水/憋尿解锁语音
   python generate_voices.py edging       # 生成寸止玩法语音
+  python generate_voices.py rccar        # 生成遥控车中英双语口令语音
   python generate_voices.py check        # 校验游戏目录中的语音资源
 """
 
@@ -112,14 +113,53 @@ EDGING_LINES = [
     ("edging_end",      "训练结束。今天辛苦了，好好休息。"),
 ]
 
+# ============================================================
+# 遥控车 — 中英两套口令（14 条，key 与页面 prompt.key 一致）
+#   voices/zh/<key>.mp3、voices/en/<key>.mp3
+#   口令与「没有照做」语速 1.3，其余 0.95
+# ============================================================
+RCCAR_LINES = [
+    ("calib_start",   "校准开始。趴好，保持不动。",
+     "Calibration. Hold still."),
+    ("calib_done",    "校准完成。听我口令。",
+     "Calibration complete. Listen closely."),
+    ("cmd_forward",   "前进。", "Forward."),
+    ("cmd_backward",  "后退。", "Backward."),
+    ("cmd_left",      "左转。", "Left."),
+    ("cmd_right",     "右转。", "Right."),
+    ("cmd_stop",      "停。", "Stop."),
+    ("violation",     "没有照做。", "You disobeyed."),
+    ("level_up",      "加强一档。", "Level up."),
+    ("level_down",    "减弱一档。", "Level down."),
+    ("pelvic_remind", "收紧提肛。", "Squeeze."),
+    ("edging_peak",   "到临界了。", "At the edge."),
+    ("sensor_lost",   "传感器断开，保持姿势。",
+     "Sensor lost. Hold position."),
+    ("game_end",      "游戏结束。", "Game over."),
+]
 
-def generate_voice(name, text):
+RCCAR_FAST_KEYS = {
+    "cmd_forward", "cmd_backward", "cmd_left", "cmd_right", "cmd_stop", "violation",
+}
+
+RCCAR_VOICES = {
+    "zh": dict(VOICE_CONFIG, voice_id="female-yujie"),
+    # 同 API 的英文女声；若该 voice_id 不可用会按错误上报，不静默换音色
+    "en": dict(VOICE_CONFIG, voice_id="English_CalmWoman"),
+}
+
+RCCAR_VOICE_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "..", "backend", "games", "rc-car", "voices"
+)
+
+
+def generate_voice(name, text, voice_setting=None):
     """调用 speech-2.8-hd API 生成单条语音"""
     import requests
 
     if not API_KEY:
         raise RuntimeError("未找到 MINIMAX_API_KEY，请在 tools/cosyvoice/.env 或环境变量中配置")
-    voice_setting = dict(VOICE_CONFIG)
+    voice_setting = dict(voice_setting or VOICE_CONFIG)
     if name in SHORT_PUNISHMENT_KEYS:
         voice_setting["speed"] = 1.3
 
@@ -161,7 +201,28 @@ GAME_ASSET_SPECS = [
      {name for name, _ in EDGING_LINES if name != "edging_takeoff"}),
     ("pressure-edging-v2", os.path.join(os.path.dirname(__file__), "..", "..", "backend", "games", "pressure-edging-v2", "voices"),
      {name for name, _ in EDGING_LINES}),
+    # 分语言目录：voices/zh、voices/en
+    ("rc-car", RCCAR_VOICE_DIR,
+     {"zh": {key for key, _, _ in RCCAR_LINES}, "en": {key for key, _, _ in RCCAR_LINES}}),
 ]
+
+
+def _check_voice_dir(label, directory, expected):
+    actual = set()
+    if os.path.isdir(directory):
+        actual = {
+            os.path.splitext(filename)[0]
+            for filename in os.listdir(directory)
+            if filename.lower().endswith(".mp3")
+        }
+    missing = sorted(expected - actual)
+    unused = sorted(actual - expected)
+    print(f"{label}: 引用 {len(expected)}，缺失 {len(missing)}，未使用 {len(unused)}")
+    for name in missing:
+        print(f"  缺失: {name}.mp3")
+    for name in unused:
+        print(f"  未使用: {name}.mp3")
+    return not missing and not unused
 
 
 def validate_game_assets():
@@ -169,21 +230,12 @@ def validate_game_assets():
     valid = True
     print("\n===== 游戏语音资源校验 =====")
     for label, directory, expected in GAME_ASSET_SPECS:
-        actual = set()
-        if os.path.isdir(directory):
-            actual = {
-                os.path.splitext(filename)[0]
-                for filename in os.listdir(directory)
-                if filename.lower().endswith(".mp3")
-            }
-        missing = sorted(expected - actual)
-        unused = sorted(actual - expected)
-        print(f"{label}: 引用 {len(expected)}，缺失 {len(missing)}，未使用 {len(unused)}")
-        for name in missing:
-            print(f"  缺失: {name}.mp3")
-        for name in unused:
-            print(f"  未使用: {name}.mp3")
-        valid = valid and not missing and not unused
+        if isinstance(expected, dict):
+            for locale in sorted(expected):
+                ok = _check_voice_dir(f"{label}/{locale}", os.path.join(directory, locale), expected[locale])
+                valid = valid and ok
+        else:
+            valid = _check_voice_dir(label, directory, expected) and valid
     return valid
 
 
@@ -236,6 +288,46 @@ def run(lines, label):
     return not failed
 
 
+def run_rccar():
+    """中英双语遥控车口令：voices/zh、voices/en；任一条失败即停止（鉴权/余额问题）。"""
+    base = os.path.abspath(RCCAR_VOICE_DIR)
+    total = len(RCCAR_LINES) * len(RCCAR_VOICES)
+    success = 0
+    idx = 0
+    for locale in ("zh", "en"):
+        out_dir = os.path.join(base, locale)
+        os.makedirs(out_dir, exist_ok=True)
+        for key, zh_text, en_text in RCCAR_LINES:
+            idx += 1
+            text = zh_text if locale == "zh" else en_text
+            out_path = os.path.join(out_dir, f"{key}.mp3")
+            print(f"[{idx}/{total}] {locale}/{key} ... ", end="", flush=True)
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                print("已存在，跳过")
+                success += 1
+                continue
+            setting = dict(RCCAR_VOICES[locale])
+            setting["speed"] = 1.3 if key in RCCAR_FAST_KEYS else 0.95
+            try:
+                audio_bytes = generate_voice(key, text, setting)
+                with open(out_path, "wb") as f:
+                    f.write(audio_bytes)
+                print(f"OK ({len(audio_bytes) / 1024:.1f} KB)")
+                success += 1
+                time.sleep(0.5)
+            except Exception as e:
+                print(f"FAIL: {e}")
+                print(f"\n===== 遥控车语音中止 =====")
+                print(f"成功: {success}/{total}，失败: {locale}/{key}")
+                print("请检查 tools/cosyvoice/.env 的 MINIMAX_API_KEY、余额与 voice_id；未更换 TTS。")
+                return False
+
+    print(f"\n===== 遥控车语音完成 =====")
+    print(f"成功: {success}/{total}")
+    print(f"输出目录: {base}/zh、{base}/en")
+    return True
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "drink"
 
@@ -244,10 +336,12 @@ def main():
         pass
     elif mode == "edging":
         generated = run(EDGING_LINES, "寸止玩法")
+    elif mode == "rccar":
+        generated = run_rccar()
     elif mode == "drink":
         generated = run(DRINK_PEE_LINES, "喝水/憋尿解锁")
     else:
-        sys.exit("用法: python generate_voices.py [drink|edging|check]")
+        sys.exit("用法: python generate_voices.py [drink|edging|rccar|check]")
 
     if not generated or not validate_game_assets():
         sys.exit(1)

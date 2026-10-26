@@ -1,0 +1,53 @@
+(function (root) {
+  'use strict';
+  if (!root.GameI18n || typeof root.GameI18n.register !== 'function') return;
+  root.GameI18n.register({
+    en: {
+      "等待宿主连接": "Awaiting host",
+      "等待指令": "Standing by",
+      "校准中": "Calibrating",
+      "待命": "Standing by",
+      "移动中": "Moving",
+      "转向中": "Turning",
+      "已暂停": "Paused",
+      "已结束": "Ended",
+      "未开局": "Not started",
+      "在线": "Online",
+      "离线": "Offline",
+      "未映射": "Unmapped",
+      "静止": "Still",
+      "运动中": "Moving",
+      "无限": "No limit",
+      "前进": "Forward",
+      "后退": "Backward",
+      "左转": "Turn left",
+      "右转": "Turn right",
+      "停": "Stop",
+      "校准开始：保持不动": "Calibration. Hold still.",
+      "校准完成": "Calibration complete",
+      "没有照做": "You disobeyed",
+      "加强一档": "Level up",
+      "减弱一档": "Level down",
+      "收紧提肛": "Squeeze",
+      "寸止到了": "At the edge",
+      "传感器断开": "Sensor lost",
+      "游戏结束": "Game over",
+      "时间到": "Time up",
+      "已停止": "Stopped",
+      "暂停": "Pause",
+      "继续": "Resume",
+      "重新校准": "Recalibrate",
+      "平静": "Calm",
+      "中段": "Middle",
+      "临界": "Edge",
+      "达标": "OK",
+      "不达标": "Low",
+      "左转时累计转角应增大；方向反了就打开「转向反向」。": "Heading should increase when turning left; if reversed, enable Invert turn direction.",
+      "已结束：显示最后一份快照的原始数据。": "Ended: showing the last snapshot's raw data.",
+      "无": "None",
+      "提肛": "Squeeze",
+      "寸止": "Edging",
+      "连接中断，正在重连": "Link lost, reconnecting"
+    }
+  });
+})(typeof window !== 'undefined' ? window : this);

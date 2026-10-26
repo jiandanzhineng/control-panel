@@ -57,6 +57,7 @@ class RemoteProjectionService {
     clearTimer = clearTimeout,
     setRepeating = setInterval,
     clearRepeating = clearInterval,
+    defaultLimitsProvider = null,
   } = {}) {
     this.devices = devices;
     this.api = api;
@@ -66,6 +67,8 @@ class RemoteProjectionService {
     this.clearTimer = clearTimer;
     this.setRepeating = setRepeating;
     this.clearRepeating = clearRepeating;
+    // 建房时没显式给 limits 就用持有方的远程设置（与远控游戏同一份上限）
+    this.defaultLimitsProvider = typeof defaultLimitsProvider === 'function' ? defaultLimitsProvider : null;
     this.session = null;
     // 编排层（remoteSessionService）订阅的事件出口，避免它去读私有字段。
     this.eventHandlers = new Set();
@@ -148,7 +151,10 @@ class RemoteProjectionService {
     if (!token) throw this._error('MISSING_TOKEN', '请先登录账号');
     await this.stop({ skipApi: false });
     const ttl = normalizePositiveInt(controlTtlSec, DEFAULT_TTL_SEC, 60, 24 * 60 * 60);
-    const normalizedLimits = normalizeLimits(limits);
+    // 没显式给 limits：用持有方的远程设置（同一份电压上限），读不到就退回内置默认值
+    const normalizedLimits = normalizeLimits(
+      limits && typeof limits === 'object' ? limits : this._defaultLimits(),
+    );
     const room = await this.api.createRoom(token, normalizePositiveInt(capacity, 8, 2, 32));
     let session = null;
     try {
@@ -264,6 +270,12 @@ class RemoteProjectionService {
     this.lastRemoteDeviceIds = new Set();
     if (removed) logService.info(`[projection] pruned ${removed} leftover remote devices (${reason})`);
     return { active: !!session, removed };
+  }
+
+  /** 持有方远程设置里的默认上限（投影房间没自带 limits 时用）；读不到返回 undefined。 */
+  _defaultLimits() {
+    if (!this.defaultLimitsProvider) return undefined;
+    try { return this.defaultLimitsProvider() || undefined; } catch (_) { return undefined; }
   }
 
   _newSession({ role, token, room, credential, controlTtlSec, limits }) {
@@ -1321,7 +1333,10 @@ class RemoteProjectionService {
   }
 }
 
-const remoteProjectionService = new RemoteProjectionService();
+const remoteProjectionService = new RemoteProjectionService({
+  // 投影房间不单独给上限时，沿用持有方在远程设置里的电压上限
+  defaultLimitsProvider: () => require('./remoteOutputSettingsService').getLimits(),
+});
 
 module.exports = remoteProjectionService;
 module.exports.RemoteProjectionService = RemoteProjectionService;

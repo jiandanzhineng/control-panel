@@ -173,18 +173,19 @@ async function flush() {
   }
 }
 
-function pair({ games = [{ id: 'surge-edging', title: '气压突变寸止', runtimeMode: 'host', params: [], devices: [] }], devices = [{ id: 'dev-1', name: '气压', type: 'QIYA', capabilities: ['sphincterPressure'] }] } = {}) {
+function pair({ games = [{ id: 'surge-edging', title: '气压突变寸止', runtimeMode: 'host', params: [], devices: [] }], devices = [{ id: 'dev-1', name: '气压', type: 'QIYA', capabilities: ['sphincterPressure'] }], outputLimitsProvider = null } = {}) {
   const broker = new FakeBroker();
   const api = createApi();
   const host = mockHost();
   const timerFns = timers();
+  const limitOptions = outputLimitsProvider ? { outputLimitsProvider } : {};
   const owner = new RemoteGameService({
     host, api, mqttConnect: broker.connect, listGames: () => games, listDevices: () => devices,
-    outputGuard: guardWith(timerFns), ...timerFns,
+    outputGuard: guardWith(timerFns), ...timerFns, ...limitOptions,
   });
   const operator = new RemoteGameService({
     host, api, mqttConnect: broker.connect, listGames: () => games, listDevices: () => devices,
-    outputGuard: guardWith(timerFns), ...timerFns,
+    outputGuard: guardWith(timerFns), ...timerFns, ...limitOptions,
   });
   return { broker, api, host, owner, operator };
 }
@@ -407,6 +408,89 @@ describe('remote game service', () => {
     expect(await operator.command({ type: 'devices.disconnect', payload: { deviceId: 'dev-1' } }))
       .toMatchObject({ ok: false, code: 'DEVICE_ACTION_UNSUPPORTED' });
     expect(host.devices.disconnectDeviceConnections).not.toHaveBeenCalled();
+  });
+
+  test('remote manual output follows the owner-set voltage cap and takes effect live', async () => {
+    let limits = { voltage: 60, power: 128, intensity: 60 };
+    const shock = {
+      id: 'dev-1', name: '电击器', type: 'DIANJI', connected: true,
+      controlConnection: 'mqtt', connections: [{ type: 'mqtt' }], capabilities: ['shock'],
+    };
+    const { host, owner, operator } = pair({
+      devices: [{ id: 'dev-1', name: '电击器', type: 'DIANJI', capabilities: ['shock'] }],
+      outputLimitsProvider: () => limits,
+    });
+    host.devices = {
+      listDevicesForApi: jest.fn(() => [shock]),
+      getDeviceForApi: jest.fn((id) => (id === shock.id ? shock : null)),
+      invokeDeviceCapabilityAndWait: jest.fn(async () => ({ ok: true })),
+      stopExecutionDeviceAndWait: jest.fn(async () => ({ ok: true })),
+    };
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({
+      type: 'devices.invoke',
+      payload: { deviceId: 'dev-1', capability: 'shock', action: 'start', input: { voltage: 60 } },
+    });
+    // 持有方把上限放到 60：60V 原样下发（不再默认夹 20）
+    expect(host.devices.invokeDeviceCapabilityAndWait).toHaveBeenLastCalledWith(
+      'dev-1', 'shock', 'start', { voltage: 60 },
+    );
+    limits = { voltage: 100, power: 128, intensity: 100 };
+    await operator.command({
+      type: 'devices.invoke',
+      payload: { deviceId: 'dev-1', capability: 'shock', action: 'start', input: { voltage: 120 } },
+    });
+    expect(host.devices.invokeDeviceCapabilityAndWait).toHaveBeenLastCalledWith(
+      'dev-1', 'shock', 'start', { voltage: 100 },
+    );
+    limits = { voltage: 20, power: 128, intensity: 50 };
+    await operator.command({
+      type: 'devices.invoke',
+      payload: { deviceId: 'dev-1', capability: 'shock', action: 'start', input: { voltage: 35 } },
+    });
+    expect(host.devices.invokeDeviceCapabilityAndWait).toHaveBeenLastCalledWith(
+      'dev-1', 'shock', 'start', { voltage: 20 },
+    );
+  });
+
+  test('the operator cannot change the owner-set remote output limit', async () => {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'remote-limit-'));
+    const previousPath = process.env.REMOTE_OUTPUT_SETTINGS_PATH;
+    process.env.REMOTE_OUTPUT_SETTINGS_PATH = path.join(tempDir, 'remote-output-settings.json');
+    const settings = require('../services/remoteOutputSettingsService');
+    settings.resetCache();
+    try {
+      settings.setVoltage(60);
+      const { owner, operator } = pair();
+      await owner.create({ token: 'owner' });
+      await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+      await owner.authorize();
+      await flush();
+      // 设置接口不在远程命令白名单里（A 连发都发不出去）
+      await expect(operator.command({ type: 'output-limits.set', payload: { voltage: 100 } }))
+        .rejects.toMatchObject({ code: 'COMMAND_NOT_ALLOWED' });
+      // 游戏命令也不能顺带把上限写进持有方设置
+      await operator.command({
+        type: 'game.start',
+        payload: { gameId: 'surge-edging', deviceMap: { sensor: ['dev-1'] } },
+      });
+      await operator.command({
+        type: 'game.setParams',
+        payload: { params: { limits: { voltage: 100 }, voltageLimit: 100 }, gameSessionId: 'game-session-1' },
+      });
+      expect(settings.getLimits()).toMatchObject({ voltage: 60 });
+    } finally {
+      if (previousPath === undefined) delete process.env.REMOTE_OUTPUT_SETTINGS_PATH;
+      else process.env.REMOTE_OUTPUT_SETTINGS_PATH = previousPath;
+      settings.resetCache();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   test('remote invoke rejects unsupported capabilities and remote-projected devices', async () => {
@@ -872,6 +956,52 @@ describe('remote game service', () => {
     await flush();
     // 5 秒低频兼容推送（不是每次变化都发全量）
     expect(broker.publishes.filter((item) => item.payload.type === 'game.snapshot').length).toBe(before);
+  });
+
+  test('the legacy full snapshot refreshes for any new game field, ignoring clock-only changes', async () => {
+    const { broker, owner } = pair();
+    await owner.create({ token: 'owner' });
+    const count = () => broker.publishes.filter((item) => item.payload.type === 'game.snapshot').length;
+    // 新游戏（rc-car）的字段：不在旧的 surge/pressure 白名单里，也必须能刷新低频全量
+    owner.host.status.snapshot = { running: true, gameId: 'rc-car', heading: 10, command: { cmd: 'left' } };
+    const before = count();
+    await owner._publishGameSnapshot(owner.session);
+    expect(count()).toBe(before + 1);
+    // 完全没变化：不发
+    await owner._publishGameSnapshot(owner.session);
+    expect(count()).toBe(before + 1);
+    // 只有计时/截止这类时间字段变化：不算变化
+    owner.host.status.snapshot = {
+      ...owner.host.status.snapshot, elapsedMs: 5000, remainingMs: 600000,
+      command: { cmd: 'left', deadlineMs: 9000, sinceMs: 2000 },
+    };
+    await owner._publishGameSnapshot(owner.session);
+    expect(count()).toBe(before + 1);
+    // 真正的游戏字段变化：照常发
+    owner.host.status.snapshot = { ...owner.host.status.snapshot, heading: 30 };
+    await owner._publishGameSnapshot(owner.session);
+    expect(count()).toBe(before + 2);
+  });
+
+  test('game.action skips both the full client snapshot and the full game snapshot', async () => {
+    const { broker, host, owner, operator } = pair();
+    await owner.create({ token: 'owner' });
+    await operator.join({ token: 'operator', joinCode: 'JOIN123' });
+    await owner.authorize();
+    await flush();
+    await operator.command({ type: 'game.start', payload: { gameId: 'surge-edging', deviceMap: {} } });
+    await flush();
+    const count = (type) => broker.publishes.filter((item) => item.payload.type === type).length;
+    const beforeClient = count('client.snapshot');
+    const beforeFull = count('game.snapshot');
+    const result = await operator.command({
+      type: 'game.action', payload: { action: 'forceEdge', payload: {}, gameSessionId: 'game-session-1' },
+    });
+    expect(result.ok).toBe(true);
+    expect(host.action).toHaveBeenCalled();
+    await flush();
+    expect(count('client.snapshot')).toBe(beforeClient);
+    expect(count('game.snapshot')).toBe(beforeFull);
   });
 
   test('a malformed game.patch on the events topic does not break later events', async () => {

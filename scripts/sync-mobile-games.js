@@ -14,6 +14,7 @@ const GAME_SOURCES = {
   'pelvic-training': 'backend/games/pelvic-training',
   'pressure-edging': 'backend/games/pressure-edging',
   'maid-punishment': 'backend/games/maid-punishment',
+  'rc-car': 'backend/games/rc-car',
   'surge-edging': 'play-registry/games/surge-edging',
 };
 const GAME_IDS = Object.keys(GAME_SOURCES);
@@ -21,6 +22,7 @@ const HOST_CORES = {
   'pressure-edging-v2': ['backend/game-runtime/cores/pressure-edging-v2-core.js', 'PressureEdgingV2Core', './pressure-edging-v2-manifest'],
   'surge-edging': ['backend/game-runtime/cores/surge-edging-core.js', 'SurgeEdgingCore', './surge-edging-manifest'],
   'maid-punishment': ['backend/games/maid-punishment/game-core.js', 'MaidPunishmentCore'],
+  'rc-car': ['backend/games/rc-car/game-core.js', 'RcCarCore'],
 };
 
 // Both repositories store text with LF. Keep checksums stable after a Git

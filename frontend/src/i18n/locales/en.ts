@@ -1092,6 +1092,12 @@ const en = {
       clamped: 'Limited',
       rejected: 'Rejected',
     },
+    limit: {
+      label: 'Remote voltage cap',
+      hint: 'Remote manual and in-game output never exceeds this cap (0–100, default 20). The controller cannot change it, and higher in-game levels have no effect.',
+      save: 'Save',
+      saved: 'Saved; applies to the next output',
+    },
     host: {
       title: 'Let others control me',
       idleDesc: 'They can operate your devices and games; output stays under the safety caps',

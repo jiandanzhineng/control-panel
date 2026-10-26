@@ -15,7 +15,7 @@ agent 查到的事实、配置位置、命令、踩坑。按主题，详情在 `
 
 ## 远程会话
 
-- 设备投影会话：房间码、`/drecv` 抓包、急停链路、SSE 统计等复用要点见 [remote-session](note/remote-session.md)。
+- 设备投影会话：房间码、`/drecv` 抓包、急停链路、SSE 统计等复用要点见 [remote-session](note/remote-session.md)（含被控端自设的远程电压上限与 `/api/remote-session/output-limits`）。
 - 2026-10-06 加固内容与 5 个已知缺陷见 [remote-session-hardening](note/remote-session-hardening.md)。
 
 ## 语音
