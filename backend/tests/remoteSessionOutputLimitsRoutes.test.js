@@ -51,7 +51,7 @@ describe('remote session output limit routes', () => {
       .put('/api/remote-session/output-limits')
       .send({ voltage: 60 })
       .expect(200);
-    expect(saved.body).toMatchObject({ voltage: 60, limits: { voltage: 60, intensity: 60 } });
+    expect(saved.body).toMatchObject({ voltage: 60, limits: { voltage: 60, intensity: 50 } });
     expect(JSON.parse(fs.readFileSync(process.env.REMOTE_OUTPUT_SETTINGS_PATH, 'utf8')))
       .toEqual({ voltage: 60 });
 

@@ -54,15 +54,14 @@ function persist() {
 
 /**
  * 安全层实际生效的上限：电压就是持有方设的那个值。
- * intensity 是品牌 0–100 刻度上限，不能低于电压上限，否则电压调多大都会被默认的 50
- * 压回去（electricCap = min(voltage, intensity)）；默认 20 时它仍是 50，行为不变。
+ * intensity 固定是电机/震动/吸吮的刻度上限（默认 50），不随电压上限变化；
+ * 品牌电刺激的刻度由 remoteOutputGuard 的 electricIntensity 单独按 max(v, intensity) 抬高。
  */
 function getLimits() {
-  const voltage = load().voltage;
   return {
-    voltage,
+    voltage: load().voltage,
     power: DEFAULT_LIMITS.power,
-    intensity: Math.max(DEFAULT_LIMITS.intensity, voltage),
+    intensity: DEFAULT_LIMITS.intensity,
   };
 }
 

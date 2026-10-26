@@ -91,13 +91,61 @@ describe('sanitizeProjectionMessage', () => {
     })).toEqual({ ok: true, message: { method: 'update', power: 255 } });
   });
 
-  test('voltage and intensity caps both apply to electric outputs', () => {
-    // voltage 100 / intensity 10 → 电刺激刻度取更小者。
+  test('voltage fields use the owner voltage cap; motor intensity keeps its own cap', () => {
+    // 电压类字段只看电压上限，不再被 intensity 压回去
     expect(sanitizeProjectionMessage({
       device: { type: 'DIANJI' },
       message: { method: 'update', voltage: 90 },
       limits: { voltage: 100, intensity: 10 },
-    })).toEqual({ ok: true, message: { method: 'update', voltage: 10 } });
+    })).toEqual({ ok: true, message: { method: 'update', voltage: 90 } });
+    // 电机/震动/吸吮的 intensity 不随电压上限放宽
+    expect(sanitizeProjectionMessage({
+      device: { type: 'SOSEXY_PID0004' },
+      message: { brand: 'sosexy', cmd: 'setVibration', value: 100 },
+      limits: { voltage: 80, intensity: 50 },
+    })).toEqual({ ok: true, message: { brand: 'sosexy', cmd: 'setVibration', value: 50 } });
+  });
+
+  test('raising the voltage cap lifts electric brand intensity but not motor intensity', () => {
+    // 持有方把电压上限调到 80：电刺激刻度可以到 80
+    expect(sanitizeProjectionMessage({
+      device: { type: 'CUNZHI01' },
+      message: { method: 'update', voltage: 120, shock: 1 },
+      limits: { voltage: 80, power: 128, intensity: 50 },
+    })).toEqual({ ok: true, message: { method: 'update', voltage: 80, shock: 1 } });
+    expect(sanitizeProjectionMessage({
+      device: { type: 'DGLAB' },
+      message: { brand: 'dglab', cmd: 'setPattern', pattern: '经典', intensity: 100 },
+      limits: { voltage: 80, power: 128, intensity: 50 },
+    })).toEqual({
+      ok: true,
+      message: { brand: 'dglab', cmd: 'setPattern', pattern: '经典', intensity: 80 },
+    });
+    expect(sanitizeProjectionMessage({
+      device: { type: 'YCY_EMS' },
+      message: { brand: 'ycy', cmd: 'setStrength', channel: 'AB', value: 100 },
+      limits: { voltage: 80, power: 128, intensity: 50 },
+    })).toEqual({ ok: true, message: { brand: 'ycy', cmd: 'setStrength', channel: 'AB', value: 80 } });
+    // 同一份上限下，电机类强度仍是 50
+    expect(sanitizeProjectionMessage({
+      device: { type: 'YCY_CUP' },
+      message: { method: 'update', vibration: 100 },
+      limits: { voltage: 80, power: 128, intensity: 50 },
+    })).toEqual({ ok: true, message: { method: 'update', vibration: 50 } });
+    // 默认上限（20/50）行为与改动前一致
+    expect(sanitizeProjectionMessage({
+      device: { type: 'CUNZHI01' },
+      message: { method: 'update', voltage: 90, shock: 1 },
+      limits: {},
+    })).toEqual({ ok: true, message: { method: 'update', voltage: 20, shock: 1 } });
+    expect(sanitizeProjectionMessage({
+      device: { type: 'DGLAB' },
+      message: { brand: 'dglab', cmd: 'setPattern', pattern: '经典', intensity: 100 },
+      limits: {},
+    })).toEqual({
+      ok: true,
+      message: { brand: 'dglab', cmd: 'setPattern', pattern: '经典', intensity: 50 },
+    });
   });
 
   test('unknown device type, command and field are rejected', () => {
@@ -217,6 +265,17 @@ describe('sanitizeCapabilityInvoke', () => {
     expect(sanitizeCapabilityInvoke({
       device: { type: 'SOSEXY_PID0004' }, capability: 'shock', action: 'start', input: { voltage: 999 }, limits: {},
     })).toEqual({ ok: true, input: { voltage: 20 } });
+  });
+
+  test('estim.set intensity follows the voltage cap, motor vibration does not', () => {
+    expect(sanitizeCapabilityInvoke({
+      device: { type: 'DGLAB' }, capability: 'estim', action: 'set',
+      input: { channel: 'A', intensity: 100 }, limits: { voltage: 80, intensity: 50 },
+    })).toEqual({ ok: true, input: { channel: 'A', intensity: 80 } });
+    expect(sanitizeCapabilityInvoke({
+      device: { type: 'SOSEXY_PID0004' }, capability: 'vibration', action: 'set',
+      input: { value: 100 }, limits: { voltage: 80, intensity: 50 },
+    })).toEqual({ ok: true, input: { value: 50 } });
   });
 
   test('rejects unknown capability, action and input fields', () => {

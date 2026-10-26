@@ -43,7 +43,7 @@ describe('remote output settings', () => {
     expect(JSON.parse(fs.readFileSync(process.env.REMOTE_OUTPUT_SETTINGS_PATH, 'utf8')))
       .toEqual({ voltage: 60 });
     settings.resetCache();
-    expect(settings.getLimits()).toEqual({ voltage: 60, power: 128, intensity: 60 });
+    expect(settings.getLimits()).toEqual({ voltage: 60, power: 128, intensity: 50 });
   });
 
   test('clamps the setting to 0–100 and rejects non-numbers', () => {
@@ -54,10 +54,10 @@ describe('remote output settings', () => {
     expect(() => settings.setVoltage('abc')).toThrow(/数字/);
   });
 
-  test('keeps the brand intensity scale at least as high as the voltage cap', () => {
+  test('the motor intensity cap stays 50 when the voltage cap rises', () => {
     const settings = load();
     expect(settings.setVoltage(45).limits).toMatchObject({ voltage: 45, intensity: 50 });
-    expect(settings.setVoltage(70).limits).toMatchObject({ voltage: 70, intensity: 70 });
+    expect(settings.setVoltage(80).limits).toMatchObject({ voltage: 80, power: 128, intensity: 50 });
   });
 
   test('the saved cap is what the guard clamps against: 60 passes, 120 becomes 100', () => {
@@ -74,5 +74,24 @@ describe('remote output settings', () => {
     expect(shock(60)).toEqual({ ok: true, input: { voltage: 60 } });
     settings.setVoltage(120);
     expect(shock(120)).toEqual({ ok: true, input: { voltage: 100 } });
+  });
+
+  test('cap 80 lifts electric brand intensity to 80 while motor vibration stays 50', () => {
+    const settings = load();
+    const guard = require('../services/remoteOutputGuard');
+    settings.setVoltage(80);
+    const limits = settings.getLimits();
+    expect(guard.sanitizeCapabilityInvoke({
+      device: { type: 'CUNZHI01' }, capability: 'shock', action: 'start',
+      input: { voltage: 80 }, limits,
+    })).toEqual({ ok: true, input: { voltage: 80 } });
+    expect(guard.sanitizeCapabilityInvoke({
+      device: { type: 'DGLAB' }, capability: 'estim', action: 'set',
+      input: { intensity: 100 }, limits,
+    })).toEqual({ ok: true, input: { intensity: 80 } });
+    expect(guard.sanitizeCapabilityInvoke({
+      device: { type: 'SOSEXY_PID0004' }, capability: 'vibration', action: 'set',
+      input: { value: 100 }, limits,
+    })).toEqual({ ok: true, input: { value: 50 } });
   });
 });

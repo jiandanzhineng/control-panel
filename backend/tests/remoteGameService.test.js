@@ -411,7 +411,7 @@ describe('remote game service', () => {
   });
 
   test('remote manual output follows the owner-set voltage cap and takes effect live', async () => {
-    let limits = { voltage: 60, power: 128, intensity: 60 };
+    let limits = { voltage: 60, power: 128, intensity: 50 };
     const shock = {
       id: 'dev-1', name: '电击器', type: 'DIANJI', connected: true,
       controlConnection: 'mqtt', connections: [{ type: 'mqtt' }], capabilities: ['shock'],
@@ -438,7 +438,7 @@ describe('remote game service', () => {
     expect(host.devices.invokeDeviceCapabilityAndWait).toHaveBeenLastCalledWith(
       'dev-1', 'shock', 'start', { voltage: 60 },
     );
-    limits = { voltage: 100, power: 128, intensity: 100 };
+    limits = { voltage: 100, power: 128, intensity: 50 };
     await operator.command({
       type: 'devices.invoke',
       payload: { deviceId: 'dev-1', capability: 'shock', action: 'start', input: { voltage: 120 } },

@@ -171,7 +171,9 @@ function createRoomApi() {
 }
 
 // 建立 owner + operator 会话；operator 已被房主显式授权。
-async function setupAuthorizedPair({ ownerDeviceType = 'CUNZHI01', operatorToken = 'operator' } = {}) {
+async function setupAuthorizedPair({
+  ownerDeviceType = 'CUNZHI01', operatorToken = 'operator', ownerExtra = {}, createLimits,
+} = {}) {
   const broker = new FakeBroker();
   const api = createRoomApi();
   const ownerDevices = new FakeDevices([{
@@ -181,12 +183,12 @@ async function setupAuthorizedPair({ ownerDeviceType = 'CUNZHI01', operatorToken
   }]);
   const operatorDevices = new FakeDevices();
   const owner = new RemoteProjectionService({
-    devices: ownerDevices, api, mqttConnect: broker.connect, ...timers(),
+    devices: ownerDevices, api, mqttConnect: broker.connect, ...timers(), ...ownerExtra,
   });
   const operator = new RemoteProjectionService({
     devices: operatorDevices, api, mqttConnect: broker.connect, ...timers(),
   });
-  await owner.create({ token: 'owner' });
+  await owner.create({ token: 'owner', ...(createLimits === undefined ? {} : { limits: createLimits }) });
   await operator.join({ token: operatorToken, joinCode: 'JOIN123' });
   await flush();
   await owner.authorize(operatorToken);
@@ -318,6 +320,43 @@ describe('RemoteProjectionService', () => {
     await write({ method: 'update', shock: 0, bogus: 1 });
     await flush();
     expect(ownerDevices.sent).toHaveLength(1);
+  });
+
+  test('projection writes read the owner voltage cap live when the room had no explicit limits', async () => {
+    let cap = 80;
+    const { ownerDevices, operatorDevices, owner } = await setupAuthorizedPair({
+      ownerExtra: { defaultLimitsProvider: () => ({ voltage: cap, power: 128, intensity: 50 }) },
+    });
+    const send = async (message) => {
+      operatorDevices.adapters.get('dev-1').send(message);
+      await flush();
+    };
+    const lastSent = () => ownerDevices.sent.filter((item) => item.id === 'dev-1').at(-1);
+    await send({ method: 'update', voltage: 120, shock: 1 });
+    expect(lastSent().message).toEqual({ method: 'update', voltage: 80, shock: 1 });
+    // 持有方把上限改成 30：下一帧写入立即收紧，房间不用重建
+    cap = 30;
+    await send({ method: 'update', voltage: 120, shock: 1 });
+    expect(lastSent().message).toEqual({ method: 'update', voltage: 30, shock: 1 });
+    expect(owner.getStatus().limits.voltage).toBe(30);
+  });
+
+  test('explicit projection limits still win but are clamped to the current owner cap', async () => {
+    let cap = 80;
+    const { ownerDevices, operatorDevices } = await setupAuthorizedPair({
+      createLimits: { voltage: 40, power: 128 },
+      ownerExtra: { defaultLimitsProvider: () => ({ voltage: cap, power: 128, intensity: 50 }) },
+    });
+    const send = async (message) => {
+      operatorDevices.adapters.get('dev-1').send(message);
+      await flush();
+    };
+    const lastVoltage = () => ownerDevices.sent.filter((item) => item.id === 'dev-1').at(-1).message.voltage;
+    await send({ method: 'update', voltage: 120, shock: 1 });
+    expect(lastVoltage()).toBe(40);
+    cap = 30;
+    await send({ method: 'update', voltage: 120, shock: 1 });
+    expect(lastVoltage()).toBe(30);
   });
 
   test('rejects projection writes while a host local play runs, except stop/zero', async () => {

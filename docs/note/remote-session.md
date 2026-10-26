@@ -4,7 +4,7 @@
 
 ## 远程输出上限（持有方自设）
 
-- 被控端「远程连接」页（`RemoteSessionView` 被控端卡片）设电压上限：`GET/PUT /api/remote-session/output-limits`，存 `BACKEND_DATA_DIR/remote-output-settings.json`（`{voltage}`，默认 20、范围 0–100）；A 改不了（不在远程命令白名单）。远控游戏、远程手动设备输出、未显式传 limits 的投影房间共用这一份。
+- 被控端「远程连接」页（`RemoteSessionView` 被控端卡片）设电压上限：`GET/PUT /api/remote-session/output-limits`，存 `BACKEND_DATA_DIR/remote-output-settings.json`（`{voltage}`，默认 20、范围 0–100）；A 改不了（不在远程命令白名单）。远控游戏、远程手动设备输出共用这一份并实时生效；投影房间未显式传 limits 时实时读这份，显式 limits 保留但按当时的电压上限再夹一次。`remoteOutputGuard` 里电机/震动 `intensity` 恒为 50，品牌电刺激刻度按 `max(intensity, voltage)` 随电压上限抬高。
 
 ## 端到端验收环境（2026-10-07）
 

@@ -15,7 +15,8 @@
 
 const REMOTE_OUTPUT_REJECTED = 'REMOTE_OUTPUT_REJECTED';
 
-// 持有方设置的上限默认值。intensity 是品牌协议 0–100 刻度（郊狼强度、SOSEXY 微电流等）。
+// 持有方设置的上限默认值。intensity 是电机/震动/吸吮的 0–100 刻度上限；
+// 品牌电刺激刻度（DGLAB/YCY_EMS intensity）另由 electricIntensityCap 随电压上限抬高。
 const DEFAULT_REMOTE_LIMITS = Object.freeze({ voltage: 20, power: 128, intensity: 50 });
 
 // 硬上限：持有方把 limits 调多大都不许越过设备/协议本身的物理边界。
@@ -68,11 +69,16 @@ function normalizeLimits(input = {}) {
 }
 
 /**
- * 电刺激的 0–100 刻度上限：取 voltage 与 intensity 中更小的那个。
- * voltage 是持有方设的「电压上限」，intensity 是品牌刻度上限，两者都要遵守。
+ * 电刺激品牌刻度（DGLAB/YCY_EMS intensity）的上限：随持有方的电压上限抬高。
+ * 电机/震动/吸吮用的 intensity 不受影响（固定 limits.intensity），
+ * 所以调高电压上限不会放宽电机输出；默认电压 20 时这里仍是 50，行为不变。
  */
-function electricCap(limits) {
-  return Math.min(limits.voltage, limits.intensity);
+function electricIntensityCap(limits) {
+  const intensity = Number(limits?.intensity);
+  const voltage = Number(limits?.voltage);
+  const fallbackIntensity = Number.isFinite(intensity) ? intensity : DEFAULT_REMOTE_LIMITS.intensity;
+  const fallbackVoltage = Number.isFinite(voltage) ? voltage : DEFAULT_REMOTE_LIMITS.voltage;
+  return Math.min(HARD_LIMITS.intensity, Math.max(fallbackIntensity, fallbackVoltage));
 }
 
 function deviceType(device) {
@@ -83,9 +89,13 @@ function deviceType(device) {
 // ============ 字段规格 ============
 // kind → 归一化函数（raw, limits）→ 数值/字符串
 const FIELD_KINDS = {
-  voltage: (raw, limits) => clampNumber(raw, electricCap(limits), 0),
+  // 电压类字段（DIANJI/CUNZHI01/SOSEXY voltage）只看持有方设的电压上限
+  voltage: (raw, limits) => clampNumber(raw, Math.min(HARD_LIMITS.voltage, limits.voltage), 0),
   power: (raw, limits) => clampNumber(raw, Math.min(HARD_LIMITS.power, limits.power), 0),
+  // 电机/震动/吸吮的强度上限（品牌 0–100 刻度），不随电压上限变化
   intensity: (raw, limits) => clampNumber(raw, Math.min(HARD_LIMITS.intensity, limits.intensity), 0),
+  // 品牌电刺激刻度：电压上限抬高时同步抬高，但不会放宽电机用的强度
+  electricIntensity: (raw, limits) => clampNumber(raw, electricIntensityCap(limits), 0),
   switch: (raw) => (raw ? 1 : 0),
   bool01: (raw) => (raw ? 1 : 0),
   reportDelay: (raw) => clampNumber(raw, MAX_REPORT_DELAY_MS, 0),
@@ -133,8 +143,8 @@ const DEVICE_FIELD_SPECS = {
   QIYA: { report_delay_ms: 'reportDelay' },
   QTZ: { low_band: 'band', high_band: 'band', report_delay_ms: 'reportDelay' },
   DZC01: { display_mode: 'uint8', display_on: 'bool01', display_contrast: 'uint8' },
-  DGLAB: { voltage: 'voltage', shock: 'switch', intensity: 'intensity', power: 'power' },
-  YCY_EMS: { voltage: 'voltage', shock: 'switch', intensity: 'intensity', power: 'power' },
+  DGLAB: { voltage: 'voltage', shock: 'switch', intensity: 'electricIntensity', power: 'power' },
+  YCY_EMS: { voltage: 'voltage', shock: 'switch', intensity: 'electricIntensity', power: 'power' },
   YCY_TOY: { power: 'power' },
   YCY_CUP: { power: 'power', stroke: 'stroke', vibration: 'intensity' },
   YCY_ENEMA: { pump: 'uint8' },
@@ -188,7 +198,7 @@ const CAPABILITY_ACTIONS = {
     stop: { stop: true },
   },
   estim: {
-    set: { latch: 'electric', fields: { channel: 'channel', intensity: 'intensity', wave: 'text' } },
+    set: { latch: 'electric', fields: { channel: 'channel', intensity: 'electricIntensity', wave: 'text' } },
     stop: { stop: true },
   },
   pump: {
@@ -229,16 +239,16 @@ const LATCH_MAX_MS = { electric: ELECTRIC_LATCH_MS, motor: MOTOR_LATCH_MS };
 // 规格：fields = 允许字段 → 字段种类；stop = 停止指令（多余字段直接丢弃）。
 const BRAND_COMMANDS = {
   dglab: {
-    setPattern: { latch: 'electric', fields: { pattern: 'text', intensity: 'intensity', ticks: 'ticks' } },
-    setEstim: { latch: 'electric', fields: { channel: 'channel', intensity: 'intensity', wave: 'text' } },
-    setBackground: { latch: 'electric', fields: { intensity: 'intensity', ticks: 'ticks' } },
+    setPattern: { latch: 'electric', fields: { pattern: 'text', intensity: 'electricIntensity', ticks: 'ticks' } },
+    setEstim: { latch: 'electric', fields: { channel: 'channel', intensity: 'electricIntensity', wave: 'text' } },
+    setBackground: { latch: 'electric', fields: { intensity: 'electricIntensity', ticks: 'ticks' } },
     stopPattern: { stop: true },
     stop: { stop: true },
   },
   ycy: {
-    setStrength: { latch: 'electric', fields: { channel: 'channel', value: 'intensity', wave: 'text' } },
-    setEstim: { latch: 'electric', fields: { channel: 'channel', intensity: 'intensity', wave: 'text' } },
-    setMode: { latch: 'electric', fields: { channel: 'channel', value: 'intensity', mode: 'text' } },
+    setStrength: { latch: 'electric', fields: { channel: 'channel', value: 'electricIntensity', wave: 'text' } },
+    setEstim: { latch: 'electric', fields: { channel: 'channel', intensity: 'electricIntensity', wave: 'text' } },
+    setMode: { latch: 'electric', fields: { channel: 'channel', value: 'electricIntensity', mode: 'text' } },
     setMotors: { latch: 'motor', channels: true },
     setFjb: { latch: 'motor', fields: { stroke: 'stroke', vibe: 'motorLevel', axis: 'motorLevel' } },
     setToySpeeds: { latch: 'motor', channels: true },
@@ -665,7 +675,7 @@ module.exports = {
   BRAND_COMMANDS,
   normalizeLimits,
   clampNumber,
-  electricCap,
+  electricIntensityCap,
   deviceType,
   ownField,
   STOP_ACTIONS,

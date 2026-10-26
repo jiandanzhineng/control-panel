@@ -427,7 +427,7 @@ describe('host runtime device events (events:v2)', () => {
 
 describe('host runtime remote output guard', () => {
   // 远程会话（source:'remote'）下核心发出的设备意图必须与远程手动输出同一套限幅。
-  // DIANJI 的 shock 上限是 min(voltage, intensity)=20（默认电压 20 / 强度 50）。
+  // 默认持有方上限：电压 20、强度 50（电压类字段只看电压上限 20）。
   const remoteDevices = () => fakeDevices([
     { id: 'p1', type: 'DIANJI' },
     { id: 'm1', type: 'TD01' },
@@ -519,7 +519,7 @@ describe('host runtime remote output guard', () => {
 
   test('the owner-set voltage cap applies live: 60 passes, 120 clamps to 100, mid-game change takes effect', () => {
     const devices = remoteDevices();
-    let limits = { voltage: 60, power: 128, intensity: 60 };
+    let limits = { voltage: 60, power: 128, intensity: 50 };
     const { host, core } = runEffects({
       devices, effects: [], extra: { outputLimitsProvider: () => limits },
     });
@@ -530,7 +530,7 @@ describe('host runtime remote output guard', () => {
       expect.objectContaining({ id: 'p1', capability: 'shock', action: 'start', input: { voltage: 60 } }),
     ]));
     // 上限改成 100：120V 仍被硬上限夹到 100，且下一条意图立即用新值
-    limits = { voltage: 100, power: 128, intensity: 100 };
+    limits = { voltage: 100, power: 128, intensity: 50 };
     core.pending = [{ type: 'device.shock', role: 'punish', voltage: 120, durationMs: 1000 }];
     host.tick(300);
     expect(devices.calls).toEqual(expect.arrayContaining([
