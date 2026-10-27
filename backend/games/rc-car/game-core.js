@@ -12,7 +12,7 @@
 // accel int16×0.00478515625 m/s²，gyro int16×0.0625 °/s，小端十六进制。
 
 const GAME_ID = 'rc-car';
-const VERSION = '1.0.0';
+const VERSION = '1.0.1';
 const TITLE = '遥控车';
 
 const LOG_LIMIT = 20;

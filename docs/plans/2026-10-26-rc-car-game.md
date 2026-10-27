@@ -47,7 +47,7 @@
 ## 语音
 
 - 只在执行端（B，host 模式）播放；A 端（remote 模式）不出声，只显示文字。
-- MiniMax `speech-2.8-hd`，脚本 `tools/cosyvoice/generate_voices.py` 加 `rccar` 模式，口令短句用 speed 1.3。
+- IndexTTS-2.5 在 2080ti 本地生成，嫌弃少女风格（参考音色 Demo voice_03）。台词与情绪向量见 `tools/indextts/rccar.py`，后处理见 `tools/indextts/postprocess.sh`（MiniMax 中转无语音通道，已放弃）。
 - 中英两套：`voices/zh/`、`voices/en/`，按游戏 locale 选。口令：前进、后退、左转、右转、停、没有照做、加强、减弱、校准请保持不动、校准完成、开始、结束，以及附加规则的提示。
 
 ## 界面（同一页面，两端角色不同）
