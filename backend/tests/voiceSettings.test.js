@@ -60,6 +60,26 @@ describe('voice settings', () => {
     expect(again.body.ready).toBe(true);
   });
 
+  it('stores Tako TTS credentials locally and masks them from API responses', async () => {
+    const saved = await request(app()).post('/api/voice/settings')
+      .send({ tako_api_key: 'tako-secret-123456', tako_proxy: 'http://127.0.0.1:7990' });
+    expect(saved.status).toBe(200);
+    expect(saved.body.has_tako_key).toBe(true);
+    expect(saved.body.tako_key_masked).toMatch(/^tako/);
+    expect(saved.body.tako_proxy).toBe('http://127.0.0.1:7990');
+    expect(JSON.stringify(saved.body)).not.toContain('tako-secret-123456');
+    expect(voiceSettings.getTakoConfig()).toEqual({
+      api_key: 'tako-secret-123456', proxy: 'http://127.0.0.1:7990',
+    });
+  });
+
+  it('rejects non-HTTP Tako proxy schemes', async () => {
+    const res = await request(app()).post('/api/voice/settings')
+      .send({ tako_proxy: 'javascript:alert(1)' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('BAD_PROXY');
+  });
+
   it('rejects unknown route', async () => {
     const res = await request(app()).post('/api/voice/settings').send({ route: 'silicon' });
     expect(res.status).toBe(400);

@@ -108,7 +108,7 @@ async function startApp(id) {
   const tail = [];
   const child = spawn(exe, args, {
     cwd,
-    env: launchEnv(launch, cwd),
+    env: launchEnv(launch, cwd, id),
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

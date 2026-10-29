@@ -5,6 +5,9 @@ export interface VoiceStatus {
   ready: boolean
   has_key: boolean
   key_masked: string
+  has_tako_key: boolean
+  tako_key_masked: string
+  tako_proxy: string
   panel_email: string | null
   panel_ok: boolean
   hint: string
@@ -25,7 +28,9 @@ export function getVoiceStatus() {
   return fetch('/api/voice/status').then(parse)
 }
 
-export function saveVoiceSettings(body: { route?: 'own_key' | 'panel'; api_key?: string }) {
+export function saveVoiceSettings(body: {
+  route?: 'own_key' | 'panel'; api_key?: string; tako_api_key?: string; tako_proxy?: string
+}) {
   return fetch('/api/voice/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

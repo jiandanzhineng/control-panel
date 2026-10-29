@@ -1,5 +1,9 @@
 const path = require('path');
 
+jest.mock('../services/voiceSettingsService', () => ({
+  getTakoConfig: jest.fn(() => ({ api_key: 'local-tako-key', proxy: 'http://127.0.0.1:7990' })),
+}));
+
 function restoreEnv(key, value) {
   if (value === undefined) delete process.env[key];
   else process.env[key] = value;
@@ -52,6 +56,16 @@ describe('localAppLaunchEnv', () => {
     expect(env.PYTHONIOENCODING).toBe('utf-8');
     expect(env.PYTHONUTF8).toBe('1');
     expect(process.env.PYTHONIOENCODING).toBe('gbk');
+  });
+
+  it('passes Tako credentials only to the digital-human child', () => {
+    const { launchEnv } = require('../services/localAppLaunchEnv');
+    const digitalHuman = launchEnv({}, path.resolve('x'), 'digital-human');
+    const otherApp = launchEnv({}, path.resolve('x'), 'other-app');
+    expect(digitalHuman.TAKO_API_KEY).toBe('local-tako-key');
+    expect(digitalHuman.TAKO_PROXY).toBe('http://127.0.0.1:7990');
+    expect(otherApp.TAKO_API_KEY).toBeUndefined();
+    expect(otherApp.TAKO_PROXY).toBeUndefined();
   });
 
   it('includes last output lines in the exit hint', () => {

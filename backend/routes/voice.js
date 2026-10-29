@@ -28,11 +28,19 @@ router.get('/phrases', (req, res) => {
 
 router.post('/settings', (req, res) => {
   if (!requireLoopback(req, res)) return;
-  const { route, api_key } = req.body || {};
+  const { route, api_key, tako_api_key, tako_proxy } = req.body || {};
   if (route !== undefined && !voiceSettings.ROUTES.includes(route)) {
     return sendError(res, 'BAD_ROUTE', 'route 只能是 own_key 或 panel', 400);
   }
-  res.json(voiceSettings.update({ route, api_key }));
+  if (tako_proxy !== undefined && tako_proxy) {
+    try {
+      const url = new URL(tako_proxy);
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error('invalid protocol');
+    } catch {
+      return sendError(res, 'BAD_PROXY', 'Tako 代理必须是 HTTP 或 HTTPS 地址', 400);
+    }
+  }
+  res.json(voiceSettings.update({ route, api_key, tako_api_key, tako_proxy }));
 });
 
 module.exports = router;
