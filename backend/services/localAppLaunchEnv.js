@@ -30,6 +30,10 @@ function launchEnv(launch, cwd) {
     DIGITAL_HUMAN_NO_BROWSER: '1',
     DIGITAL_HUMAN_PLAY_URL: backendUrl(),
     MIMO_RELAY_URL: localSessionService.getRelayUrl(),
+    // stdout/stderr are pipes: Chinese Windows otherwise uses GBK, and an
+    // emoji in an error handler can raise UnicodeEncodeError and stop play.
+    PYTHONIOENCODING: 'utf-8',
+    PYTHONUTF8: '1',
   };
   stripPythonVars(env);
   const binDir = path.resolve(cwd, 'bin');

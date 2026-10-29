@@ -9,7 +9,7 @@ describe('localAppLaunchEnv', () => {
   const previous = {};
 
   beforeEach(() => {
-    for (const key of ['PYTHONHOME', 'PYTHONPATH', 'PYTHONSTARTUP', 'BACKEND_URL']) {
+    for (const key of ['PYTHONHOME', 'PYTHONPATH', 'PYTHONSTARTUP', 'PYTHONIOENCODING', 'PYTHONUTF8', 'BACKEND_URL']) {
       previous[key] = process.env[key];
     }
     jest.resetModules();
@@ -42,6 +42,16 @@ describe('localAppLaunchEnv', () => {
     const env = launchEnv({}, path.resolve('x'));
     expect('PYTHONHOME' in env).toBe(false);
     expect('PYTHONPATH' in env).toBe(false);
+  });
+
+  it('uses UTF-8 for piped Python output even with an inherited GBK setting', () => {
+    process.env.PYTHONIOENCODING = 'gbk';
+    process.env.PYTHONUTF8 = '0';
+    const { launchEnv } = require('../services/localAppLaunchEnv');
+    const env = launchEnv({ env: { PYTHONIOENCODING: 'gbk' } }, path.resolve('x'));
+    expect(env.PYTHONIOENCODING).toBe('utf-8');
+    expect(env.PYTHONUTF8).toBe('1');
+    expect(process.env.PYTHONIOENCODING).toBe('gbk');
   });
 
   it('includes last output lines in the exit hint', () => {

@@ -3,6 +3,7 @@ const voiceSettings = require('./voiceSettingsService');
 
 const ALLOWED_MODELS = new Set([
   'mimo-v2.5',
+  'mimo-v2.6-flash',
   'mimo-v2.5-asr',
   'mimo-v2.5-tts',
 ]);
@@ -69,12 +70,13 @@ async function chatCompletions(req, res) {
     upstream = await fetch(`${target.base}/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...target.headers },
-      body: JSON.stringify(body),
+      // Keep older digital-human packages working after MiMo retired v2.5.
+      body: JSON.stringify({ ...body, model: body.model === 'mimo-v2.5' ? 'mimo-v2.6-flash' : body.model }),
     });
   } catch (e) {
     return sendJsonError(res, 502, 'UPSTREAM_UNREACHABLE', `上游不可达: ${e.message}`);
   }
-  return pipeUpstream(upstream, res, Boolean(body.stream));
+  return pipeUpstream(upstream, res, Boolean(body.stream) && upstream.status < 400);
 }
 
 module.exports = { chatCompletions, ALLOWED_MODELS };

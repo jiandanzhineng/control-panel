@@ -7,6 +7,11 @@
 - 后端单测：`npm --prefix backend test -- --runInBand`；前端：`npm --prefix frontend test`；构建：`npm run build:frontend`。
 - 只跑某套件可追加文件名，如 `npm --prefix backend test -- --runInBand pushup-detection-output.test.js`。
 
+## 本机依赖缓存
+
+- 本机根 `node_modules` 的部分包目录联接到 `tmp/digital-human-debug-deps/node_modules`；该目录是当前调试依赖缓存，清理前须先重新安装根依赖。前后端依赖仍分别在各自目录。
+- Windows 的 Electron `dist/resources/default_app.asar` 被占用时，`npm ci` 可能报 `EBUSY`；不要为此终止无关 Electron。下载可用 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`，正常启动必须同时具备 Electron 包元数据、`path.txt` 和完整 `dist`。
+
 ## 前端构建
 
 - 组件按需导入用 `unplugin-vue-components@29.2.0`，配置在 `frontend/vite.config.ts`。保留 Element Plus 全局样式以维持主题覆盖顺序，图标由各组件显式导入。
