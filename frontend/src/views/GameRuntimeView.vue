@@ -17,7 +17,7 @@
       </div>
       <template v-else>
         <div class="frame-wrap">
-          <iframe v-if="iframeSrc" :src="iframeSrc" class="game-frame" allow="fullscreen; autoplay"></iframe>
+          <iframe v-if="iframeSrc" :src="iframeSrc" class="game-frame" :allow="iframeAllow"></iframe>
           <div v-else-if="pageResolving" class="page-hint">{{ t('gameRuntime.loadingPage') }}</div>
           <el-empty v-else class="empty-state" :description="pageError || t('gameRuntime.empty')">
             <p class="empty-hint">{{ t('gameRuntime.emptyHint') }}</p>
@@ -37,7 +37,7 @@
       <el-alert type="warning" :closable="false" :title="t('gameRuntime.reconnecting')" show-icon />
     </div>
     <div class="frame-wrap">
-      <iframe v-if="iframeSrc" :src="iframeSrc" class="game-frame" allow="fullscreen; autoplay"></iframe>
+      <iframe v-if="iframeSrc" :src="iframeSrc" class="game-frame" :allow="iframeAllow"></iframe>
       <div v-else-if="pageResolving" class="page-hint">{{ t('gameRuntime.loadingPage') }}</div>
       <el-empty v-else class="empty-state" :description="pageError || t('gameRuntime.empty')">
         <p class="empty-hint">{{ t('gameRuntime.emptyHint') }}</p>
@@ -121,6 +121,10 @@ const iframeSrc = computed(() => {
   const tag = String(route.query.localeTag || localeTag(currentLocale()))
   return buildGameRuntimePageSrc(pagePath.value, runtime, locale, tag)
 })
+// 本机游戏页要用麦克风做语音识别；远程页面跑在对方机器上，这里不给麦克风。
+const iframeAllow = computed(() => (
+  props.source === 'remote' ? 'fullscreen; autoplay' : 'fullscreen; autoplay; microphone'
+))
 
 watch(() => props.paramsSchema, (value) => { if (props.source === 'remote') schema.value = value || [] }, { immediate: true })
 watch(() => props.pagePath, (value) => { if (props.source === 'remote') { pagePath.value = value || ''; pageResolving.value = !value; pageError.value = '' } }, { immediate: true })

@@ -8,6 +8,7 @@ const { BRIDGE_INTERNAL_HEADER } = require('../constants/bridgeAccess');
 const externalGameAccessService = require('./externalGameAccessService');
 const browserDeviceGrantService = require('./browserDeviceGrantService');
 const wsUpgradeRouter = require('./wsUpgradeRouter');
+const sttService = require('./sttService');
 // 玩法载体事件（本机开始/退出一次玩法）：远程占用仲裁（remoteGameService）订阅
 const playCarrierBus = require('./playCarrierBus');
 
@@ -287,6 +288,21 @@ function handleMessage(session, msg) {
 
       case 'getDeviceMap': {
         session.send({ id, result: session.deviceMap });
+        break;
+      }
+
+      case 'speechStatus': {
+        session.send({ id, result: speechStatusForSession() });
+        break;
+      }
+
+      case 'speechToText': {
+        // 转写是异步的（上游可达 20s），结果/错误都用原 requestId 回发。
+        transcribeForSession(msg)
+          .then((result) => session.send({ id, result }))
+          .catch((error) => session.send({
+            id, error: error?.message || String(error), code: error?.code || null,
+          }));
         break;
       }
 
@@ -899,6 +915,40 @@ function scheduleShockAutoStop(session, physId, capability, actionName) {
 
 function emitSystemLog(session, level, message, meta) {
   session.send({ event: 'systemLog', level, message, meta: meta || {} });
+}
+
+// ---------- 语音识别（游戏用，契约见 docs/plans/reading-game.md §3.2） ----------
+// 只给本机游戏用：远程会话 / 远程投影期间麦克风不在本机执行端，一律拒绝。
+function remoteSpeechReason() {
+  try {
+    if (require('./remoteSessionService').getStatus().active) return 'remote';
+  } catch (_) {}
+  try {
+    if (require('./remoteProjectionService').getStatus().active) return 'projection';
+  } catch (_) {}
+  return null;
+}
+
+function speechBlockedError(reason) {
+  const error = new Error(`远程${reason === 'projection' ? '投影' : '会话'}中不可用，断开后可用`);
+  error.code = 'NO_STT';
+  return error;
+}
+
+function speechStatusForSession() {
+  const reason = remoteSpeechReason();
+  if (reason) return { ready: false, mode: 'none', reason: 'REMOTE_LOCKED' };
+  return sttService.status();
+}
+
+function transcribeForSession(msg) {
+  const reason = remoteSpeechReason();
+  if (reason) return Promise.reject(speechBlockedError(reason));
+  return sttService.transcribe({
+    audio: msg.audio,
+    format: msg.format,
+    timeoutMs: msg.timeoutMs,
+  });
 }
 
 // 本机（页面式游戏 / 插件）开始与退出玩法：广播给远程占用仲裁。

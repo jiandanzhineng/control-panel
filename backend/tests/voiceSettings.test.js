@@ -84,4 +84,34 @@ describe('voice settings', () => {
     const res = await request(app()).post('/api/voice/settings').send({ route: 'silicon' });
     expect(res.status).toBe(400);
   });
+
+  it('stores a SiliconFlow key for speech recognition and masks it', async () => {
+    const saved = await request(app()).post('/api/voice/settings')
+      .send({ siliconflow_api_key: 'sk-siliconflow-abcdef123456' });
+    expect(saved.status).toBe(200);
+    expect(saved.body.has_sf_key).toBe(true);
+    expect(saved.body.sf_key_masked).toMatch(/^sk-s/);
+    expect(saved.body.stt_mode).toBe('own_key');
+    expect(JSON.stringify(saved.body)).not.toContain('sk-siliconflow-abcdef123456');
+    // 和 MiMo 通路互相独立：没动 route/api_key
+    expect(saved.body.route).toBe('panel');
+    expect(saved.body.has_key).toBe(false);
+
+    voiceSettings._resetForTests();
+    const again = await request(app()).get('/api/voice/status');
+    expect(again.body.has_sf_key).toBe(true);
+    expect(voiceSettings.getSiliconFlowKey()).toBe('sk-siliconflow-abcdef123456');
+  });
+
+  it('clears the SiliconFlow key with an empty string and falls back to relay/none', async () => {
+    await request(app()).post('/api/voice/settings').send({ siliconflow_api_key: 'sk-siliconflow-abcdef' });
+    const cleared = await request(app()).post('/api/voice/settings').send({ siliconflow_api_key: '' });
+    expect(cleared.body.has_sf_key).toBe(false);
+    expect(cleared.body.sf_key_masked).toBe('');
+    expect(cleared.body.stt_mode).toBe('none');
+
+    localSession.deposit('jwt-token', { id: 'u1' });
+    const signedIn = await request(app()).get('/api/voice/status');
+    expect(signedIn.body.stt_mode).toBe('relay');
+  });
 });

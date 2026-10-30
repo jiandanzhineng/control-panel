@@ -8,6 +8,10 @@ export interface VoiceStatus {
   has_tako_key: boolean
   tako_key_masked: string
   tako_proxy: string
+  // 语音识别（游戏用）：自备 SiliconFlow key，或走官方中转（需登录）
+  has_sf_key: boolean
+  sf_key_masked: string
+  stt_mode: 'own_key' | 'relay' | 'none'
   panel_email: string | null
   panel_ok: boolean
   hint: string
@@ -30,6 +34,7 @@ export function getVoiceStatus() {
 
 export function saveVoiceSettings(body: {
   route?: 'own_key' | 'panel'; api_key?: string; tako_api_key?: string; tako_proxy?: string
+  siliconflow_api_key?: string
 }) {
   return fetch('/api/voice/settings', {
     method: 'POST',

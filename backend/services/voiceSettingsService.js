@@ -23,7 +23,11 @@ function filePath() {
 }
 
 function empty() {
-  return { route: 'panel', api_key: '', route_chosen: false, tako_api_key: '', tako_proxy: '' };
+  return {
+    route: 'panel', api_key: '', route_chosen: false, tako_api_key: '', tako_proxy: '',
+    // 语音识别用的 SiliconFlow key，和 MiMo 通路互不影响。
+    siliconflow_api_key: '',
+  };
 }
 
 function load() {
@@ -38,6 +42,9 @@ function load() {
     if (typeof saved.api_key === 'string') memory.api_key = saved.api_key.trim();
     if (typeof saved.tako_api_key === 'string') memory.tako_api_key = saved.tako_api_key.trim();
     if (typeof saved.tako_proxy === 'string') memory.tako_proxy = saved.tako_proxy.trim();
+    if (typeof saved.siliconflow_api_key === 'string') {
+      memory.siliconflow_api_key = saved.siliconflow_api_key.trim();
+    }
   } catch {
     memory = empty();
   }
@@ -51,6 +58,7 @@ function persist() {
   fs.writeFileSync(dest, JSON.stringify({
     route: cur.route, api_key: cur.api_key, route_chosen: cur.route_chosen,
     tako_api_key: cur.tako_api_key, tako_proxy: cur.tako_proxy,
+    siliconflow_api_key: cur.siliconflow_api_key,
   }, null, 2) + '\n', 'utf8');
 }
 
@@ -61,7 +69,7 @@ function maskKey(key) {
   return `${text.slice(0, 4)}…${text.slice(-4)}`;
 }
 
-function update({ route, api_key, tako_api_key, tako_proxy } = {}) {
+function update({ route, api_key, tako_api_key, tako_proxy, siliconflow_api_key } = {}) {
   const cur = load();
   if (ROUTES.includes(route)) {
     cur.route = route;
@@ -70,6 +78,9 @@ function update({ route, api_key, tako_api_key, tako_proxy } = {}) {
   if (api_key !== undefined) cur.api_key = String(api_key || '').trim();
   if (tako_api_key !== undefined) cur.tako_api_key = String(tako_api_key || '').trim();
   if (tako_proxy !== undefined) cur.tako_proxy = String(tako_proxy || '').trim();
+  if (siliconflow_api_key !== undefined) {
+    cur.siliconflow_api_key = String(siliconflow_api_key || '').trim();
+  }
   persist();
   return status();
 }
@@ -77,6 +88,17 @@ function update({ route, api_key, tako_api_key, tako_proxy } = {}) {
 function getTakoConfig() {
   const cur = load();
   return { api_key: cur.tako_api_key, proxy: cur.tako_proxy };
+}
+
+// 语音识别（STT）用的自备 SiliconFlow key；空串表示走官方中转。
+function getSiliconFlowKey() {
+  return load().siliconflow_api_key;
+}
+
+function sttMode() {
+  if (load().siliconflow_api_key) return 'own_key';
+  const session = localSession.get();
+  return session && session.token ? 'relay' : 'none';
 }
 
 function effectiveRoute() {
@@ -125,6 +147,10 @@ function status() {
     has_tako_key: Boolean(cur.tako_api_key),
     tako_key_masked: maskKey(cur.tako_api_key),
     tako_proxy: cur.tako_proxy,
+    // 语音识别（游戏用）：自备 SiliconFlow key，或走官方中转（需登录）。
+    has_sf_key: Boolean(cur.siliconflow_api_key),
+    sf_key_masked: maskKey(cur.siliconflow_api_key),
+    stt_mode: sttMode(),
     panel_email: session.user && session.user.email || null,
     panel_ok: Boolean(session.token),
     hint: OFFICIAL_HINT,
@@ -138,5 +164,6 @@ function _resetForTests() { memory = undefined; }
 
 module.exports = {
   ROUTES, DIRECT_BASE, update, status, resolve, effectiveRoute, getTakoConfig,
+  getSiliconFlowKey, sttMode,
   _resetForTests, maskKey,
 };

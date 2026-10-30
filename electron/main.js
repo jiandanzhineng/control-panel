@@ -18,7 +18,7 @@ const { fileURLToPath, pathToFileURL } = require('url');
 const { BRIDGE_INTERNAL_HEADER } = require('../backend/constants/bridgeAccess.js');
 const externalGameAccessService = require('../backend/services/externalGameAccessService.js');
 const gameHost = require('./gameHost.js');
-const { createLocalAppWindowController } = require('./localAppWindow.js');
+const { createLocalAppWindowController, attachGameMediaPermissions } = require('./localAppWindow.js');
 const { createBleMainIntegration } = require('./ble/mainIntegration.js');
 const { createBrandBleMainIntegration } = require('./ble/brandMainIntegration.js');
 const { createQuitCoordinator } = require('./shutdownCoordinator.js');
@@ -698,6 +698,8 @@ function createWindow() {
     },
   });
   mainWindow = win;
+  // 游戏页 iframe 与面板的麦克风：只放行本机来源，其余权限保持默认。
+  attachGameMediaPermissions(win.webContents.session);
   bleMainIntegration.attachWindow(win);
   brandBleMainIntegration?.attachWindow(win);
   win.on('close', (event) => quitCoordinator.handleWindowClose(event));
