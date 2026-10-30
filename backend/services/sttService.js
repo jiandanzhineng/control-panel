@@ -92,9 +92,19 @@ function decodeAudio(audio) {
   return buffer;
 }
 
-function mapUpstreamError(status, data) {
+function mapUpstreamError(status, data, mode) {
   const detail = data && typeof data === 'object' ? (data.message || data.error?.message || data.error) : '';
   const suffix = typeof detail === 'string' && detail ? `：${detail}` : '';
+  // 走中转时 401 是账号 JWT 失效（中转自己的厂商 key 失效会回 502 UPSTREAM_AUTH_FAILED）。
+  if (mode === 'relay' && status === 401) {
+    return makeError('NOT_SIGNED_IN', '登录已失效，请重新登录或填写自己的 SiliconFlow key');
+  }
+  const relayCode = mode === 'relay' && data && data.error && data.error.code;
+  if (relayCode === 'UPSTREAM_AUTH_FAILED' || relayCode === 'STT_KEY_NOT_CONFIGURED') {
+    return makeError('UPSTREAM_AUTH_FAILED', `官方语音识别服务暂不可用${suffix}`);
+  }
+  if (relayCode === 'RATE_LIMITED') return makeError('RATE_LIMITED', `语音识别请求过于频繁，请稍后再试${suffix}`);
+  if (relayCode === 'UPSTREAM_TIMEOUT') return makeError('TIMEOUT', '语音识别上游超时');
   if (status === 401 || status === 403) {
     return makeError('UPSTREAM_AUTH_FAILED', `语音识别密钥无效或未授权${suffix}`);
   }
@@ -134,10 +144,10 @@ async function transcribe({ audio, format = 'wav', timeoutMs } = {}) {
     statusCode = upstream.status;
     const raw = await upstream.text();
     const data = parseJson(raw);
-    if (!upstream.ok) throw mapUpstreamError(upstream.status, data);
+    if (!upstream.ok) throw mapUpstreamError(upstream.status, data, channel.mode);
     const text = data && typeof data.text === 'string' ? data.text : '';
     const latencyMs = Date.now() - startedAt;
-    logService.info('VoiceSTT', `mode=${channel.mode} status=${statusCode} ms=${latencyMs}`);
+    logService.debug('VoiceSTT', `mode=${channel.mode} status=${statusCode} ms=${latencyMs}`);
     return { text, mode: channel.mode, latencyMs };
   } catch (error) {
     const latencyMs = Date.now() - startedAt;

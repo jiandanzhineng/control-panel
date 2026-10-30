@@ -4,7 +4,7 @@ const path = require('path');
 const http = require('http');
 
 jest.mock('../services/logService', () => ({
-  info: jest.fn(), warn: jest.fn(), error: jest.fn(),
+  info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn(),
 }));
 
 const localSession = require('../services/localSessionService');
@@ -114,7 +114,8 @@ describe('sttService', () => {
   it('maps upstream failures to the agreed error codes', async () => {
     localSession.deposit('jwt-account-token', { id: 'u1' });
     const cases = [
-      [401, 'UPSTREAM_AUTH_FAILED'],
+      // 中转模式下 401 是账号登录失效
+      [401, 'NOT_SIGNED_IN'],
       [403, 'UPSTREAM_AUTH_FAILED'],
       [429, 'RATE_LIMITED'],
       [413, 'BAD_AUDIO'],
@@ -126,6 +127,15 @@ describe('sttService', () => {
       // eslint-disable-next-line no-await-in-loop
       await expect(sttService.transcribe({ audio: TINY_WAV })).rejects.toMatchObject({ code });
     }
+    // 中转自己的厂商 key 失效：502 + error.code
+    upstream.reply = { status: 502, body: { error: { code: 'UPSTREAM_AUTH_FAILED', message: 'x' } } };
+    await expect(sttService.transcribe({ audio: TINY_WAV })).rejects.toMatchObject({ code: 'UPSTREAM_AUTH_FAILED' });
+  });
+
+  it('maps a 401 from SiliconFlow to UPSTREAM_AUTH_FAILED when using the own key', async () => {
+    voiceSettings.update({ siliconflow_api_key: 'sk-own-test' });
+    upstream.reply = { status: 401, body: { message: 'Invalid token' } };
+    await expect(sttService.transcribe({ audio: TINY_WAV })).rejects.toMatchObject({ code: 'UPSTREAM_AUTH_FAILED' });
   });
 
   it('aborts the upstream request when the timeout elapses', async () => {

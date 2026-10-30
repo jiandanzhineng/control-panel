@@ -151,6 +151,9 @@ function init(server) {
           params: msg.params || {},
         };
         if (pendingDisconnect && activeSession === pendingDisconnect && isSameSessionConfig(pendingDisconnect, config)) {
+          // 同配置快速重连（页面刷新/崩溃重载）会销毁旧会话并清掉它的自动停止定时器，
+          // 旧页面发出的电击可能还没停，这里先补发 stop。
+          if (pendingDisconnect.shockStopTimer) stopShockTargets(pendingDisconnect);
           removeSession(pendingDisconnect);
         } else {
           replaceActiveSession();
@@ -896,21 +899,33 @@ function scheduleShockAutoStop(session, physId, capability, actionName) {
   }
   session.shockStopTargets = session.shockStopTargets || new Set();
   session.shockStopTargets.add(physId);
+  // 留痕：宿主兜底停止是“游戏自身停止没发出去”时的最后保险，日志里要能看出它排在游戏停止之后
+  logService.info('BridgeShock', `auto-stop scheduled in ${duration}s target=${physId}`);
   session.shockStopTimer = setTimeout(() => {
     session.shockStopTimer = null;
     if (!session.active) return;
-    const targets = Array.from(session.shockStopTargets || []);
-    session.shockStopTargets = new Set();
-    for (const target of targets) {
-      try {
-        if (virtualDeviceService.isVirtualDevice(target)) {
-          virtualDeviceService.interceptCommand(target, { action: 'invoke', capability: 'shock', actionName: 'stop', params: {} });
-        } else {
-          deviceService.invokeDeviceCapability(target, 'shock', 'stop', {});
-        }
-      } catch (_) {}
-    }
+    logService.info('BridgeShock', `auto-stop fired targets=${Array.from(session.shockStopTargets || []).join(',')}`);
+    stopShockTargets(session);
   }, duration * 1000);
+}
+
+// 对会话登记过的电击目标发 stop，并清掉自动停止定时器。
+function stopShockTargets(session) {
+  if (session.shockStopTimer) {
+    clearTimeout(session.shockStopTimer);
+    session.shockStopTimer = null;
+  }
+  const targets = Array.from(session.shockStopTargets || []);
+  session.shockStopTargets = new Set();
+  for (const target of targets) {
+    try {
+      if (virtualDeviceService.isVirtualDevice(target)) {
+        virtualDeviceService.interceptCommand(target, { action: 'invoke', capability: 'shock', actionName: 'stop', params: {} });
+      } else {
+        deviceService.invokeDeviceCapability(target, 'shock', 'stop', {});
+      }
+    } catch (_) {}
+  }
 }
 
 function emitSystemLog(session, level, message, meta) {

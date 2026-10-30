@@ -1,7 +1,7 @@
 const EventEmitter = require('events');
 
 jest.mock('../services/logService', () => ({
-  info: jest.fn(), warn: jest.fn(), error: jest.fn(),
+  info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn(),
 }));
 
 jest.mock('../services/virtualDeviceService', () => ({
