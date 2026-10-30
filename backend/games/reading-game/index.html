@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title data-en="Reading game">朗读游戏</title>
+<script type="application/json" id="game-manifest">
+{
+  "id": "reading-game",
+  "title": "朗读游戏",
+  "description": "朗读屏幕上的文字。停下来不读或长时间不按原文读会先警告再电击；读完全文即通关。语音识别失败只会少电，不会多电。",
+  "howTo": "1. 映射电击设备（必需）\n2. 选择内置文本或填写自定义文本\n3. 调整沉默/离稿时限与电击强度\n4. 点开始，允许麦克风，先安静 3 秒再朗读",
+  "version": "1.0.0",
+  "devices": [
+    {
+      "id": "shock",
+      "label": "电击设备",
+      "capabilities": ["shock"],
+      "required": true
+    }
+  ],
+  "params": [
+    {
+      "key": "textSource",
+      "type": "enum",
+      "default": "builtin",
+      "enum": ["builtin", "custom"],
+      "enumLabels": { "builtin": "内置文本", "custom": "自定义文本" },
+      "label": "朗读文本来源",
+      "description": "内置文本来自 texts.js；自定义文本在下方填写",
+      "group": "core"
+    },
+    {
+      "key": "textIndex",
+      "type": "number",
+      "default": 1,
+      "min": 1,
+      "max": 5,
+      "step": 1,
+      "label": "内置文本编号",
+      "description": "选择内置文本中的第几篇（1-5）",
+      "group": "core"
+    },
+    {
+      "key": "customText",
+      "type": "string",
+      "default": "",
+      "label": "自定义朗读文本",
+      "placeholder": "文本来源选「自定义文本」时使用",
+      "description": "建议 100–600 字，带正常标点",
+      "group": "core"
+    },
+    {
+      "key": "silenceLimit",
+      "type": "number",
+      "default": 6,
+      "min": 2,
+      "max": 60,
+      "step": 0.5,
+      "unit": "秒",
+      "label": "沉默时限",
+      "description": "连续多久没有检测到人声就触发电击（默认 6 秒）",
+      "group": "core"
+    },
+    {
+      "key": "stallLimit",
+      "type": "number",
+      "default": 20,
+      "min": 5,
+      "max": 120,
+      "step": 1,
+      "unit": "秒",
+      "label": "离稿判定窗口",
+      "description": "在这段时间内一直不按原文前进才触发离稿警告（默认 20 秒）",
+      "group": "core"
+    },
+    {
+      "key": "warnLead",
+      "type": "number",
+      "default": 2,
+      "min": 0.5,
+      "max": 5,
+      "step": 0.5,
+      "unit": "秒",
+      "label": "电击预警提前量",
+      "description": "触发条件满足后先警告多少秒再电击，期间继续读可取消",
+      "group": "core"
+    },
+    {
+      "key": "checkContent",
+      "type": "boolean",
+      "default": true,
+      "label": "检测是否在读原文",
+      "description": "关闭后只检测有没有出声；语音识别不可用时也会自动退化为这个模式",
+      "group": "core"
+    },
+    {
+      "key": "shockIntensity",
+      "type": "number",
+      "default": 20,
+      "min": 10,
+      "max": 100,
+      "step": 1,
+      "unit": "V",
+      "label": "电击强度",
+      "description": "基础电击强度，请谨慎设置，风险自行承担。未允许超过 30V 时最高 30V",
+      "group": "punish",
+      "device": "shock",
+      "recommended": "15–24"
+    },
+    {
+      "key": "allowUnsafeIntensity",
+      "type": "boolean",
+      "default": false,
+      "label": "允许超过 30V",
+      "description": "关闭时强度上限 30V，开启请谨慎",
+      "group": "advanced",
+      "device": "shock",
+      "required": false
+    },
+    {
+      "key": "shockDuration",
+      "type": "number",
+      "default": 1,
+      "min": 1,
+      "max": 5,
+      "step": 1,
+      "unit": "秒",
+      "label": "电击持续时间",
+      "description": "每次电击持续的时间",
+      "group": "punish",
+      "device": "shock"
+    },
+    {
+      "key": "shockStep",
+      "type": "number",
+      "default": 0,
+      "min": 0,
+      "max": 20,
+      "step": 1,
+      "unit": "V",
+      "label": "连续受罚强度递增",
+      "description": "连续受罚时每次增加的电击强度，30 秒未受罚后恢复",
+      "group": "punish",
+      "device": "shock",
+      "required": false
+    },
+    {
+      "key": "shockMax",
+      "type": "number",
+      "default": 50,
+      "min": 10,
+      "max": 100,
+      "step": 1,
+      "unit": "V",
+      "label": "电击强度上限",
+      "description": "递增后的强度不会超过这个值（未允许时仍受 30V 限制）",
+      "group": "punish",
+      "device": "shock",
+      "required": false
+    },
+    {
+      "key": "cooldown",
+      "type": "number",
+      "default": 5,
+      "min": 0,
+      "max": 30,
+      "step": 1,
+      "unit": "秒",
+      "label": "电击冷却",
+      "description": "电击后多少秒内不再判定",
+      "group": "punish"
+    },
+    {
+      "key": "startGrace",
+      "type": "number",
+      "default": 5,
+      "min": 0,
+      "max": 30,
+      "step": 1,
+      "unit": "秒",
+      "label": "开局宽限期",
+      "description": "校准完成开始朗读后多少秒内不判定惩罚",
+      "group": "core"
+    },
+    {
+      "key": "segmentLen",
+      "type": "number",
+      "default": 4,
+      "min": 2,
+      "max": 8,
+      "step": 0.5,
+      "unit": "秒",
+      "label": "识别窗口",
+      "description": "每次上传给语音识别的音频长度",
+      "group": "advanced"
+    },
+    {
+      "key": "segmentHop",
+      "type": "number",
+      "default": 3,
+      "min": 1,
+      "max": 6,
+      "step": 0.5,
+      "unit": "秒",
+      "label": "识别间隔",
+      "description": "每隔多久上传一段音频，窗口之间会重叠",
+      "group": "advanced"
+    },
+    {
+      "key": "totalTime",
+      "type": "number",
+      "default": 0,
+      "min": 0,
+      "max": 120,
+      "step": 1,
+      "unit": "分钟",
+      "label": "总时限（0=不限）",
+      "description": "超过此时间仍未读完视为失败并结束游戏",
+      "group": "advanced"
+    },
+    {
+      "key": "sttTimeout",
+      "type": "number",
+      "default": 15000,
+      "min": 3000,
+      "max": 20000,
+      "step": 1000,
+      "unit": "毫秒",
+      "label": "语音识别超时",
+      "description": "单次识别请求的超时时间，超时记为未知，不惩罚",
+      "group": "advanced"
+    },
+    {
+      "key": "beep",
+      "type": "boolean",
+      "default": true,
+      "label": "警告提示音",
+      "description": "警告和电击时播放提示音",
+      "group": "advanced"
+    }
+  ],
+  "i18n": {
+    "en": {
+      "title": "Reading game",
+      "description": "Read the text on screen. Staying silent or not reading the original for too long warns first, then shocks. Finish the text to win. Speech-recognition failures can only reduce shocks, never add them.",
+      "howTo": "1. Map a shock device (required)\n2. Pick a built-in text or paste your own\n3. Tune silence/off-script limits and shock intensity\n4. Press start, allow the mic, stay quiet for 3 seconds, then read",
+      "devices": {
+        "shock": "Shock device"
+      },
+      "params": {
+        "textSource": "Text source",
+        "textIndex": "Built-in text #",
+        "customText": "Custom text",
+        "silenceLimit": "Silence limit",
+        "stallLimit": "Off-script window",
+        "warnLead": "Warning lead",
+        "checkContent": "Check script content",
+        "shockIntensity": "Shock intensity",
+        "allowUnsafeIntensity": "Allow over 30V",
+        "shockDuration": "Shock duration",
+        "shockStep": "Penalty escalation",
+        "shockMax": "Shock cap",
+        "cooldown": "Shock cooldown",
+        "startGrace": "Start grace",
+        "segmentLen": "Recognition window",
+        "segmentHop": "Recognition interval",
+        "totalTime": "Time limit (0 = none)",
+        "sttTimeout": "Recognition timeout",
+        "beep": "Warning beeps"
+      },
+      "paramDescriptions": {
+        "textSource": "Built-in texts come from texts.js; custom text is entered below.",
+        "textIndex": "Which built-in text to read (1-5).",
+        "customText": "Used when text source is Custom. 100-600 characters recommended.",
+        "silenceLimit": "Seconds without voice before a shock is triggered (default 6).",
+        "stallLimit": "Seconds without on-script progress before the off-script warning (default 20).",
+        "warnLead": "Warning seconds before a shock; resuming reading cancels it.",
+        "checkContent": "Off detects voice only. Automatically degrades when recognition is unavailable.",
+        "shockIntensity": "Base shock voltage. Capped at 30V unless explicitly allowed.",
+        "allowUnsafeIntensity": "Off caps intensity at 30V. Turn on with care.",
+        "shockDuration": "Duration of one shock.",
+        "shockStep": "Extra voltage per consecutive penalty, reset after 30s without one.",
+        "shockMax": "Escalated intensity never exceeds this (still capped at 30V unless allowed).",
+        "cooldown": "No judging for this many seconds after a shock.",
+        "startGrace": "No judging for this many seconds after calibration.",
+        "segmentLen": "Audio length uploaded to recognition each time.",
+        "segmentHop": "How often audio is uploaded; windows overlap.",
+        "totalTime": "End the game as a failure after this many minutes.",
+        "sttTimeout": "Per-request recognition timeout; timeouts are unknown and never punished.",
+        "beep": "Play beeps for warnings and shocks."
+      },
+      "paramUnits": {
+        "silenceLimit": "s",
+        "stallLimit": "s",
+        "warnLead": "s",
+        "shockDuration": "s",
+        "cooldown": "s",
+        "startGrace": "s",
+        "segmentLen": "s",
+        "segmentHop": "s",
+        "totalTime": "min",
+        "sttTimeout": "ms"
+      }
+    }
+  }
+}
+</script>
+<script src="/bridge-api/device-api-bridge.js"></script>
+<script src="/bridge-api/game-i18n.js"></script>
+<script src="vendor/pinyin-pro.min.js"></script>
+<script src="reading-core.js"></script>
+<script src="pinyin.js"></script>
+<script src="texts.js"></script>
+<style>
+  :root { color-scheme: dark; --bg:#111827; --panel:#1f2937; --deep:#0b1220; --text:#e5e7eb; --muted:#9ca3af; --line:#374151; --red:#ef4444; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 14px 14px calc(84px + env(safe-area-inset-bottom, 0px)); min-height: 100vh; }
+  .rg-root { position: relative; width: 100%; max-width: 940px; margin: 0 auto; }
+  .rg-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+  .rg-title { font-size: 20px; font-weight: 700; color: #f9fafb; }
+  .rg-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .rg-pill { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--panel); color: #d1d5db; white-space: nowrap; }
+  .rg-pill.reading { background: #064e3b; color: #6ee7b7; }
+  .rg-pill.calibrating { background: #1e3a8a; color: #bfdbfe; }
+  .rg-pill.warning, .rg-pill.shock { background: #7f1d1d; color: #fecaca; }
+  .rg-pill.shock { animation: rg-pulse .6s infinite alternate; }
+  @keyframes rg-pulse { from { opacity: 1; } to { opacity: .55; } }
+  .rg-pill.cooldown { background: #78350f; color: #fde68a; }
+  .rg-pill.paused { background: #4c1d95; color: #ddd6fe; }
+  .rg-pill.won { background: #14532d; color: #bbf7d0; }
+  .rg-progress { height: 8px; background: var(--panel); border-radius: 999px; overflow: hidden; margin-bottom: 12px; }
+  .rg-progress > i { display: block; height: 100%; background: linear-gradient(90deg,#22c55e,#4ade80); transition: width .25s ease; }
+  .rg-scroll { position: relative; height: 34vh; min-height: 180px; max-height: 340px; overflow-y: auto; padding: 18px 18px; background: var(--deep); border: 1px solid var(--panel); border-radius: 12px; font-size: 24px; line-height: 1.9; letter-spacing: .5px; word-break: break-word; }
+  .rg-read { color: #4b5563; }
+  .rg-todo { color: var(--text); }
+  .rg-current { color: #fca5a5; font-weight: 700; border-bottom: 3px solid var(--red); background: rgba(239,68,68,.12); border-radius: 3px; padding: 0 1px; }
+  .rg-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin-top: 10px; }
+  .rg-card { background: var(--panel); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+  .rg-card .k { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .rg-card .v { font-size: 16px; font-weight: 700; color: #f3f4f6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rg-card .v small { font-size: 11px; font-weight: 400; color: var(--muted); }
+  .rg-vol { position: relative; height: 10px; background: var(--deep); border-radius: 5px; overflow: hidden; margin-top: 6px; }
+  .rg-vol > i { display: block; height: 100%; background: linear-gradient(90deg,#22c55e,#facc15,#ef4444); }
+  .rg-vol > b { position: absolute; top: -2px; bottom: -2px; width: 2px; background: #f9fafb; }
+  .rg-muted { color: #6b7280; }
+  .rg-good { color: #4ade80; }
+  .rg-bad { color: #f87171; }
+  .rg-warn { color: #fbbf24; }
+  .rg-overlay { position: fixed; inset: 0; z-index: 20; background: rgba(127,29,29,.5); display: flex; align-items: center; justify-content: center; pointer-events: none; padding: 20px; }
+  .rg-overlay:empty { display: none; }
+  .rg-overlay-card { text-align: center; padding: 22px 34px; border-radius: 16px; background: rgba(17,24,39,.94); border: 2px solid var(--red); box-shadow: 0 0 40px rgba(239,68,68,.5); }
+  .rg-overlay-card .t { font-size: 20px; color: #fecaca; font-weight: 700; }
+  .rg-overlay-card .n { font-size: 64px; line-height: 1.1; color: var(--red); font-weight: 800; }
+  .rg-overlay-card .s { font-size: 13px; color: #fca5a5; }
+  .rg-banner { margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 13px; line-height: 1.45; }
+  .rg-banner.warn { background: #422006; color: #fde68a; border: 1px solid #92400e; }
+  .rg-banner.bad { background: #450a0a; color: #fecaca; border: 1px solid #991b1b; }
+  .rg-banner.ok { background: #052e16; color: #bbf7d0; border: 1px solid #166534; }
+  .rg-segments { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; }
+  .rg-seg { display: flex; gap: 8px; align-items: baseline; padding: 6px 9px; background: var(--deep); border-radius: 7px; font-size: 13px; color: #d1d5db; }
+  .rg-seg .tag { flex: none; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #374151; color: #e5e7eb; }
+  .rg-seg .tag.reading { background: #065f46; color: #a7f3d0; }
+  .rg-seg .tag.offtext { background: #7f1d1d; color: #fecaca; }
+  .rg-seg .tag.unknown { background: #4b5563; color: #e5e7eb; }
+  .rg-seg .tag.silent { background: #1e3a8a; color: #bfdbfe; }
+  .rg-seg .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rg-seg .pos { flex: none; color: #6b7280; font-size: 11px; }
+  .rg-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  .rg-btn { min-height: 48px; flex: 1; min-width: 150px; border: none; border-radius: 10px; font-size: 16px; font-weight: 700; cursor: pointer; padding: 12px 18px; }
+  .rg-btn.primary { background: #2563eb; color: #fff; }
+  .rg-btn.primary:disabled { opacity: .45; cursor: default; }
+  .rg-stop { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px)); background: linear-gradient(180deg, rgba(17,24,39,0), rgba(17,24,39,.96) 30%); }
+  .rg-stop button { width: 100%; min-height: 52px; border: none; border-radius: 10px; background: #b91c1c; color: #fff; font-size: 16px; font-weight: 700; cursor: pointer; }
+  .rg-stop button:hover { background: #dc2626; }
+  .rg-test-badge { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: #78350f; color: #fde68a; font-size: 11px; }
+  .rg-win { text-align: center; padding: 30px 12px; }
+  .rg-win h1 { font-size: 30px; margin: 0 0 8px; color: #4ade80; }
+  .rg-win .rg-sub { font-size: 14px; color: var(--muted); }
+  .rg-win-stats { display: flex; justify-content: center; gap: 22px; margin-top: 18px; flex-wrap: wrap; }
+  .rg-win-stats .v { font-size: 24px; font-weight: 800; color: #f9fafb; }
+  .rg-win-stats .k { font-size: 12px; color: var(--muted); }
+  .rg-hint { font-size: 12px; color: #6b7280; margin-top: 16px; }
+  [hidden] { display: none !important; }
+  @media (max-width: 420px) {
+    body { padding: 10px 10px calc(78px + env(safe-area-inset-bottom, 0px)); }
+    .rg-head { gap: 6px; margin-bottom: 8px; }
+    .rg-title { font-size: 17px; }
+    .rg-sub { font-size: 12px; }
+    .rg-scroll { font-size: 22px; line-height: 1.8; padding: 14px; height: 38vh; min-height: 190px; }
+    .rg-grid { grid-template-columns: repeat(6, 1fr); gap: 6px; }
+    .rg-card { padding: 6px 7px; grid-column: span 2; }
+    .rg-card:nth-child(4), .rg-card:nth-child(5) { grid-column: span 3; }
+    .rg-card .v { font-size: 13px; }
+    .rg-card .k { font-size: 10px; }
+    .rg-overlay-card .n { font-size: 52px; }
+    .rg-overlay-card { padding: 18px 24px; }
+    .rg-btn { min-width: 0; width: 100%; }
+    .rg-actions { gap: 8px; }
+    .rg-stop button { min-height: 50px; font-size: 15px; }
+  }
+</style>
+</head>
+<body>
+  <div class="rg-root">
+    <header class="rg-head">
+      <div>
+        <div class="rg-title" id="rg-title" data-en="Reading game">朗读游戏</div>
+        <div class="rg-sub" id="rg-sub">准备中…</div>
+      </div>
+      <span class="rg-pill idle" id="rg-phase" data-en="Ready">待开始</span>
+    </header>
+    <div class="rg-progress"><i id="rg-progress" style="width:0%"></i></div>
+    <section id="rg-main">
+      <div class="rg-scroll">
+        <span class="rg-read" id="rg-read"></span><span class="rg-current" id="rg-current"></span><span class="rg-todo" id="rg-todo"></span>
+      </div>
+      <div id="rg-banners"></div>
+      <div class="rg-grid">
+        <div class="rg-card">
+          <div class="k" data-en="Volume / threshold">音量 / 阈值</div>
+          <div class="v" id="rg-level">0 <small>阈值 0</small></div>
+          <div class="rg-vol"><i id="rg-levelbar" style="width:0%"></i><b id="rg-thbar" style="left:0%"></b></div>
+        </div>
+        <div class="rg-card">
+          <div class="k" data-en="Silence timer">沉默计时</div>
+          <div class="v" id="rg-silence">—</div>
+        </div>
+        <div class="rg-card">
+          <div class="k" data-en="Off-script check">离稿判定</div>
+          <div class="v rg-good" id="rg-t2">—</div>
+        </div>
+        <div class="rg-card">
+          <div class="k" data-en="Speech recognition">语音识别</div>
+          <div class="v rg-good" id="rg-stt">正常</div>
+        </div>
+        <div class="rg-card">
+          <div class="k" data-en="Punishments">受罚次数</div>
+          <div class="v" id="rg-shock">0</div>
+        </div>
+      </div>
+      <div class="rg-segments" id="rg-segments"></div>
+      <div class="rg-actions">
+        <button class="rg-btn primary" id="rg-start-btn" type="button" data-en="Start reading">开始朗读</button>
+      </div>
+      <div class="rg-hint"><span data-en="Finish the whole text to win. Press Esc to stop immediately.">读完全文即通关 · 按 Esc 可紧急停止</span><span class="rg-test-badge" id="rg-test-badge" hidden data-en="Test audio">测试音频</span></div>
+    </section>
+    <section class="rg-win" id="rg-win" hidden>
+      <h1 id="rg-win-title">朗读完成</h1>
+      <div class="rg-sub" id="rg-win-sub"></div>
+      <div class="rg-win-stats">
+        <div><div class="v" id="rg-win-time">—</div><div class="k" id="rg-win-time-label" data-en="Time">用时</div></div>
+        <div><div class="v" id="rg-win-shocks">0</div><div class="k" id="rg-win-shocks-label" data-en="Punishments">受罚次数</div></div>
+        <div><div class="v" id="rg-win-syllables">—</div><div class="k" id="rg-win-syllables-label" data-en="Syllables">音节数</div></div>
+      </div>
+      <div class="rg-hint" id="rg-win-hint"><span data-en="You can stop the game from the play page.">可以在玩法页停止游戏</span></div>
+    </section>
+  </div>
+  <div class="rg-overlay" id="rg-overlay"></div>
+  <div class="rg-stop">
+    <button id="rg-stop-btn" type="button" data-en="Emergency stop">紧急停止</button>
+  </div>
+  <script src="i18n.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
