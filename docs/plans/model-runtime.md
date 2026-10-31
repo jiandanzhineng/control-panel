@@ -121,7 +121,7 @@
 - 引擎：`sherpa-onnx-node` 2.0.1（N-API），Windows x64 原生库来自 `sherpa-onnx-win-x64`（内含 CPU 版 onnxruntime）。
 - 模型：SenseVoiceSmall int8。`model.int8.onnx` 239,233,841 B（sha256 `c71f0ce0…cd51`），`tokens.txt` 315,894 B（sha256 `f449eb28…a1dc`）；按需下载到 `BACKEND_DATA_DIR/models/sense-voice-small-int8/`。
 - 子进程只接受 16kHz 单声道 WAV；CPU 线程数 `min(4, max(1, floor(cores/2)))`（本机 Ryzen 5 2600，12 线程 → 4 线程）。
-- 实测：ONNX Runtime CPU 4 线程、4 秒音频 p50 320.9ms；游戏内每段约 3 秒音频，本地识别 328–414ms。CDP 端到端日志：335 / 364 / 339 / 328ms。
+- 实测：ONNX Runtime CPU 4 线程、4 秒音频 p50 320.9ms；游戏内每段约 3 秒音频，本地识别 328–414ms。CDP 端到端日志（最终一轮）：319 / 334 / 337 / 336 / 344ms。
 
 ### 8.2 GPU 与 NPU 结论
 
