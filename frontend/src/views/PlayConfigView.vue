@@ -220,7 +220,7 @@
               <div v-if="p.description" class="param-desc">{{ p.description }}</div>
               <div class="param-meta-line">
                 <span v-if="p.recommended">{{ t('playConfig.recommended', { value: p.recommended }) }}</span>
-                <span v-if="p.default !== undefined && !p.multiline">{{ t('playConfig.default', { value: formatDefault(p.default) }) }}</span>
+                <span v-if="p.default !== undefined && !p.multiline">{{ t('playConfig.default', { value: formatDefault(p.default, p) }) }}</span>
                 <span v-if="p.min !== undefined || p.max !== undefined">{{ t('playConfig.range', { value: formatRange(p) }) }}</span>
               </div>
             </div>
@@ -307,7 +307,7 @@
                   <div v-if="p.description" class="param-desc">{{ p.description }}</div>
                   <div class="param-meta-line">
                     <span v-if="p.recommended">{{ t('playConfig.recommended', { value: p.recommended }) }}</span>
-                    <span v-if="p.default !== undefined && !p.multiline">{{ t('playConfig.default', { value: formatDefault(p.default) }) }}</span>
+                    <span v-if="p.default !== undefined && !p.multiline">{{ t('playConfig.default', { value: formatDefault(p.default, p) }) }}</span>
                     <span v-if="p.min !== undefined || p.max !== undefined">{{ t('playConfig.range', { value: formatRange(p) }) }}</span>
                   </div>
                 </div>
@@ -838,8 +838,12 @@ function paramHelpText(p: any): string {
   return parts.join('\n');
 }
 
-function formatDefault(v: any): string {
+function formatDefault(v: any, p?: any): string {
   if (typeof v === 'boolean') return v ? t('playConfig.on') : t('playConfig.off');
+  if (p?.type === 'enum') {
+    const hit = enumOptions(p).find(o => String(o.value) === String(v));
+    if (hit) return hit.label;
+  }
   return String(v);
 }
 
