@@ -9,8 +9,8 @@
   "id": "reading-game",
   "title": "朗读游戏",
   "description": "朗读屏幕上的文字。停下来不读或长时间不按原文读会先警告再电击；读完全文即通关。语音识别失败只会少电，不会多电。",
-  "howTo": "1. 映射电击设备（必需）\n2. 选择内置文本或填写自定义文本\n3. 调整沉默/离稿时限与电击强度\n4. 点开始，允许麦克风，先安静 3 秒再朗读",
-  "version": "1.0.1",
+  "howTo": "1. 映射电击设备（必需）\n2. 在「朗读文本」里填写或修改要读的文字（已有默认短文）\n3. 调整沉默/离稿时限与电击强度\n4. 点开始，允许麦克风，先安静 3 秒再朗读",
+  "version": "1.0.2",
   "permissions": ["microphone"],
   "devices": [
     {
@@ -22,33 +22,14 @@
   ],
   "params": [
     {
-      "key": "textSource",
-      "type": "enum",
-      "default": "builtin",
-      "enum": ["builtin", "custom"],
-      "enumLabels": { "builtin": "内置文本", "custom": "自定义文本" },
-      "label": "朗读文本来源",
-      "description": "内置文本来自 texts.js；自定义文本在下方填写",
-      "group": "core"
-    },
-    {
-      "key": "textIndex",
-      "type": "number",
-      "default": 1,
-      "min": 1,
-      "max": 5,
-      "step": 1,
-      "label": "内置文本编号",
-      "description": "选择内置文本中的第几篇（1-5）",
-      "group": "core"
-    },
-    {
       "key": "customText",
       "type": "string",
-      "default": "",
-      "label": "自定义朗读文本",
-      "placeholder": "文本来源选「自定义文本」时使用",
-      "description": "建议 100–600 字，带正常标点",
+      "multiline": true,
+      "rows": 5,
+      "default": "窗外下了一夜的小雨，早上醒来，空气里都是泥土的味道。我推开门，看见院子里的花开了几朵，叶子上还挂着水珠。邻居家的小狗跑过来，摇着尾巴，好像也在说早上好。",
+      "label": "朗读文本",
+      "placeholder": "填写要朗读的文字",
+      "description": "建议 50–600 字，带正常标点；清空则使用内置文本",
       "group": "core"
     },
     {
@@ -245,14 +226,12 @@
     "en": {
       "title": "Reading game",
       "description": "Read the text on screen. Staying silent or not reading the original for too long warns first, then shocks. Finish the text to win. Speech-recognition failures can only reduce shocks, never add them.",
-      "howTo": "1. Map a shock device (required)\n2. Pick a built-in text or paste your own\n3. Tune silence/off-script limits and shock intensity\n4. Press start, allow the mic, stay quiet for 3 seconds, then read",
+      "howTo": "1. Map a shock device (required)\n2. Edit the text to read in “Reading text” (a short default is filled in)\n3. Tune silence/off-script limits and shock intensity\n4. Press start, allow the mic, stay quiet for 3 seconds, then read",
       "devices": {
         "shock": "Shock device"
       },
       "params": {
-        "textSource": "Text source",
-        "textIndex": "Built-in text #",
-        "customText": "Custom text",
+        "customText": "Reading text",
         "silenceLimit": "Silence limit",
         "stallLimit": "Off-script window",
         "warnLead": "Warning lead",
@@ -271,9 +250,7 @@
         "beep": "Warning beeps"
       },
       "paramDescriptions": {
-        "textSource": "Built-in texts come from texts.js; custom text is entered below.",
-        "textIndex": "Which built-in text to read (1-5).",
-        "customText": "Used when text source is Custom. 100-600 characters recommended.",
+        "customText": "50-600 characters with normal punctuation recommended; leave empty to use a built-in text.",
         "silenceLimit": "Seconds without voice before a shock is triggered (default 6).",
         "stallLimit": "Seconds without on-script progress before the off-script warning (default 20).",
         "warnLead": "Warning seconds before a shock; resuming reading cancels it.",

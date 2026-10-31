@@ -174,10 +174,13 @@
               </div>
             </template>
 
-            <div class="param-control">
+            <div class="param-control" :class="{ 'param-control--wide': p.multiline }">
               <el-input
                 v-if="p.type === 'string'"
                 v-model="parameters[p.key]"
+                :type="p.multiline ? 'textarea' : 'text'"
+                :autosize="p.multiline ? { minRows: p.rows || 4, maxRows: 12 } : undefined"
+                :class="{ 'param-textarea': p.multiline }"
                 :placeholder="p.placeholder || ''"
               />
               <el-input-number
@@ -217,7 +220,7 @@
               <div v-if="p.description" class="param-desc">{{ p.description }}</div>
               <div class="param-meta-line">
                 <span v-if="p.recommended">{{ t('playConfig.recommended', { value: p.recommended }) }}</span>
-                <span v-if="p.default !== undefined">{{ t('playConfig.default', { value: formatDefault(p.default) }) }}</span>
+                <span v-if="p.default !== undefined && !p.multiline">{{ t('playConfig.default', { value: formatDefault(p.default) }) }}</span>
                 <span v-if="p.min !== undefined || p.max !== undefined">{{ t('playConfig.range', { value: formatRange(p) }) }}</span>
               </div>
             </div>
@@ -258,10 +261,13 @@
                   </div>
                 </template>
 
-                <div class="param-control">
+                <div class="param-control" :class="{ 'param-control--wide': p.multiline }">
                   <el-input
                     v-if="p.type === 'string'"
                     v-model="parameters[p.key]"
+                    :type="p.multiline ? 'textarea' : 'text'"
+                    :autosize="p.multiline ? { minRows: p.rows || 4, maxRows: 12 } : undefined"
+                    :class="{ 'param-textarea': p.multiline }"
                     :placeholder="p.placeholder || ''"
                   />
                   <el-input-number
@@ -301,7 +307,7 @@
                   <div v-if="p.description" class="param-desc">{{ p.description }}</div>
                   <div class="param-meta-line">
                     <span v-if="p.recommended">{{ t('playConfig.recommended', { value: p.recommended }) }}</span>
-                    <span v-if="p.default !== undefined">{{ t('playConfig.default', { value: formatDefault(p.default) }) }}</span>
+                    <span v-if="p.default !== undefined && !p.multiline">{{ t('playConfig.default', { value: formatDefault(p.default) }) }}</span>
                     <span v-if="p.min !== undefined || p.max !== undefined">{{ t('playConfig.range', { value: formatRange(p) }) }}</span>
                   </div>
                 </div>
@@ -618,6 +624,8 @@ interface PlayParam {
   device?: string;
   name?: string;
   placeholder?: string;
+  multiline?: boolean;
+  rows?: number;
 }
 
 interface PlayDetail {
@@ -1862,6 +1870,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.param-control--wide,
+.param-textarea {
+  width: 100%;
 }
 
 .param-unit {

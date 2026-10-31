@@ -110,12 +110,11 @@
       this.started = false
       this.title = t('朗读游戏')
       this.description = t('朗读屏幕上的文字，停下来或长时间不按原文读就会受到电击，读完即通关')
-      this.version = '1.0.0'
+      this.version = '1.0.2'
       this.author = '游戏设计师'
       this.config = {
-        textSource: 'builtin',
-        textIndex: 1,
-        customText: '',
+        // 与 manifest 的 customText 默认值保持一致；清空时退回第一篇内置文本。
+        customText: '窗外下了一夜的小雨，早上醒来，空气里都是泥土的味道。我推开门，看见院子里的花开了几朵，叶子上还挂着水珠。邻居家的小狗跑过来，摇着尾巴，好像也在说早上好。',
         silenceLimit: 6,
         stallLimit: 20,
         warnLead: 2,
@@ -320,12 +319,9 @@
     }
 
     _currentTextChoice() {
-      const source = String(this.config.textSource || 'builtin')
-      if (source === 'custom') {
-        const custom = String(this.config.customText == null ? '' : this.config.customText).trim()
-        if (custom) return { title: t('自定义文本'), text: custom }
-      }
-      return this._pickText({ texts: this.texts }, this.config.textIndex)
+      const custom = String(this.config.customText == null ? '' : this.config.customText).trim()
+      if (custom) return { title: t('朗读文本'), text: custom }
+      return this._pickText({ texts: this.texts }, 1)
     }
 
     _pickText(payload, index) {

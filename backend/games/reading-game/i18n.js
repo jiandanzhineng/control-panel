@@ -99,6 +99,7 @@
       "（语音识别不可用）": "(speech recognition unavailable)",
       "内置文本": "Built-in text",
       "自定义文本": "Custom text",
+      "朗读文本": "Reading text",
       "文本 {n}": "Text {n}"
     }
   });
