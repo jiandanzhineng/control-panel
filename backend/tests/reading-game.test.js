@@ -1171,3 +1171,259 @@ test('wakeLock 有则申请并释放，无则标记不支持', async () => {
   assert.strictEqual(await g2._requestWakeLock(), false)
   assert.strictEqual(g2.wakeLockSupported, false)
 })
+
+console.log('\n[反复朗读与背诵单元测试]')
+
+const maskSample = pinyinService.textToPinyin('春天来了，花儿开了。').chars
+
+test('选字：比例、只遮汉字、至少一个、100% 全遮', () => {
+  assert.strictEqual(core.rgMaskRatio(1, 10, 10), 10)
+  assert.strictEqual(core.rgMaskRatio(4, 10, 30), 100)
+  assert.deepStrictEqual(core.rgSelectMaskChars(maskSample, 0, 1, null, () => 0.5), [])
+  const zh = maskSample.filter(c => c.isZh).map(c => c.charIndex)
+  const low = core.rgSelectMaskChars(maskSample, 1, 1, null, () => 0.5)
+  assert.strictEqual(low.length, 1, '比例 > 0 时至少遮 1 个')
+  assert.ok(zh.indexOf(low[0]) >= 0, '只能遮汉字')
+  const half = core.rgSelectMaskChars(maskSample, 50, 1, null, () => 0.5)
+  assert.strictEqual(half.length, Math.round(zh.length * 0.5))
+  const all = core.rgSelectMaskChars(maskSample, 100, 1, null, () => 0.5)
+  assert.strictEqual(all.length, zh.length)
+  assert.deepStrictEqual(all.slice().sort((a, b) => a - b), zh.slice().sort((a, b) => a - b))
+})
+
+test('选字：上一遍遮过的字尽量不再遮，同一档内随机', () => {
+  const zhCount = maskSample.filter(c => c.isZh).length
+  const first = core.rgSelectMaskChars(maskSample, 30, 1, null, () => 0.1)
+  const last = new Map()
+  first.forEach(i => last.set(i, 1))
+  const second = core.rgSelectMaskChars(maskSample, 30, 2, last, () => 0.9)
+  assert.strictEqual(second.length, Math.round(zhCount * 0.3))
+  const overlap = second.filter(i => first.indexOf(i) >= 0)
+  assert.strictEqual(overlap.length, 0, '还有没遮过的字时不应重复遮')
+  const a = core.rgSelectMaskChars(maskSample, 30, 2, null, seqRandom(false))
+  const b = core.rgSelectMaskChars(maskSample, 30, 2, null, seqRandom(true))
+  assert.notDeepStrictEqual(a, b, '同一档内应受随机数影响')
+})
+
+test('正确率：分母扣掉结尾，跳过的字不算', () => {
+  assert.strictEqual(core.rgAccuracy(new Set([0, 1, 2]), 10, 10), 0.3)
+  // 结尾 10 个没确认时最多只扣 TAIL_ESTIMATE_SLACK
+  assert.strictEqual(core.rgAccuracy(new Set([0, 1]), 20, 10), 2 / 10)
+  assert.strictEqual(core.rgAccuracy(new Set([0, 1]), 20, 15), 2 / 15)
+  assert.strictEqual(core.rgAccuracy(new Set([0, 1, 2, 3]), 4, 4), 1)
+  const al = new ReadingAligner(sourceSyllables)
+  const r = alignText(sentences[2], cumulativeSyllables(1), al)
+  const matched = new Set()
+  core.rgAddMatchedPairs(matched, r, r.newPos)
+  assert.ok(matched.size > 0)
+  assert.ok(Math.max.apply(null, Array.from(matched)) < r.newPos, '只计入采纳位置之前')
+  const skipped = core.rgAccuracy(matched, sourceSyllables.length, r.newPos)
+  assert.ok(skipped < 1, '被跳过的句子拉低正确率')
+})
+
+function seqRandom (desc) {
+  let n = 0
+  return () => { n += 1; return desc ? 1 - n / 1000 : n / 1000 }
+}
+
+function newFlowGame (cfg, matched) {
+  const g = new ReadingGame()
+  Object.assign(g.config, cfg || {})
+  g.state = g._initialState()
+  g.state.startTime = Date.now()
+  g.state.mode = g._mode()
+  g.state.totalPasses = g.state.mode === 'read' ? g._passCount() : 0
+  g.state.passNumber = 1
+  g.state.level = g.state.mode === 'recite' ? 1 : 0
+  g.state.sourceText = SOURCE
+  g.state.totalSyllables = 100
+  g.state.position = 100
+  g.passId = 1
+  g.state.passId = 1
+  const hits = typeof matched === 'number'
+    ? Array.from({ length: matched }, (_, i) => i)
+    : (matched || Array.from({ length: 100 }, (_, i) => i))
+  g.passMatched = new Set(hits)
+  g.trigger = new ReadingTriggerMachine({ silenceLimit: 6, warnLead: 2, startGrace: 0, checkContent: false, maxTickGapMs: 1e9 }, () => Date.now())
+  return g
+}
+
+test('多遍流程：朗读 2 遍后通关', () => {
+  const g = newFlowGame({ mode: 'read', passes: 2, totalTime: 0, restSeconds: 0 })
+  g._onPassDone('won')
+  assert.strictEqual(g.state.completedPasses, 1)
+  assert.strictEqual(g.state.won, false, '第一遍后不应通关')
+  assert.strictEqual(g.passId, 2, '进入下一遍应有新 passId')
+  assert.strictEqual(g.state.passNumber, 2)
+  assert.strictEqual(g.state.phase, 'reading')
+  g.state.position = 100
+  g.passMatched = new Set(Array.from({ length: 100 }, (_, i) => i))
+  g._onPassDone('won')
+  assert.strictEqual(g.state.completedPasses, 2)
+  assert.strictEqual(g.state.won, true, '读满 2 遍应通关')
+  assert.strictEqual(g.state.unconfirmed, false)
+})
+
+test('多遍流程：背诵升级、留级和 100% 遮字通关', () => {
+  const up = newFlowGame({ mode: 'recite', passRate: 85, maskStart: 10, maskStep: 50, restSeconds: 20 }, 90)
+  up.state.lastAccuracy = null
+  up.state.maskRatio = 10
+  up.state.level = 1
+  up._onPassDone('won')
+  assert.strictEqual(up.state.level, 2, '正确率达标应升级')
+  assert.strictEqual(up.state.phase, 'rest')
+  assert.strictEqual(up.state.maskRatio, 60, '下一遍遮字比例应按新等级')
+  assert.strictEqual(up.trigger.paused, true, '休息期间暂停判定')
+  assert.strictEqual(up.state.lastPassPassed, true)
+  const stay = newFlowGame({ mode: 'recite', passRate: 85, maskStart: 10, maskStep: 50, restSeconds: 20 }, 50)
+  stay.state.maskRatio = 10
+  stay.state.level = 1
+  stay._onPassDone('won')
+  assert.strictEqual(stay.state.level, 1, '正确率不够应留级')
+  assert.strictEqual(stay.state.lastPassPassed, false)
+  assert.strictEqual(stay.state.phase, 'rest')
+  const win = newFlowGame({ mode: 'recite', passRate: 85, maskStart: 10, maskStep: 50, restSeconds: 20 }, 100)
+  win.state.maskRatio = 100
+  win.state.level = 3
+  win._onPassDone('won')
+  assert.strictEqual(win.state.won, true, '100% 遮字达标应通关')
+  assert.strictEqual(win.state.phase, 'won')
+})
+
+test('多遍流程：旧 passId 的结果和休息期间的识别结果都被丢弃', async () => {
+  const g = newFlowGame({ mode: 'read', passes: 2, totalTime: 0, restSeconds: 20 })
+  g.state.position = 10
+  g.passId = 2
+  g.state.phase = 'reading'
+  g._applyResult(1, { verdict: 'reading', newPos: 80, strongStart: 78, chainStart: 76, pairs: [], windowStart: 0 }, '旧遍结果', 0, 1000, false, 1)
+  assert.strictEqual(g.state.position, 10, '旧 passId 不得推进')
+  g.passId = 3
+  g.state.phase = 'rest'
+  g._applyResult(2, { verdict: 'reading', newPos: 90, strongStart: 88, chainStart: 86, pairs: [], windowStart: 0 }, '休息期结果', 0, 2000, false, 3)
+  assert.strictEqual(g.state.position, 10, '休息期间不得推进')
+  const calls = []
+  g.deviceManager = makeDevice(calls)
+  await g.doShock('T1', Date.now())
+  assert.strictEqual(calls.length, 0, '休息期间绝不电击')
+  assert.strictEqual(g.state.shockCount, 0)
+})
+
+test('背诵每级放宽沉默时限，朗读玩法不变', () => {
+  const g = newFlowGame({ mode: 'recite', silenceLimit: 6, silenceBonus: 2, restSeconds: 0 })
+  g.state.level = 1
+  assert.strictEqual(g._effectiveSilenceLimit(), 8)
+  g.state.level = 3
+  assert.strictEqual(g._effectiveSilenceLimit(), 12)
+  g.config.mode = 'read'
+  g.state.level = 3
+  assert.strictEqual(g._effectiveSilenceLimit(), 6)
+})
+
+test('待定跳转：一次不推进，连续两次推进，回到原位后清除', () => {
+  const gate = new core.PendingJumpGate({ minJump: 12, slack: 4 })
+  const far = { verdict: 'reading', newPos: 30, strongStart: 28, chainStart: 26 }
+  assert.strictEqual(gate.evaluate({ verdict: 'reading', newPos: 4, strongStart: 2, chainStart: 1 }, 0).action, 'advance', '小跳照常推进')
+  assert.strictEqual(gate.evaluate(far, 0).action, 'defer')
+  assert.ok(gate.pending)
+  const second = gate.evaluate({ verdict: 'reading', newPos: 33, strongStart: 31, chainStart: 29 }, 0)
+  assert.strictEqual(second.action, 'accept')
+  assert.ok(second.newPos >= 33)
+  assert.strictEqual(gate.pending, null)
+  gate.evaluate(far, 0)
+  assert.strictEqual(gate.evaluate({ verdict: 'reading', newPos: 3, strongStart: 2, chainStart: 1 }, 0).action, 'advance')
+  assert.strictEqual(gate.pending, null)
+})
+
+test('待定跳转接入游戏：跳远先不推进，连续两段后承认', () => {
+  const g = newFlowGame({ mode: 'read', passes: 1 })
+  g.state.position = 0
+  g.state.phase = 'reading'
+  g.passMatched = new Set()
+  g._applyResult(1, { verdict: 'reading', newPos: 24, strongStart: 20, chainStart: 18, pairs: [{ asrIndex: 0, srcIndex: 20, sim: 0.9 }], windowStart: 0 }, '跳远', 0, 1000, false, 1)
+  assert.strictEqual(g.state.position, 0, '第一段跳远先待定')
+  assert.ok(g.jumpGate.pending)
+  g._applyResult(2, { verdict: 'reading', newPos: 30, strongStart: 26, chainStart: 24, pairs: [{ asrIndex: 0, srcIndex: 24, sim: 0.9 }], windowStart: 0 }, '再跳', 0, 2000, false, 1)
+  assert.strictEqual(g.state.position, 30, '连续两段后承认跳转')
+  assert.strictEqual(g.jumpGate.pending, null)
+})
+
+function makeLockApi (calls, opts) {
+  const options = opts || {}
+  return {
+    device (id) {
+      if (id === 'lock') {
+        return {
+          isMapped: () => options.mapped !== false,
+          invoke: async (capability, action, params) => {
+            calls.push({ id, capability, action, params })
+            if (options.fail) throw new Error('lock failed')
+            return true
+          }
+        }
+      }
+      return { isMapped: () => false, invoke: async () => true }
+    }
+  }
+}
+
+async function startWithStubs (g) {
+  g._initSpeech = async () => false
+  g.loadText = async () => { g.state.sourceText = '测试'; g.state.sourceTitle = '测试' }
+  g.preparePinyin = async () => { g.state.chars = []; g.state.sourceSyllables = []; g.state.totalSyllables = 0 }
+  g.bindEsc = () => {}
+  g.bindLifecycle = () => {}
+  g._requestWakeLock = async () => false
+  g.startAudio = async () => {}
+  g.startTimers = () => {}
+  g.renderUI = () => {}
+  await g.start()
+}
+
+test('自动锁：开始上锁，结束/通关/离开都解锁', async () => {
+  const calls = []
+  const g = new ReadingGame({ deviceApi: makeLockApi(calls) })
+  await startWithStubs(g)
+  assert.deepStrictEqual(calls.filter(c => c.action === 'setOpen').pop().params, { open: false }, '开始应上锁')
+  await g.end()
+  assert.strictEqual(calls[calls.length - 1].params.open, true, 'end 应解锁')
+
+  const calls2 = []
+  const g2 = new ReadingGame({ deviceApi: makeLockApi(calls2) })
+  g2.state.startTime = Date.now()
+  g2.finishWin()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.strictEqual(calls2[calls2.length - 1].params.open, true, '通关应解锁')
+
+  const calls3 = []
+  const listeners = {}
+  const win = { addEventListener: (name, fn) => { listeners[name] = fn }, removeEventListener: () => {} }
+  const g3 = new ReadingGame({ deviceApi: makeLockApi(calls3), window: win })
+  g3.bindLifecycle()
+  listeners.pagehide()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  assert.strictEqual(calls3[calls3.length - 1].params.open, true, 'pagehide 应解锁')
+})
+
+test('自动锁：开始失败解锁，未映射或发送失败都不影响游戏', async () => {
+  const calls = []
+  const g = new ReadingGame({ deviceApi: makeLockApi(calls) })
+  g._initSpeech = async () => false
+  g.loadText = async () => {}
+  g.preparePinyin = async () => { g.state.chars = []; g.state.sourceSyllables = []; g.state.totalSyllables = 0 }
+  g.bindEsc = () => {}
+  g.bindLifecycle = () => {}
+  g._requestWakeLock = async () => false
+  g.startAudio = async () => { throw new Error('no audio') }
+  await assert.rejects(() => g.start())
+  assert.strictEqual(calls[calls.length - 1].params.open, true, '开始失败应解锁')
+
+  const unmapped = []
+  const g2 = new ReadingGame({ deviceApi: makeLockApi(unmapped, { mapped: false }) })
+  assert.strictEqual(await g2._setLock(false), false)
+  assert.strictEqual(unmapped.length, 0, '未映射时跳过')
+
+  const failCalls = []
+  const g3 = new ReadingGame({ deviceApi: makeLockApi(failCalls, { fail: true }) })
+  assert.strictEqual(await g3._setLock(true), false, '发送失败只记日志')
+  assert.strictEqual(g3.lockState, true)
+})

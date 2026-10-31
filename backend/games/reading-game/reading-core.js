@@ -88,6 +88,147 @@ function rgMatchScore(sim) {
   return -1.5
 }
 
+// 背诵第 level 级（从 1 开始）的遮字比例，封顶 100
+function rgMaskRatio(level, maskStart, maskStep) {
+  const start = Math.max(0, Math.min(100, Number(maskStart) || 0))
+  const step = Math.max(0, Math.min(100, Number(maskStep) || 0))
+  const lv = Math.max(1, Math.floor(Number(level) || 1))
+  return Math.min(100, start + (lv - 1) * step)
+}
+
+function _lastMaskedAt(lastMaskedPass, idx) {
+  if (!lastMaskedPass) return -1
+  let value
+  if (typeof lastMaskedPass.get === 'function') value = lastMaskedPass.get(idx)
+  else value = lastMaskedPass[idx]
+  const n = Number(value)
+  return Number.isFinite(n) ? n : -1
+}
+
+/**
+ * 选本遍要遮住的字。只遮汉字；比例 > 0 时至少遮 1 个；
+ * 从没遮过 / 最久没遮过的字优先，同一档内随机（random 可注入）。
+ * 返回升序的 charIndex 数组。
+ */
+function rgSelectMaskChars(chars, ratio, passNumber, lastMaskedPass, random) {
+  const zh = []
+  ;(chars || []).forEach((c) => {
+    if (c && c.isZh && Number.isFinite(Number(c.charIndex))) zh.push(Number(c.charIndex))
+  })
+  if (!zh.length) return []
+  const pct = Math.max(0, Math.min(100, Number(ratio) || 0))
+  if (pct <= 0) return []
+  let count = Math.round(pct / 100 * zh.length)
+  if (count < 1) count = 1
+  if (count > zh.length) count = zh.length
+  const rnd = typeof random === 'function' ? random : Math.random
+  const ordered = zh.map((idx) => ({
+    idx,
+    last: _lastMaskedAt(lastMaskedPass, idx),
+    r: Number(rnd()) || 0
+  }))
+  // 稳定排序：先按“最久没遮”排，同一档按随机数
+  ordered.sort((a, b) => (a.last - b.last) || (a.r - b.r))
+  return ordered.slice(0, count).map((x) => x.idx).sort((a, b) => a - b)
+}
+
+/**
+ * 正确率：分母扣掉最后一段未能确认的结尾（最多 TAIL_ESTIMATE_SLACK 个音节），
+ * 被跳过的字不在 matched 里，照样算错。
+ */
+function rgAccuracy(matched, totalSyllables, endPosition, slack) {
+  const total = Math.max(0, Math.floor(Number(totalSyllables) || 0))
+  if (!total) return 0
+  const end = Math.max(0, Math.min(total, Math.floor(Number(endPosition) || 0)))
+  const drop = slack == null ? RG_CONST.TAIL_ESTIMATE_SLACK : Math.max(0, Number(slack) || 0)
+  const denom = Math.max(1, total - Math.min(total - end, drop))
+  let hits = 0
+  if (matched && typeof matched.forEach === 'function') {
+    matched.forEach((idx) => {
+      const n = Number(idx)
+      if (n >= 0 && n < denom) hits += 1
+    })
+  }
+  return Math.min(1, hits / denom)
+}
+
+// 把一段对齐结果里 sim >= 0.65 的配对计入 matched（绝对音节下标）
+function rgAddMatchedPairs(matched, result, maxPos) {
+  if (!matched || typeof matched.add !== 'function' || !result || !Array.isArray(result.pairs)) return 0
+  const windowStart = Number(result.windowStart)
+  const base = Number.isFinite(windowStart) ? windowStart : 0
+  const limit = Number.isFinite(Number(maxPos)) ? Number(maxPos) : Infinity
+  let added = 0
+  result.pairs.forEach((p) => {
+    if (!p || Number(p.sim) < 0.65) return
+    const abs = base + Number(p.srcIndex)
+    if (!Number.isFinite(abs) || abs < 0 || abs >= limit) return
+    if (!matched.has(abs)) {
+      matched.add(abs)
+      added += 1
+    }
+  })
+  return added
+}
+
+/**
+ * 顺着读：第一个强匹配比当前位置超前 12 个音节以上时先不推进，
+ * 连续两条结果都落在跳转位附近才承认。纯逻辑，时间/位置由调用方传入。
+ */
+class PendingJumpGate {
+  constructor(options) {
+    const opts = options || {}
+    this.minJump = opts.minJump != null ? Number(opts.minJump) : 12
+    this.slack = opts.slack != null ? Number(opts.slack) : 4
+    this.pending = null
+  }
+
+  reset() {
+    this.pending = null
+  }
+
+  evaluate(result, position) {
+    const pos = Math.max(0, Number(position) || 0)
+    const strong = Number(result && result.strongStart)
+    const chain = Number(result && result.chainStart)
+    const newPos = Number(result && result.newPos)
+    if (!Number.isFinite(strong) || strong < 0) {
+      this.pending = null
+      return { action: 'advance' }
+    }
+    if (!this.pending) {
+      if (strong >= pos + this.minJump) {
+        this.pending = {
+          chainStart: chain >= 0 ? chain : strong,
+          strongStart: strong,
+          newPos: Number.isFinite(newPos) ? newPos : pos
+        }
+        return { action: 'defer', pending: this.pending }
+      }
+      return { action: 'advance' }
+    }
+    const pending = this.pending
+    if (chain >= 0 && chain >= pending.chainStart - this.slack) {
+      this.pending = null
+      return {
+        action: 'accept',
+        pending,
+        newPos: Math.max(pending.newPos || 0, Number.isFinite(newPos) ? newPos : pos)
+      }
+    }
+    if (strong >= pos + this.minJump) {
+      this.pending = {
+        chainStart: chain >= 0 ? chain : strong,
+        strongStart: strong,
+        newPos: Number.isFinite(newPos) ? newPos : pos
+      }
+      return { action: 'defer', pending: this.pending, replaced: pending }
+    }
+    this.pending = null
+    return { action: 'advance', cleared: pending }
+  }
+}
+
 function rgEscapeHtml(text) {
   return String(text == null ? '' : text)
     .replace(/&/g, '&amp;')
@@ -132,7 +273,9 @@ class ReadingAligner {
       consecutiveStrong: 0,
       score: 0,
       reason: '',
-      pairs: []
+      pairs: [],
+      windowStart: 0,
+      strongStart: -1
     }, extra || {})
   }
 
@@ -278,7 +421,9 @@ class ReadingAligner {
         reason: shortReading ? 'short-advanced' : 'too-short',
         pairs,
         chainStart: pairs.length ? lo + pairs[0].srcIndex : -1,
-        chainEnd: pairs.length ? lo + pairs[pairs.length - 1].srcIndex : -1
+        chainEnd: pairs.length ? lo + pairs[pairs.length - 1].srcIndex : -1,
+        windowStart: lo,
+        strongStart: firstStrongSrc >= 0 ? lo + firstStrongSrc : -1
       })
     }
     let verdict = 'reading'
@@ -295,7 +440,9 @@ class ReadingAligner {
       reason: verdict === 'offtext' ? 'low-match' : (advanced ? 'advanced' : 'behind'),
       pairs,
       chainStart: pairs.length ? lo + pairs[0].srcIndex : -1,
-      chainEnd: pairs.length ? lo + pairs[pairs.length - 1].srcIndex : -1
+      chainEnd: pairs.length ? lo + pairs[pairs.length - 1].srcIndex : -1,
+      windowStart: lo,
+      strongStart: firstStrongSrc >= 0 ? lo + firstStrongSrc : -1
     })
   }
 }
@@ -490,7 +637,7 @@ class ReadingTriggerMachine {
     if (verdict === 'reading' || verdict === 'offtext') {
       this.unknownStreak = 0
       if (this.degraded) this.degraded = false
-      if (verdict === 'offtext' || (verdict === 'reading' && !seg.advanced)) {
+      if (verdict === 'offtext' || (verdict === 'reading' && !seg.advanced && !seg.pendingJump)) {
         this.badSegments.push({ t, verdict, advanced: !!seg.advanced })
       }
     }
@@ -959,6 +1106,10 @@ function rgVerdictLabel(verdict) {
     rgEditSim,
     rgSyllableSim,
     rgMatchScore,
+    rgMaskRatio,
+    rgSelectMaskChars,
+    rgAccuracy,
+    rgAddMatchedPairs,
     rgEscapeHtml,
     rgBytesToBase64,
     rgVerdictLabel,
@@ -967,6 +1118,7 @@ function rgVerdictLabel(verdict) {
     rgWorkletCode,
     ReadingAligner,
     ReadingTriggerMachine,
+    PendingJumpGate,
     VoiceDetector,
     PcmRingBuffer
   }
