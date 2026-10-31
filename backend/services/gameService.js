@@ -88,6 +88,7 @@ function scanHtmlGames() {
         folder: ent.name,
         devices: manifest.devices || [],
         params: manifest.params || [],
+        models: manifest.models || [],
         version: manifest.version || '1.0.0',
         createdAt: Date.now(),
         lastPlayed: null,

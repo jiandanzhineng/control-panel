@@ -4,6 +4,7 @@
 const localSession = require('./localSessionService');
 const voiceSettings = require('./voiceSettingsService');
 const logService = require('./logService');
+const modelRuntime = require('../model-runtime');
 
 const DIRECT_BASE_DEFAULT = 'https://api.siliconflow.cn';
 const MODEL = 'FunAudioLLM/SenseVoiceSmall';
@@ -44,28 +45,45 @@ function parseJson(text) {
  * 选择通道：自备 key 直连，否则用账号 JWT 走中转。
  * 返回的 headers 含密钥，调用方不得记日志或回传。
  */
-function resolveChannel() {
+function resolveChannels() {
+  const channels = [];
   const key = String(voiceSettings.getSiliconFlowKey() || '').trim();
   if (key) {
-    return {
+    channels.push({
       mode: 'own_key',
       url: `${directBase()}/v1/audio/transcriptions`,
       headers: { Authorization: `Bearer ${key}` },
-    };
+    });
   }
   const session = localSession.get();
   const token = session && session.token;
-  if (!token) throw makeError('NOT_SIGNED_IN', '未登录控制面板，请先登录或填写自己的 SiliconFlow key');
-  const base = relayBase();
-  if (!base) throw makeError('NO_STT', '语音识别服务地址未配置');
-  return {
-    mode: 'relay',
-    url: `${base}/audio/transcriptions`,
-    headers: { Authorization: `Bearer ${token}` },
-  };
+  if (token) {
+    const base = relayBase();
+    if (base) {
+      channels.push({
+        mode: 'relay',
+        url: `${base}/audio/transcriptions`,
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    }
+  }
+  if (!channels.length) {
+    throw makeError('NOT_SIGNED_IN', '未登录控制面板，请先登录或填写自己的 SiliconFlow key');
+  }
+  return channels;
 }
 
+function resolveChannel() {
+  return resolveChannels()[0];
+}
+
+const LOCAL_TASK = 'asr.transcribe';
+
 function status() {
+  try {
+    const local = modelRuntime.localStatus(LOCAL_TASK);
+    if (local) return local;
+  } catch (_) {}
   try {
     const channel = resolveChannel();
     return { ready: true, mode: channel.mode };
@@ -115,18 +133,11 @@ function mapUpstreamError(status, data, mode) {
 }
 
 /**
- * 转写一段音频：{ audio(base64), format, timeoutMs } → { text, mode, latencyMs }。
- * 失败 reject Error，带 code：NOT_SIGNED_IN | NO_STT | TIMEOUT | RATE_LIMITED |
- * UPSTREAM_* | BAD_AUDIO。日志只记通道、状态码和耗时。
+ * 云端通道请求。失败 reject Error，带 code：NOT_SIGNED_IN | NO_STT | TIMEOUT |
+ * RATE_LIMITED | UPSTREAM_* | BAD_AUDIO。日志只记通道、状态码和耗时。
  */
-async function transcribe({ audio, format = 'wav', timeoutMs } = {}) {
-  const startedAt = Date.now();
-  const buffer = decodeAudio(audio);
-  const fmt = String(format || 'wav').toLowerCase();
+async function requestChannel(channel, buffer, fmt, timeout, startedAt) {
   const mime = FORMATS[fmt];
-  if (!mime) throw makeError('BAD_AUDIO', `不支持的音频格式: ${format}`);
-  const channel = resolveChannel();
-  const timeout = clampTimeout(timeoutMs);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
@@ -165,10 +176,50 @@ async function transcribe({ audio, format = 'wav', timeoutMs } = {}) {
   }
 }
 
+/** 云端回退：自备 key 直连失败后再试官方中转。 */
+async function transcribeCloud(input = {}, opts = {}) {
+  const buffer = input.buffer || decodeAudio(input.audio);
+  const fmt = String(input.format || 'wav').toLowerCase();
+  if (!FORMATS[fmt]) throw makeError('BAD_AUDIO', `不支持的音频格式: ${input.format}`);
+  const timeout = clampTimeout(opts.timeoutMs);
+  const channels = resolveChannels();
+  let lastError = null;
+  for (const channel of channels) {
+    try {
+      return await requestChannel(channel, buffer, fmt, timeout, Date.now());
+    } catch (error) {
+      lastError = error;
+      if (channels.length > 1) {
+        logService.warn('VoiceSTT', `mode=${channel.mode} failed code=${error?.code || 'ERROR'}, trying next channel`);
+      }
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * 转写一段音频：{ audio(base64), format, timeoutMs } → { text, mode, latencyMs }。
+ * 先走本地模型运行时；本地失败时 taskRouter 会回退到云端。
+ */
+async function transcribe({ audio, format = 'wav', timeoutMs } = {}) {
+  const buffer = decodeAudio(audio);
+  const fmt = String(format || 'wav').toLowerCase();
+  if (!FORMATS[fmt]) throw makeError('BAD_AUDIO', `不支持的音频格式: ${format}`);
+  return modelRuntime.run(LOCAL_TASK, {
+    audio: buffer.toString('base64'),
+    buffer,
+    format: fmt,
+  }, { timeoutMs: clampTimeout(timeoutMs) });
+}
+
+modelRuntime.registerCloudHandler(LOCAL_TASK, transcribeCloud);
+
 module.exports = {
   status,
   resolveChannel,
+  resolveChannels,
   transcribe,
+  transcribeCloud,
   clampTimeout,
   MODEL,
   MIN_TIMEOUT_MS,

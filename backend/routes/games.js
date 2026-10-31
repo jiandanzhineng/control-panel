@@ -48,6 +48,7 @@ router.get('/external/meta', async (req, res) => {
       version: manifest.version || '1.0.0',
       devices: manifest.devices || [],
       params: manifest.params || [],
+      models: manifest.models || [],
       // 前缀式代理路径，前端据此拼 iframe src（同源化）。
       // 含协议段 <http|https>，使本机/局域网 http 游戏站也能被代理。
       gamePath: `/games/proxy/${u.protocol.replace(':', '')}/${u.host}${u.pathname}${u.search}`,
