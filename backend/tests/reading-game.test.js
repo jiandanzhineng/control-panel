@@ -1678,3 +1678,144 @@ test('休息时按下一遍遮字从 0 渲染，不露出被遮的原字', () =>
   g.state.position = 2
   assert.strictEqual(g._displayCursor(), 2, '非休息时仍按阅读位置')
 })
+
+// ---- 识别滞后/超时不能导致多电 ----
+
+function endHoldGame (overrides) {
+  const g = newFlowGame({ mode: 'read', passes: 2, restSeconds: 20, silenceLimit: 6, warnLead: 2, sttTimeout: 20000 })
+  g.state.phase = 'reading'
+  g.state.hidden = false
+  g.state.paused = false
+  g.state.totalSyllables = 214
+  g.state.position = 67
+  g.state.degraded = false
+  g.state.sttSlow = false
+  g.state.sttInFlight = 0
+  g.audioStartTime = 1000
+  g.sttErrorAt = 0
+  g.requestStarts = []
+  g.finalQueue = []
+  g.voiceTicks = [{ t: 1000 + 70000, voiced: true }]
+  g.voicedBuckets = new Map()
+  g.trigger.lastEnergyAt = Date.now() - 8000
+  g.state.endWait = { startedAt: Date.now() - 3000, posAtStart: 67, deadline: Date.now() + 5000 }
+  Object.assign(g, overrides || {})
+  return g
+}
+
+test('第二遍末尾识别超时/失败时，沉默按未确认结算而不是电击', () => {
+  const now = Date.now()
+  const g = endHoldGame({ sttErrorAt: now - 5000 })
+  g._updateEndHold(now)
+  assert.strictEqual(g.state.completedPasses, 1)
+  assert.strictEqual(g.state.lastPassKind, 'unconfirmed')
+  assert.strictEqual(g.state.phase, 'rest', '读玩法应进入休息/结算，而不是警告')
+  assert.strictEqual(g.state.warning, null, '不得进入电击警告')
+  assert.strictEqual(g.state.shockCount, 0)
+  assert.strictEqual(g.state.sttInFlight, 0)
+})
+
+test('第二遍一直出声但识别全部超时时，末尾不会因沉默电击', () => {
+  const now = Date.now()
+  const g = endHoldGame({ sttErrorAt: now - 1000 })
+  g.state.sttSlow = true
+  g.state.degraded = true
+  g.trigger.degraded = true
+  // 用户一直在读：最后一段有声且刚刚还在出声
+  g.trigger.lastEnergyAt = now - 8000
+  g._updateEndHold(now)
+  assert.strictEqual(g.state.shockCount, 0)
+  assert.strictEqual(g.state.warning, null)
+  assert.strictEqual(g.state.completedPasses, 1)
+  assert.strictEqual(g.state.phase, 'rest')
+})
+
+test('识别正常且最后一段有进展时，T1 判定保持原样', () => {
+  const now = Date.now()
+  const g = endHoldGame()
+  g.state.position = 80
+  g.trigger.setTailGuard(true, now)
+  g._updateEndHold(now)
+  assert.strictEqual(g.state.completedPasses, 0, '识别可靠时不能直接按未确认结算')
+  assert.strictEqual(g.state.phase, 'reading')
+  assert.strictEqual(g.trigger.tailGuard, false, '应退出结尾等待，恢复正常 T1')
+  assert.strictEqual(g.state.warning, null)
+})
+
+test('换遍重置所有跨遍状态，上一遍失败不影响新一遍', async () => {
+  const g = newFlowGame({ mode: 'read', passes: 2, restSeconds: 0 })
+  const now = Date.now()
+  g.passId = 1
+  g.passEnded = true
+  g.appliedAudioEndMs = 60000
+  g.requestStarts = [{ seq: 1, passId: 1, t: now, audioStartMs: 0, audioEndMs: 60000 }]
+  g.voicedBuckets = new Map([[1, 1000], [2, 1000]])
+  g.voiceTicks = [{ t: now, voiced: true }]
+  g.latencySamples = [{ t: now, ms: 18000 }]
+  g.sttErrorAt = now - 1000
+  g.lastChunkEndSec = 50
+  g.audioStartTime = 1000
+  g.testAudioUrl = 'x'
+  g.state.endWait = { startedAt: now, posAtStart: 0, deadline: now + 1000 }
+  g.state.tailConfirm = { startedAt: now, attempts: 1 }
+  g.state.paused = true
+  g.trigger.setTransportOk(false)
+  g.trigger.degraded = true
+  g.trigger.unknownStreak = 3
+  g._startNextPass(now)
+  assert.strictEqual(g.appliedAudioEndMs, 0)
+  assert.deepStrictEqual(g.requestStarts, [])
+  assert.strictEqual(g.voicedBuckets.size, 0)
+  assert.deepStrictEqual(g.voiceTicks, [])
+  assert.deepStrictEqual(g.latencySamples, [])
+  assert.strictEqual(g.sttErrorAt, 0)
+  assert.strictEqual(g.lastChunkEndSec, 0)
+  assert.strictEqual(g.audioStartTime, now)
+  assert.strictEqual(g.ringBuffer.total, 0, '测试音频换遍应使用新缓冲区')
+  assert.strictEqual(g.state.endWait, null)
+  assert.strictEqual(g.state.tailConfirm, null)
+  assert.strictEqual(g.state.paused, false)
+  assert.strictEqual(g.passEnded, false)
+  assert.strictEqual(g.trigger.transportOk, true)
+  assert.strictEqual(g.trigger.degraded, false)
+  assert.strictEqual(g.trigger.unknownStreak, 0)
+  assert.strictEqual(g.trigger.paused, false)
+
+  // 上一遍的失败请求：stale 丢弃，不写 sttErrorAt、不扣新一遍在途计数
+  g.passId = 2
+  g.passEnded = false
+  g.sttErrorAt = 0
+  g.latencySamples = []
+  g.state.sttInFlight = 1
+  g.finalQueue = []
+  g.requestStarts = [{ seq: 9, passId: 1, t: now, audioStartMs: 0, audioEndMs: 1000 }]
+  g.speech = { transcribe: async () => { const e = new Error('timeout'); e.code = 'TIMEOUT'; throw e } }
+  await g._processSegment(9, Buffer.alloc(2), false, 0, 1000, false, 1)
+  assert.strictEqual(g.sttErrorAt, 0, '上一遍失败不能污染新一遍的识别可靠标记')
+  assert.strictEqual(g.state.sttInFlight, 1, '上一遍的 finally 不能扣新一遍的在途计数')
+  assert.deepStrictEqual(g.latencySamples, [], '上一遍的迟到延迟不进入新一遍')
+})
+
+test('识别响应变慢时，末尾沉默也按未确认结算而不是电击', () => {
+  const now = Date.now()
+  const g = endHoldGame()
+  g.state.sttSlow = true
+  g._updateEndHold(now)
+  assert.strictEqual(g.state.completedPasses, 1)
+  assert.strictEqual(g.state.phase, 'rest')
+  assert.strictEqual(g.state.warning, null)
+  assert.strictEqual(g.state.shockCount, 0)
+})
+
+test('末尾等待超时但识别请求仍在途时，也不电击', () => {
+  const now = Date.now()
+  const g = endHoldGame()
+  g.state.sttInFlight = 1
+  g.requestStarts = [{ seq: 1, passId: 1, t: now - 20000, audioStartMs: 64000, audioEndMs: 70000 }]
+  g.state.endWait.deadline = now - 1
+  g._updateEndHold(now)
+  assert.strictEqual(g.state.completedPasses, 1)
+  assert.strictEqual(g.state.phase, 'rest')
+  assert.strictEqual(g.state.warning, null)
+  assert.strictEqual(g.state.shockCount, 0)
+})

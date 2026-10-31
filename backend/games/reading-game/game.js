@@ -179,6 +179,7 @@
       this.finalQueue = []
       this.tailConfirmAttempts = 0
       this.latencySamples = []
+      this.sttErrorAt = 0
       this.voicedBuckets = new Map()
       this.shockGen = 0
       this.chunkSeq = 0
@@ -432,6 +433,7 @@
         this.finalQueue = []
         this.tailConfirmAttempts = 0
         this.latencySamples = []
+        this.sttErrorAt = 0
         this.chunkSeq = 0
         this.lastChunkEndSec = 0
         this.voiceTicks = []
@@ -1335,7 +1337,7 @@
         return
       }
       const pending = this._pendingCoveringVoice()
-      if (!pending || now >= this.state.endWait.deadline) this._finishEndWait(now)
+      if (!pending || now >= this.state.endWait.deadline) this._finishEndWait(now, true)
       return
     }
     if (this.state.warning) return
@@ -1350,10 +1352,10 @@
       return
     }
     // 没有在途结果：直接按“估计位置 + tailCap”判定，必要时进入最终确认
-    this._finishEndWait(now)
+    this._finishEndWait(now, false)
   }
 
-  _finishEndWait(now) {
+  _finishEndWait(now, holding) {
     this.state.endWait = null
     const total = this.state.totalSyllables || 0
     if (total > 0 && this.state.position >= total - RG_CONST.WIN_SLACK_SYLLABLES) {
@@ -1367,6 +1369,20 @@
       this.trigger.setTailGuard(true, now)
       this.log('已接近结尾，正在最终确认最后一段朗读；确认期间不会电击', 'info')
       return
+    }
+    // 等待最后一段在途结果期间识别超时/失败或变慢：用户可能已经读完，
+    // 识别不可靠时只能少电，按“未能确认结尾”结算，不再因沉默电击。
+    if (holding) {
+      const timeoutMs = Math.max(15000, Number(this.config.sttTimeout) || 15000)
+      const recentError = this.sttErrorAt && now - this.sttErrorAt <= Math.max(20000, timeoutMs * 1.5)
+      const unreliable = recentError || this.state.sttSlow || this.state.degraded ||
+        this.sttUnavailable || this.state.sttInFlight > 0
+      if (unreliable) {
+        this.trigger.clearTailGuard()
+        this.log('最后一段识别超时或失败，本遍按未能确认结尾结算，不电击', 'warning')
+        this._onPassDone('unconfirmed')
+        return
+      }
     }
     // 其他情况恢复正常 T1；把计时推进到“应立即警告”，仍给满 warnLead
     if (this.trigger.tailGuard) this.trigger.setTailGuard(false, now)
@@ -1556,6 +1572,8 @@
     this.appliedAudioEndMs = 0
     this.requestStarts = []
     this.finalQueue = []
+    this.latencySamples = []
+    this.sttErrorAt = 0
     this.voiceTicks = []
     this.voicedBuckets = new Map()
     if (this.detector) {
@@ -1650,6 +1668,7 @@
     } catch (error) {
       this._updateTransport(Date.now() - startedAt, passId)
       if (!this._isStalePass(passId)) {
+        this.sttErrorAt = Date.now()
         const reason = error && error.code === 'NO_STT' ? 'no-speech' : 'exception'
         this._applyUnknown(seq, reason, null, audioStartMs, audioEndMs, confirm, passId)
       }

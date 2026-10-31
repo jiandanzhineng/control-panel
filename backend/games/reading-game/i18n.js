@@ -74,6 +74,8 @@
       "测试音频": "Test audio",
       "读完全文即通关 · 按 Esc 可紧急停止": "Finish the text to win · Esc stops immediately",
       "背完全文即通关 · 按 Esc 可紧急停止": "Finish reciting the text to win · Esc stops immediately",
+      "最后一段识别仍在途，正在确认；确认期间不会电击": "The last segment is still being recognized; no shock while confirming",
+      "最后一段识别超时或失败，本遍按未能确认结尾结算，不电击": "The last segment timed out or failed; this pass is treated as finished with an unconfirmed ending, no shock",
       "窗口已恢复（休息中），继续休息计时": "Window restored during rest; continuing the rest timer",
       "休息期间麦克风异常，继续保持休息: {reason}": "Microphone problem during rest; staying in rest: {reason}",
       "恭喜读完全文": "Finished the whole text",
