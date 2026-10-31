@@ -79,7 +79,7 @@ class WorkerHost {
       entry.stderr = (entry.stderr + String(chunk)).slice(-4000);
     });
     child.stdout?.on('data', () => {});
-    child.on('message', (message) => this._onMessage(entry, message));
+    child.on('message', (message) => this._onMessage(entry, message, childId));
     child.on('error', (error) => {
       entry.stderr = `${entry.stderr}\n${error.message}`.slice(-4000);
     });
@@ -96,14 +96,18 @@ class WorkerHost {
     entry.settleLoad = null;
   }
 
-  _onMessage(entry, message) {
+  _onMessage(entry, message, childId) {
     if (!message || typeof message !== 'object') return;
+    if (entry.childId !== childId || !entry.child) return;
     if (message.type === 'ready') {
       entry.ready = true;
       entry.settleLoad = null;
       if (entry.readyTimer) { clearTimeout(entry.readyTimer); entry.readyTimer = null; }
       const waiters = entry.loadWaiters.splice(0);
-      for (const waiter of waiters) waiter.resolve();
+      for (const waiter of waiters) {
+        if (waiter.generation !== childId) waiter.reject(makeError('WORKER_KILLED', '本地推理进程已停止'));
+        else waiter.resolve();
+      }
       this._pump(entry);
       return;
     }
@@ -184,11 +188,17 @@ class WorkerHost {
     }
   }
 
+  _rejectLoadWaiters(entry, error) {
+    const waiters = entry.loadWaiters.splice(0);
+    for (const waiter of waiters) waiter.reject(error);
+  }
+
   _killChild(entry) {
     entry.childId = (entry.childId || 0) + 1;
     entry.ready = false;
     const child = entry.child;
     entry.child = null;
+    this._rejectLoadWaiters(entry, makeError('WORKER_KILLED', '本地推理进程已停止'));
     try { child?.kill(); } catch (_) {}
     if (entry.readyTimer) { clearTimeout(entry.readyTimer); entry.readyTimer = null; }
   }
@@ -222,18 +232,24 @@ class WorkerHost {
     if (startEnv) entry.startEnv = startEnv;
     this._clearIdle(entry);
     if (entry.ready) return Promise.resolve();
-    if (!entry.child) this._ensureChild(entry);
+    if (!entry.child) {
+      try { this._spawn(entry, entry.startEnv); } catch (error) { return Promise.reject(error); }
+    }
+    if (entry.ready) return Promise.resolve();
+    if (!entry.child) return Promise.reject(makeError('WORKER_SPAWN_FAILED', '子进程启动失败'));
+    const generation = entry.childId;
     return new Promise((resolve, reject) => {
-      if (!entry.child && !entry.settleLoad) return reject(makeError('WORKER_SPAWN_FAILED', '子进程启动失败'));
-      entry.loadWaiters.push({ resolve, reject });
+      entry.loadWaiters.push({ resolve, reject, generation });
     });
   }
 
   kill(key, { rejectQueued = true } = {}) {
     const entry = this.entries.get(key);
-    if (!entry) return;
+    if (!entry) return Promise.resolve();
     this._clearIdle(entry);
+    const child = entry.child;
     const error = makeError('WORKER_KILLED', '本地推理进程已停止');
+    this._rejectLoadWaiters(entry, error);
     if (entry.current) {
       if (entry.current.timer) clearTimeout(entry.current.timer);
       entry.current.reject(error);
@@ -245,16 +261,32 @@ class WorkerHost {
     entry.busy = false;
     this._killChild(entry);
     this.entries.delete(key);
+    if (!child) return Promise.resolve();
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(finish, 3000);
+      if (timer.unref) timer.unref();
+      if (child.exitCode !== null) finish();
+      else child.once('exit', finish);
+    });
   }
 
   killModel(modelId) {
+    const jobs = [];
     for (const key of Array.from(this.entries.keys())) {
-      if (key.startsWith(`${modelId}|`)) this.kill(key);
+      if (key.startsWith(`${modelId}|`)) jobs.push(this.kill(key));
     }
+    return Promise.all(jobs);
   }
 
   stopAll() {
-    for (const key of Array.from(this.entries.keys())) this.kill(key);
+    return Promise.all(Array.from(this.entries.keys()).map((key) => this.kill(key)));
   }
 
   status() {

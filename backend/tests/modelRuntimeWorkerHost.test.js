@@ -81,4 +81,28 @@ describe('WorkerHost', () => {
     const result = await host.request('demo|cpu', { audio: 'after-prefetch' });
     expect(result.text).toBe('after-prefetch');
   });
+
+  test('prefetch rejects when the worker is killed before it becomes ready', async () => {
+    makeHost({ loadMs: 60000 });
+    const key = 'demo|cpu';
+    const pending = host.prefetch(key);
+    const killed = host.kill(key);
+    await expect(pending).rejects.toMatchObject({ code: 'WORKER_KILLED' });
+    await killed;
+    expect(host.status()).toHaveLength(0);
+  });
+
+  test('prefetch rejects instead of hanging when spawn throws synchronously', async () => {
+    makeHost({ spawnImpl: () => { throw new Error('no exec'); } });
+    await expect(host.prefetch('demo|cpu')).rejects.toMatchObject({ code: 'WORKER_SPAWN_FAILED' });
+    await expect(host.request('demo|cpu', { audio: 'x' })).rejects.toMatchObject({ code: 'WORKER_SPAWN_FAILED' });
+  });
+
+  test('kill resolves only after the child process exits', async () => {
+    makeHost();
+    await host.request('demo|cpu', { audio: 'quick' }, { timeoutMs: 3000 });
+    const pid = host.status()[0].pid;
+    await host.kill('demo|cpu');
+    expect(() => process.kill(pid, 0)).toThrow();
+  });
 });

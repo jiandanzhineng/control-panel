@@ -22,6 +22,7 @@ function snapshot() {
     models: list,
     settings,
     accelerators,
+    acceleratorState: modelRuntime.accelerators.refreshState,
     benchmarks,
     last: {
       provider: modelRuntime.router.lastProvider,
@@ -40,16 +41,26 @@ router.get('/accelerators', (req, res) => {
   if (!requireLoopback(req, res)) return;
   res.json({
     devices: modelRuntime.accelerators.probeAll(),
+    state: modelRuntime.accelerators.refreshState,
     benchmarks: modelRuntime.benchmarks(),
   });
 });
 
-router.post('/accelerators/refresh', (req, res) => {
+router.post('/accelerators/refresh', async (req, res) => {
   if (!requireLoopback(req, res)) return;
-  res.json({
-    devices: modelRuntime.refreshAccelerators(),
-    benchmarks: modelRuntime.benchmarks(),
-  });
+  try {
+    const devices = await modelRuntime.refreshAccelerators();
+    res.json({
+      devices,
+      state: modelRuntime.accelerators.refreshState,
+      benchmarks: modelRuntime.benchmarks(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error?.message || String(error),
+      state: modelRuntime.accelerators.refreshState,
+    });
+  }
 });
 
 router.get('/settings', (req, res) => {
@@ -60,10 +71,15 @@ router.get('/settings', (req, res) => {
 router.post('/settings', (req, res) => {
   if (!requireLoopback(req, res)) return;
   const body = req.body || {};
-  const tasks = body.tasks && typeof body.tasks === 'object' ? body.tasks : body;
-  const updated = {};
-  for (const [task, patch] of Object.entries(tasks)) {
-    if (!patch || typeof patch !== 'object') continue;
+  const tasks = body.tasks && typeof body.tasks === 'object' && !Array.isArray(body.tasks) ? body.tasks : body;
+  const allowed = new Set(modelRuntime.catalog.list().map((model) => model.task));
+  const updated = Object.create(null);
+  for (const task of Object.keys(tasks)) {
+    const patch = tasks[task];
+    if (!allowed.has(task)) {
+      return sendError(res, 'INVALID_TASK', `未知任务: ${task}`, 400);
+    }
+    if (!patch || typeof patch !== 'object' || Array.isArray(patch)) continue;
     if (patch.model) {
       const model = modelRuntime.catalog.get(patch.model);
       if (!model || model.task !== task) {

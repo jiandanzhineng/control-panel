@@ -43,10 +43,11 @@ function createRuntime(options = {}) {
     logService.info('ModelRuntime', `model ready id=${model.id} task=${model.task}`);
   };
   modelStore.onRemove = (model) => {
-    workerHost.killModel(model.id);
     logService.info('ModelRuntime', `model removed id=${model.id}`);
+    return workerHost.killModel(model.id);
   };
   modelStore.refreshFromDisk();
+  accelerators.probeAll();
   logService.info('ModelRuntime', `catalog dir=${options.catalogDir || catalogDir()} models=${catalog.list().length}`);
   return { catalog, modelStore, accelerators, workerHost, router, engine };
 }
@@ -73,6 +74,7 @@ module.exports = {
     models: runtime.modelStore.list(),
     settings: settings.all(),
     accelerators: runtime.accelerators.probeAll(),
+    acceleratorState: runtime.accelerators.refreshState,
     workers: runtime.workerHost.status(),
     last: {
       provider: runtime.router.lastProvider,

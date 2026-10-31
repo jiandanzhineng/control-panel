@@ -7,6 +7,12 @@ jest.mock('../services/logService', () => ({
   info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn(),
 }));
 
+// 隔离模型运行时：开发机可能已经下载了模型，不能让单测意外走本地识别。
+const runtimeIsolationDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stt-runtime-'));
+process.env.BACKEND_DATA_DIR = path.join(runtimeIsolationDir, 'data');
+process.env.MODEL_RUNTIME_CATALOG_DIR = path.join(runtimeIsolationDir, 'catalog');
+fs.mkdirSync(process.env.MODEL_RUNTIME_CATALOG_DIR, { recursive: true });
+
 const localSession = require('../services/localSessionService');
 const voiceSettings = require('../services/voiceSettingsService');
 const sttService = require('../services/sttService');
@@ -67,6 +73,12 @@ describe('sttService', () => {
     delete process.env.STT_RELAY_BASE_URL;
     await new Promise((resolve) => upstream.server.close(resolve));
     fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  afterAll(() => {
+    delete process.env.BACKEND_DATA_DIR;
+    delete process.env.MODEL_RUNTIME_CATALOG_DIR;
+    fs.rmSync(runtimeIsolationDir, { recursive: true, force: true });
   });
 
   it('uses the own SiliconFlow key directly when configured', async () => {

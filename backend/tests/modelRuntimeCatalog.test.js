@@ -36,6 +36,19 @@ describe('model runtime catalog', () => {
     expect(errors.join('\n')).toMatch(/sha256/);
   });
 
+  test('rejects file and path names that could escape the model directory', () => {
+    const errors = validateModel(baseModel({
+      task: '__proto__',
+      engineConfig: { type: 'sense_voice', model: '../m.onnx', tokens: 'a/../../tokens.txt' },
+      files: [{ name: '../m.onnx', bytes: 3, sha256: 'a'.repeat(64), urls: ['https://example.com/m.onnx'] }],
+    }));
+    const text = errors.join('\n');
+    expect(text).toMatch(/task/);
+    expect(text).toMatch(/engineConfig\.model/);
+    expect(text).toMatch(/engineConfig\.tokens/);
+    expect(text).toMatch(/file\.name/);
+  });
+
   test('loads a directory and reports invalid files', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mr-catalog-'));
     try {

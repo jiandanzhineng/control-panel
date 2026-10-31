@@ -57,6 +57,9 @@ const LOCK_RULES = [
   // 账号/设置类写操作
   { method: 'POST', pattern: /^\/auth(\/|$)/ },
   { method: 'PUT', pattern: /^\/auth(\/|$)/ },
+  // 本地模型：下载/删除/改设置只在本机做；GET 状态照常放行（页面渲染需要）
+  { method: 'POST', pattern: /^\/models(\/|$)/ },
+  { method: 'DELETE', pattern: /^\/models(\/|$)/ },
 ];
 
 // 即使命中 LOCK_RULES 也放行的读接口（页面渲染需要，且无本机副作用）。

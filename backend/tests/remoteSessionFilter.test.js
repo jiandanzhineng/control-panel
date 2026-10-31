@@ -120,6 +120,12 @@ function lockedRoutes() {
     ['post', '/api/devices/firmware/batch/blink-latest'],
     // MQTT 直发可绕开设备白名单与安全钳制
     ['post', '/api/mqtt-client/publish'],
+    // 本地模型：下载/取消/删除/改设置都必须在本机做
+    ['post', '/api/models/sensevoice-small/download'],
+    ['post', '/api/models/sensevoice-small/cancel'],
+    ['delete', '/api/models/sensevoice-small'],
+    ['post', '/api/models/accelerators/refresh'],
+    ['post', '/api/models/settings'],
   ];
 }
 
@@ -291,6 +297,9 @@ describe('remote session filter', () => {
     await request(app).get('/api/dev-access').expect(200);
     await request(app).get('/api/plugins').expect(200);
     await request(app).get('/api/local-apps').expect(200);
+    // 本地模型状态只读，远程下页面仍可显示
+    await request(app).get('/api/models').expect(200);
+    await request(app).get('/api/models/accelerators').expect(200);
     await request(app).get('/api/virtual-devices/dev-1/properties').expect(200);
     await request(app).get('/api/wired-flash/ports').expect(200);
   });

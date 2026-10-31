@@ -6,6 +6,11 @@ const CIRCUIT_MS = 60 * 1000;
 
 function baseTask(task) { return String(task || '').split('.')[0]; }
 
+// 音频问题和主动停止不代表设备不可用，不计入连续失败。
+function countableFailure(error) {
+  return !['BAD_AUDIO', 'WORKER_KILLED', 'ABORTED'].includes(error?.code);
+}
+
 function makeError(code, message) {
   const error = new Error(message);
   error.code = code;
@@ -109,7 +114,7 @@ class TaskRouter {
 
   async _runTaskLocal(task, model, taskSettings, input, opts) {
     if (!input || !input.audio) throw makeError('BAD_AUDIO', '音频为空');
-    const order = await this._prepareProviders(model, taskSettings);
+    const order = this.accelerators.orderForModel(model.id, taskSettings.provider);
     let lastError = null;
     for (const provider of order) {
       try {
@@ -122,13 +127,10 @@ class TaskRouter {
         this._resetFailures();
         this.lastProvider = provider;
         this.lastLatencyMs = latencyMs;
-        if (!this.accelerators.benchmarkFor(model.id, provider)) {
-          this.accelerators.recordBenchmark(model.id, provider, latencyMs);
-        }
         return { text: result.text, mode: 'local', model: model.id, provider, latencyMs, fallback: false };
       } catch (error) {
         lastError = error;
-        this.accelerators.recordFailure(model.id, provider);
+        if (countableFailure(error)) this.accelerators.recordFailure(model.id, provider);
         logService.warn('ModelRuntime', `task=${task} local provider=${provider} failed code=${error?.code || 'ERROR'}: ${error?.message || error}`);
       }
     }
@@ -142,8 +144,12 @@ class TaskRouter {
       const taskSettings = this.settings.get(baseTask(task));
       const model = this.selectModel(task, null, taskSettings);
       if (!taskSettings.localEnabled || !model) return;
-      const order = await this._prepareProviders(model, taskSettings);
-      const provider = order[0];
+      const order = this.accelerators.orderForModel(model.id, taskSettings.provider);
+      if (taskSettings.provider === 'auto' && order.length > 1) {
+        await this._benchmarkProviders(model, order);
+      }
+      const preferred = this.accelerators.orderForModel(model.id, taskSettings.provider);
+      const provider = preferred[0];
       if (!provider) return;
       const startEnv = this.engine.workerEnv(model, this.modelStore.modelDir(model.id), provider);
       await this.workerHost.prefetch(`${model.id}|${provider}`, startEnv);
@@ -152,23 +158,20 @@ class TaskRouter {
     return promise;
   }
 
-  async _prepareProviders(model, taskSettings) {
-    const order = this.accelerators.orderForModel(model.id, taskSettings.provider);
-    if (taskSettings.provider !== 'auto' || order.length <= 1) return order;
+  async _benchmarkProviders(model, order) {
     const sample = silenceWav(4);
     for (const provider of order) {
       if (this.accelerators.benchmarkFor(model.id, provider)) continue;
       try {
         const startEnv = this.engine.workerEnv(model, this.modelStore.modelDir(model.id), provider);
         const started = this.now();
-        await this.workerHost.request(`${model.id}|${provider}`, { audio: sample }, { timeoutMs: 15000, startEnv });
+        await this.workerHost.request(`${model.id}|${provider}`, { audio: sample }, { timeoutMs: 5000, startEnv });
         this.accelerators.recordBenchmark(model.id, provider, this.now() - started);
       } catch (error) {
-        this.accelerators.recordFailure(model.id, provider);
+        if (countableFailure(error)) this.accelerators.recordFailure(model.id, provider);
         logService.warn('ModelRuntime', `benchmark model=${model.id} provider=${provider} failed: ${error?.message || error}`);
       }
     }
-    return this.accelerators.orderForModel(model.id, taskSettings.provider);
   }
 
   localStatus(task) {
@@ -176,7 +179,7 @@ class TaskRouter {
     const model = this.selectModel(task, null, taskSettings);
     if (!taskSettings.localEnabled || !model || this.circuitOpen()) return null;
     const provider = this.lastProvider || this.accelerators.orderForModel(model.id, taskSettings.provider)[0];
-    this.warmUp(task).catch(() => {});
+    setImmediate(() => { this.warmUp(task).catch(() => {}); });
     return { ready: true, mode: 'local', model: model.id, provider, modelTitle: model.title };
   }
 }

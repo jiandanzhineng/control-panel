@@ -1,39 +1,54 @@
 // 推理设备探测与排序：CPU 永远可用；CUDA / DirectML 需要引擎构建、硬件、实际加载都通过。
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawn } = require('child_process');
 const { acceleratorsPath } = require('./paths');
 
 const ORDER = ['cuda', 'directml', 'npu', 'cpu'];
 const DISPLAY = { cuda: 'CUDA', directml: 'DirectML', npu: 'NPU', cpu: 'CPU' };
+const PROBE_TIMEOUT_MS = 4000;
 
-function readNvidia() {
-  try {
-    const r = spawnSync('nvidia-smi', ['--query-gpu=name,driver_version', '--format=csv,noheader'], {
-      encoding: 'utf8', timeout: 4000, windowsHide: true,
-    });
-    if (r.status !== 0 || !r.stdout) return null;
-    const line = String(r.stdout).split(/\r?\n/).find((row) => row.trim());
-    if (!line) return null;
-    const [name, driver] = line.split(',').map((part) => part.trim());
-    return { name: name || 'NVIDIA GPU', driver: driver || '' };
-  } catch (_) {
-    return null;
-  }
+// 异步执行探测命令，绝不阻塞主进程；超时或失败都返回 null。
+function runProbe(command, args, timeoutMs = PROBE_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    let out = '';
+    let done = false;
+    let child;
+    const finish = (value) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { if (child && !child.killed) child.kill(); } catch (_) {}
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    try {
+      child = spawn(command, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+    } catch (_) {
+      finish(null);
+      return;
+    }
+    child.stdout?.on('data', (chunk) => { out += String(chunk); });
+    child.on('error', () => finish(null));
+    child.on('close', (code) => finish(code === 0 ? out : null));
+  });
 }
 
-function detectNpu() {
+async function readNvidia() {
+  const out = await runProbe('nvidia-smi', ['--query-gpu=name,driver_version', '--format=csv,noheader']);
+  if (!out) return null;
+  const line = String(out).split(/\r?\n/).find((row) => row.trim());
+  if (!line) return null;
+  const [name, driver] = line.split(',').map((part) => part.trim());
+  return { name: name || 'NVIDIA GPU', driver: driver || '' };
+}
+
+async function detectNpu() {
   if (process.platform !== 'win32') return null;
-  try {
-    const script = "Get-CimInstance Win32_PnPEntity | Where-Object { $_.Name -match '\bNPU\b|AI Boost|Neural|\bIPU\b|Hexagon' } | Select-Object -ExpandProperty Name -First 1";
-    const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
-      encoding: 'utf8', timeout: 6000, windowsHide: true,
-    });
-    const name = String(r.stdout || '').split(/\r?\n/).find((row) => row.trim());
-    return name ? name.trim() : null;
-  } catch (_) {
-    return null;
-  }
+  const script = "Get-CimInstance Win32_PnPEntity | Where-Object { $_.Name -match '\\bNPU\\b|AI Boost|Neural|\\bIPU\\b|Hexagon' } | Select-Object -ExpandProperty Name -First 1";
+  const out = await runProbe('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], 6000);
+  const name = String(out || '').split(/\r?\n/).find((row) => row.trim());
+  return name ? name.trim() : null;
 }
 
 function cpuName() {
@@ -54,12 +69,13 @@ class Accelerators {
     this.now = now;
     this.cache = null;
     this.failures = new Map();
+    this.probePromise = null;
+    this.refreshState = { probing: false, lastAt: null, error: null };
   }
 
   fingerprint() {
-    const build = this.engine?.buildInfo?.() || {};
-    const gpu = this.probeNvidia();
-    return JSON.stringify({ probe: 4, engine: build, gpu: gpu ? gpu.driver : null, platform: this.platform });
+    // 只包含版本类信息；硬件探测结果单独缓存在 cache.hardware，避免同步跑 nvidia-smi。
+    return JSON.stringify({ probe: 5, engine: this.engine?.buildInfo?.() || {}, platform: this.platform });
   }
 
   _loadCache() {
@@ -69,7 +85,7 @@ class Accelerators {
     if (saved && saved.fingerprint === this.fingerprint()) {
       this.cache = saved;
     } else {
-      this.cache = { fingerprint: this.fingerprint(), devices: null, benchmarks: {} };
+      this.cache = { fingerprint: this.fingerprint(), devices: null, hardware: null, benchmarks: {} };
     }
     return this.cache;
   }
@@ -85,47 +101,96 @@ class Accelerators {
     try { return new Set(this.engine?.supportedProviders?.() || ['cpu']); } catch (_) { return new Set(['cpu']); }
   }
 
+  cpuDevice() {
+    return { present: true, name: cpuName() };
+  }
+
+  fallbackDevices() {
+    const supported = this.supported();
+    const declared = new Set(['cpu']);
+    for (const model of this.catalog?.list?.() || []) {
+      for (const id of model.providers || []) declared.add(id);
+    }
+    return ORDER.filter((id) => declared.has(id)).map((id) => ({
+      id,
+      name: id === 'cpu' ? cpuName() : (DISPLAY[id] || id),
+      available: id === 'cpu' && supported.has('cpu'),
+      supported: supported.has(id),
+      present: id === 'cpu',
+      reason: supported.has(id) ? (id === 'cpu' ? null : 'untested') : 'engine-unsupported',
+      provisional: true,
+    }));
+  }
+
   hardware() {
-    const nvidia = this.probeNvidia();
+    return this._loadCache().hardware || null;
+  }
+
+  probeAll() {
+    const cache = this._loadCache();
+    if (!cache.devices) cache.devices = this.fallbackDevices();
+    if (!cache.hardware) this._ensureProbed().catch(() => {});
+    return cache.devices;
+  }
+
+  _deviceList(hw, cache) {
+    const supported = this.supported();
+    return ORDER.map((id) => {
+      const supportedHere = supported.has(id);
+      const present = id === 'cpu' ? true : !!hw[id]?.present;
+      let reason = null;
+      if (!supportedHere) reason = 'engine-unsupported';
+      else if (!present) reason = 'hardware-missing';
+      else if (id !== 'cpu' && !cache.verified?.[id]) reason = 'untested';
+      return {
+        id,
+        name: hw[id]?.name || (id === 'cpu' ? cpuName() : DISPLAY[id] || id),
+        available: supportedHere && present && (id === 'cpu' || !!cache.verified?.[id]),
+        supported: supportedHere,
+        present,
+        reason,
+        provisional: false,
+      };
+    });
+  }
+
+  async _probeHardware() {
+    const [nvidia, npu] = await Promise.all([
+      Promise.resolve().then(() => this.probeNvidia()).catch(() => null),
+      Promise.resolve().then(() => this.probeNpu()).catch(() => null),
+    ]);
     return {
       cuda: nvidia ? { present: true, name: `${nvidia.name} (CUDA)`, driver: nvidia.driver } : { present: false },
       directml: this.platform === 'win32'
         ? { present: true, name: nvidia ? `${nvidia.name} (DirectML)` : 'DirectX 12 GPU (DirectML)' }
         : { present: false },
-      npu: (() => {
-        const name = this.probeNpu();
-        return name ? { present: true, name: `${name} (NPU)` } : { present: false };
-      })(),
-      cpu: { present: true, name: cpuName() },
+      npu: npu ? { present: true, name: `${npu} (NPU)` } : { present: false },
+      cpu: this.cpuDevice(),
     };
   }
 
-  probeAll({ force = false } = {}) {
+  _ensureProbed(force = false) {
+    if (this.probePromise) return this.probePromise;
     const cache = this._loadCache();
-    let devices = cache.devices;
-    if (force || !devices) {
-      const supported = this.supported();
-      const hw = this.hardware();
-      devices = ORDER.map((id) => {
-        const supportedHere = supported.has(id);
-        const present = !!hw[id]?.present;
-        let reason = null;
-        if (!supportedHere) reason = 'engine-unsupported';
-        else if (!present) reason = 'hardware-missing';
-        else if (id !== 'cpu' && !cache.verified?.[id]) reason = 'untested';
-        return {
-          id,
-          name: hw[id]?.name || DISPLAY[id] || id,
-          available: supportedHere && present && (id === 'cpu' || !!cache.verified?.[id]),
-          supported: supportedHere,
-          present,
-          reason,
-        };
-      });
-      cache.devices = devices;
-      this._saveCache();
-    }
-    return devices;
+    if (!force && cache.hardware) return Promise.resolve(cache.devices || this.fallbackDevices());
+    this.refreshState = { probing: true, lastAt: this.refreshState.lastAt, error: null };
+    this.probePromise = (async () => {
+      try {
+        const hw = await this._probeHardware();
+        const current = this._loadCache();
+        current.hardware = hw;
+        current.devices = this._deviceList(hw, current);
+        this._saveCache();
+        this.refreshState = { probing: false, lastAt: this.now(), error: null };
+        return current.devices;
+      } catch (error) {
+        this.refreshState = { probing: false, lastAt: this.refreshState.lastAt, error: error?.message || String(error) };
+        throw error;
+      } finally {
+        this.probePromise = null;
+      }
+    })();
+    return this.probePromise;
   }
 
   devicesForModel(modelId) {
@@ -174,13 +239,19 @@ class Accelerators {
     return this._loadCache().benchmarks[modelId]?.[provider] || null;
   }
 
+  _invalidateDevices(cache) {
+    // 有硬件快照时立即重算，避免下一次 probeAll 退回只剩 CPU 的兜底列表。
+    cache.devices = cache.hardware ? this._deviceList(cache.hardware, cache) : null;
+    return cache.devices;
+  }
+
   recordBenchmark(modelId, provider, ms) {
     const cache = this._loadCache();
     cache.benchmarks[modelId] = cache.benchmarks[modelId] || {};
     cache.benchmarks[modelId][provider] = { ms: Math.round(ms), at: this.now() };
     cache.verified = cache.verified || {};
     cache.verified[provider] = true;
-    cache.devices = null;
+    this._invalidateDevices(cache);
     this._saveCache();
     return cache.benchmarks[modelId][provider];
   }
@@ -192,7 +263,7 @@ class Accelerators {
     if (next >= 2) {
       const cache = this._loadCache();
       if (cache.verified) cache.verified[provider] = false;
-      cache.devices = null;
+      this._invalidateDevices(cache);
       this._saveCache();
     }
     return next;
@@ -211,7 +282,7 @@ class Accelerators {
   refresh() {
     this.cache = null;
     this.failures.clear();
-    return this.probeAll({ force: true });
+    return this._ensureProbed(true);
   }
 }
 

@@ -96,15 +96,36 @@ describe('TaskRouter', () => {
     expect(cloud).toHaveBeenCalledTimes(CIRCUIT_FAILURES + 2);
   });
 
-  test('auto mode benchmarks every provider before choosing', async () => {
+  test('auto mode benchmarks every provider during warmup, not on first transcribe', async () => {
     const acc = new FakeAccelerators(['cuda', 'cpu']);
     const workerHost = makeWorkerHost(() => ({ text: 'ok' }));
     const { router } = makeRouter({ accelerators: acc, workerHost });
+    await router.warmUp('asr.transcribe');
+    expect(workerHost.request).toHaveBeenCalledTimes(2);
+    expect(Object.keys(acc.bench).sort()).toEqual(['cpu', 'cuda']);
+    const benchmarkProviders = workerHost.calls.map((c) => c.key.split('|')[1]);
+    expect(benchmarkProviders.sort()).toEqual(['cpu', 'cuda']);
+    expect(workerHost.prefetch).toHaveBeenCalledTimes(1);
+
     await router.run('asr.transcribe', { audio: 'real' }, {});
     expect(workerHost.request).toHaveBeenCalledTimes(3);
-    expect(Object.keys(acc.bench).sort()).toEqual(['cpu', 'cuda']);
-    const benchmarkProviders = workerHost.calls.slice(0, 2).map((c) => c.key.split('|')[1]);
-    expect(benchmarkProviders.sort()).toEqual(['cpu', 'cuda']);
+  });
+
+  test('does not count audio problems or killed workers as device failures', async () => {
+    const acc = new FakeAccelerators(['cpu']);
+    const workerHost = makeWorkerHost(() => {
+      throw Object.assign(new Error('killed'), { code: 'WORKER_KILLED' });
+    });
+    const { router } = makeRouter({ accelerators: acc, workerHost });
+    await router.run('asr.transcribe', { audio: 'x' }, {});
+    expect(acc.failures.cpu).toBeUndefined();
+
+    const badAudio = makeWorkerHost(() => {
+      throw Object.assign(new Error('bad'), { code: 'BAD_AUDIO' });
+    });
+    const second = makeRouter({ accelerators: acc, workerHost: badAudio }).router;
+    await second.run('asr.transcribe', { audio: 'x' }, {});
+    expect(acc.failures.cpu).toBeUndefined();
   });
 
   test('tries the next device when one fails', async () => {

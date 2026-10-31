@@ -4,7 +4,9 @@ const path = require('path');
 const { catalogDir } = require('../paths');
 
 const ID_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const TASK_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const HASH_RE = /^[0-9a-f]{64}$/;
+const FILE_RE = /^[A-Za-z0-9._-]+$/;
 
 function isNonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0;
@@ -13,6 +15,7 @@ function isNonEmptyString(value) {
 function validateFile(file, errors, where) {
   if (!file || typeof file !== 'object') return errors.push(`${where}: file 必须是对象`);
   if (!isNonEmptyString(file.name)) errors.push(`${where}: file.name 缺失`);
+  else if (!FILE_RE.test(file.name) || file.name === '.' || file.name === '..') errors.push(`${where}: file.name 只能包含字母数字 ._-`);
   if (!Number.isInteger(file.bytes) || file.bytes <= 0) errors.push(`${where}: file.bytes 必须是正整数`);
   if (!HASH_RE.test(String(file.sha256 || ''))) errors.push(`${where}: file.sha256 必须是 64 位小写十六进制`);
   if (!Array.isArray(file.urls) || file.urls.length === 0) errors.push(`${where}: file.urls 不能为空`);
@@ -25,11 +28,17 @@ function validateModel(model) {
   const errors = [];
   if (!model || typeof model !== 'object') return ['模型条目必须是对象'];
   if (!ID_RE.test(String(model.id || ''))) errors.push('id 只能是小写字母数字和 ._-，最长 64');
-  if (!isNonEmptyString(model.task)) errors.push('task 缺失');
+  if (!isNonEmptyString(model.task) || !TASK_RE.test(model.task)) errors.push('task 只能包含小写字母数字 ._-');
   if (!isNonEmptyString(model.title?.zh) || !isNonEmptyString(model.title?.en)) errors.push('title 需要中英文');
   if (!isNonEmptyString(model.engine)) errors.push('engine 缺失');
   if (!model.engineConfig || typeof model.engineConfig !== 'object') errors.push('engineConfig 缺失');
   if (!isNonEmptyString(model.engineConfig?.type)) errors.push('engineConfig.type 缺失');
+  for (const key of ['model', 'tokens']) {
+    const name = model.engineConfig?.[key];
+    if (name !== undefined && (!isNonEmptyString(name) || !FILE_RE.test(name) || name === '.' || name === '..')) {
+      errors.push(`engineConfig.${key} 只能包含字母数字 ._-`);
+    }
+  }
   if (!Array.isArray(model.files) || model.files.length === 0) errors.push('files 不能为空');
   (model.files || []).forEach((file, i) => validateFile(file, errors, `files[${i}]`));
   if (!Array.isArray(model.providers) || model.providers.length === 0) errors.push('providers 不能为空');
@@ -63,4 +72,4 @@ function loadCatalog(dir = catalogDir()) {
   return { models, invalid };
 }
 
-module.exports = { validateModel, loadCatalog, ID_RE, HASH_RE };
+module.exports = { validateModel, loadCatalog, ID_RE, TASK_RE, FILE_RE, HASH_RE };

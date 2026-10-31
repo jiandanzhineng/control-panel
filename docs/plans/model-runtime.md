@@ -151,3 +151,15 @@
 - CDP 下载流程用本地假源加速；另用 hf-mirror 实测断点续传（2,150,280 → 4,055,028 B，+1,904,748 B，Range 生效）。
 - 本机 GPU 未能实际跑通，因此没有执行「GPU 可用时再回放一遍」。
 - 当前工作区把根 `node_modules` 指到主仓库（符号链接），`electron-builder` 打出的完整 GUI 因 `electron-updater` 依赖的 `graceful-fs` 未被复制而报错；这是工作区/依赖布局问题，与本次改动无关。打包子进程识别验证不受影响（见 8.3）。
+
+### 8.6 启动就绪与后台校验
+
+- 下载流程在校验通过、文件改名完成后写 `models/<id>/.verified.json`，记录每个文件的 catalog sha256、字节数和最终 `mtimeMs`。
+- 启动时 `refreshFromDisk()` 只做 O(文件数) 的 stat：文件大小全部匹配且 marker 中的 sha/bytes/mtime 也匹配，才直接标为 `ready`；不再每次启动重新算 239MB 的 sha256。
+- 大小匹配但没有 marker（例如旧版本下载、手工拷贝）时标为 `verifying`，用 `setImmediate` 在后台算 sha256；校验通过写 marker 并触发 `onReady`，失败标为 `error`。校验完成前 `isReady(id)` 为 false，不会把未验证模型交给推理进程。
+- marker 跟随模型目录一起删除；重新下载会覆盖 marker。
+- 硬件探测改为异步子进程（`nvidia-smi` / PowerShell）并在启动后后台执行；请求路径只读设备缓存，无缓存时先返回「目录声明的设备 + CPU」的临时列表，不阻塞 `speech.status()`。
+
+### 8.7 待办（本次未改）
+
+- 现有 `browserApiAccess` 允许 `Origin: null`（例如沙箱 iframe / `file://` 页面），与本运行时无关，但属于本机接口暴露面；后续应单独评估收紧，本次修改不触碰。

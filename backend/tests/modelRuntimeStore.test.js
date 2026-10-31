@@ -149,6 +149,79 @@ describe('ModelStore', () => {
     expect(fs.existsSync(path.join(dir, 'demo', 'a.bin.part'))).toBe(true);
   });
 
+  test('trusts a verified marker on startup and verifies again when it is missing', async () => {
+    const contents = { 'a.bin': Buffer.alloc(4096, 7), 'b.txt': Buffer.from('hello') };
+    const { base } = await start(contents);
+    const model = makeModel(base, contents);
+    await new ModelStore({ catalog: catalogOf([model]), rootDir: dir, fetchImpl: fetch }).downloadAsync('demo');
+    expect(fs.existsSync(path.join(dir, 'demo', '.verified.json'))).toBe(true);
+
+    const reopened = new ModelStore({ catalog: catalogOf([model]), rootDir: dir, fetchImpl: fetch });
+    reopened.refreshFromDisk();
+    expect(reopened.status('demo').state).toBe('ready');
+
+    fs.rmSync(path.join(dir, 'demo', '.verified.json'));
+    const reverify = new ModelStore({ catalog: catalogOf([model]), rootDir: dir, fetchImpl: fetch });
+    reverify.refreshFromDisk();
+    expect(reverify.status('demo').state).toBe('verifying');
+    for (let i = 0; i < 200 && reverify.status('demo').state === 'verifying'; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(reverify.status('demo').state).toBe('ready');
+  });
+
+  test('cancels during checksum verification without renaming the file', async () => {
+    const contents = { 'a.bin': Buffer.alloc(24 * 1024 * 1024, 5), 'b.txt': Buffer.from('t') };
+    const { base } = await start(contents);
+    const store = new ModelStore({ catalog: catalogOf([makeModel(base, contents)]), rootDir: dir, fetchImpl: fetch });
+    const promise = store.downloadAsync('demo');
+    for (let i = 0; i < 2000 && store.status('demo').state !== 'verifying'; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+    expect(store.status('demo').state).toBe('verifying');
+    store.cancel('demo');
+    const status = await promise;
+    expect(status.state).toBe('absent');
+    expect(fs.existsSync(path.join(dir, 'demo', 'a.bin'))).toBe(false);
+  });
+
+  test('waits for the worker to exit before deleting the model directory', async () => {
+    const contents = { 'a.bin': Buffer.from('x'), 'b.txt': Buffer.from('y') };
+    const { base } = await start(contents);
+    let dirExistedWhenWorkerExited = false;
+    const onRemove = jest.fn(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      dirExistedWhenWorkerExited = fs.existsSync(path.join(dir, 'demo'));
+    });
+    const store = new ModelStore({ catalog: catalogOf([makeModel(base, contents)]), rootDir: dir, fetchImpl: fetch, onRemove });
+    await store.downloadAsync('demo');
+    await store.remove('demo');
+    expect(dirExistedWhenWorkerExited).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'demo'))).toBe(false);
+  });
+
+  test('can be cancelled repeatedly without uncaught stream errors', async () => {
+    const contents = { 'a.bin': Buffer.alloc(4000, 3), 'b.txt': Buffer.from('t') };
+    const { base } = await start(contents, { slow: true });
+    const catalog = catalogOf([makeModel(base, contents)]);
+    for (let i = 0; i < 50; i++) {
+      fs.rmSync(path.join(dir, 'demo'), { recursive: true, force: true });
+      const store = new ModelStore({ catalog, rootDir: dir, fetchImpl: fetch });
+      const promise = store.downloadAsync('demo');
+      for (let j = 0; j < 500 && store.status('demo').received === 0; j++) {
+        await new Promise((resolve) => setTimeout(resolve, 1));
+      }
+      store.cancel('demo');
+      const status = await promise;
+      expect(status.state).toBe('absent');
+    }
+  }, 20000);
+
+  test('refuses a file name that escapes the model directory', () => {
+    const store = new ModelStore({ catalog: catalogOf([makeModel('http://x', { 'a': Buffer.from('x') })]), rootDir: dir });
+    expect(() => store.filePath('demo', '../escape.bin')).toThrow(expect.objectContaining({ code: 'BAD_FILE_NAME' }));
+  });
+
   test('removes an installed model', async () => {
     const contents = { 'a.bin': Buffer.from('x'), 'b.txt': Buffer.from('y') };
     const { base } = await start(contents);
