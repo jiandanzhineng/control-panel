@@ -163,11 +163,41 @@ function startRegistryServer() {
   });
 }
 
+// 后端端口写死 5278，已安装的正式版运行时会占着它：开发版后端起不来，前端却会连上正式版后端，
+// 现象很迷惑，所以启动前先查，占用就直接报错退出。
+function assertBackendPortFree(port = 5278) {
+  return new Promise((resolve, reject) => {
+    const probe = http.createServer();
+    probe.once('error', (error) => {
+      if (error.code !== 'EADDRINUSE') return reject(error);
+      reject(new Error(
+        `后端端口 ${port} 已被占用（通常是已安装的 UnderSilicon 正在运行）。` +
+          '请先在托盘里退出它，再运行 npm run electron:dev。',
+      ));
+    });
+    probe.listen(port, '127.0.0.1', () => probe.close(resolve));
+  });
+}
+
 async function main() {
   const npmCommand = process.platform === 'win32' ? 'npm' : 'npm';
   const electronPath = require('electron');
 
+  await assertBackendPortFree();
+
   if (LOCAL_REGISTRY) {
+    // play-registry 是独立 npm 包（依赖 adm-zip），新克隆 / worktree 里常缺依赖（node_modules 可能是空目录），先装上。
+    if (!fs.existsSync(path.join(REPO_ROOT, 'play-registry', 'node_modules', 'adm-zip', 'package.json'))) {
+      console.log('[electron-dev] installing play-registry dependencies...');
+      execFileSync(npmCommand, ['--prefix', 'play-registry', 'ci'], {
+        cwd: REPO_ROOT,
+        stdio: 'inherit',
+        shell: process.platform === 'win32',
+        // 用户级 .npmrc 若有 allow-scripts（npm ≥11 全局装包留下的），项目内安装会报 EALLOWSCRIPTS；
+        // adm-zip 没有安装脚本，这里置空即可。
+        env: { ...process.env, npm_config_allow_scripts: '' },
+      });
+    }
     console.log('[electron-dev] building play-registry site (.site)...');
     execFileSync(npmCommand, ['--prefix', 'play-registry', 'run', 'build:site'], {
       cwd: REPO_ROOT,
