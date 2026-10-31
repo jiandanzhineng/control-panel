@@ -1,0 +1,80 @@
+// 每个任务的本地模型设置：是否启用、首选模型、推理设备。
+const fs = require('fs');
+const path = require('path');
+const { settingsPath } = require('./paths');
+
+const PROVIDER_RE = /^(auto|[a-z0-9_-]{1,32})$/;
+const PROVIDERS = ['auto', 'cuda', 'directml', 'npu', 'cpu'];
+let memory;
+
+function defaults() {
+  return { tasks: {} };
+}
+
+function ensureTask(state, task) {
+  if (!state.tasks[task]) {
+    state.tasks[task] = { localEnabled: false, model: null, provider: 'auto', configured: false };
+  }
+  return state.tasks[task];
+}
+
+function load() {
+  if (memory !== undefined) return memory;
+  try {
+    const saved = JSON.parse(fs.readFileSync(settingsPath(), 'utf8')) || {};
+    memory = defaults();
+    for (const [task, value] of Object.entries(saved.tasks || {})) {
+      const entry = ensureTask(memory, task);
+      if (typeof value.localEnabled === 'boolean') entry.localEnabled = value.localEnabled;
+      if (value.model === null || typeof value.model === 'string') entry.model = value.model || null;
+      if (PROVIDER_RE.test(String(value.provider || ''))) entry.provider = value.provider;
+      if (value.configured === true) entry.configured = true;
+    }
+  } catch {
+    memory = defaults();
+  }
+  return memory;
+}
+
+function persist() {
+  const dest = settingsPath();
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, `${JSON.stringify(load(), null, 2)}\n`, 'utf8');
+}
+
+function get(task) {
+  return { ...ensureTask(load(), task) };
+}
+
+function all() {
+  const state = load();
+  const out = {};
+  for (const [task, value] of Object.entries(state.tasks)) out[task] = { ...value };
+  return out;
+}
+
+function update(task, patch = {}) {
+  const entry = ensureTask(load(), task);
+  if (typeof patch.localEnabled === 'boolean') entry.localEnabled = patch.localEnabled;
+  if (patch.model === null || typeof patch.model === 'string') entry.model = patch.model || null;
+  if (PROVIDER_RE.test(String(patch.provider || ''))) entry.provider = patch.provider;
+  if (patch.localEnabled !== undefined || patch.model !== undefined || patch.provider !== undefined) {
+    entry.configured = true;
+  }
+  persist();
+  return { ...entry };
+}
+
+/** 模型下载完成后：这个任务还没被用户设置过，就自动启用本地。 */
+function markDownloaded(task) {
+  const entry = ensureTask(load(), task);
+  if (entry.configured) return { ...entry };
+  entry.localEnabled = true;
+  entry.configured = true;
+  persist();
+  return { ...entry };
+}
+
+function resetForTests() { memory = undefined; }
+
+module.exports = { PROVIDERS, PROVIDER_RE, get, all, update, markDownloaded, resetForTests };

@@ -25,6 +25,7 @@
     "semver": "^7.6.3",
     "serialport": "^13.0.0",
     "sherpa-onnx": "^1.13.8",
+    "sherpa-onnx-node": "^2.0.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {

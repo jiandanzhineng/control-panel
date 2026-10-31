@@ -1004,6 +1004,11 @@ function startBackendThenWindow() {
   }
 }
 
+// 允许完全隔离的测试实例：用户数据（单实例锁、后端数据、日志）也一起隔离。
+if (process.env.CONTROL_PANEL_USER_DATA_DIR) {
+  app.setPath('userData', path.resolve(process.env.CONTROL_PANEL_USER_DATA_DIR));
+}
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();

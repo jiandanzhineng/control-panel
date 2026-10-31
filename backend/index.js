@@ -151,6 +151,7 @@ function shutdownBackend(reason = 'backend-shutdown', {
     await gameHostService.shutdown();
     await remoteProjectionService.shutdown();
     voiceTriggerWs.closeAll();
+    try { require('./model-runtime').workerHost.stopAll(); } catch (_) {}
     if (typeof beforeTransportShutdown === 'function') {
       await beforeTransportShutdown();
     }
@@ -214,6 +215,7 @@ app.use('/api/test', require('./routes/test'));
 app.use('/api/virtual-devices', require('./routes/virtualDevices'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/voice', require('./routes/voice'));
+app.use('/api/models', require('./routes/models'));
 // 远控接口只服务本机（审查报告 §2.4 的纵深防御；后端本身也已只绑回环）。
 app.use('/api/remote-projection', loopbackOnly, require('./routes/remoteProjection'));
 app.use('/api/game-runtime', require('./routes/gameRuntime'));

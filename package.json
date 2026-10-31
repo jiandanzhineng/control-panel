@@ -53,7 +53,9 @@
       "!backend/voice-kws"
     ],
     "asarUnpack": [
-      "**/node_modules/sherpa-onnx/**"
+      "**/node_modules/sherpa-onnx/**",
+      "**/node_modules/sherpa-onnx-node/**",
+      "**/node_modules/sherpa-onnx-win-x64/**"
     ],
     "extraResources": [
       {
