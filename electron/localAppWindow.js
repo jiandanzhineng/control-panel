@@ -33,13 +33,36 @@ function isLocalAppUrl(url) {
 }
 
 function attachMediaPermission(win, fallbackUrl) {
-  win.webContents.session.setPermissionRequestHandler((wc, permission, callback) => {
-    const media = permission === 'media' || permission === 'microphone';
-    if (win && !win.isDestroyed() && wc.id === win.webContents.id) {
-      callback(media && isLocalAppUrl(wc.getURL() || fallbackUrl));
-      return;
-    }
-    callback(true);
+  // 与小雅窗口共用默认 session 的还有主窗口：媒体权限统一按「本机来源」判定，
+  // 后安装的处理器不会把游戏页的麦克风放开或收紧成另一套规则。
+  win.webContents.session.setPermissionRequestHandler((wc, permission, callback, details) => {
+    if (permission !== 'media' && permission !== 'microphone') return callback(true);
+    callback(isTrustedMediaUrl(details?.requestingUrl || wc?.getURL?.() || fallbackUrl));
+  });
+}
+
+// 主窗口的媒体权限：游戏页 iframe 与面板自身都要用麦克风（语音开始、游戏内语音识别），
+// 只放开本机来源，其他权限维持 Electron 默认行为。
+// iframe 请求按 details.requestingUrl / securityOrigin 判定（顶层是 file: 面板，不能只看 webContents.getURL）。
+function isTrustedMediaUrl(url) {
+  try {
+    const parsed = new URL(String(url || ''));
+    if (parsed.protocol === 'file:') return true; // 打包后的面板自身
+    return parsed.protocol === 'http:' && isLocalAppUrl(url);
+  } catch {
+    return false;
+  }
+}
+
+function attachGameMediaPermissions(session) {
+  if (!session) return;
+  session.setPermissionRequestHandler((wc, permission, callback, details) => {
+    if (permission !== 'media' && permission !== 'microphone') return callback(true);
+    callback(isTrustedMediaUrl(details?.requestingUrl || wc?.getURL?.()));
+  });
+  session.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) => {
+    if (permission !== 'media' && permission !== 'microphone') return true;
+    return isTrustedMediaUrl(details?.requestingUrl || requestingOrigin);
   });
 }
 
@@ -140,5 +163,7 @@ module.exports = {
   withTitleHint,
   handleLocalAppHotkey,
   isLocalAppUrl,
+  isTrustedMediaUrl,
+  attachGameMediaPermissions,
   createLocalAppWindowController,
 };

@@ -28,7 +28,7 @@ router.get('/phrases', (req, res) => {
 
 router.post('/settings', (req, res) => {
   if (!requireLoopback(req, res)) return;
-  const { route, api_key, tako_api_key, tako_proxy } = req.body || {};
+  const { route, api_key, tako_api_key, tako_proxy, siliconflow_api_key } = req.body || {};
   if (route !== undefined && !voiceSettings.ROUTES.includes(route)) {
     return sendError(res, 'BAD_ROUTE', 'route 只能是 own_key 或 panel', 400);
   }
@@ -40,7 +40,7 @@ router.post('/settings', (req, res) => {
       return sendError(res, 'BAD_PROXY', 'Tako 代理必须是 HTTP 或 HTTPS 地址', 400);
     }
   }
-  res.json(voiceSettings.update({ route, api_key, tako_api_key, tako_proxy }));
+  res.json(voiceSettings.update({ route, api_key, tako_api_key, tako_proxy, siliconflow_api_key }));
 });
 
 module.exports = router;

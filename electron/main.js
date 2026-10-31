@@ -18,7 +18,7 @@ const { fileURLToPath, pathToFileURL } = require('url');
 const { BRIDGE_INTERNAL_HEADER } = require('../backend/constants/bridgeAccess.js');
 const externalGameAccessService = require('../backend/services/externalGameAccessService.js');
 const gameHost = require('./gameHost.js');
-const { createLocalAppWindowController } = require('./localAppWindow.js');
+const { createLocalAppWindowController, attachGameMediaPermissions } = require('./localAppWindow.js');
 const { createBleMainIntegration } = require('./ble/mainIntegration.js');
 const { createBrandBleMainIntegration } = require('./ble/brandMainIntegration.js');
 const { createQuitCoordinator } = require('./shutdownCoordinator.js');
@@ -698,6 +698,8 @@ function createWindow() {
     },
   });
   mainWindow = win;
+  // 游戏页 iframe 与面板的麦克风：只放行本机来源，其余权限保持默认。
+  attachGameMediaPermissions(win.webContents.session);
   bleMainIntegration.attachWindow(win);
   brandBleMainIntegration?.attachWindow(win);
   win.on('close', (event) => quitCoordinator.handleWindowClose(event));
@@ -933,7 +935,8 @@ function startFrontendServer(callback) {
     res.sendFile(path.join(distPath, 'index.html'));
   });
   
-  const FRONTEND_PORT = 5277;
+  // 端口可用环境变量覆盖：便于在用户已运行安装版时启动一套完全隔离的实例。
+  const FRONTEND_PORT = Number(process.env.CONTROL_PANEL_FRONTEND_PORT) || 5277;
   // 只绑回环：本机面板/后端不对外提供任何服务（审查报告 §2.4）。
   frontendServer = frontendApp.listen(FRONTEND_PORT, '127.0.0.1', () => {
     process.env.FRONTEND_URL = `http://127.0.0.1:${FRONTEND_PORT}`;
@@ -971,7 +974,7 @@ function startBackendThenWindow() {
     const logService = require(path.join(appPath, 'backend', 'services', 'logService.js'));
     logService.cleanOldLogs();
     backendApp = require(backendPath);
-    const BACKEND_PORT = 5278;
+    const BACKEND_PORT = Number(process.env.CONTROL_PANEL_BACKEND_PORT) || 5278;
     // 必须 listen 后端导出的 server（已挂 /bridge WS），不能对 app 重新 listen——
     // 否则会新建一个不带 WS 的 server，插件 bridge 握手 404。回退到 app 仅为兼容旧导出。
     const backendServer = backendApp.server || backendApp;

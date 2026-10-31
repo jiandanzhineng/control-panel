@@ -8,6 +8,7 @@ const { BRIDGE_INTERNAL_HEADER } = require('../constants/bridgeAccess');
 const externalGameAccessService = require('./externalGameAccessService');
 const browserDeviceGrantService = require('./browserDeviceGrantService');
 const wsUpgradeRouter = require('./wsUpgradeRouter');
+const sttService = require('./sttService');
 // 玩法载体事件（本机开始/退出一次玩法）：远程占用仲裁（remoteGameService）订阅
 const playCarrierBus = require('./playCarrierBus');
 
@@ -150,6 +151,9 @@ function init(server) {
           params: msg.params || {},
         };
         if (pendingDisconnect && activeSession === pendingDisconnect && isSameSessionConfig(pendingDisconnect, config)) {
+          // 同配置快速重连（页面刷新/崩溃重载）会销毁旧会话并清掉它的自动停止定时器，
+          // 旧页面发出的电击可能还没停，这里先补发 stop。
+          if (pendingDisconnect.shockStopTimer) stopShockTargets(pendingDisconnect);
           removeSession(pendingDisconnect);
         } else {
           replaceActiveSession();
@@ -287,6 +291,21 @@ function handleMessage(session, msg) {
 
       case 'getDeviceMap': {
         session.send({ id, result: session.deviceMap });
+        break;
+      }
+
+      case 'speechStatus': {
+        session.send({ id, result: speechStatusForSession() });
+        break;
+      }
+
+      case 'speechToText': {
+        // 转写是异步的（上游可达 20s），结果/错误都用原 requestId 回发。
+        transcribeForSession(msg)
+          .then((result) => session.send({ id, result }))
+          .catch((error) => session.send({
+            id, error: error?.message || String(error), code: error?.code || null,
+          }));
         break;
       }
 
@@ -880,25 +899,71 @@ function scheduleShockAutoStop(session, physId, capability, actionName) {
   }
   session.shockStopTargets = session.shockStopTargets || new Set();
   session.shockStopTargets.add(physId);
+  // 留痕：宿主兜底停止是“游戏自身停止没发出去”时的最后保险，日志里要能看出它排在游戏停止之后
+  logService.info('BridgeShock', `auto-stop scheduled in ${duration}s target=${physId}`);
   session.shockStopTimer = setTimeout(() => {
     session.shockStopTimer = null;
     if (!session.active) return;
-    const targets = Array.from(session.shockStopTargets || []);
-    session.shockStopTargets = new Set();
-    for (const target of targets) {
-      try {
-        if (virtualDeviceService.isVirtualDevice(target)) {
-          virtualDeviceService.interceptCommand(target, { action: 'invoke', capability: 'shock', actionName: 'stop', params: {} });
-        } else {
-          deviceService.invokeDeviceCapability(target, 'shock', 'stop', {});
-        }
-      } catch (_) {}
-    }
+    logService.info('BridgeShock', `auto-stop fired targets=${Array.from(session.shockStopTargets || []).join(',')}`);
+    stopShockTargets(session);
   }, duration * 1000);
+}
+
+// 对会话登记过的电击目标发 stop，并清掉自动停止定时器。
+function stopShockTargets(session) {
+  if (session.shockStopTimer) {
+    clearTimeout(session.shockStopTimer);
+    session.shockStopTimer = null;
+  }
+  const targets = Array.from(session.shockStopTargets || []);
+  session.shockStopTargets = new Set();
+  for (const target of targets) {
+    try {
+      if (virtualDeviceService.isVirtualDevice(target)) {
+        virtualDeviceService.interceptCommand(target, { action: 'invoke', capability: 'shock', actionName: 'stop', params: {} });
+      } else {
+        deviceService.invokeDeviceCapability(target, 'shock', 'stop', {});
+      }
+    } catch (_) {}
+  }
 }
 
 function emitSystemLog(session, level, message, meta) {
   session.send({ event: 'systemLog', level, message, meta: meta || {} });
+}
+
+// ---------- 语音识别（游戏用，契约见 docs/plans/reading-game.md §3.2） ----------
+// 只给本机游戏用：远程会话 / 远程投影期间麦克风不在本机执行端，一律拒绝。
+function remoteSpeechReason() {
+  try {
+    if (require('./remoteSessionService').getStatus().active) return 'remote';
+  } catch (_) {}
+  try {
+    if (require('./remoteProjectionService').getStatus().active) return 'projection';
+  } catch (_) {}
+  return null;
+}
+
+function speechBlockedError(reason) {
+  const error = new Error(`远程${reason === 'projection' ? '投影' : '会话'}中不可用，断开后可用`);
+  error.code = 'NO_STT';
+  return error;
+}
+
+function speechStatusForSession() {
+  const reason = remoteSpeechReason();
+  if (reason) return { ready: false, mode: 'none', reason: 'REMOTE_LOCKED' };
+  return sttService.status();
+}
+
+function transcribeForSession(msg) {
+  const reason = remoteSpeechReason();
+  if (reason) return Promise.reject(speechBlockedError(reason));
+  return sttService.transcribe({
+    audio: msg.audio,
+    format: msg.format,
+    timeoutMs: msg.timeoutMs,
+  });
 }
 
 // 本机（页面式游戏 / 插件）开始与退出玩法：广播给远程占用仲裁。

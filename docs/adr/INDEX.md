@@ -2,6 +2,8 @@
 
 > 自动生成，勿手改。更新：`python E:\smart\tools\memory-index\memory_index.py --path <本层级目录>`
 
+- 2026-10-30 [朗读游戏迁入 control-panel](2026-10-30-reading-game.md) — 朗读游戏从 electron-client 迁入 control-panel，PC 与手机端都要能玩
+- 2026-10-30 [游戏语音识别：mimo 中转 SiliconFlow + 可自备 key](2026-10-30-siliconflow-stt.md) — 语音识别走 mimo 中转的 SiliconFlow，用户可在面板填自己的 SiliconFlow key
 - 2026-10-13 [语音开始：口令触发玩法启动](2026-10-13-voice-start-trigger.md) — 新增「语音开始」，中英固定口令直接开始，PC 与手机都做
 - 2026-10-08 [控制面板支持心率带并新增心率能力](2026-10-08-heart-rate-capability.md) — control-panel 支持标准蓝牙心率带并新增心率能力
 - 2026-10-07 [虚拟心率带用 ESP32-C3 假设备](2026-10-07-virtual-hrm-c3-mock.md) — 用 ESP32-C3 做标准 BLE 心率带假设备供测试

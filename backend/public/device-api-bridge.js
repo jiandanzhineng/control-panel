@@ -101,8 +101,12 @@
       if (msg.id && pending.has(msg.id)) {
         var p = pending.get(msg.id);
         pending.delete(msg.id);
-        if (msg.error) p.reject(new Error(msg.error));
-        else p.resolve(msg.result);
+        if (msg.error) {
+          var err = new Error(msg.error);
+          // 语音识别等动作需要保留错误码（NOT_SIGNED_IN / TIMEOUT / BAD_AUDIO…）。
+          if (msg.code) err.code = msg.code;
+          p.reject(err);
+        } else p.resolve(msg.result);
         return;
       }
       if (msg.event) handleEvent(msg);
@@ -249,6 +253,24 @@
 
   window.DeviceAPI = {
     device: device,
+    // 游戏用语音识别（朗读游戏等）。PC 宿主总有这块；手机旧版 App 没有，游戏要判存在性。
+    // audio: 16kHz 单声道 WAV 的 base64（不带 data: 前缀）；
+    // reject 的 Error 带 code：NOT_SIGNED_IN | NO_STT | TIMEOUT | RATE_LIMITED |
+    // UPSTREAM_* | BAD_AUDIO。
+    speech: {
+      status: function () {
+        return sendRequest({ action: 'speechStatus' });
+      },
+      transcribe: function (options) {
+        var opts = options || {};
+        return sendRequest({
+          action: 'speechToText',
+          audio: opts.audio,
+          format: opts.format || 'wav',
+          timeoutMs: opts.timeoutMs,
+        });
+      },
+    },
     getDevices: function () { return sendRequest({ action: 'getDevices' }); },
     getDeviceMap: function () { return sendRequest({ action: 'getDeviceMap' }); },
     log: function (level, message, meta) { sendFire({ action: 'log', level: level, message: message, meta: meta }); },
