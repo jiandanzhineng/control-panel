@@ -222,6 +222,22 @@ describe('ModelStore', () => {
     expect(() => store.filePath('demo', '../escape.bin')).toThrow(expect.objectContaining({ code: 'BAD_FILE_NAME' }));
   });
 
+  test('reports an error and refreshes from disk when deleting the directory fails', async () => {
+    const fsp = require('fs/promises');
+    const contents = { 'a.bin': Buffer.from('x'), 'b.txt': Buffer.from('y') };
+    const { base } = await start(contents);
+    const store = new ModelStore({ catalog: catalogOf([makeModel(base, contents)]), rootDir: dir, fetchImpl: fetch });
+    await store.downloadAsync('demo');
+    const spy = jest.spyOn(fsp, 'rm').mockRejectedValueOnce(new Error('busy'));
+    try {
+      await expect(store.remove('demo')).rejects.toThrow('busy');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(store.status('demo').state).toBe('error');
+    expect(store.status('demo').error).toContain('删除失败');
+  });
+
   test('removes an installed model', async () => {
     const contents = { 'a.bin': Buffer.from('x'), 'b.txt': Buffer.from('y') };
     const { base } = await start(contents);
