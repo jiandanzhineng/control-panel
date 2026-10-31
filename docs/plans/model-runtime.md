@@ -129,7 +129,7 @@
 - sherpa-onnx 官方 npm 的 Windows 包只带 CPU 版 onnxruntime，没有官方 CUDA / DirectML 的 Windows Node addon；要用 GPU 需自编（VS2022 + CMake + 对应 EP）。
 - DirectML 试过：`onnxruntime-directml` 1.24.4 能跑小模型，但加载 SenseVoice **int8** 会话直接崩溃（exit 139）；fp32 模型 937,617,178 B（约 938MB），远大于 int8 的 239MB，v1 不采用。
 - 因此 v1 引擎只声明 `cpu`（可用 `MR_SHERPA_PROVIDERS` 覆盖），设备探测、自动基准、失败回退等接口都已就绪；以后有 GPU 构建时可作为可下载组件接入。
-- NPU：`accelerators` 已通过 WMI 识别 NPU，设备 id 预留 `npu`；当前引擎构建没有 NPU / DirectML EP，界面显示「当前引擎不支持」。sherpa-onnx 走 onnxruntime 的 execution provider，理论上可用 DirectML 统一使用 GPU / NPU；厂商 NPU（QNN / OpenVINO / CoreML）需要专门构建，npm 预编译包不包含。
+- NPU：`accelerators` 已通过 WMI 识别 NPU，设备 id 预留 `npu`；只有实际检测到（`present=true`）才会出现在设置页，未被检测到的硬件不展示。当前引擎构建没有 NPU / DirectML EP，检测到时显示「当前引擎不支持」。sherpa-onnx 走 onnxruntime 的 execution provider，理论上可用 DirectML 统一使用 GPU / NPU；厂商 NPU（QNN / OpenVINO / CoreML）需要专门构建，npm 预编译包不包含。
 
 ### 8.3 体积
 
@@ -137,6 +137,8 @@
 - 模型不进安装包，首次使用下载约 239.5MB。
 - `electron-builder --dir` 产物 `dist/win-unpacked` 约 472MiB，其中 `app.asar` 约 89.7MiB；新增解包目录 `sherpa-onnx-node` 63,217 B + `sherpa-onnx-win-x64` 23,160,980 B，合计约 23.2MB。
 - 打包验证：用打包后的 `UnderSilicon.exe` + `ELECTRON_RUN_AS_NODE=1` 启动 `app.asar` 里的 `worker.js`，原生模块从 `app.asar.unpacked` 加载成功，识别 4 秒音频耗时 345ms，结果「山路。」。
+- 干净目录打包（2026-11-01）：`git archive HEAD` 到 `tmp/local-stt/pack-clean`，根目录 `npm ci --ignore-scripts`（Electron 运行时复用现有 `dist`），`backend` 执行 `npm ci --omit=dev`，再 `electron-builder --dir`。产物 `win-unpacked` 433MB，`app.asar` 51MB，`UnderSilicon.exe` 210.6MB；`graceful-fs` 等主进程依赖已完整进入 asar。
+- 打包后 GUI 端到端：设置页下载真实 SenseVoice（239MB，本地源）耗时 11.6s，经历 downloading → verifying → ready；随后朗读游戏全流程 214/214 通关，本地识别 313–352ms，5 次抽样全部 `mode=local`，无云端回退。
 
 ### 8.4 许可证
 
@@ -150,7 +152,7 @@
 - 朗读游戏版本升到 1.1.2（manifest 与 `game.js` 内部版本号一致）。
 - CDP 下载流程用本地假源加速；另用 hf-mirror 实测断点续传（2,150,280 → 4,055,028 B，+1,904,748 B，Range 生效）。
 - 本机 GPU 未能实际跑通，因此没有执行「GPU 可用时再回放一遍」。
-- 当前工作区把根 `node_modules` 指到主仓库（符号链接），`electron-builder` 打出的完整 GUI 因 `electron-updater` 依赖的 `graceful-fs` 未被复制而报错；这是工作区/依赖布局问题，与本次改动无关。打包子进程识别验证不受影响（见 8.3）。
+- 当前工作区把根 `node_modules` 指到主仓库（符号链接），直接打包会因 `electron-updater` 依赖的 `graceful-fs` 未被复制而报错；这是工作区/依赖布局问题，与本次改动无关。已按上面的干净目录 + `npm ci` 方式完成完整 GUI 打包验证（见 8.3）。
 
 ### 8.6 启动就绪与后台校验
 
