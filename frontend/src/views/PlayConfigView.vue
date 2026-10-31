@@ -46,8 +46,7 @@
               <span>{{ t('playConfig.localModelLine', { name: notice.title, state: modelStateText(notice.state) }) }}</span>
               <el-button link type="primary" @click="goLocalModels">
                 {{ notice.state === 'absent' ? t('playConfig.localModelDownload') : t('playConfig.localModelOpen') }}
-              </el-button>
-            </div>
+              </el-button>            </div>
           </el-alert>
         </div>
         <div class="loading-status">
@@ -689,10 +688,12 @@ const play = ref<PlayDetail | null>(null);
 const modelCatalog = ref<ModelEntry[]>([]);
 const localModelNotices = computed(() => (play.value?.models || []).map((entry) => {
   const model = modelCatalog.value.find((m) => m.id === entry.id);
+  // 目录请求失败或还没回来时不能误报「未下载」。
+  const state = model?.state || 'unknown';
   return {
     id: entry.id,
     title: model ? (locale.value === 'en' ? model.title.en : model.title.zh) : entry.id,
-    state: model?.state || 'absent',
+    state,
   };
 }));
 function modelStateText(state: string) {
@@ -700,10 +701,13 @@ function modelStateText(state: string) {
   return t(key);
 }
 async function loadModelCatalog() {
+  if (!(play.value?.models || []).length) return;
   try {
     const snapshot = await getModels();
     modelCatalog.value = snapshot.models;
-  } catch (_) {}
+  } catch (_) {
+    // 失败时保持 unknown，不显示成「未下载」。
+  }
 }
 function goLocalModels() { router.push({ name: 'settings' }); }
 const devices = ref<DeviceItem[]>([]);
@@ -1718,8 +1722,7 @@ function cancel() { router.push({ name: 'play_library' }); }
 onMounted(() => {
   onResize();
   window.addEventListener('resize', onResize);
-  loadAll().then(() => recomputeBlocking());
-  void loadModelCatalog();
+  loadAll().then(() => { recomputeBlocking(); void loadModelCatalog(); });
 });
 watch(locale, () => { void loadAll().then(() => recomputeBlocking()); });
 onUnmounted(() => {

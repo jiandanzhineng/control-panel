@@ -126,9 +126,12 @@ const localEnabled = ref(false)
 const modelId = ref('')
 const provider = ref('auto')
 let timer: ReturnType<typeof setTimeout> | undefined
+let disposed = false
 
 const models = computed<ModelEntry[]>(() => snapshot.value?.models || [])
-const devices = computed<Accelerator[]>(() => snapshot.value?.accelerators || [])
+// 没检测到的硬件（CPU 除外）不展示；后端仍返回完整列表供诊断。
+const devices = computed<Accelerator[]>(() => (snapshot.value?.accelerators || [])
+  .filter((device) => device.present || device.id === 'cpu'))
 const last = computed(() => snapshot.value?.last || { provider: null, latencyMs: null })
 const asr = computed(() => snapshot.value?.settings?.asr || { localEnabled: false, model: null, provider: 'auto' })
 const readyModels = computed(() => models.value.filter((model) => model.state === 'ready'))
@@ -206,8 +209,11 @@ const lastText = computed(() => {
 })
 
 async function load() {
+  if (disposed) return
   try {
-    snapshot.value = await getModels()
+    const next = await getModels()
+    if (disposed) return
+    snapshot.value = next
   } catch (_) {
     // 后端暂时不可用时保持上一次状态
   }
@@ -215,6 +221,7 @@ async function load() {
 }
 
 function schedule() {
+  if (disposed) return
   if (timer) clearTimeout(timer)
   const busy = activeModels.value.length > 0
   timer = setTimeout(load, busy ? 1000 : 5000)
@@ -248,7 +255,21 @@ async function saveAsr() {
   }
 }
 
+async function confirmDownload(model: ModelEntry, redownload = false) {
+  try {
+    await ElMessageBox.confirm(
+      t(redownload ? 'models.redownloadConfirm' : 'models.downloadConfirm', { size: formatSize(model.total) }),
+      t(redownload ? 'models.redownload' : 'models.download'),
+      { type: 'info', confirmButtonText: t('models.download'), cancelButtonText: t('common.cancel') },
+    )
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
 async function download(model: ModelEntry) {
+  if (!(await confirmDownload(model))) return
   try {
     await downloadModel(model.id)
     await load()
@@ -284,6 +305,7 @@ async function remove(model: ModelEntry) {
 }
 
 async function redownload(model: ModelEntry) {
+  if (!(await confirmDownload(model, true))) return
   try {
     await deleteModel(model.id)
     await downloadModel(model.id)
@@ -294,7 +316,7 @@ async function redownload(model: ModelEntry) {
 }
 
 onMounted(load)
-onBeforeUnmount(() => { if (timer) clearTimeout(timer) })
+onBeforeUnmount(() => { disposed = true; if (timer) clearTimeout(timer) })
 </script>
 
 <style scoped>

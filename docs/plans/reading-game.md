@@ -38,12 +38,15 @@
 
 ```js
 DeviceAPI.speech            // 宿主不支持时是 undefined（比如旧版手机 App），游戏必须能降级
-DeviceAPI.speech.status()   // → Promise<{ ready: boolean, mode: 'own_key'|'relay'|'none', reason?: string }>
+DeviceAPI.speech.status()   // → Promise<{ ready: boolean, mode: 'local'|'own_key'|'relay'|'none', reason?: string }>
 DeviceAPI.speech.transcribe({ audio, format: 'wav', timeoutMs })
                             // audio 是 16kHz 单声道 WAV 的 base64（不带 data: 前缀）
-                            // → Promise<{ text: string, mode: 'own_key'|'relay', latencyMs: number }>
-                            // 失败时 reject Error，带 code：NOT_SIGNED_IN | NO_STT | TIMEOUT | RATE_LIMITED | UPSTREAM_* | BAD_AUDIO
+                            // → Promise<{ text: string, mode: 'local'|'own_key'|'relay', latencyMs: number, fallback?: boolean }>
+                            // 失败时 reject Error，带 code：NOT_SIGNED_IN | NO_STT | NO_LOCAL | TIMEOUT
+                            //   | RATE_LIMITED | UPSTREAM_* | BAD_AUDIO | WORKER_* | LOCAL_INFERENCE_FAILED
 ```
+
+- 本地优先：游戏声明 `models: [{ task: 'asr', id: 'sense-voice-small-int8' }]` 并下载就绪后，`status()` 返回 `mode: 'local'`，`transcribe()` 先走本机模型；本地不可用、加载失败或推理失败时自动回退云端，回退结果带 `fallback: true` 和云端 `mode`。
 
 - 消息层：`sendRequest({ action: 'speechStatus' })`、`sendRequest({ action: 'speechToText', audio, format, timeoutMs })`。
 - 宿主把 `timeoutMs` 限制在 3000–20000 之间（默认 10000），超时要真正中止上游请求。
@@ -66,7 +69,7 @@ DeviceAPI.speech.transcribe({ audio, format: 'wav', timeoutMs })
 
 | 文件 | 内容 |
 |---|---|
-| `index.html` | manifest（id `reading-game`，版本以第 7 节为准（1.1.0），**不设** `runtime: host`）、界面骨架；按其他内置页面游戏的方式引入 bridge、i18n |
+| `index.html` | manifest（id `reading-game`，版本以第 7 节为准（1.1.2），**不设** `runtime: host`）、界面骨架；按其他内置页面游戏的方式引入 bridge、i18n |
 | `reading-core.js` | 纯逻辑，不碰 DOM 和网络：`ReadingAligner`、`ReadingTriggerMachine`、`VoiceDetector`、`PcmRingBuffer`、重采样、WAV 编码、模糊音归一。从原版原样搬过来，Node 里可以直接 require 来单测 |
 | `pinyin.js` | 页面内把汉字转成拼音并记录字下标，替代原版主进程的 IPC `text-to-pinyin`，下标规则沿用原版 `services/pinyinService.js`（按 origin.length 累加） |
 | `vendor/pinyin-pro.min.js` | pinyin-pro 的 UMD 构建（MIT，文件头保留许可证）。手机上不能依赖 npm |
@@ -107,7 +110,7 @@ DeviceAPI.speech.transcribe({ audio, format: 'wav', timeoutMs })
 - 远程会话（被控端在另一台设备）首版不支持，因为麦克风在执行端。
 - iOS 只做代码层面的兼容（AudioWorklet 回退、手势、采样率），没有真机验证。
 
-## 7. 反复朗读与背诵玩法（2026-10-31，版本 1.1.0，先只做 PC；1.1.1 起背诵第 1 级不遮字、页面加载后自动开始）
+## 7. 反复朗读与背诵玩法（2026-10-31，版本 1.1.0，先只做 PC；1.1.1 起背诵第 1 级不遮字、页面加载后自动开始；1.1.2 起支持声明并优先使用本地模型）
 
 > 决定见 `docs/adr/2026-10-31-reading-game-recite.md`。本节修订第 1 节"不改玩法"。
 
