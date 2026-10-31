@@ -93,7 +93,9 @@ function rgMaskRatio(level, maskStart, maskStep) {
   const start = Math.max(0, Math.min(100, Number(maskStart) || 0))
   const step = Math.max(0, Math.min(100, Number(maskStep) || 0))
   const lv = Math.max(1, Math.floor(Number(level) || 1))
-  return Math.min(100, start + (lv - 1) * step)
+  // 第 1 级是不遮字的通读；从第 2 级开始按 maskStart 起遮
+  if (lv <= 1) return 0
+  return Math.min(100, start + (lv - 2) * step)
 }
 
 function _lastMaskedAt(lastMaskedPass, idx) {

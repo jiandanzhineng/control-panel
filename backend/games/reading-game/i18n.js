@@ -114,6 +114,7 @@
       "朗读文本": "Reading text",
       "文本 {n}": "Text {n}",
       "开始背诵": "Start reciting",
+      "当前环境需要先点一下才能启用麦克风，请点击下方按钮开始": "This environment needs a tap before the mic can start. Press the button below to begin",
       "玩法": "Mode",
       "朗读": "Read",
       "背诵": "Recite",

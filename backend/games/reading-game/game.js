@@ -115,7 +115,7 @@
       this.started = false
       this.title = t('朗读游戏')
       this.description = t('朗读屏幕上的文字，停下来或长时间不按原文读就会受到电击；支持反复朗读和逐级遮字的背诵玩法')
-      this.version = '1.1.0'
+      this.version = '1.1.1'
       this.author = '游戏设计师'
       this.random = typeof opts.random === 'function' ? opts.random : Math.random
       this.config = {
@@ -282,12 +282,12 @@
       return Math.max(1, Math.min(50, n))
     }
 
-    // 背诵时每级多给一点停顿时间；朗读玩法 k = 0
+    // 背诵时每级多给一点停顿时间；朗读玩法和第 1 级（不遮字）不加
     _effectiveSilenceLimit() {
       const base = Math.max(0.5, Number(this.config.silenceLimit) || 6)
       if (this._mode() !== 'recite') return base
       const bonus = Math.max(0, Number(this.config.silenceBonus) || 0)
-      return base + Math.max(1, Number(this.state.level) || 1) * bonus
+      return base + Math.max(0, (Number(this.state.level) || 1) - 1) * bonus
     }
 
     // 选本遍要遮的字；朗读玩法不遮
@@ -572,7 +572,12 @@
       }
       if (!this.audioContext) this.audioContext = new Ctx()
       if (this.audioContext.state === 'suspended') {
-        try { await this.audioContext.resume() } catch (_) { /* 用户手势后会自动恢复 */ }
+        // 没有用户手势时 resume() 可能一直挂起，最多等 1.5 秒
+        const wait = new Promise(resolve => this.timers.setTimeout(resolve, 1500))
+        try { await Promise.race([this.audioContext.resume(), wait]) } catch (_) { /* 用户手势后会自动恢复 */ }
+      }
+      if (this.autoStarting && this.audioContext.state === 'suspended') {
+        throw new Error(t('当前环境需要先点一下才能启用麦克风，请点击下方按钮开始'))
       }
       const sr = this.audioContext.sampleRate || RG_CONST.SAMPLE_RATE
       this.ringBuffer = new RGRingBuffer(30, sr)
@@ -2594,6 +2599,16 @@
     }
   }
 
+  // 页面加载后直接开始；需要用户手势或启动失败时停在开始页，可手动点按钮
+  async autoStart() {
+    this.autoStarting = true
+    try {
+      await this.startGame()
+    } finally {
+      this.autoStarting = false
+    }
+  }
+
   bindStartButton() {
     if (!this.doc || typeof this.doc.getElementById !== 'function') return
     const start = this.doc.getElementById('rg-start-btn')
@@ -2641,6 +2656,7 @@
       game.bindStartButton()
       game.renderIdle()
       win.__game = game
+      game.autoStart()
       win.ReadingGame = ReadingGame
       // 宿主可直接调用：window.__game.startGame() / emergencyStop() / end()
       win.__readingGame = game

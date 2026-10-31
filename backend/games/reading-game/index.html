@@ -9,8 +9,8 @@
   "id": "reading-game",
   "title": "朗读游戏",
   "description": "朗读屏幕上的文字。停下来不读或长时间不按原文读会先警告再电击。支持反复朗读，以及逐级遮字的背诵玩法；语音识别失败只会少电，不会多电。",
-  "howTo": "1. 映射电击设备（必需），可选映射自动锁\n2. 选择玩法：朗读（可设遍数）或背诵（逐级遮字）\n3. 在「朗读文本」里填写或修改要读的文字（已有默认短文）\n4. 调整沉默/离稿时限、过关正确率与电击强度\n5. 点开始，允许麦克风，先安静 3 秒再朗读",
-  "version": "1.1.0",
+  "howTo": "1. 映射电击设备（必需），可选映射自动锁\n2. 选择玩法：朗读（可设遍数）或背诵（第一遍不遮字，之后逐级遮字）\n3. 在「朗读文本」里填写或修改要读的文字（已有默认短文）\n4. 调整沉默/离稿时限、过关正确率与电击强度\n5. 开始后游戏自动启动，允许麦克风，先安静 3 秒再朗读",
+  "version": "1.1.1",
   "permissions": ["microphone"],
   "devices": [
     {
@@ -95,8 +95,8 @@
       "max": 100,
       "step": 1,
       "unit": "%",
-      "label": "第一级遮字比例",
-      "description": "背诵第一遍遮住的汉字比例",
+      "label": "起始遮字比例",
+      "description": "背诵第一级不遮字（通读），过关后从这个比例开始遮",
       "group": "core"
     },
     {
@@ -329,7 +329,7 @@
     "en": {
       "title": "Reading game",
       "description": "Read the text on screen. Staying silent or not reading the original for too long warns first, then shocks. Supports repeated reading and recite mode with progressive character masking. Speech-recognition failures can only reduce shocks, never add them.",
-      "howTo": "1. Map a shock device (required); optionally map an auto lock\n2. Choose a mode: read (repeat for N passes) or recite (progressive masking)\n3. Edit the text to read in “Reading text” (a short default is filled in)\n4. Tune silence/off-script limits, pass rate and shock intensity\n5. Press start, allow the mic, stay quiet for 3 seconds, then read",
+      "howTo": "1. Map a shock device (required); optionally map an auto lock\n2. Choose a mode: read (repeat for N passes) or recite (no masking on the first pass, then progressive masking)\n3. Edit the text to read in “Reading text” (a short default is filled in)\n4. Tune silence/off-script limits, pass rate and shock intensity\n5. The game starts automatically; allow the mic, stay quiet for 3 seconds, then read",
       "devices": {
         "shock": "Shock device",
         "lock": "Auto lock"
@@ -346,7 +346,7 @@
         "passes": "Reading passes",
         "restSeconds": "Rest between passes",
         "passRate": "Recite pass rate",
-        "maskStart": "First-level mask",
+        "maskStart": "Starting mask",
         "maskStep": "Mask per level",
         "hintChars": "Hint characters",
         "silenceBonus": "Extra pause per level",
@@ -373,7 +373,7 @@
         "passes": "How many times to read in read mode. 1 is the original single read (unused in recite mode).",
         "restSeconds": "Rest between passes: no listening or shocks. 0 starts the next pass immediately.",
         "passRate": "Recite mode: accuracy needed to level up. Clear the 100% mask level to finish.",
-        "maskStart": "Percentage of Chinese characters masked on the first recite pass.",
+        "maskStart": "Recite level 1 has no masking (a plain read); after passing it, masking starts at this percentage.",
         "maskStep": "Extra masking per level, capped at 100%.",
         "hintChars": "Characters revealed after a shock in recite mode, starting from the current position.",
         "silenceBonus": "Extra silence seconds per recite level.",

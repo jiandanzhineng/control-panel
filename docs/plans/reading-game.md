@@ -107,7 +107,7 @@ DeviceAPI.speech.transcribe({ audio, format: 'wav', timeoutMs })
 - 远程会话（被控端在另一台设备）首版不支持，因为麦克风在执行端。
 - iOS 只做代码层面的兼容（AudioWorklet 回退、手势、采样率），没有真机验证。
 
-## 7. 反复朗读与背诵玩法（2026-10-31，版本 1.1.0，先只做 PC）
+## 7. 反复朗读与背诵玩法（2026-10-31，版本 1.1.0，先只做 PC；1.1.1 起背诵第 1 级不遮字、页面加载后自动开始）
 
 > 决定见 `docs/adr/2026-10-31-reading-game-recite.md`。本节修订第 1 节"不改玩法"。
 
@@ -157,7 +157,7 @@ DeviceAPI.speech.transcribe({ audio, format: 'wav', timeoutMs })
 
 ### 7.4 遮字（背诵）
 
-- 第 k 级（k 从 1 开始）的遮字比例 = `min(100, maskStart + (k−1)·maskStep)`。
+- 第 1 级不遮字（通读）；第 k 级（k ≥ 2）的遮字比例 = `min(100, maskStart + (k−2)·maskStep)`（1.1.1 起）。
 - 只遮汉字，标点和空白不遮。遮的个数 = round(比例 × 汉字数)；比例大于 0 时至少遮 1 个。
 - **每一遍都重新选。** 记录每个字最近一次被遮是第几遍，从没遮过或最久没遮过的字优先，同一档内随机。这样上一遍遮过的字，这一遍尽量不再遮。选字函数是纯函数，可以注入随机数。
 - **显示**：
@@ -165,7 +165,7 @@ DeviceAPI.speech.transcribe({ audio, format: 'wav', timeoutMs })
   - 读过去以后，这个字还原成原字，用淡色显示。
   - 卡壳提示还原出来的字用琥珀色。
 - **卡壳提示**：背诵玩法下每次真的电击（`doShock`）后，从当前位置对应的字开始，往后 `hintChars` 个被遮的字在本遍内还原。
-- **停顿放宽**：每遍开始时把 trigger 的 `silenceLimit` 设为 `config.silenceLimit + k·silenceBonus`，朗读玩法里 k 取 0。
+- **停顿放宽**：每遍开始时把 trigger 的 `silenceLimit` 设为 `config.silenceLimit + k·silenceBonus`，朗读玩法里 k 取 0。1.1.1 起改为 `(k−1)·silenceBonus`，第 1 级不加。
 
 ### 7.5 顺着读（两种玩法都适用）
 

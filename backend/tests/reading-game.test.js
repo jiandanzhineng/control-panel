@@ -1179,8 +1179,9 @@ console.log('\n[反复朗读与背诵单元测试]')
 const maskSample = pinyinService.textToPinyin('春天来了，花儿开了。').chars
 
 test('选字：比例、只遮汉字、至少一个、100% 全遮', () => {
-  assert.strictEqual(core.rgMaskRatio(1, 10, 10), 10)
-  assert.strictEqual(core.rgMaskRatio(4, 10, 30), 100)
+  assert.strictEqual(core.rgMaskRatio(1, 10, 10), 0, '第 1 级不遮字')
+  assert.strictEqual(core.rgMaskRatio(2, 10, 10), 10)
+  assert.strictEqual(core.rgMaskRatio(5, 10, 30), 100)
   assert.deepStrictEqual(core.rgSelectMaskChars(maskSample, 0, 1, null, () => 0.5), [])
   const zh = maskSample.filter(c => c.isZh).map(c => c.charIndex)
   const low = core.rgSelectMaskChars(maskSample, 1, 1, null, () => 0.5)
@@ -1270,12 +1271,12 @@ test('多遍流程：朗读 2 遍后通关', () => {
 test('多遍流程：背诵升级、留级和 100% 遮字通关', () => {
   const up = newFlowGame({ mode: 'recite', passRate: 85, maskStart: 10, maskStep: 50, restSeconds: 20 }, 90)
   up.state.lastAccuracy = null
-  up.state.maskRatio = 10
+  up.state.maskRatio = 0
   up.state.level = 1
   up._onPassDone('won')
   assert.strictEqual(up.state.level, 2, '正确率达标应升级')
   assert.strictEqual(up.state.phase, 'rest')
-  assert.strictEqual(up.state.maskRatio, 60, '下一遍遮字比例应按新等级')
+  assert.strictEqual(up.state.maskRatio, 10, '通读过关后从 maskStart 开始遮')
   assert.strictEqual(up.trigger.paused, true, '休息期间暂停判定')
   assert.strictEqual(up.state.lastPassPassed, true)
   const stay = newFlowGame({ mode: 'recite', passRate: 85, maskStart: 10, maskStep: 50, restSeconds: 20 }, 50)
@@ -1287,7 +1288,7 @@ test('多遍流程：背诵升级、留级和 100% 遮字通关', () => {
   assert.strictEqual(stay.state.phase, 'rest')
   const win = newFlowGame({ mode: 'recite', passRate: 85, maskStart: 10, maskStep: 50, restSeconds: 20 }, 100)
   win.state.maskRatio = 100
-  win.state.level = 3
+  win.state.level = 4
   win._onPassDone('won')
   assert.strictEqual(win.state.won, true, '100% 遮字达标应通关')
   assert.strictEqual(win.state.phase, 'won')
@@ -1314,9 +1315,9 @@ test('多遍流程：旧 passId 的结果和休息期间的识别结果都被丢
 test('背诵每级放宽沉默时限，朗读玩法不变', () => {
   const g = newFlowGame({ mode: 'recite', silenceLimit: 6, silenceBonus: 2, restSeconds: 0 })
   g.state.level = 1
-  assert.strictEqual(g._effectiveSilenceLimit(), 8)
+  assert.strictEqual(g._effectiveSilenceLimit(), 6, '第 1 级不遮字，不加停顿')
   g.state.level = 3
-  assert.strictEqual(g._effectiveSilenceLimit(), 12)
+  assert.strictEqual(g._effectiveSilenceLimit(), 10)
   g.config.mode = 'read'
   g.state.level = 3
   assert.strictEqual(g._effectiveSilenceLimit(), 6)
@@ -1493,7 +1494,7 @@ test('休息结束后的窗口恢复会直接开始下一遍', () => {
 test('T1 警告起点使用加上等级奖励后的沉默时限', () => {
   const g = newFlowGame({ mode: 'recite', silenceLimit: 6, silenceBonus: 2, restSeconds: 20 })
   g.config.warnLead = 2
-  g.state.level = 2
+  g.state.level = 3
   g.state.position = 50
   g.state.totalSyllables = 100
   g.state.phase = 'reading'
@@ -1665,8 +1666,8 @@ test('休息时按下一遍遮字从 0 渲染，不露出被遮的原字', () =>
   g.state.chars = pinyinService.textToPinyin('你好世界').chars
   g.state.phase = 'rest'
   g.state.position = 4
-  g.state.level = 1
-  g._selectMask(1, 1)
+  g.state.level = 2
+  g._selectMask(1, 2)
   assert.ok(g.state.maskedChars.length > 0)
   assert.strictEqual(g._displayCursor(), 0, '休息时从 0 显示')
   const html = g._renderChars('你好世界', 0, 4, 0)
@@ -1818,4 +1819,20 @@ test('末尾等待超时但识别请求仍在途时，也不电击', () => {
   assert.strictEqual(g.state.phase, 'rest')
   assert.strictEqual(g.state.warning, null)
   assert.strictEqual(g.state.shockCount, 0)
+})
+
+test('自动开始：没有用户手势导致音频挂起时报错并停在开始页', async () => {
+  class SuspendedCtx {
+    constructor () { this.state = 'suspended'; this.sampleRate = 48000 }
+    resume () { return new Promise(() => {}) }
+  }
+  const g = new ReadingGame({
+    window: { navigator: { mediaDevices: { getUserMedia: async () => ({}) } } },
+    media: { AudioContext: SuspendedCtx },
+    timers: { setTimeout: (fn) => { fn(); return 0 }, clearTimeout: () => {} }
+  })
+  g.autoStarting = true
+  await assert.rejects(() => g.startAudio(), /点一下/)
+  g.autoStarting = false
+  assert.strictEqual(typeof g.autoStart, 'function')
 })
