@@ -100,6 +100,8 @@
       </div>
       <p class="settings-note">{{ sfStatusText }}</p>
     </el-card>
+
+    <LocalModelsCard />
   </div>
 </template>
 
@@ -108,6 +110,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { getVoiceStatus, saveVoiceSettings, type VoiceStatus } from '../api/voice'
+import LocalModelsCard from '../components/LocalModelsCard.vue'
 import { useLocale } from '../i18n/useLocale'
 import type { LocalePreference } from '../i18n/locale'
 

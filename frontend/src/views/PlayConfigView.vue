@@ -34,6 +34,21 @@
             <template #title>{{ t('playConfig.howTo') }}</template>
             <div class="howto-body">{{ playHowTo }}</div>
           </el-alert>
+          <el-alert
+            v-if="localModelNotices.length"
+            class="local-model-alert"
+            type="success"
+            :closable="false"
+            show-icon
+          >
+            <template #title>{{ t('playConfig.localModels') }}</template>
+            <div v-for="notice in localModelNotices" :key="notice.id" class="local-model-line">
+              <span>{{ t('playConfig.localModelLine', { name: notice.title, state: modelStateText(notice.state) }) }}</span>
+              <el-button link type="primary" @click="goLocalModels">
+                {{ notice.state === 'absent' ? t('playConfig.localModelDownload') : t('playConfig.localModelOpen') }}
+              </el-button>
+            </div>
+          </el-alert>
         </div>
         <div class="loading-status">
           <div v-if="loadingAll" class="loading-info">
@@ -582,6 +597,7 @@ import {
 import { joinPhraseLabels, resolveMicId, voiceErrorKey } from '../play/voiceStart';
 import { useRemoteSession } from '../composables/useRemoteSession';
 import { friendlyMessage } from '../api/errorMessage';
+import { getModels, type ModelEntry } from '../api/models';
 import { needsFrontendOccupy } from '../remote/remotePlay';
 import { currentLocale } from '../i18n';
 import { localeTag } from '../i18n/locale';
@@ -637,6 +653,7 @@ interface PlayDetail {
   version?: string;
   devices?: PlayDevice[];
   params?: PlayParam[];
+  models?: Array<{ task: string; id: string; optional?: boolean }>;
   // 游戏专属
   gamePath?: string;
   external?: boolean;
@@ -669,6 +686,26 @@ const carrierType = computed<'game' | 'plugin'>(() => {
 const playId = computed(() => String(route.params.id || ''));
 
 const play = ref<PlayDetail | null>(null);
+const modelCatalog = ref<ModelEntry[]>([]);
+const localModelNotices = computed(() => (play.value?.models || []).map((entry) => {
+  const model = modelCatalog.value.find((m) => m.id === entry.id);
+  return {
+    id: entry.id,
+    title: model ? (locale.value === 'en' ? model.title.en : model.title.zh) : entry.id,
+    state: model?.state || 'absent',
+  };
+}));
+function modelStateText(state: string) {
+  const key = `models.state${state.charAt(0).toUpperCase()}${state.slice(1)}`;
+  return t(key);
+}
+async function loadModelCatalog() {
+  try {
+    const snapshot = await getModels();
+    modelCatalog.value = snapshot.models;
+  } catch (_) {}
+}
+function goLocalModels() { router.push({ name: 'settings' }); }
 const devices = ref<DeviceItem[]>([]);
 const typeCapabilityMap = ref<Record<string, string[]>>({});
 const loadingAll = ref(false);
@@ -1682,6 +1719,7 @@ onMounted(() => {
   onResize();
   window.addEventListener('resize', onResize);
   loadAll().then(() => recomputeBlocking());
+  void loadModelCatalog();
 });
 watch(locale, () => { void loadAll().then(() => recomputeBlocking()); });
 onUnmounted(() => {
@@ -1841,6 +1879,18 @@ onUnmounted(() => {
 
 .howto-alert {
   margin-top: 12px;
+}
+
+.local-model-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.local-model-line + .local-model-line {
+  margin-top: 4px;
 }
 
 .howto-body {
