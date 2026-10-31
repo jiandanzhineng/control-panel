@@ -66,7 +66,7 @@ DeviceAPI.speech.transcribe({ audio, format: 'wav', timeoutMs })
 
 | 文件 | 内容 |
 |---|---|
-| `index.html` | manifest（id `reading-game`，版本 1.0.0，**不设** `runtime: host`）、界面骨架；按其他内置页面游戏的方式引入 bridge、i18n |
+| `index.html` | manifest（id `reading-game`，版本以第 7 节为准（1.1.0），**不设** `runtime: host`）、界面骨架；按其他内置页面游戏的方式引入 bridge、i18n |
 | `reading-core.js` | 纯逻辑，不碰 DOM 和网络：`ReadingAligner`、`ReadingTriggerMachine`、`VoiceDetector`、`PcmRingBuffer`、重采样、WAV 编码、模糊音归一。从原版原样搬过来，Node 里可以直接 require 来单测 |
 | `pinyin.js` | 页面内把汉字转成拼音并记录字下标，替代原版主进程的 IPC `text-to-pinyin`，下标规则沿用原版 `services/pinyinService.js`（按 origin.length 累加） |
 | `vendor/pinyin-pro.min.js` | pinyin-pro 的 UMD 构建（MIT，文件头保留许可证）。手机上不能依赖 npm |

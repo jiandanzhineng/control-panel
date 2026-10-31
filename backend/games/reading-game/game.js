@@ -190,6 +190,7 @@
       this._lastCur = -1
       this._textSig = ''
       this.passId = 0
+      this.passEnded = false
       this.passMatched = new Set()
       this.lastMaskedPass = new Map()
       this.jumpGate = new PendingJumpGate()
@@ -300,7 +301,8 @@
       const ratio = rgMaskRatio(this.state.level, this.config.maskStart, this.config.maskStep)
       const picked = rgSelectMaskChars(this.state.chars, ratio, passNumber, this.lastMaskedPass, this.random)
       picked.forEach(idx => this.lastMaskedPass.set(idx, passNumber))
-      this.state.maskRatio = ratio
+      // 拼音转换失败时没有字符可遮，不能继续显示“遮字 x%”
+      this.state.maskRatio = picked.length ? ratio : 0
       this.state.maskedChars = picked
       this.state.hintedChars = []
       this.hintedSet = new Set()
@@ -326,7 +328,12 @@
       const dev = this._lockDevice()
       if (!dev) return false
       try {
-        await dev.invoke('lock', 'setOpen', { open: value })
+        const res = await dev.invoke('lock', 'setOpen', { open: value })
+        if (res === false || (res && typeof res === 'object' && res.success === false)) {
+          const msg = (res && (res.error || res.message)) || 'rejected'
+          this.log(t('自动锁操作失败: {msg}', { msg }), 'warning')
+          return false
+        }
         this.log(t(value ? '自动锁已解锁' : '自动锁已上锁'), 'info')
         return true
       } catch (error) {
@@ -391,14 +398,27 @@
       this.state.completedPasses = 0
       this.state.level = this.state.mode === 'recite' ? 1 : 0
       this.passId = 1
+      this.passEnded = false
       this.passMatched = new Set()
       this.lastMaskedPass = new Map()
       this.jumpGate.reset()
       this.pendingJumpResult = null
       this.hintedSet = new Set()
       this.log(t('朗读游戏 v{version} 正在启动...', { version: this.version }), 'info')
+      const speechReady = await this._initSpeech()
+      if (!speechReady && this.state.mode === 'recite') {
+        // 背诵必须靠语音识别判断是否背对，不能像朗读那样降级成仅检测出声
+        const msg = t('背诵玩法需要语音识别，请登录账号或在设置里填写 SiliconFlow key')
+        this.log(msg, 'error')
+        this.started = false
+        this.state.isGameActive = false
+        this.state.phase = 'idle'
+        this.state.ended = false
+        this.state.won = false
+        this.renderIdle(msg)
+        return false
+      }
       try {
-        await this._initSpeech()
         await this.loadText()
         await this.preparePinyin()
         this._selectMask(1, this.state.level)
@@ -810,6 +830,15 @@
     if (this.audioContext && this.audioContext.state === 'suspended') {
       try { this.audioContext.resume() } catch (_) {}
     }
+    if (this.state.phase === 'rest') {
+      // 休息期间不看页面也不能打断倒计时，更不能解除 trigger 的暂停
+      this.state.paused = false
+      this.state.pauseReason = ''
+      this._tickRest(now)
+      this.renderUI()
+      this.log(t('窗口已恢复（休息中），继续休息计时'), 'info')
+      return
+    }
     if (!this.state.paused && this.detector) {
       // 恢复后重新校准，计时重置（手机切后台回来时底噪可能已经变了）
       this.detector.startCalibration(now)
@@ -826,6 +855,13 @@
 
   onMicAbnormal(reason) {
     if (this.state.ended || this.state.paused) return
+    if (this.state.phase === 'rest') {
+      // 休息期间麦克风异常不影响休息流程，也不改 phase
+      this.stopShock({ silent: true })
+      this.log(t('休息期间麦克风异常，继续保持休息: {reason}', { reason: reason || t('麦克风异常') }), 'warning')
+      this.renderUI()
+      return
+    }
     this.state.paused = true
     this.state.pauseReason = reason || t('麦克风异常')
     this.state.warning = null
@@ -838,6 +874,13 @@
 
   resumeMic(now) {
     if (!this.state.paused) return
+    if (this.state.phase === 'rest') {
+      // 休息中恢复音频：只清暂停标记，保持休息和 trigger 暂停
+      this.state.paused = false
+      this.state.pauseReason = ''
+      this.renderUI()
+      return
+    }
     this.state.paused = false
     this.state.pauseReason = ''
     this.state.phase = 'calibrating'
@@ -1284,7 +1327,7 @@
     if (this.state.ended || this.state.won || this.state.paused || this.state.hidden) return
     if (this.state.tailConfirm) return
     const silenceMs = Math.max(0, now - this.trigger.lastEnergyAt)
-    const warnAtMs = Math.max(0, (this.config.silenceLimit - this.config.warnLead) * 1000)
+    const warnAtMs = Math.max(0, (this._effectiveSilenceLimit() - this.config.warnLead) * 1000)
     if (this.state.endWait) {
       if (silenceMs < 1500) {
         this.state.endWait = null
@@ -1405,7 +1448,8 @@
 
   // 一遍结束：朗读按遍数推进；背诵按正确率升级/留级，100% 遮字过关即通关
   _onPassDone(kind) {
-    if (this.state.ended || this.state.won || this.state.phase === 'rest') return
+    if (this.state.ended || this.state.won || this.state.phase === 'rest' || this.passEnded) return
+    this.passEnded = true
     const now = Date.now()
     const accuracy = rgAccuracy(this.passMatched, this.state.totalSyllables, this.state.position)
     this.state.lastAccuracy = accuracy
@@ -1425,9 +1469,10 @@
       }
       return
     }
-    const pct = accuracy * 100
-    const line = Math.max(0, Math.min(100, Number(this.config.passRate) || 85))
-    const passed = pct >= line - 1e-9
+    // 比较和显示都用四舍五入后的整数百分比
+    const pct = Math.round(accuracy * 100)
+    const line = Math.round(Math.max(0, Math.min(100, Number(this.config.passRate) || 85)))
+    const passed = pct >= line
     this.state.lastPassPassed = passed
     if (passed && this.state.maskRatio >= 100) {
       this._finishGame(kind)
@@ -1435,8 +1480,8 @@
     }
     if (passed) this.state.level = (Number(this.state.level) || 1) + 1
     this.log(passed
-      ? t('第 {n} 遍正确率 {pct}%，过关，升到第 {lv} 级', { n: this.state.passNumber, pct: Math.round(pct), lv: this.state.level })
-      : t('第 {n} 遍正确率 {pct}%，未达到 {line}%，留在第 {lv} 级重读', { n: this.state.passNumber, pct: Math.round(pct), line, lv: this.state.level }),
+      ? t('第 {n} 遍正确率 {pct}%，过关，升到第 {lv} 级', { n: this.state.passNumber, pct, lv: this.state.level })
+      : t('第 {n} 遍正确率 {pct}%，未达到 {line}%，留在第 {lv} 级重读', { n: this.state.passNumber, pct, line, lv: this.state.level }),
     passed ? 'success' : 'warning')
     this._enterRest(now)
   }
@@ -1448,6 +1493,8 @@
 
   _enterRest(now) {
     const seconds = Math.max(0, Number(this.config.restSeconds) || 0)
+    this.state.paused = false
+    this.state.pauseReason = ''
     this.state.phase = 'rest'
     this.state.restSeconds = seconds
     this.state.restUntil = now + seconds * 1000
@@ -1480,9 +1527,12 @@
   _startNextPass(now) {
     if (this.state.ended || this.state.won) return
     this.passId += 1
+    this.passEnded = false
     this.state.passId = this.passId
     this.state.passNumber = (Number(this.state.passNumber) || 1) + 1
     this.state.position = 0
+    this.state.paused = false
+    this.state.pauseReason = ''
     this.state.sttInFlight = 0
     this.state.sttSlow = false
     this.state.sttStatus = t('待机')
@@ -1508,6 +1558,16 @@
     this.finalQueue = []
     this.voiceTicks = []
     this.voicedBuckets = new Map()
+    if (this.detector) {
+      // 上一遍结束到下一遍开始之间可能有静音，清掉异常的 zeroSince/voiced 残留
+      this.detector.zeroSince = 0
+      this.detector.isVoiced = false
+      this.detector.energyVoiced = false
+      this.detector.aboveSince = 0
+      this.detector.belowSince = 0
+      this.detector.energyAboveSince = 0
+      this.detector.energyBelowSince = 0
+    }
     this.lastChunkEndSec = 0
     this.readingStartTime = now
     this.state.readingStartTime = now
@@ -1553,7 +1613,7 @@
         format: 'wav',
         timeoutMs: this.config.sttTimeout
       })
-      this._updateTransport(Date.now() - startedAt)
+      this._updateTransport(Date.now() - startedAt, passId)
       if (this._isStalePass(passId)) return
       if (this._isStaleEnd(audioEndMs, confirm)) {
         if (confirm) this._afterTailConfirm(Date.now(), 'superseded')
@@ -1588,19 +1648,26 @@
       }
       this._applyResult(seq, result, text, audioStartMs, audioEndMs, confirm, passId)
     } catch (error) {
-      this._updateTransport(Date.now() - startedAt)
+      this._updateTransport(Date.now() - startedAt, passId)
       if (!this._isStalePass(passId)) {
         const reason = error && error.code === 'NO_STT' ? 'no-speech' : 'exception'
         this._applyUnknown(seq, reason, null, audioStartMs, audioEndMs, confirm, passId)
       }
     } finally {
-      this.state.sttInFlight = Math.max(0, this.state.sttInFlight - 1)
-      for (let i = this.requestStarts.length - 1; i >= 0; i--) {
-        if (this.requestStarts[i].seq === seq) this.requestStarts.splice(i, 1)
-      }
-      this._updateSttStatus()
-      this._drainFinalQueue()
+      this._releaseInFlight(passId, seq)
     }
+  }
+  // 在途计数只归还当前这一遍，上一遍的迟到响应不能扣掉新一遍的计数
+  _releaseInFlight(passId, seq) {
+    if (passId != null && Number(passId) !== Number(this.passId)) return
+    this.state.sttInFlight = Math.max(0, this.state.sttInFlight - 1)
+    for (let i = this.requestStarts.length - 1; i >= 0; i--) {
+      if (this.requestStarts[i].seq === seq && Number(this.requestStarts[i].passId) === Number(passId)) {
+        this.requestStarts.splice(i, 1)
+      }
+    }
+    this._updateSttStatus()
+    this._drainFinalQueue()
   }
   _isStaleEnd(endMs, confirm) {
     const end = Number(endMs) || 0
@@ -1610,6 +1677,7 @@
 
   // 上一遍在途的识别结果必须丢弃；休息期间也不接受任何结果
   _isStalePass(passId) {
+    if (this.passEnded) return true
     if (this.state.ended || this.state.won || this.state.phase === 'rest') return true
     if (passId == null) return false
     return Number(passId) !== Number(this.passId)
@@ -1676,16 +1744,20 @@
         this.pendingJumpResult = null
         targetPos = result.newPos
       }
+    } else if (result.verdict === 'reading' && this.pendingJumpResult) {
+      // 回到原位或更前：否定待定跳转，不能继续累积
+      this.jumpGate.reset()
+      this.pendingJumpResult = null
     }
     if (targetPos > posBefore) {
       this.state.position = targetPos
       advanced = true
       if (this.trigger) this.trigger.setPosition(now, this.state.position)
     }
-    // 正确率：只计入采纳后位置之前的配对；待定跳转先按当前位置记，确认后再补齐
-    if (result.verdict === 'reading') {
-      rgAddMatchedPairs(this.passMatched, result, pendingJump ? posBefore : this.state.position)
-      if (!pendingJump && deferredResult) rgAddMatchedPairs(this.passMatched, deferredResult, this.state.position)
+    // 正确率：只计入采纳后位置之前的配对；待定跳转先不计，承认后两条一起补
+    if (result.verdict === 'reading' && !pendingJump) {
+      rgAddMatchedPairs(this.passMatched, result, this.state.position)
+      if (deferredResult) rgAddMatchedPairs(this.passMatched, deferredResult, this.state.position)
     }
     if (this.trigger) {
       // 识别结果反向佐证这段音频确实有人在读/出声，刷新 T1 计时
@@ -1755,7 +1827,9 @@
     }
   }
 
-  _updateTransport(latency) {
+  _updateTransport(latency, passId) {
+    // 上一遍的迟到响应不能影响新一遍的传输状态
+    if (passId != null && Number(passId) !== Number(this.passId)) return
     const ms = Math.round(Number(latency) || 0)
     this.latencySamples.push({ t: Date.now(), ms })
     if (this.latencySamples.length > 200) this.latencySamples.shift()
@@ -1819,19 +1893,22 @@
     // 先挂停止定时器再发 shock:1：即使 shock:1 的 IPC 卡住，到点也一定会发 shock:0
     if (this.shockTimer) this.timers.clearTimeout(this.shockTimer)
     this.shockTimer = this.timers.setTimeout(() => { this.stopShock({ gen }) }, ms)
+    let sent = false
     try {
       if (this.state.ended) return
       if (this.deviceManager && this.deviceManager.setDeviceProperty) {
-        await this.deviceManager.setDeviceProperty('shock_device', {
+        const res = await this.deviceManager.setDeviceProperty('shock_device', {
           voltage,
           shock: 1,
           maxMs: ms + 3000
         })
+        sent = res !== false && !(res && typeof res === 'object' && res.success === false)
       }
     } catch (error) {
       this.log('开始电击失败: ' + error.message, 'error')
     }
-    this._applyHint()
+    // 只有真的把 shock:1 发出去并成功，才还原提示字
+    if (sent) this._applyHint()
     this.renderUI()
   }
 
@@ -1935,8 +2012,11 @@
     this._releaseWakeLock()
     this.renderWin()
     const seconds = Math.max(0, Math.round((Date.now() - this.state.startTime) / 1000))
-    this.log((this.state.mode === 'recite' ? '背诵通关' : '恭喜读完全文') +
-      '，用时 ' + seconds + ' 秒，受罚 ' + this.state.shockCount + ' 次', 'success')
+    this.log(t('{title}，用时 {s} 秒，受罚 {n} 次', {
+      title: this.state.mode === 'recite' ? t('背诵通关') : t('恭喜读完全文'),
+      s: seconds,
+      n: this.state.shockCount
+    }), 'success')
   }
 
   emergencyStop() {
@@ -1980,7 +2060,11 @@
     this.unbindLifecycle()
     await this.stopAudio()
     await this.stopShock({ silent: true })
-    await this._setLock(true)
+    // 锁设备卡住不能拖住结束界面，最多等 3 秒
+    await Promise.race([
+      this._setLock(true),
+      new Promise(resolve => this.timers.setTimeout(resolve, 3000))
+    ])
     await this._releaseWakeLock()
     if (won) this.renderWin()
     else this.renderStopped()
@@ -1999,6 +2083,18 @@
     this.end()
   }
 
+  // 休息时背诵下一遍从 0 开始显示遮字，避免露出下一遍要遮的原字
+  _displayCursor() {
+    const s = this.state
+    if (s.phase === 'rest' && s.mode === 'recite') return 0
+    const text = s.sourceText || ''
+    let cur = text.length
+    const syllables = s.sourceSyllables || []
+    if (s.position < syllables.length) cur = syllables[s.position].charIndex
+    if (cur < 0) cur = 0
+    return cur > text.length ? text.length : cur
+  }
+
   renderUI() {
     if (this.state.ended) {
       if (this.state.won) this.renderWin()
@@ -2008,12 +2104,7 @@
     const s = this.state
     const now = Date.now()
     const text = s.sourceText || ''
-    let cur = text.length
-    if (s.position < s.sourceSyllables.length) {
-      cur = s.sourceSyllables[s.position].charIndex
-    }
-    if (cur < 0) cur = 0
-    if (cur > text.length) cur = text.length
+    const cur = this._displayCursor()
     const readHtml = this._renderChars(text, 0, cur, cur)
     const currentHtml = cur < text.length ? this._renderChars(text, cur, cur + 1, cur) : ''
     const afterHtml = cur < text.length ? this._renderChars(text, cur + 1, text.length, cur) : ''
@@ -2028,7 +2119,16 @@
       : phase === 'cooldown' ? t('冷却中')
       : phase === 'paused' ? t('已暂停')
       : phase === 'rest' ? t('休息中')
-      : phase === 'won' ? t('已通关') : t('朗读中')
+      : phase === 'won' ? t('已通关')
+      : (s.mode === 'recite' ? t('背诵中') : t('朗读中'))
+    const phaseEn = s.isShocking ? 'Shocking'
+      : phase === 'calibrating' ? 'Calibrating'
+      : phase === 'warning' ? 'Warning'
+      : phase === 'cooldown' ? 'Cooldown'
+      : phase === 'paused' ? 'Paused'
+      : phase === 'rest' ? 'Resting'
+      : phase === 'won' ? 'Cleared'
+      : (s.mode === 'recite' ? 'Reciting' : 'Reading')
     const silenceText = s.silenceSeconds != null
       ? s.silenceSeconds.toFixed(1) + 's / ' + this._effectiveSilenceLimit().toFixed(1) + 's'
       : '—'
@@ -2078,7 +2178,7 @@
     const restLeft = resting ? Math.max(0, Math.ceil((s.restUntil - now) / 1000)) : 0
     this._paintUI({
       cur, text, readHtml, currentHtml, afterHtml, progress, levelPct, thPct,
-      displayPhase, phaseText, silenceText, t2Text, t2Class, sttClass,
+      displayPhase, phaseText, phaseEn, silenceText, t2Text, t2Class, sttClass,
       overlay, banners: banners.join(''), segHtml, warning,
       modeText: s.mode === 'recite' ? t('背诵') : t('朗读'),
       passText: s.mode === 'recite'
@@ -2149,6 +2249,16 @@
     if (pill) {
       pill.className = 'rg-pill ' + d.displayPhase
       pill.textContent = d.phaseText
+      pill.setAttribute('data-en', d.phaseEn)
+    }
+    const hint = byId('rg-hint-text')
+    if (hint) {
+      hint.textContent = s.mode === 'recite'
+        ? t('背完全文即通关 · 按 Esc 可紧急停止')
+        : t('读完全文即通关 · 按 Esc 可紧急停止')
+      hint.setAttribute('data-en', s.mode === 'recite'
+        ? 'Finish reciting the text to win · Esc stops immediately'
+        : 'Finish the whole text to win · Esc stops immediately')
     }
     const prog = byId('rg-progress')
     if (prog) prog.style.width = d.progress.toFixed(1) + '%'
@@ -2369,6 +2479,17 @@
     if (start) {
       start.disabled = false
       start.textContent = this._mode() === 'recite' ? t('开始背诵') : t('开始朗读')
+      start.setAttribute('data-en', this._mode() === 'recite' ? 'Start reciting' : 'Start reading')
+    }
+    const hint = byId('rg-hint-text')
+    if (hint) {
+      const reciting = this._mode() === 'recite'
+      hint.textContent = reciting
+        ? t('背完全文即通关 · 按 Esc 可紧急停止')
+        : t('读完全文即通关 · 按 Esc 可紧急停止')
+      hint.setAttribute('data-en', reciting
+        ? 'Finish reciting the text to win · Esc stops immediately'
+        : 'Finish the whole text to win · Esc stops immediately')
     }
     const title = byId('rg-title')
     if (title) title.textContent = picked.title
@@ -2424,9 +2545,14 @@
     const overlay = byId('rg-overlay')
     if (overlay) overlay.innerHTML = ''
     const banners = byId('rg-banners')
+    const reciting = this._mode() === 'recite'
     if (banners) banners.innerHTML = message
       ? '<div class="rg-banner bad">' + rgEscapeHtml(message) + '</div>'
-      : '<div class="rg-banner ok">' + t('点击下方「开始朗读」，允许麦克风后保持安静约 3 秒') + '</div>'
+      : '<div class="rg-banner ok" data-en="' +
+        (reciting
+          ? 'Press “Start reciting”, allow the mic, then stay quiet for about 3 seconds'
+          : 'Press “Start reading”, allow the mic, then stay quiet for about 3 seconds') + '">' +
+        t(reciting ? '点击下方「开始背诵」，允许麦克风后保持安静约 3 秒' : '点击下方「开始朗读」，允许麦克风后保持安静约 3 秒') + '</div>'
     const segs = byId('rg-segments')
     if (segs) segs.innerHTML = ''
     const badge = byId('rg-test-badge')
