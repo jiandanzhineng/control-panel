@@ -59,6 +59,7 @@
       "受罚次数": "Punishments",
       "音节数": "Syllables",
       "游戏已停止": "Game stopped",
+      "已停止": "Stopped",
       "阅读进度（音节）": "Progress (syllables)",
       "共 {n} 字 · 点开始后请朗读全文": "{n} characters · press start and read the whole text",
       "点击下方「开始朗读」，允许麦克风后保持安静约 3 秒": "Press “Start reading”, allow the mic, then stay quiet for about 3 seconds",

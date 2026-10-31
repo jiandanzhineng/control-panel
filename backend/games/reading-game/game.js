@@ -794,7 +794,9 @@
     }
     this.state.isVoiced = info.voiced
     this.state.lastVoiceAt = info.lastVoiceAt
-    if (!this.state.paused && info.micAbnormal) {
+    // 测试音频播完后输入端是数字静音（峰值恒为 0），不能当成“麦克风异常”暂停；
+    // 否则结尾确认还没跑完就被暂停，测试注入永远无法通关。真实麦克风仍按原逻辑处理。
+    if (!this.state.paused && info.micAbnormal && !this.testAudioUrl) {
       this.onMicAbnormal('连续 2 秒没有音频输入')
     }
     if (this.state.paused) {
@@ -1846,6 +1848,8 @@
       title.textContent = s.unconfirmed ? t('已完成') : t('朗读完成')
       title.style.color = s.unconfirmed ? '#fbbf24' : ''
     }
+    const winPill = byId('rg-phase')
+    if (winPill) { winPill.className = 'rg-pill won'; winPill.textContent = s.unconfirmed ? t('已完成') : t('已通关') }
     const sub = byId('rg-win-sub')
     if (sub) {
       sub.textContent = t('《{title}》', { title: s.sourceTitle || this.title }) +
@@ -1875,6 +1879,8 @@
       title.textContent = t('游戏已停止')
       title.style.color = '#f87171'
     }
+    const stopPill = byId('rg-phase')
+    if (stopPill) { stopPill.className = 'rg-pill stopped'; stopPill.textContent = t('已停止') }
     const sub = byId('rg-win-sub')
     if (sub) sub.textContent = s.sourceTitle || this.title
     const time = byId('rg-win-time')
