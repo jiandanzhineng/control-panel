@@ -550,7 +550,7 @@
   const VOICE_UNKNOWN = /(不认识|不会|不知道|不记得|忘了)/
   const VOICE_CHOICE_PATTERNS = [
     { index: 1, patterns: ['第一个', '第一', '一个', '一号', '选一', '一是', '衣', '医'] },
-    { index: 2, patterns: ['第二个', '第二', '二个', '二号', '选二', '二', '儿', '而'] },
+    { index: 2, patterns: ['第二个', '第二', '二个', '两', '两个', '二号', '选二', '二', '儿', '而'] },
     { index: 3, patterns: ['第三个', '第三', '三个', '三号', '选三', '三', '山', '伞'] },
     { index: 4, patterns: ['第四个', '第四', '四个', '四号', '选四', '四', '寺', '似'] }
   ]
@@ -585,7 +585,7 @@
         if (choiceText.indexOf(pattern) >= 0) hits.add(item.index)
       })
     })
-    const digit = choiceText.match(/第([1-4])个?/)
+    const digit = choiceText.match(/第([1-4])个?/) || choiceText.match(/([1-4])个/)
     if (digit) hits.add(Number(digit[1]))
     const latin = choiceText.match(/选([abcd])/)
     if (latin) hits.add(VOICE_EXACT[latin[1]])
