@@ -409,3 +409,103 @@ test('时长与音标格式化', () => {
   assert.strictEqual(gameModule.formatPhonetic('/ˈæpl/'), '/ˈæpl/')
   assert.strictEqual(gameModule.formatPhonetic(''), '')
 })
+
+console.log('\n[空计划与设置]')
+
+test('空计划（没有新词也没有到期复习）算今日完成', () => {
+  const plan = { bank: 'cet4', ids: [], done: [], extra: 0, newIds: [], u: 1 }
+  assert.strictEqual(core.isPlanComplete(plan), true)
+  assert.strictEqual(core.planStats(plan).remaining, 0)
+  assert.strictEqual(core.isPlanComplete(null), false)
+})
+
+test('旧存档没有 settings 时补默认值，设置合并取 u 大的那份', () => {
+  const old = core.normalizeSave({ words: { a: { k: 1, due: 3, last: 1 } }, plans: {} })
+  assert.deepStrictEqual(
+    { bank: old.settings.bank, newPerDay: old.settings.newPerDay, inputMode: old.settings.inputMode },
+    { bank: 'cet4', newPerDay: 20, inputMode: 'touch' }
+  )
+  const newer = { v: 1, words: {}, plans: {}, settings: { bank: 'ielts', newPerDay: 50, u: 200 } }
+  const older = { v: 1, words: {}, plans: {}, settings: { bank: 'cet6', newPerDay: 10, u: 100 } }
+  assert.strictEqual(core.mergeSaves(older, newer).settings.bank, 'ielts')
+  assert.strictEqual(core.mergeSaves(newer, older).settings.bank, 'ielts')
+})
+
+test('updateSettings 只接受白名单字段并限制范围', () => {
+  const next = core.updateSettings({ bank: 'cet4', newPerDay: 20, u: 1 }, {
+    newPerDay: 999,
+    reviewCap: -3,
+    questionTime: 30,
+    inputMode: 'voice',
+    autoSpeak: false,
+    hacker: true
+  }, 50)
+  assert.strictEqual(next.newPerDay, 200)
+  assert.strictEqual(next.reviewCap, 0)
+  assert.strictEqual(next.questionTime, 30)
+  assert.strictEqual(next.inputMode, 'voice')
+  assert.strictEqual(next.autoSpeak, false)
+  assert.strictEqual(next.u, 50)
+  assert.strictEqual(next.hacker, undefined)
+})
+
+console.log('\n[当天改设置]')
+
+test('换词书：复习词和已答过的词不动，没答过的新词换成新词库', () => {
+  const today = 20000
+  const old = {
+    bank: 'cet4',
+    ids: ['r1', 'n1', 'n2', 'n3'],
+    done: ['n1'],
+    extra: 0,
+    newIds: ['n1', 'n2', 'n3'],
+    u: 1
+  }
+  const progress = { n1: { k: 1, due: today + 2, last: today, wrong: 0, u: 2 } }
+  const next = core.rebuildPlan(old, {
+    bank: 'ielts',
+    bankIds: ['x1', 'x2', 'x3'],
+    progress: progress,
+    today: today,
+    now: 9,
+    newPerDay: 3
+  })
+  assert.deepStrictEqual(next.ids, ['r1', 'n1', 'x1', 'x2'])
+  assert.deepStrictEqual(next.newIds, ['n1', 'x1', 'x2'])
+  assert.strictEqual(next.bank, 'ielts')
+  assert.strictEqual(next.u, 9)
+})
+
+test('同词库改每日新词数：保留没答过的新词，超出上限裁掉，增加则补齐', () => {
+  const today = 20000
+  const progress = {}
+  const base = { bank: 'cet4', ids: ['n1', 'n2', 'n3'], done: [], extra: 0, newIds: ['n1', 'n2', 'n3'], u: 1 }
+  const shrunk = core.rebuildPlan(base, {
+    bank: 'cet4', bankIds: ['n1', 'n2', 'n3', 'n4', 'n5'], progress: progress, today: today, now: 2, newPerDay: 2
+  })
+  assert.deepStrictEqual(shrunk.ids, ['n1', 'n2'])
+  const grown = core.rebuildPlan(shrunk, {
+    bank: 'cet4', bankIds: ['n1', 'n2', 'n3', 'n4', 'n5'], progress: progress, today: today, now: 3, newPerDay: 4
+  })
+  assert.deepStrictEqual(grown.ids, ['n1', 'n2', 'n3', 'n4'])
+})
+
+console.log('\n[电击本机覆盖]')
+
+test('游戏内电击设置只在本机覆盖，宿主值变了以宿主为准', () => {
+  const host = { shockVoltage: 15, shockDuration: 2 }
+  const local = { hostVoltage: 15, hostDuration: 2, voltage: 40, duration: 5 }
+  const same = core.resolveShockSettings(host, local)
+  assert.strictEqual(same.voltage, 40)
+  assert.strictEqual(same.duration, 5)
+  assert.ok(same.override)
+
+  const hostChanged = core.resolveShockSettings({ shockVoltage: 20, shockDuration: 2 }, local)
+  assert.strictEqual(hostChanged.voltage, 20)
+  assert.strictEqual(hostChanged.duration, 2)
+  assert.strictEqual(hostChanged.override, null)
+
+  const noOverride = core.resolveShockSettings(host, null)
+  assert.strictEqual(noOverride.voltage, 15)
+  assert.strictEqual(noOverride.duration, 2)
+})

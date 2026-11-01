@@ -12,7 +12,7 @@
 
 ## 2. 游戏页面 `backend/games/vocab-game/`
 
-- manifest：id `vocab-game`，标题「背单词」/ "Vocabulary"，版本 1.0.0，**不设** `runtime: host`。写法、bridge/i18n 引入方式照抄 `reading-game`。
+- manifest：id `vocab-game`，标题「背单词」/ "Vocabulary"，版本 1.1.0，**不设** `runtime: host`。写法、bridge/i18n 引入方式照抄 `reading-game`。
 - 文件：`index.html`、`vocab-core.js`（纯逻辑，不碰 DOM/网络，Node 可 require 单测）、`voice.js`（麦克风、VAD、切片识别；采集链路从 `reading-game/reading-core.js` 复制 `VoiceDetector`、`PcmRingBuffer`、重采样、WAV 编码）、`game.js`（编排与界面）、`i18n.js`（中文当 key）、`banks/<id>.js`（词库）。
 - 设备：`shock`（必需，能力 `shock`），`lock`（可选，`required:false`，label「自动锁」/ "Auto lock"，写法照抄 `pushup-detection`）。电击调用方式与 `reading-game` 一致。
 
@@ -137,9 +137,10 @@ DeviceAPI.cloud.put(data, baseVersion)
   ```js
   { v: 1,
     words: { "<word>": { k, due, last, wrong, u } },   // due/last 为日期序号；u = 修改时间 ms
-    plans: { "<YYYY-MM-DD>": { bank, ids: [...], done: [...], extra: n, u } } }  // 只保留最近 7 天
+    plans: { "<YYYY-MM-DD>": { bank, ids: [...], done: [...], extra: n, u } },  // 只保留最近 7 天
+    settings: { bank, newPerDay, reviewCap, questionTime, inputMode, autoSpeak, punishUnknown, u } }
   ```
-- 合并规则：`words` 每个词取 `u` 大的；同一天的 `plans` 取 `ids` 并集（保持先到的顺序）、`done` 并集。
+- 合并规则：`words` 每个词取 `u` 大的；同一天的 `plans` 取 `ids` 并集（保持先到的顺序）、`done` 并集；`settings` 整份取 `u` 大的。旧存档没有 `settings` 时用默认值，1.0.x 的 params 不迁移。
 - 时机：开始前 `get` 并和本机缓存（localStorage，按用户 id 分开）合并；每答完 10 题或 30 秒、今日完成、结束、`pagehide` 时 `put`。冲突就用 `err.remote` 合并后重试，最多 3 次。
 - 开始时网络失败：可以选「离线继续」，用本机缓存玩，下次联网再合并上传。界面角标显示同步状态。
 

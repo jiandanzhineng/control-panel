@@ -57,9 +57,9 @@ test('答案面板等待期间点选项不再作答', () => {
 
 test('开始页按急停不会进入已结束', () => {
   const game = makeGame()
-  game.state.view = 'start'
+  game.state.view = 'home'
   game.emergencyStop()
-  assert.strictEqual(game.state.view, 'start')
+  assert.strictEqual(game.state.view, 'home')
 })
 
 function makeListener() {

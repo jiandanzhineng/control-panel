@@ -13,6 +13,16 @@
   const DAY_BOUNDARY_HOUR = 4
   const DAY_MS = 24 * 60 * 60 * 1000
   const PLAN_KEEP_DAYS = 7
+  const BANK_IDS = ['gaokao', 'cet4', 'cet6', 'ielts']
+  const DEFAULT_SETTINGS = {
+    bank: 'cet4',
+    newPerDay: 20,
+    reviewCap: 100,
+    questionTime: 20,
+    inputMode: 'touch',
+    autoSpeak: true,
+    punishUnknown: true
+  }
 
   function toNumber(value, fallback) {
     const n = Number(value)
@@ -192,12 +202,55 @@
     }
   }
 
+  // 当天中途换词书或改每日新词数：复习词与已答过的词不动，
+  // 没答过的新词按新设置保留/裁掉/从新词库补齐。
+  function rebuildPlan(plan, opts) {
+    const o = opts || {}
+    const base = normalizePlan(plan) || { bank: '', ids: [], done: [], extra: 0, newIds: [], u: 0 }
+    const now = toNumber(o.now, Date.now())
+    const today = toNumber(o.today, dayIndex(now))
+    const bank = BANK_IDS.indexOf(String(o.bank || base.bank)) >= 0
+      ? String(o.bank || base.bank)
+      : DEFAULT_SETTINGS.bank
+    const bankIds = (Array.isArray(o.bankIds) ? o.bankIds : []).map(String)
+    const bankSet = new Set(bankIds)
+    const progress = o.progress && typeof o.progress === 'object' ? o.progress : {}
+    const newPerDay = clampInt(o.newPerDay, DEFAULT_SETTINGS.newPerDay, 0, 200)
+    const oldNew = new Set((base.newIds || []).map(String))
+    const done = new Set((base.done || []).map(String))
+    const answered = id => !!progress[id] && Number(progress[id].last) === today
+    const ids = []
+    const newIds = []
+    base.ids.forEach(id => {
+      if (!oldNew.has(id)) {
+        ids.push(id)
+        return
+      }
+      const kept = done.has(id) || answered(id)
+      // 没答过的新词：同词库且还有名额就保留，换词书或超出新上限就裁掉。
+      if (kept || (bankSet.has(id) && newIds.length < newPerDay)) {
+        ids.push(id)
+        newIds.push(id)
+      }
+    })
+    const used = new Set(ids)
+    for (let i = 0; i < bankIds.length && newIds.length < newPerDay; i++) {
+      const id = bankIds[i]
+      if (progress[id] || used.has(id)) continue
+      used.add(id)
+      ids.push(id)
+      newIds.push(id)
+    }
+    return { bank: bank, ids: ids, done: (base.done || []).slice(), extra: base.extra, newIds: newIds, u: now }
+  }
+
   function planDoneSet(plan) {
     return new Set(plan && Array.isArray(plan.done) ? plan.done.map(String) : [])
   }
 
   function isPlanComplete(plan) {
-    if (!plan || !Array.isArray(plan.ids) || !plan.ids.length) return false
+    if (!plan || !Array.isArray(plan.ids)) return false
+    // 空计划（没有新词也没有到期复习）也算今日完成，首页不能一直让人「开始学习」。
     const done = planDoneSet(plan)
     return plan.ids.every(id => done.has(String(id)))
   }
@@ -378,8 +431,52 @@
     }
   }
 
+  function normalizeSettings(raw) {
+    const src = raw && typeof raw === 'object' ? raw : {}
+    return {
+      bank: BANK_IDS.indexOf(String(src.bank)) >= 0 ? String(src.bank) : DEFAULT_SETTINGS.bank,
+      newPerDay: clampInt(src.newPerDay, DEFAULT_SETTINGS.newPerDay, 0, 200),
+      reviewCap: clampInt(src.reviewCap, DEFAULT_SETTINGS.reviewCap, 0, 500),
+      questionTime: clampInt(src.questionTime, DEFAULT_SETTINGS.questionTime, 0, 120),
+      inputMode: String(src.inputMode) === 'voice' ? 'voice' : 'touch',
+      autoSpeak: src.autoSpeak !== false,
+      punishUnknown: src.punishUnknown !== false,
+      u: toNumber(src.u, 0)
+    }
+  }
+
+  // 游戏内改设置：整份 settings 带新的 u，合并时取 u 大的那份。
+  function updateSettings(current, patch, now) {
+    const base = normalizeSettings(current)
+    const src = patch && typeof patch === 'object' ? patch : {}
+    const merged = Object.assign({}, base, { u: toNumber(now, Date.now()) })
+    Object.keys(DEFAULT_SETTINGS).forEach(key => {
+      if (Object.prototype.hasOwnProperty.call(src, key)) merged[key] = src[key]
+    })
+    return normalizeSettings(merged)
+  }
+
+  // 电击强度/时长：游戏内改的存本机，并记下当时宿主的值。
+  // 下次启动宿主值没变就用本机值；宿主值变了就用宿主值并清掉本机覆盖。
+  function resolveShockSettings(host, override) {
+    const h = host && typeof host === 'object' ? host : {}
+    const hostVoltage = clampInt(h.shockVoltage, 15, 10, 100)
+    const hostDuration = clampInt(h.shockDuration, 2, 1, 10)
+    const saved = override && typeof override === 'object' ? override : null
+    if (!saved) return { voltage: hostVoltage, duration: hostDuration, override: null }
+    const sameHost = Number(saved.hostVoltage) === hostVoltage && Number(saved.hostDuration) === hostDuration
+    if (!sameHost) return { voltage: hostVoltage, duration: hostDuration, override: null }
+    const voltage = clampInt(saved.voltage, hostVoltage, 10, 100)
+    const duration = clampInt(saved.duration, hostDuration, 1, 10)
+    return {
+      voltage: voltage,
+      duration: duration,
+      override: { hostVoltage: hostVoltage, hostDuration: hostDuration, voltage: voltage, duration: duration }
+    }
+  }
+
   function normalizeSave(raw) {
-    const out = { v: 1, words: {}, plans: {} }
+    const out = { v: 1, words: {}, plans: {}, settings: normalizeSettings(raw && raw.settings) }
     if (!raw || typeof raw !== 'object') return out
     const words = raw.words
     if (words && typeof words === 'object') {
@@ -429,7 +526,11 @@
         u: Math.max(toNumber(left.u, 0), toNumber(right.u, 0))
       }
     })
-    return { v: 1, words: words, plans: plans }
+    return { v: 1, words: words, plans: plans, settings: mergedSettings(a.settings, b.settings) }
+  }
+
+  function mergedSettings(left, right) {
+    return toNumber(right && right.u, 0) > toNumber(left && left.u, 0) ? right : left
   }
 
   // 只保留最近 7 天（含今天）的计划。
@@ -505,6 +606,11 @@
     DAY_BOUNDARY_HOUR: DAY_BOUNDARY_HOUR,
     DAY_MS: DAY_MS,
     PLAN_KEEP_DAYS: PLAN_KEEP_DAYS,
+    BANK_IDS: BANK_IDS,
+    DEFAULT_SETTINGS: DEFAULT_SETTINGS,
+    normalizeSettings: normalizeSettings,
+    updateSettings: updateSettings,
+    resolveShockSettings: resolveShockSettings,
     dayIndex: dayIndex,
     dateKey: dateKey,
     indexToDateKey: indexToDateKey,
@@ -517,6 +623,7 @@
     spreadNewWords: spreadNewWords,
     buildDailyPlan: buildDailyPlan,
     buildExtraPlan: buildExtraPlan,
+    rebuildPlan: rebuildPlan,
     planStats: planStats,
     planRemaining: planRemaining,
     isPlanComplete: isPlanComplete,
