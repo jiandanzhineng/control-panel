@@ -175,6 +175,7 @@
       this.visibilityHandler = null
       this.unloadHandler = null
       this.keyHandler = null
+      this.errorHandler = null
     }
 
     updateParameters(params) {
@@ -295,7 +296,21 @@
           if (event && event.key === 'Escape') this.emergencyStop()
         }
         this.env.addEventListener('keydown', this.keyHandler)
+        // 未捕获错误/未处理的 Promise 拒绝也是结束路径：至少停电击并解锁，避免锁一直关着。
+        this.errorHandler = event => {
+          if (event && event.type === 'error' && !event.message && !event.error) return
+          const reason = (event && (event.message || (event.reason && event.reason.message))) || 'unknown'
+          this._safetyAbort(reason)
+        }
+        this.env.addEventListener('error', this.errorHandler)
+        this.env.addEventListener('unhandledrejection', this.errorHandler)
       }
+    }
+
+    _safetyAbort(reason) {
+      this._log('未捕获错误，已停电击并解锁: ' + reason, 'error')
+      this.stopShock()
+      this.setLock(true)
     }
 
     async prepare() {
@@ -621,7 +636,7 @@
     }
 
     markUnknown() {
-      if (this.state.view !== 'playing' || this.state.answered) return
+      if (this.state.view !== 'playing' || this.state.answered || this.state.paused) return
       this._wrongAnswer('unknown', 0)
     }
 
@@ -707,6 +722,8 @@
     }
 
     emergencyStop() {
+      // 只有答题中（含答案面板）才需要急停；开始页/完成页按了不应把状态改成“已结束”。
+      if (this.state.view !== 'playing' && this.state.view !== 'answer') return
       this.endGame('user')
     }
 
@@ -1088,6 +1105,8 @@
       this._setHidden('vg-play', view !== 'play')
       this._setHidden('vg-complete', view !== 'complete')
       this._setHidden('vg-qbar-wrap', view !== 'play')
+      // 急停只在答题/答案面板时有意义，避免开始页和完成页一直顶着红色按钮。
+      this._setHidden('vg-stop-bar', view !== 'play')
       if (view !== 'play') this._setVoiceCapsule('off')
     }
 

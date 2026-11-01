@@ -102,8 +102,10 @@ function buildSrc(): string {
   if (!base) return '';
 
   const sep = base.includes('?') ? '&' : '?';
-  const tokenQuery = gameToken ? `&gameToken=${encodeURIComponent(gameToken)}` : '';
-  return `${base}${sep}deviceMap=${encodeURIComponent(deviceMap)}&params=${encodeURIComponent(params)}&locale=${encodeURIComponent(locale)}&localeTag=${encodeURIComponent(localeTag)}${tokenQuery}`;
+  // 启动令牌放在 # 片段里：请求游戏页面时片段不会发给服务器，避免令牌进访问日志。
+  // 页面脚本仍能从 location.hash 读到它（见 device-api-bridge.js）。
+  const tokenHash = gameToken ? `#gameToken=${encodeURIComponent(gameToken)}` : '';
+  return `${base}${sep}deviceMap=${encodeURIComponent(deviceMap)}&params=${encodeURIComponent(params)}&locale=${encodeURIComponent(locale)}&localeTag=${encodeURIComponent(localeTag)}${tokenHash}`;
 }
 
 function beginGame() {

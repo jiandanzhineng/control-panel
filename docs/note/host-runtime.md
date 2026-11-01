@@ -23,7 +23,7 @@
 ## DeviceAPI.cloud（页面游戏云存档，2026-11-01）
 
 - 页面游戏经 bridge 调用 `DeviceAPI.cloud.status/get/put`，宿主转发到 `GET/PUT {ACCOUNT_API_URL}/me/game-data/:gameId`；契约与错误码见 `docs/plans/vocab-game.md` §4.2。
-- `gameId` 只由宿主持有：`/api/games/:id/start` 签发 `gameToken`，前端拼进 iframe URL、bridge init 回传，页面传来的任何 gameId 都忽略；无令牌 `BAD_GAME`。手机端实现同一接口时也要保持这个来源。
+- `gameId` 只由宿主持有：`/api/games/:id/start` 签发 `gameToken`，前端放进 iframe URL 的 `#` 片段（不进服务器访问日志）、bridge init 回传，页面传来的任何 gameId 都忽略；无令牌 `BAD_GAME`。手机端实现同一接口时也要保持这个来源。
 - 错误码 `NOT_SIGNED_IN | VERSION_CONFLICT（err.remote）| NETWORK | TOO_LARGE | BAD_GAME | BAD_DATA | UPSTREAM_<status>`；token 与存档内容不进日志。
 
 ## 版本与验证

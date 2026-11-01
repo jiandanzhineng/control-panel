@@ -338,7 +338,9 @@
     var pStr = urlParams.get('params');
     var localeStr = urlParams.get('locale');
     var localeTagStr = urlParams.get('localeTag');
-    var gameTokenStr = urlParams.get('gameToken');
+    // 令牌优先从 # 片段读（片段不会进服务器访问日志）；兼容旧的 query 传法。
+    var hashParams = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+    var gameTokenStr = hashParams.get('gameToken') || urlParams.get('gameToken');
     if (gameTokenStr) gameToken = gameTokenStr;
     if (dmStr) { deviceMapData = JSON.parse(decodeURIComponent(dmStr)); window.DeviceAPI.deviceMap = deviceMapData; }
     if (pStr) { var urlP = JSON.parse(decodeURIComponent(pStr)); Object.assign(paramsData, urlP); window.DeviceAPI.params = paramsData; }

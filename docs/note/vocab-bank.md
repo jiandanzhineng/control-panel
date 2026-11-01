@@ -75,3 +75,11 @@ window.VG_BANKS.cet4 = { id: 'cet4', name: '四级', nameEn: 'CET-4', count: 384
 
 - ECDICT 本身缺音标：gaokao 25、cet4 10、cet6 24、ielts 50 个词，`phonetic` 为空串（ielts 从 231 降到 50，主要是复数换成了带音标的 lemma）。
 - 源数据有拼写问题（`reservior`、`uptodate`）和个别首词性不常用（`tough` 先给 `n. 恶棍`），脚本按原顺序取，不做人工修正。
+
+## 本地联调
+
+- 本地账号 API（PGlite 内存库，不连生产）：在 `packages/api` 下用 `createTestContext({mqtt:false})` + `Bun.serve({port:5289, fetch:ctx.app.fetch})` 起一个 tmp 脚本，`PORT=5289 bun run <tmp脚本>`。
+- 注册测试账号：`curl -X POST http://127.0.0.1:5289/auth/register -H 'content-type: application/json' -d '{"email":"vg-e2e@test.local","password":"..."}'`。
+- 客户端指向本地：`ACCOUNT_API_URL=http://127.0.0.1:5289 STT_RELAY_BASE_URL=http://127.0.0.1:5291 node tools/electron-dev.js --remote-debugging-port=9224`，在 `/account` 登录同一账号。
+- 语音联调：把 SenseVoice 模型目录联接到 `%APPDATA%\Electron\data\models\sense-voice-small-int8`，并在同目录 `model-runtime-settings.json` 设 `tasks.asr.localEnabled=true`；`STT_RELAY_BASE_URL` 指本地兜底，避免测试音频打到生产中转。
+- 已跑通真实链路：登录 → `/api/games/vocab-game/start` 签 token → iframe → bridge `cloudGet/cloudPut` → 本地 API `game_data`，存档版本随写入递增。

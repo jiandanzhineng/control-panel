@@ -354,6 +354,7 @@ registerProcessor('vg-recorder', VGRecorder)
       this.audioStartTime = 0
       this.tickTimer = null
       this.segStartedAt = 0
+      this.segSeq = 0
       this.lastVoiceAt = 0
       this.inFlight = false
       this.pendingSegment = null
@@ -363,6 +364,10 @@ registerProcessor('vg-recorder', VGRecorder)
     setSeq(seq) {
       this.seq = Number(seq) || 0
       this.pendingSegment = null
+      // 换题时丢掉正在采集的语音：这段音频属于上一题，切片晚于换题时不能再算到新题上。
+      this.segStartedAt = 0
+      this.segSeq = 0
+      this.lastVoiceAt = 0
     }
 
     // 朗读单词期间（以及结束后 0.5 秒）丢弃音频，防止识别到游戏的发音。
@@ -451,6 +456,7 @@ registerProcessor('vg-recorder', VGRecorder)
       this.freqData = new Uint8Array(this.analyser.frequencyBinCount)
       this.timeData = new Float32Array(this.analyser.fftSize)
       this.segStartedAt = 0
+      this.segSeq = 0
       this.lastVoiceAt = 0
       this.micWarned = false
       this.audioStartTime = this.now()
@@ -603,7 +609,11 @@ registerProcessor('vg-recorder', VGRecorder)
         this.micWarned = false
       }
       if (info.voiced) {
-        if (!this.segStartedAt) this.segStartedAt = Math.max(now - 100, this.blockedUntil)
+        if (!this.segStartedAt) {
+          this.segStartedAt = Math.max(now - 100, this.blockedUntil)
+          // 序号在“开始采集”时确定：切片可能晚于换题，不能按切片时的题号归属。
+          this.segSeq = this.seq
+        }
         this.lastVoiceAt = now
         if (now - this.segStartedAt >= VG_VOICE_CONST.MAX_SEGMENT_MS) this._flush(now)
         return
@@ -620,7 +630,9 @@ registerProcessor('vg-recorder', VGRecorder)
       const rate = ctx.sampleRate || VG_VOICE_CONST.SAMPLE_RATE
       const startAt = Math.max(this.blockedUntil, this.segStartedAt - VG_VOICE_CONST.SEGMENT_PAD_MS)
       const end = Math.min(Number(endAt) || 0, this.lastVoiceAt + 250)
+      const segmentSeq = this.segSeq
       this.segStartedAt = 0
+      this.segSeq = 0
       this.lastVoiceAt = 0
       if (end - startAt < VG_VOICE_CONST.MIN_SEGMENT_MS) return
       const startSample = Math.max(0, Math.round((startAt - this.audioStartTime) * rate / 1000))
@@ -633,7 +645,7 @@ registerProcessor('vg-recorder', VGRecorder)
         audio: rgbBytesToBase64(wav),
         format: 'wav',
         timeoutMs: 10000,
-        seq: this.seq
+        seq: segmentSeq
       }
       if (this.inFlight) {
         this.pendingSegment = segment
@@ -715,6 +727,7 @@ registerProcessor('vg-recorder', VGRecorder)
       this.ringBuffer = null
       this.detector = null
       this.segStartedAt = 0
+      this.segSeq = 0
       this.lastVoiceAt = 0
       this.pendingSegment = null
       this.inFlight = false

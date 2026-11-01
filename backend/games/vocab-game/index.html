@@ -10,7 +10,7 @@
   "title": "背单词",
   "description": "英文单词四选一中文释义，带自动朗读和语音选择。选错、超时或点「不认识」会电击并显示完整释义，单词当天排到队尾，答对一次才算过。旧词首答正确后复习间隔逐次翻倍，进度走账号云同步。",
   "howTo": "1. 映射电击设备（必需），可选映射自动锁\n2. 在配置里选词库、每天新词数、复习上限和每题/总时长\n3. 登录客户端账号后开始；开始页会读取今日计划\n4. 点选中文释义，也可以开语音模式说「第一个」到「第四个」\n5. 今日计划全部答对一次即完成并解锁；点「再学一组」可继续加新词",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "permissions": ["microphone"],
   "models": [
     { "task": "asr", "id": "sense-voice-small-int8", "optional": true }
@@ -374,7 +374,7 @@
   </div>
   <div class="vg-voice" id="vg-voice" hidden><i></i><span id="vg-voice-text" data-en="Listening">监听中</span></div>
   <div class="vg-toast" id="vg-toast" hidden></div>
-  <div class="vg-stop"><button id="vg-stop-btn" type="button" data-en="Emergency stop">紧急停止</button></div>
+  <div class="vg-stop" id="vg-stop-bar" hidden><button id="vg-stop-btn" type="button" data-en="Emergency stop">紧急停止</button></div>
   <script src="i18n.js"></script>
   <script src="game.js"></script>
 </body>
