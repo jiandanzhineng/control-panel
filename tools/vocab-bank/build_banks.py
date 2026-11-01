@@ -193,6 +193,7 @@ def build_full(pairs):
     lines = []
     for pos, body in pairs:
         text = clean_body((pos + '. ' + body) if pos else body)
+        text = re.sub(r'\s*,\s*', '，', text)
         if text:
             lines.append(text)
     kept = []
