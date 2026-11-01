@@ -10,7 +10,7 @@
   "title": "朗读游戏",
   "description": "朗读屏幕上的文字。停下来不读或长时间不按原文读会先警告再电击。支持反复朗读，以及逐级遮字的背诵玩法；语音识别失败只会少电，不会多电。",
   "howTo": "1. 映射电击设备（必需），可选映射自动锁\n2. 选择玩法：朗读（可设遍数）或背诵（第一遍不遮字，之后逐级遮字）\n3. 在「朗读文本」里填写或修改要读的文字（已有默认短文）\n4. 调整沉默/离稿时限、过关正确率与电击强度\n5. 开始后游戏自动启动，允许麦克风，先安静 3 秒再朗读",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "permissions": ["microphone"],
   "models": [
     { "task": "asr", "id": "sense-voice-small-int8", "optional": true }
@@ -108,7 +108,7 @@
       "unit": "%",
       "label": "起始遮字比例",
       "description": "背诵第一级不遮字（通读），过关后从这个比例开始遮",
-      "group": "core"
+      "group": "advanced"
     },
     {
       "key": "maskStep",
@@ -120,7 +120,7 @@
       "unit": "%",
       "label": "每级增加遮字",
       "description": "每升一级多遮的比例，封顶 100%",
-      "group": "core"
+      "group": "advanced"
     },
     {
       "key": "hintChars",
@@ -132,7 +132,7 @@
       "unit": "字",
       "label": "卡壳提示字数",
       "description": "背诵时被电击后，从当前位置往后还原成文字的字数",
-      "group": "core"
+      "group": "advanced"
     },
     {
       "key": "silenceBonus",
@@ -144,7 +144,7 @@
       "unit": "秒",
       "label": "每级放宽停顿",
       "description": "背诵每升一级，沉默时限额外增加的秒数",
-      "group": "core"
+      "group": "advanced"
     },
     {
       "key": "silenceLimit",
@@ -168,7 +168,7 @@
       "unit": "秒",
       "label": "离稿判定窗口",
       "description": "在这段时间内一直不按原文前进才触发离稿警告（默认 20 秒）",
-      "group": "core"
+      "group": "advanced"
     },
     {
       "key": "warnLead",
@@ -180,7 +180,7 @@
       "unit": "秒",
       "label": "电击预警提前量",
       "description": "触发条件满足后先警告多少秒再电击，期间继续读可取消",
-      "group": "core"
+      "group": "advanced"
     },
     {
       "key": "checkContent",
@@ -188,7 +188,7 @@
       "default": true,
       "label": "检测是否在读原文",
       "description": "关闭后只检测有没有出声；语音识别不可用时也会自动退化为这个模式",
-      "group": "core"
+      "group": "advanced"
     },
     {
       "key": "shockIntensity",
@@ -224,7 +224,7 @@
       "unit": "秒",
       "label": "电击持续时间",
       "description": "每次电击持续的时间",
-      "group": "punish",
+      "group": "advanced",
       "device": "shock"
     },
     {
@@ -237,7 +237,7 @@
       "unit": "V",
       "label": "连续受罚强度递增",
       "description": "连续受罚时每次增加的电击强度，30 秒未受罚后恢复",
-      "group": "punish",
+      "group": "advanced",
       "device": "shock",
       "required": false
     },
@@ -251,7 +251,7 @@
       "unit": "V",
       "label": "电击强度上限",
       "description": "递增后的强度不会超过这个值（未允许时仍受 30V 限制）",
-      "group": "punish",
+      "group": "advanced",
       "device": "shock",
       "required": false
     },
@@ -265,7 +265,7 @@
       "unit": "秒",
       "label": "电击冷却",
       "description": "电击后多少秒内不再判定",
-      "group": "punish"
+      "group": "advanced"
     },
     {
       "key": "startGrace",
@@ -277,7 +277,7 @@
       "unit": "秒",
       "label": "开局宽限期",
       "description": "校准完成开始朗读后多少秒内不判定惩罚",
-      "group": "core"
+      "group": "advanced"
     },
     {
       "key": "segmentLen",
