@@ -115,7 +115,7 @@
       this.started = false
       this.title = t('朗读游戏')
       this.description = t('朗读屏幕上的文字，停下来或长时间不按原文读就会受到电击；支持反复朗读和逐级遮字的背诵玩法')
-      this.version = '1.1.4'
+      this.version = '1.1.5'
       this.author = '游戏设计师'
       this.random = typeof opts.random === 'function' ? opts.random : Math.random
       this.config = {
@@ -2631,8 +2631,17 @@
       this.state.ended = false
       this.state.won = false
       this.state.isGameActive = false
-      this.renderIdle(t('启动失败：{msg}', { msg: error.message }))
+      this.renderIdle(t('启动失败：{msg}', { msg: this._startErrorText(error) }))
     }
+  }
+
+  // 麦克风权限类错误给出可操作的提示，其他错误保留原文
+  _startErrorText(error) {
+    const name = error && error.name
+    if (name === 'NotAllowedError' || name === 'SecurityError') return t('没有麦克风权限，请允许后重试')
+    if (name === 'NotFoundError') return t('没有找到麦克风')
+    if (name === 'NotReadableError') return t('麦克风被其他应用占用')
+    return (error && error.message) || String(error)
   }
 
   // 页面加载后直接开始；需要用户手势或启动失败时停在开始页，可手动点按钮

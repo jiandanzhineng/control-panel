@@ -1912,3 +1912,11 @@ test('警告倒计时中途停止：清掉警告状态和浮层', async () => {
   assert.strictEqual(els['rg-banners'].hidden, true)
   assert.strictEqual(els['rg-win'].hidden, false)
 })
+
+test('麦克风权限被拒时开始页显示可操作提示而不是原始英文报错', () => {
+  const g = new ReadingGame({})
+  const denied = Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' })
+  assert.strictEqual(g._startErrorText(denied), '没有麦克风权限，请允许后重试')
+  assert.strictEqual(g._startErrorText(Object.assign(new Error('x'), { name: 'NotFoundError' })), '没有找到麦克风')
+  assert.strictEqual(g._startErrorText(new Error('其他错误')), '其他错误')
+})
