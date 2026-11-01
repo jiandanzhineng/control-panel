@@ -1896,3 +1896,19 @@ test('正确率不足电击：最后一遍被电时等电击结束再结算', ()
   finish.fn()
   assert.strictEqual(g.state.won, true)
 })
+
+test('警告倒计时中途停止：清掉警告状态和浮层', async () => {
+  const els = {}
+  const el = id => (els[id] = els[id] || { id, hidden: false, innerHTML: '', textContent: '', style: {}, className: '' })
+  const doc = { hidden: false, addEventListener: () => {}, removeEventListener: () => {}, getElementById: el }
+  const calls = []
+  const g = new ReadingGame({ document: doc, deviceManager: makeDevice(calls) })
+  g.state.isGameActive = true
+  g.state.warning = { reason: 'T2', dueAt: Date.now() + 2000 }
+  el('rg-overlay').innerHTML = '<div class="rg-overlay">x</div>'
+  await g.end()
+  assert.strictEqual(g.state.warning, null)
+  assert.strictEqual(els['rg-overlay'].innerHTML, '')
+  assert.strictEqual(els['rg-banners'].hidden, true)
+  assert.strictEqual(els['rg-win'].hidden, false)
+})

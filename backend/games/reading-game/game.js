@@ -115,7 +115,7 @@
       this.started = false
       this.title = t('朗读游戏')
       this.description = t('朗读屏幕上的文字，停下来或长时间不按原文读就会受到电击；支持反复朗读和逐级遮字的背诵玩法')
-      this.version = '1.1.3'
+      this.version = '1.1.4'
       this.author = '游戏设计师'
       this.random = typeof opts.random === 'function' ? opts.random : Math.random
       this.config = {
@@ -2107,6 +2107,7 @@
     this.ending = true
     const won = this.state.won
     this.state.ended = true
+    this.state.warning = null
     this.state.isGameActive = false
     if (this.trigger) this.trigger.setEnded()
     this.clearTimers()
@@ -2427,6 +2428,11 @@
     if (main) main.hidden = true
     const win = this.doc.getElementById('rg-win')
     if (win) win.hidden = false
+    // 警告倒计时中途结束时，浮层和横幅要一起收起
+    const overlay = this.doc.getElementById('rg-overlay')
+    if (overlay) overlay.innerHTML = ''
+    const banners = this.doc.getElementById('rg-banners')
+    if (banners) banners.hidden = true
     const start = this.doc.getElementById('rg-start-btn')
     if (start) start.disabled = true
     const label = this.doc.getElementById('rg-win-kind')
