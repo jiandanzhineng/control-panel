@@ -283,12 +283,17 @@ test('点「开始/继续学习」的手势里同时预热 AudioContext 和麦�
   game.signedIn = false
   game._bindUI()
   const button = doc.getElementById('vg-start-btn')
+  game.voiceMode = false
   button.handlers.click()
   assert.strictEqual(prime, 1)
+  assert.strictEqual(mic, 0, '点选模式不申请麦克风')
+  game.voiceMode = true
+  button.handlers.click()
+  assert.strictEqual(prime, 2)
   assert.strictEqual(mic, 1)
 })
 
-test('自动进入：有历史且未完成时直接开始；语音模式先显示点一下遮罩', async () => {
+test('自动进入：有历史且未完成时直接开始；语音模式起不来才显示点一下遮罩', async () => {
   const game = makeGame()
   game.autoStart = true
   game.voiceMode = false
@@ -307,9 +312,23 @@ test('自动进入：有历史且未完成时直接开始；语音模式先显�
   voiceGame.plan = { bank: 'cet4', ids: ['bravo'], done: [], extra: 0, newIds: ['bravo'], u: 1 }
   let voiceStarted = 0
   voiceGame._handleStart = async () => { voiceStarted += 1; return true }
+  voiceGame._tryPrimeWithoutGesture = async () => false
   assert.strictEqual(await voiceGame._maybeAutoEnter(), false)
   assert.strictEqual(voiceStarted, 0)
   assert.strictEqual(doc.getElementById('vg-gate').hidden, false)
+
+  // 无手势也能起麦克风时（如 Electron），语音模式直接开始，不弹遮罩
+  const doc2 = fakeDoc()
+  const okGame = makeGame({ document: doc2 })
+  okGame.autoStart = true
+  okGame.voiceMode = true
+  okGame.save.words.alpha = { k: 1, due: 3, last: 1, wrong: 0, u: 1 }
+  okGame.plan = { bank: 'cet4', ids: ['bravo'], done: [], extra: 0, newIds: ['bravo'], u: 1 }
+  let okStarted = 0
+  okGame._handleStart = async () => { okStarted += 1; return true }
+  okGame._tryPrimeWithoutGesture = async () => true
+  assert.strictEqual(await okGame._maybeAutoEnter(), true)
+  assert.strictEqual(okStarted, 1)
 })
 
 test('自动进入：今日已完成或没有学习记录时停在首页', async () => {

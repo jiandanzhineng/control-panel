@@ -288,8 +288,9 @@
         if (el && typeof el.addEventListener === 'function') el.addEventListener(event, fn)
       }
       const startGesture = () => {
-        // 用户手势里同步恢复 AudioContext，并尽早申请麦克风（语音模式随后直接复用）。
+        // 用户手势里同步恢复 AudioContext；只有语音模式才申请麦克风，点选模式不弹权限。
         this.voice.prime()
+        if (!this.voiceMode) return
         try {
           const pending = this.voice.primeMic()
           if (pending && typeof pending.catch === 'function') pending.catch(() => {})
@@ -587,13 +588,32 @@
       if (!Object.keys(this.save.words || {}).length) return false
       if (this.state.view !== 'home') return false
       this.autoEntered = true
-      if (this.voiceMode) {
-        // 语音模式无用户手势时 AudioContext/麦克风可能起不来，先让用户点一下。
+      if (this.voiceMode && !(await this._tryPrimeWithoutGesture())) {
+        // 先静默尝试（手被束缚时也要能直接开始）；起不来才让用户点一下。
         this._setHidden('vg-gate', false)
         return false
       }
       await this._handleStart()
       return true
+    }
+
+    async _tryPrimeWithoutGesture() {
+      try {
+        this.voice.prime()
+        await this.voice.primeMic()
+        const ctx = this.voice.audioContext
+        if (ctx && ctx.state === 'suspended' && typeof ctx.resume === 'function') {
+          await Promise.race([
+            Promise.resolve(ctx.resume()).catch(() => {}),
+            new Promise(resolve => this.timers.setTimeout(resolve, 800))
+          ])
+        }
+        if (this.voice.micError) return false
+        if (this.voice.testAudioUrl) return !ctx || ctx.state !== 'suspended'
+        return !!ctx && ctx.state === 'running'
+      } catch (_) {
+        return false
+      }
     }
 
     _startHomeDayTimer() {
