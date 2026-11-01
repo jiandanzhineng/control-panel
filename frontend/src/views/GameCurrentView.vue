@@ -91,6 +91,7 @@ function buildSrc(): string {
   const id = String(q.id || '');
   const locale = String(q.locale || 'zh');
   const localeTag = String(q.localeTag || (locale === 'en' ? 'en-US' : 'zh-CN'));
+  const gameToken = String(q.gameToken || '');
 
   // 基础游戏 URL：
   // - 外部游戏：后端已返回前缀代理路径 gamePath（/games/proxy/...）
@@ -101,7 +102,8 @@ function buildSrc(): string {
   if (!base) return '';
 
   const sep = base.includes('?') ? '&' : '?';
-  return `${base}${sep}deviceMap=${encodeURIComponent(deviceMap)}&params=${encodeURIComponent(params)}&locale=${encodeURIComponent(locale)}&localeTag=${encodeURIComponent(localeTag)}`;
+  const tokenQuery = gameToken ? `&gameToken=${encodeURIComponent(gameToken)}` : '';
+  return `${base}${sep}deviceMap=${encodeURIComponent(deviceMap)}&params=${encodeURIComponent(params)}&locale=${encodeURIComponent(locale)}&localeTag=${encodeURIComponent(localeTag)}${tokenQuery}`;
 }
 
 function beginGame() {

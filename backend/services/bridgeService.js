@@ -9,6 +9,8 @@ const externalGameAccessService = require('./externalGameAccessService');
 const browserDeviceGrantService = require('./browserDeviceGrantService');
 const wsUpgradeRouter = require('./wsUpgradeRouter');
 const sttService = require('./sttService');
+const gameLaunchTokenService = require('./gameLaunchTokenService');
+const gameCloudService = require('./gameCloudService');
 // 玩法载体事件（本机开始/退出一次玩法）：远程占用仲裁（remoteGameService）订阅
 const playCarrierBus = require('./playCarrierBus');
 
@@ -30,6 +32,8 @@ class GameSession {
     this.params = config.params || {};
     this.kind = config.kind || 'play';
     this.origin = config.origin || '';
+    // 宿主签发的游戏启动令牌；云存档的游戏 id 只能由它解析，页面传的 gameId 一律忽略。
+    this.gameToken = typeof config.gameToken === 'string' ? config.gameToken : null;
     this.subscriptions = new Map();
     this.propertySubscriptions = new Map();
     this.valueSubscriptions = new Map();
@@ -149,6 +153,7 @@ function init(server) {
         const config = {
           deviceMap: msg.deviceMap || {},
           params: msg.params || {},
+          gameToken: msg.gameToken,
         };
         if (pendingDisconnect && activeSession === pendingDisconnect && isSameSessionConfig(pendingDisconnect, config)) {
           // 同配置快速重连（页面刷新/崩溃重载）会销毁旧会话并清掉它的自动停止定时器，
@@ -161,6 +166,7 @@ function init(server) {
         session = new GameSession(ws, {
           deviceMap: config.deviceMap,
           params: config.params,
+          gameToken: config.gameToken,
         });
         sessions.set(session.id, session);
         activeSession = session;
@@ -306,6 +312,27 @@ function handleMessage(session, msg) {
           .catch((error) => session.send({
             id, error: error?.message || String(error), code: error?.code || null,
           }));
+        break;
+      }
+
+      case 'cloudStatus': {
+        // 只看本地登录会话，不请求网络。
+        session.send({ id, result: gameCloudService.status() });
+        break;
+      }
+
+      case 'cloudGet': {
+        gameCloudService.get(resolveSessionGameId(session))
+          .then((result) => session.send({ id, result }))
+          .catch((error) => sendCloudError(session, id, error));
+        break;
+      }
+
+      case 'cloudPut': {
+        // msg.gameId / msg.data.gameId 都不看：游戏 id 只认宿主签发的启动令牌。
+        gameCloudService.put(resolveSessionGameId(session), msg.data, msg.baseVersion)
+          .then((result) => session.send({ id, result }))
+          .catch((error) => sendCloudError(session, id, error));
         break;
       }
 
@@ -930,6 +957,19 @@ function stopShockTargets(session) {
 
 function emitSystemLog(session, level, message, meta) {
   session.send({ event: 'systemLog', level, message, meta: meta || {} });
+}
+
+// ---------- 页面游戏云存档（契约见 docs/plans/vocab-game.md §4.2） ----------
+// 令牌由 /api/games/:id/start 按游戏签发，bridge init 回传；页面传来的 gameId 不参与。
+function resolveSessionGameId(session) {
+  return gameLaunchTokenService.resolve(session.gameToken);
+}
+
+// 409 冲突时把云端当前内容带回页面（err.remote），其余只回错误码。
+function sendCloudError(session, id, error) {
+  const payload = { id, error: error?.message || String(error), code: error?.code || null };
+  if (error?.remote) payload.remote = error.remote;
+  session.send(payload);
 }
 
 // ---------- 语音识别（游戏用，契约见 docs/plans/reading-game.md §3.2） ----------

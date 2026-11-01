@@ -39,9 +39,11 @@ function persist(session) {
 }
 
 function deposit(token, user) {
+  // nickname 给页面游戏云存档的 DeviceAPI.cloud.status() 用；上游没有就存 null。
+  const nickname = typeof user?.nickname === 'string' && user.nickname ? user.nickname : null;
   persist({
     token,
-    user: { id: user?.id || null, email: user?.email || null },
+    user: { id: user?.id || null, email: user?.email || null, nickname },
     depositedAt: Date.now(),
   });
   return memory;

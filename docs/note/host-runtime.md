@@ -20,6 +20,12 @@
 - 页面路径解析 `frontend/src/play/gamePagePath.ts`：内置游戏走 `/api/games/:id` 的 gamePath，注册表游戏走 `/api/game-cache/install/:id`。
 - `GameRuntimeSurface`/`gameSurfaces/*` 已删除，配置页不再有「配置预览」。
 
+## DeviceAPI.cloud（页面游戏云存档，2026-11-01）
+
+- 页面游戏经 bridge 调用 `DeviceAPI.cloud.status/get/put`，宿主转发到 `GET/PUT {ACCOUNT_API_URL}/me/game-data/:gameId`；契约与错误码见 `docs/plans/vocab-game.md` §4.2。
+- `gameId` 只由宿主持有：`/api/games/:id/start` 签发 `gameToken`，前端拼进 iframe URL、bridge init 回传，页面传来的任何 gameId 都忽略；无令牌 `BAD_GAME`。手机端实现同一接口时也要保持这个来源。
+- 错误码 `NOT_SIGNED_IN | VERSION_CONFLICT（err.remote）| NETWORK | TOO_LARGE | BAD_GAME | BAD_DATA | UPSTREAM_<status>`；token 与存档内容不进日志。
+
 ## 版本与验证
 
 - surge-edging 以线上 1.3.6 页面为原版拉回仓库并加托管适配（1.4.0 → 1.4.1 对齐原版算法）；pressure-edging-v2 2.2.0 → 2.2.1（恢复临界气压无上限、曲线拖动经 `setThresholds` 提交宿主、+10 只抬本帧目标）。
