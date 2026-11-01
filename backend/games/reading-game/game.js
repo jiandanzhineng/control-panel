@@ -115,7 +115,7 @@
       this.started = false
       this.title = t('朗读游戏')
       this.description = t('朗读屏幕上的文字，停下来或长时间不按原文读就会受到电击；支持反复朗读和逐级遮字的背诵玩法')
-      this.version = '1.1.2'
+      this.version = '1.1.3'
       this.author = '游戏设计师'
       this.random = typeof opts.random === 'function' ? opts.random : Math.random
       this.config = {
@@ -125,6 +125,7 @@
         passes: 1,
         restSeconds: 20,
         passRate: 85,
+        lowAccuracyShock: true,
         maskStart: 10,
         maskStep: 10,
         hintChars: 8,
@@ -180,6 +181,7 @@
       this.tailConfirmAttempts = 0
       this.latencySamples = []
       this.sttErrorAt = 0
+      this.passUnreliable = false
       this.voicedBuckets = new Map()
       this.shockGen = 0
       this.chunkSeq = 0
@@ -434,6 +436,7 @@
         this.tailConfirmAttempts = 0
         this.latencySamples = []
         this.sttErrorAt = 0
+        this.passUnreliable = false
         this.chunkSeq = 0
         this.lastChunkEndSec = 0
         this.voiceTicks = []
@@ -1481,18 +1484,19 @@
     this.state.warning = null
     this.state.endWait = null
     this.state.tailConfirm = null
+    // 比较和显示都用四舍五入后的整数百分比
+    const pct = Math.round(accuracy * 100)
+    const line = Math.round(Math.max(0, Math.min(100, Number(this.config.passRate) || 85)))
+    const shocked = this._maybeAccuracyShock(kind, pct, line, now)
     if (this.state.mode !== 'recite') {
       this.state.lastPassPassed = null
       if (this.state.completedPasses >= this.state.totalPasses) {
-        this._finishGame(kind)
+        this._finishAfterShock(kind, shocked)
       } else {
         this._enterRest(now)
       }
       return
     }
-    // 比较和显示都用四舍五入后的整数百分比
-    const pct = Math.round(accuracy * 100)
-    const line = Math.round(Math.max(0, Math.min(100, Number(this.config.passRate) || 85)))
     const passed = pct >= line
     this.state.lastPassPassed = passed
     if (passed && this.state.maskRatio >= 100) {
@@ -1505,6 +1509,29 @@
       : t('第 {n} 遍正确率 {pct}%，未达到 {line}%，留在第 {lv} 级重读', { n: this.state.passNumber, pct, line, lv: this.state.level }),
     passed ? 'success' : 'warning')
     this._enterRest(now)
+  }
+
+  // 一遍读完正确率低于过关线时电一下提醒。识别不可靠（结尾未确认、出错、变慢、降级）的那遍不电，只能少电不能多电。
+  // 电击在进入休息前发出，休息期间不会再有新的电击。
+  _maybeAccuracyShock(kind, pct, line, now) {
+    if (this.config.lowAccuracyShock === false || pct >= line) return false
+    const n = this.state.passNumber
+    if (kind === 'unconfirmed' || this.passUnreliable || this.state.degraded || this.sttUnavailable) {
+      this.log(t('第 {n} 遍正确率 {pct}% 偏低，但识别不稳定，本遍不电击', { n, pct }), 'warning')
+      return false
+    }
+    this.log(t('第 {n} 遍正确率 {pct}%，低于 {line}%，电击提醒', { n, pct, line }), 'warning')
+    this.doShock('ACC', now)
+    return true
+  }
+
+  // 最后一遍被电时，等电击结束再结算，避免结束流程把电击提前掐断
+  _finishAfterShock(kind, shocked) {
+    if (!shocked) { this._finishGame(kind); return }
+    const ms = Math.max(100, Number(this.config.shockDuration) * 1000) + 300
+    this.timers.setTimeout(() => {
+      if (!this.state.ended && !this.state.won) this._finishGame(kind)
+    }, ms)
   }
 
   _finishGame(kind) {
@@ -1579,6 +1606,7 @@
     this.finalQueue = []
     this.latencySamples = []
     this.sttErrorAt = 0
+    this.passUnreliable = false
     this.voiceTicks = []
     this.voicedBuckets = new Map()
     if (this.detector) {
@@ -1674,6 +1702,7 @@
       this._updateTransport(Date.now() - startedAt, passId)
       if (!this._isStalePass(passId)) {
         this.sttErrorAt = Date.now()
+        this.passUnreliable = true
         const reason = error && error.code === 'NO_STT' ? 'no-speech' : 'exception'
         this._applyUnknown(seq, reason, null, audioStartMs, audioEndMs, confirm, passId)
       }
@@ -1867,6 +1896,7 @@
     this.state.sttLatency = ms
     if (slow === this.state.sttSlow) return
     this.state.sttSlow = slow
+    if (slow) this.passUnreliable = true
     if (this.trigger) this.trigger.setTransportOk(!slow)
     this.log(slow
       ? '识别响应 ' + (ms / 1000).toFixed(1) + ' 秒，已暂停离稿判定，仅检测沉默'
@@ -1912,7 +1942,7 @@
     const voltage = this._voltage(now)
     this.state.lastVoltage = voltage
     this.playBeep(120, 0.3)
-    this.log('电击 #' + this.state.shockCount + '（' + (reason === 'T1' ? '沉默' : '离稿') + '），强度 ' + voltage + 'V', 'error')
+    this.log('电击 #' + this.state.shockCount + '（' + (reason === 'T1' ? '沉默' : reason === 'ACC' ? '正确率不足' : '离稿') + '），强度 ' + voltage + 'V', 'error')
     const ms = Math.max(100, Number(this.config.shockDuration) * 1000)
     // 先挂停止定时器再发 shock:1：即使 shock:1 的 IPC 卡住，到点也一定会发 shock:0
     if (this.shockTimer) this.timers.clearTimeout(this.shockTimer)

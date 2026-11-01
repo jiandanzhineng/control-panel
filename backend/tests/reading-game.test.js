@@ -572,6 +572,7 @@ test('proactive 传输判定和普通分片有界队列', () => {
 
 test('结尾 20 秒拥堵：6 段排队后仍能推进并通关，不电击', () => {
   const g = new ReadingGame()
+  g.config.lowAccuracyShock = false // 这里只测结尾判定，不测正确率电击
   g.state = g._initialState()
   const now = Date.now()
   g.state.totalSyllables = 214
@@ -912,6 +913,7 @@ test('最终确认两次 unknown：按未确认完成结束，不电击', () => 
 
 test('最终确认 reading 且终点达到 total-10：通关', () => {
   const g = new ReadingGame()
+  g.config.lowAccuracyShock = false // 这里只测结尾判定，不测正确率电击
   g.state = g._initialState()
   const now = Date.now()
   g.state.totalSyllables = 214
@@ -1835,4 +1837,62 @@ test('自动开始：没有用户手势导致音频挂起时报错并停在开�
   await assert.rejects(() => g.startAudio(), /点一下/)
   g.autoStarting = false
   assert.strictEqual(typeof g.autoStart, 'function')
+})
+
+// ---- 正确率不足电击提醒 ----
+
+function accGame (cfg, matched) {
+  const g = newFlowGame(Object.assign({ restSeconds: 20, passRate: 85, shockDuration: 1 }, cfg), matched)
+  g.state.phase = 'reading'
+  const calls = []
+  g.deviceManager = makeDevice(calls)
+  const timeouts = []
+  g.timers = { setTimeout: (fn, ms) => { timeouts.push({ fn, ms }); return timeouts.length }, clearTimeout: () => {} }
+  return { g, calls, timeouts }
+}
+const shockStarts = calls => calls.filter(c => c.props.shock === 1)
+
+test('正确率不足电击：朗读一遍低于过关线且识别可靠时电一次，然后休息', () => {
+  const { g, calls } = accGame({ mode: 'read', passes: 2 }, 50)
+  g._onPassDone('won')
+  assert.strictEqual(shockStarts(calls).length, 1)
+  assert.strictEqual(g.state.shockCount, 1)
+  assert.strictEqual(g.state.phase, 'rest')
+})
+
+test('正确率不足电击：识别不稳定、结尾未确认、降级或关闭开关时都不电', () => {
+  const cases = [
+    ['unreliable', g => { g.passUnreliable = true }, 'won'],
+    ['unconfirmed', () => {}, 'unconfirmed'],
+    ['degraded', g => { g.state.degraded = true }, 'won'],
+    ['off', g => { g.config.lowAccuracyShock = false }, 'won']
+  ]
+  for (const [name, setup, kind] of cases) {
+    const { g, calls } = accGame({ mode: 'read', passes: 2 }, 50)
+    setup(g)
+    g._onPassDone(kind)
+    assert.strictEqual(shockStarts(calls).length, 0, name + ' 不应电击')
+  }
+})
+
+test('正确率不足电击：达到过关线不电；背诵未过关电一次并留级', () => {
+  const ok = accGame({ mode: 'read', passes: 2 }, 90)
+  ok.g._onPassDone('won')
+  assert.strictEqual(shockStarts(ok.calls).length, 0)
+  const rc = accGame({ mode: 'recite', maskStart: 10, maskStep: 10 }, 50)
+  rc.g._onPassDone('won')
+  assert.strictEqual(shockStarts(rc.calls).length, 1)
+  assert.strictEqual(rc.g.state.level, 1)
+  assert.strictEqual(rc.g.state.phase, 'rest')
+})
+
+test('正确率不足电击：最后一遍被电时等电击结束再结算', () => {
+  const { g, calls, timeouts } = accGame({ mode: 'read', passes: 1 }, 50)
+  g._onPassDone('won')
+  assert.strictEqual(shockStarts(calls).length, 1)
+  assert.strictEqual(g.state.won, false, '电击期间还没结算')
+  const finish = timeouts.find(x => x.ms >= 1300)
+  assert.ok(finish, '应在电击时长之后结算')
+  finish.fn()
+  assert.strictEqual(g.state.won, true)
 })

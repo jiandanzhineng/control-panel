@@ -170,6 +170,16 @@ DeviceAPI.speech.transcribe({ audio, format: 'wav', timeoutMs })
 - **卡壳提示**：背诵玩法下每次真的电击（`doShock`）后，从当前位置对应的字开始，往后 `hintChars` 个被遮的字在本遍内还原。
 - **停顿放宽**：每遍开始时把 trigger 的 `silenceLimit` 设为 `config.silenceLimit + k·silenceBonus`，朗读玩法里 k 取 0。1.1.1 起改为 `(k−1)·silenceBonus`，第 1 级不加。
 
+### 7.4.1 正确率不足电击（1.1.3）
+
+- 参数 `lowAccuracyShock`，默认开启。两种玩法都适用，阈值用 `passRate`。
+- 时机：一遍结束、进入休息之前，在 `_onPassDone` 里电一次，原因记为 `ACC`。如果是最后一遍，等电击结束后再结算。
+- 以下情况本遍不电：
+  - 结尾没能确认（`unconfirmed`）；
+  - 本遍出过识别错误或超时；
+  - 本遍识别变慢过；
+  - 识别降级或不可用。
+
 ### 7.5 顺着读（两种玩法都适用）
 
 - **跳得远**：采纳结果时，如果第一个强匹配的位置比当前位置超前 12 个音节以上，先不推进，记为"待定跳转"（`pendingJump`，记录链的起止位置）。

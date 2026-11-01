@@ -114,6 +114,8 @@
       "朗读文本": "Reading text",
       "文本 {n}": "Text {n}",
       "开始背诵": "Start reciting",
+      "第 {n} 遍正确率 {pct}% 偏低，但识别不稳定，本遍不电击": "Pass {n} accuracy {pct}% is low, but recognition was unstable, so no shock",
+      "第 {n} 遍正确率 {pct}%，低于 {line}%，电击提醒": "Pass {n} accuracy {pct}% is below {line}%, shock reminder",
       "当前环境需要先点一下才能启用麦克风，请点击下方按钮开始": "This environment needs a tap before the mic can start. Press the button below to begin",
       "玩法": "Mode",
       "朗读": "Read",
