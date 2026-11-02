@@ -1630,6 +1630,9 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
       const gamePath = installedGamePath || (play.value as any)?.gamePath || String(route.query.gamePath || '');
       if (externalUrl) resumeQuery.externalUrl = externalUrl;
       if (gamePath) resumeQuery.gamePath = gamePath;
+      // 宿主签发的一次性游戏令牌：云存档按它解析 gameId，页面自己不传游戏 id。
+      const gameToken = String((started as any)?.runtime?.gameToken || '');
+      if (gameToken) resumeQuery.gameToken = gameToken;
       if (mode === 'button' && startTriggerDeviceId.value) {
         resumeQuery.startMode = 'button';
         resumeQuery.startTriggerDeviceId = startTriggerDeviceId.value;

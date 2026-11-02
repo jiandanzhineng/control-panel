@@ -7,6 +7,7 @@ const bridgeService = require('../services/bridgeService');
 const gameHost = require('../game-runtime/gameHostService');
 const gameCoreResolver = require('../game-runtime/gameCoreResolver');
 const remoteSession = require('../services/remoteSessionService');
+const gameLaunchTokenService = require('../services/gameLaunchTokenService');
 
 // 主控端远程模式下开始一次玩法：被控端登记为一次远程占用（ADR-0004 玩法唯一性）。
 // 被控端本地玩法运行中会以 HOST_PLAY_ACTIVE 拒绝 → 启动必须失败可见（游戏不启动）。
@@ -154,12 +155,15 @@ router.post('/:id/start', async (req, res) => {
     }
     await occupyRemotePlay(req.params.id, g);
     await localAppProcessService.stopAll();
+    // 页面游戏云存档的 gameId 由宿主持有：签发一次启动令牌，前端拼进 iframe URL，
+    // bridge init 回传后按令牌解析游戏 id（页面传来的 gameId 一律忽略）。
+    const gameToken = gameLaunchTokenService.issue(g?.id);
     res.json({
       ok: true,
       gamePath: g?.gamePath || req.body?.gamePath || null,
       deviceMap: normalizedMap,
       params: parameters,
-      runtime: { mode: 'iframe' },
+      runtime: gameToken ? { mode: 'iframe', gameToken } : { mode: 'iframe' },
     });
   } catch (e) {
     // 被控端本地玩法运行中（HOST_PLAY_ACTIVE）：409 让主控端界面把「启动被拒」显示清楚

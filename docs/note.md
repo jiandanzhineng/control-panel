@@ -12,6 +12,7 @@ agent 查到的事实、配置位置、命令、踩坑。按主题，详情在 `
 
 - HostRuntime 模块、JS Core 契约、`/api/game-runtime` 与原始 UI 托管渲染见 [host-runtime](note/host-runtime.md)。
 - 远程游戏测试环境、虚拟设备检查路径、无头验证方法见 [remote-game-testing](note/remote-game-testing.md)。
+- 背单词词库由 ECDICT 生成，脚本用法、字段、统计与许可证见 [vocab-bank](note/vocab-bank.md)。
 
 ## 远程会话
 

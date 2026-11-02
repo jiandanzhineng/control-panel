@@ -25,6 +25,7 @@
   let systemLogCallbacks = [];
   let deviceMapData = {};
   let paramsData = {};
+  let gameToken = '';
   let idCounter = 0;
 
   function genId() { return 'req_' + (++idCounter) + '_' + Date.now(); }
@@ -93,6 +94,7 @@
         action: 'init',
         deviceMap: deviceMapData,
         params: paramsData,
+        gameToken: gameToken,
       }));
     };
     ws.onmessage = function (evt) {
@@ -103,8 +105,10 @@
         pending.delete(msg.id);
         if (msg.error) {
           var err = new Error(msg.error);
-          // 语音识别等动作需要保留错误码（NOT_SIGNED_IN / TIMEOUT / BAD_AUDIO…）。
+          // 语音识别、云存档等动作需要保留错误码（NOT_SIGNED_IN / TIMEOUT / TOO_LARGE…）。
           if (msg.code) err.code = msg.code;
+          // 云存档版本冲突时带回云端当前内容，页面合并后重试。
+          if (msg.remote) err.remote = msg.remote;
           p.reject(err);
         } else p.resolve(msg.result);
         return;
@@ -271,6 +275,20 @@
         });
       },
     },
+    // 页面游戏云存档（背单词等）。gameId 由宿主按当前游戏决定，页面传不进来。
+    // reject 的 Error 带 code：NOT_SIGNED_IN | VERSION_CONFLICT（err.remote = { data, version }）
+    // | NETWORK | TOO_LARGE | BAD_GAME | BAD_DATA | UPSTREAM_<status>。
+    cloud: {
+      status: function () {
+        return sendRequest({ action: 'cloudStatus' });
+      },
+      get: function () {
+        return sendRequest({ action: 'cloudGet' });
+      },
+      put: function (data, baseVersion) {
+        return sendRequest({ action: 'cloudPut', data: data, baseVersion: baseVersion });
+      },
+    },
     getDevices: function () { return sendRequest({ action: 'getDevices' }); },
     getDeviceMap: function () { return sendRequest({ action: 'getDeviceMap' }); },
     log: function (level, message, meta) { sendFire({ action: 'log', level: level, message: message, meta: meta }); },
@@ -320,6 +338,10 @@
     var pStr = urlParams.get('params');
     var localeStr = urlParams.get('locale');
     var localeTagStr = urlParams.get('localeTag');
+    // 令牌优先从 # 片段读（片段不会进服务器访问日志）；兼容旧的 query 传法。
+    var hashParams = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+    var gameTokenStr = hashParams.get('gameToken') || urlParams.get('gameToken');
+    if (gameTokenStr) gameToken = gameTokenStr;
     if (dmStr) { deviceMapData = JSON.parse(decodeURIComponent(dmStr)); window.DeviceAPI.deviceMap = deviceMapData; }
     if (pStr) { var urlP = JSON.parse(decodeURIComponent(pStr)); Object.assign(paramsData, urlP); window.DeviceAPI.params = paramsData; }
     if (localeStr) {
