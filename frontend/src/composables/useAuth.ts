@@ -94,11 +94,19 @@ async function recover(email: string): Promise<void> {
   await authApi.recover(email);
 }
 
+async function phoneLogin(challengeId:string,code:string):Promise<void> {
+ const {token,user}=await authApi.phoneLogin(challengeId,code);persistSession(token,user);
+}
+async function phoneBind(body:{challengeId:string;code:string;oldChallengeId?:string;oldCode?:string}):Promise<void> {
+ const {user}=await authApi.phoneBind(body);if(state.token)persistSession(state.token,user);
+}
 export function useAuth() {
   return {
     authState: readonly(state),
     checkSession,
     login,
+    phoneLogin,
+    phoneBind,
     register,
     logout,
     deleteAccount,

@@ -8,9 +8,11 @@
       </template>
       <el-descriptions :column="1" border>
         <el-descriptions-item :label="t('account.email')">{{ authState.user.email || '—' }}</el-descriptions-item>
-        <el-descriptions-item :label="t('account.provider')">{{ authState.user.provider }}</el-descriptions-item>
+        <el-descriptions-item :label="t('account.phone')">{{ authState.user.phoneMasked || '—' }}</el-descriptions-item>
+        <el-descriptions-item :label="t('account.provider')">{{ authState.user.provider === 'phone' ? t('account.phoneLogin') : authState.user.provider === 'email' ? t('account.email') : authState.user.provider }}</el-descriptions-item>
         <el-descriptions-item :label="t('account.createdAt')">{{ formatDate(authState.user.createdAt) }}</el-descriptions-item>
       </el-descriptions>
+      <PhoneAuthForm binding :phone-masked="authState.user.phoneMasked" />
       <div class="actions">
         <el-button type="primary" :loading="acting" @click="onLogout">{{ t('account.logout') }}</el-button>
         <el-button type="danger" plain :loading="acting" @click="onDeleteAccount">{{ t('account.delete') }}</el-button>
@@ -19,6 +21,7 @@
 
     <el-card v-else class="account-card">
       <el-tabs v-model="activeTab">
+        <el-tab-pane :label="t('account.phoneLogin')" name="phone"><PhoneAuthForm /></el-tab-pane>
         <el-tab-pane :label="t('account.login')" name="login">
           <el-form :model="loginForm" label-width="70px" @submit.prevent>
             <el-form-item :label="t('account.email')">
@@ -63,6 +66,7 @@
 import { reactive, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import PhoneAuthForm from '../components/PhoneAuthForm.vue';
 import { useAuth } from '../composables/useAuth';
 
 const { t } = useI18n();

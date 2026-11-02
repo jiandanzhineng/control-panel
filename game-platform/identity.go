@@ -50,25 +50,32 @@ func (c *identityClient) currentUser(ctx context.Context, authorization string) 
 	}
 	var payload struct {
 		User struct {
-			ID       string  `json:"id"`
-			Email    *string `json:"email"`
-			Provider string  `json:"provider"`
-			IsAdmin  bool    `json:"isAdmin"`
+			PhoneMasked   string  `json:"phoneMasked"`
+			PhoneVerified bool    `json:"phoneVerified"`
+			ID            string  `json:"id"`
+			Email         *string `json:"email"`
+			Provider      string  `json:"provider"`
+			IsAdmin       bool    `json:"isAdmin"`
 		} `json:"user"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 32*1024)).Decode(&payload); err != nil {
 		return User{}, fmt.Errorf("invalid mobile identity response: %w", err)
 	}
-	if payload.User.ID == "" || payload.User.Email == nil || payload.User.Provider != "email" {
+	if payload.User.ID == "" || len(payload.User.ID) > 200 {
 		return User{}, errIdentityUnauthenticated
 	}
-	email := normalizeEmail(*payload.User.Email)
-	if !strings.Contains(email, "@") || len(email) > 254 || len(payload.User.ID) > 200 {
+	email := ""
+	if payload.User.Email != nil {
+		email = normalizeEmail(*payload.User.Email)
+	}
+	emailAccount := payload.User.Provider == "email" && strings.Contains(email, "@") && len(email) <= 254
+	phoneAccount := payload.User.Provider == "phone" && payload.User.PhoneVerified && payload.User.PhoneMasked != ""
+	if !emailAccount && !phoneAccount {
 		return User{}, errIdentityUnauthenticated
 	}
 	role := "author"
 	if payload.User.IsAdmin {
 		role = "admin"
 	}
-	return User{ID: payload.User.ID, Email: email, Role: role}, nil
+	return User{ID: payload.User.ID, Email: email, Role: role, PhoneMasked: payload.User.PhoneMasked, PhoneVerified: payload.User.PhoneVerified}, nil
 }

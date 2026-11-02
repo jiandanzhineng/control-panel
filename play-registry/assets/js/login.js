@@ -12,6 +12,7 @@
     views[view.getAttribute('data-auth-view')] = view;
   });
   var forms = {
+    phone: document.getElementById('phone-form'),
     login: document.getElementById('login-form'),
     register: document.getElementById('register-form'),
     recover: document.getElementById('recover-form')
@@ -22,7 +23,7 @@
   function t(key) { return auth.t(key); }
 
   function viewOf(hash) {
-    if (hash === '#register' || hash === '#recover') return hash.slice(1);
+    if (hash === '#register' || hash === '#recover' || hash === '#phone') return hash.slice(1);
     return 'login';
   }
 
@@ -132,6 +133,25 @@
     if (!form) return;
     form.addEventListener('input', function () { clearError(form); });
   });
+
+  var phoneChallenge='', phoneRetry=0;
+  var sendPhone=document.getElementById('phone-send');
+  if(sendPhone) sendPhone.addEventListener('click',function(){
+    sendPhone.disabled=true;clearError(forms.phone);
+    auth.phoneCode(forms.phone.phone.value.trim()).then(function(data){
+      phoneChallenge=data.challengeId;phoneRetry=data.retryAfter;
+      sendPhone.textContent=String(phoneRetry)+'s';
+      var timer=setInterval(function(){phoneRetry--;sendPhone.textContent=phoneRetry>0?String(phoneRetry)+'s':t('phoneSend');if(phoneRetry<=0){clearInterval(timer);sendPhone.disabled=false;}},1000);
+    }).catch(function(err){showError(forms.phone,err.message);sendPhone.disabled=false;});
+  });
+  if(forms.phone) {
+    forms.phone.phone.addEventListener('input',function(){phoneChallenge='';forms.phone.code.value='';});
+    forms.phone.addEventListener('submit',function(event){
+      event.preventDefault();if(!phoneChallenge){showError(forms.phone,t('phoneRequestFirst'));return;}
+      setBusy(forms.phone,true,'authLoggingIn');
+      auth.phoneLogin(phoneChallenge,forms.phone.code.value,forms.phone.remember.checked).then(redirectAfterAuth).catch(function(err){showError(forms.phone,err.status===401?t('phoneInvalid'):err.message);setBusy(forms.phone,false);});
+    });
+  }
 
   /* ---------- 登录 ---------- */
 

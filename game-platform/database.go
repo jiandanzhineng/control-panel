@@ -50,7 +50,8 @@ func migrate(db *sql.DB) error {
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS identities (
 			id TEXT PRIMARY KEY,
-			email TEXT NOT NULL UNIQUE,
+			email TEXT UNIQUE,
+			phone_masked TEXT NOT NULL DEFAULT '',
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL
 		)`,
@@ -127,7 +128,7 @@ func migrate(db *sql.DB) error {
 	} else if err != nil {
 		return err
 	}
-	return nil
+	return migratePhoneIdentities(db)
 }
 
 // dropLegacyPayoutReports 删掉旧结构的 payout_reports（有 status/generated_at、
@@ -179,7 +180,8 @@ func migrateLegacyLocalAccounts(db *sql.DB) error {
 		`ALTER TABLE releases RENAME TO legacy_releases`,
 		`CREATE TABLE identities (
 			id TEXT PRIMARY KEY,
-			email TEXT NOT NULL UNIQUE,
+			email TEXT UNIQUE,
+			phone_masked TEXT NOT NULL DEFAULT '',
 			created_at INTEGER NOT NULL,
 			updated_at INTEGER NOT NULL
 		)`,
@@ -255,3 +257,47 @@ const submissionSelect = `SELECT s.id, s.author_id, s.author_name, s.title, s.de
 	LEFT JOIN identities reviewer ON reviewer.id = s.reviewed_by`
 
 func normalizeEmail(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
+
+// Rebuild only identities so foreign keys and all author-owned rows keep their IDs.
+func migratePhoneIdentities(db *sql.DB) error {
+	var required int
+	if err := db.QueryRow(`SELECT "notnull" FROM pragma_table_info('identities') WHERE name='email'`).Scan(&required); err != nil {
+		return err
+	}
+	var hasPhone int
+	_ = db.QueryRow(`SELECT count(*) FROM pragma_table_info('identities') WHERE name='phone_masked'`).Scan(&hasPhone)
+	if required == 0 && hasPhone == 1 {
+		return nil
+	}
+	if _, err := db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+		return err
+	}
+	defer db.Exec(`PRAGMA foreign_keys=ON`)
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	copyIdentities := `INSERT INTO identities_phone_migration(id,email,created_at,updated_at) SELECT id,NULLIF(email,''),created_at,updated_at FROM identities`
+	if hasPhone == 1 {
+		copyIdentities = `INSERT INTO identities_phone_migration(id,email,phone_masked,created_at,updated_at) SELECT id,NULLIF(email,''),COALESCE(phone_masked,''),created_at,updated_at FROM identities`
+	}
+	statements := []string{`CREATE TABLE identities_phone_migration(id TEXT PRIMARY KEY,email TEXT UNIQUE,phone_masked TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL)`,
+		copyIdentities,
+		`DROP TABLE identities`, `ALTER TABLE identities_phone_migration RENAME TO identities`}
+	for _, statement := range statements {
+		if _, err := tx.Exec(statement); err != nil {
+			return err
+		}
+	}
+	rows, err := tx.Query(`PRAGMA foreign_key_check`)
+	if err != nil {
+		return err
+	}
+	broken := rows.Next()
+	rows.Close()
+	if broken {
+		return errors.New("identity migration would leave broken references")
+	}
+	return tx.Commit()
+}

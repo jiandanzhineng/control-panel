@@ -5,6 +5,10 @@ export interface AuthUser {
   id: string;
   email: string | null;
   provider: string;
+  phoneMasked?: string|null;
+  phoneVerified?: boolean;
+  isAnonymous?: boolean;
+  hasPassword?: boolean;
   createdAt: string;
 }
 
@@ -105,3 +109,10 @@ export function depositLocalSession(token: string): Promise<void> {
 export function clearLocalSession(): Promise<void> {
   return request<void>('/local-session', { method: 'DELETE' });
 }
+
+export interface PhoneChallenge {challengeId:string;retryAfter:number;expiresIn:number}
+export function phoneCode(phone:string|undefined,purpose:'login'|'bind'|'change') {
+ return request<PhoneChallenge>('/phone/code',{method:'POST',body:{phone,purpose},token:getToken()||undefined});
+}
+export function phoneLogin(challengeId:string,code:string) {return request<AuthResponse>('/phone/login',{method:'POST',body:{challengeId,code}});}
+export function phoneBind(body:{challengeId:string;code:string;oldChallengeId?:string;oldCode?:string}) {return request<{user:AuthUser}>('/phone/bind',{method:'POST',body,token:getToken()||undefined});}

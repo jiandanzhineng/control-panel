@@ -45,7 +45,15 @@ function handleUpstreamError(res, e) {
   }
 }
 
-router.post('/register', async (req, res) => {
+router.get('/phone/status',async (_req,res)=>{try{const {data}=await accountService.phoneStatus();res.json(data);}catch(e){handleUpstreamError(res,e);}});
+for(const action of ['code','login','bind']) router.post('/phone/'+action,async (req,res)=>{
+ const body=req.body||{};const token=extractBearer(req);
+ if((action==='bind'||(action==='code'&&body.purpose&&body.purpose!=='login'))&&!token) return sendError(res,'MISSING_TOKEN','缺少 Bearer token',401);
+ const input=action==='code'?{phone:body.phone,purpose:body.purpose||'login'}:{challengeId:body.challengeId,code:body.code,...(action==='bind'?{oldChallengeId:body.oldChallengeId,oldCode:body.oldCode}:{})};
+ try{const {status,data}=await accountService[action==='code'?'phoneCode':action==='bind'?'phoneBind':'phoneLogin'](input,token);res.status(status).json(data);}catch(e){handleUpstreamError(res,e);}
+});
+
+router.post('/register' , async (req, res) => {
   const input = validateEmailPassword(req, res, { checkPasswordLength: true });
   if (!input) return;
   try {
