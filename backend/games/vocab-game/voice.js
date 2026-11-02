@@ -23,7 +23,10 @@
     ONSET_MS: 120,
     HANGOVER_MS: 320,
     SEGMENT_END_MS: 600,
-    SEGMENT_PAD_MS: 400,
+    // 前置留白：Zipformer 对开头静音敏感。VAD 的 onset 通常在声音开始后才
+    // 确认，400ms 扣掉 onset 延迟后只剩几十毫秒，短口令会被吃掉首字；800ms
+    // 能留出约 0.4s 静音，手机端实测「第二个」稳定识别。
+    SEGMENT_PAD_MS: 800,
     MAX_SEGMENT_MS: 6000,
     MIN_SEGMENT_MS: 260
   }

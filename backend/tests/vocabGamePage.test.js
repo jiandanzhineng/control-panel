@@ -97,6 +97,19 @@ test('语音切片按开始采集时的题号归属，不按切片时的题号',
   assert.strictEqual(captured[0].seq, 1)
 })
 
+test('语音切片前置留白足够 Zipformer 识别短口令首字', () => {
+  const { listener, captured } = makeListener()
+  listener.seq = 1
+  listener._tick() // segStartedAt = now - 100
+  listener._flush(1150)
+  assert.strictEqual(captured.length, 1)
+  const wav = Buffer.from(captured[0].audio, 'base64')
+  // 16k / 单声道 / 16bit，去掉 44 字节 WAV 头
+  const seconds = (wav.length - 44) / 2 / 16000
+  // 起点最多往前 800ms，终点 1150ms → 至少 1.0s；400ms 时只有 0.65s
+  assert.ok(seconds >= 1.0, `segment ${seconds.toFixed(2)}s too short`)
+})
+
 test('换题时丢弃正在采集的语音', () => {
   const { listener, captured } = makeListener()
   listener.seq = 1
