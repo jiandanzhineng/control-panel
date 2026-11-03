@@ -182,6 +182,41 @@ test('整体时间到时结束，不被答案自动下一题覆盖', () => {
   assert.strictEqual(game.lastResult, 'ended')
 })
 
+test('全部点不认识并手动继续，循环一百题也不算完成或解锁', () => {
+  const { game } = reviewGame()
+  game.setLock = jest.fn()
+  for (let i = 0; i < 100; i++) {
+    game.markUnknown()
+    game.continueQuestion()
+  }
+  assert.strictEqual(game.state.view, 'playing')
+  assert.strictEqual(game.session.answers, 100)
+  assert.deepStrictEqual(game.plan.done, [])
+  assert.strictEqual(core.planRemaining(game.plan).length, 3)
+  assert.strictEqual(game.lastResult, '')
+  expect(game.setLock).not.toHaveBeenCalled()
+})
+
+test('全部不认识并自动继续，仅整体时限到才结束，今日任务保持未完成', () => {
+  const { game, advance } = reviewGame()
+  game.state.totalEndsAt = 1000 + 60000
+  game.setLock = jest.fn()
+  for (let i = 0; i < 5; i++) {
+    game.markUnknown()
+    advance(10000)
+    assert.strictEqual(game.state.view, 'playing')
+  }
+  expect(game.setLock).not.toHaveBeenCalled()
+  game.markUnknown()
+  advance(10000)
+  assert.strictEqual(game.state.view, 'home')
+  assert.strictEqual(game.lastResult, 'ended')
+  assert.deepStrictEqual(game.plan.done, [])
+  assert.strictEqual(core.isPlanComplete(game.plan), false)
+  assert.strictEqual(core.planRemaining(game.plan).length, 3)
+  expect(game.setLock).toHaveBeenCalledWith(true)
+})
+
 test('学习页可以直接开启语音并识别第一个、第二个，关闭后释放录音', async () => {
   const game = makeGame({ deviceApi: { speech: { status: async () => ({ ready: true }), transcribe: async () => ({ text: '' }) } } })
   const calls = []
