@@ -8,9 +8,9 @@
 {
   "id": "vocab-game",
   "title": "背单词",
-  "description": "英文单词四选一中文释义，带自动朗读和语音选择。选错、超时或点「不认识」会电击并显示完整释义，单词当天排到队尾，答对一次才算过。旧词首答正确后复习间隔逐次翻倍，进度和设置走账号云同步。",
+  "description": "英文单词四选一中文释义，带自动朗读和语音选择。选错、超时或点「不认识」会电击，正确选项标绿，错选项标红，单词当天排到队尾，答对一次才算过。旧词首答正确后复习间隔逐次翻倍，进度和设置走账号云同步。",
   "howTo": "1. 映射电击设备（必需），可选映射自动锁\n2. 可在这里改电击强度/时长、整体时间上限，并选择是否自动进入本日学习\n3. 登录客户端账号后进入游戏；首页选词书、开始学习，学习设置在游戏内「设置」页改\n4. 点选中文释义，也可以开语音模式说「第一个」到「第四个」\n5. 今日计划全部答对一次即完成并解锁；点「再学一组」可继续加新词",
-  "version": "1.1.4",
+  "version": "1.1.7",
   "permissions": ["microphone"],
   "models": [
     { "task": "asr", "id": "sense-voice-small-int8", "optional": true }
@@ -81,7 +81,7 @@
   "i18n": {
     "en": {
       "title": "Vocabulary",
-      "description": "Pick the Chinese meaning of an English word from four options, with automatic pronunciation and optional voice selection. A wrong answer, timeout or “Don't know” shocks you and shows the full meaning; the word goes to the end of today's queue and must be answered correctly once. Correct first answers double the review interval; progress and settings sync to your account.",
+      "description": "Pick the Chinese meaning of an English word from four options, with automatic pronunciation and optional voice selection. A wrong answer, timeout or “Don't know” shocks you. The correct option turns green and a wrong selection turns red; the word goes to the end of today's queue and must be answered correctly once. Correct first answers double the review interval; progress and settings sync to your account.",
       "howTo": "1. Map a shock device (required); optionally map an auto lock\n2. Set shock intensity/duration, the total time limit and whether to enter today's study automatically\n3. Sign in to the client account; choose a word bank and start from the home page. Learning settings live in the in-game Settings page\n4. Tap a meaning, or turn on voice mode and say “first” to “fourth”\n5. Finish today's plan to unlock; “Study another set” adds more new words",
       "devices": {
         "shock": "Shock device",
@@ -262,20 +262,17 @@
   .vg-opt-text { flex: 1; min-width: 0; }
   .vg-opt-hint { flex: none; font-size: 11px; color: var(--muted); display: none; }
   body.voice-mode .vg-opt-hint { display: inline; }
-  .vg-opt.correct { border-color: var(--green); background: rgba(34,197,94,.16); }
+  .vg-opt.correct { border-color: var(--green); background: rgba(34,197,94,.16); color: #bbf7d0; }
   .vg-opt.correct .vg-badge { border-color: var(--green); color: #bbf7d0; background: rgba(34,197,94,.2); }
-  .vg-opt.wrong { border-color: var(--red); background: rgba(239,68,68,.13); animation: vg-shake .26s ease 2; }
+  .vg-opt.wrong { border-color: var(--red); background: rgba(239,68,68,.13); color: #fecaca; animation: vg-shake .26s ease 2; }
   .vg-opt.wrong .vg-badge { border-color: var(--red); color: #fecaca; background: rgba(239,68,68,.2); }
   @keyframes vg-shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
   .vg-study-actions { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
   .vg-unknown { display: block; margin: 0; min-height: 40px; padding: 8px 12px; border: none; background: transparent; color: var(--muted); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
   .vg-unknown:hover { color: var(--text); }
-  .vg-answer { margin-top: 14px; padding: 18px; border-radius: 14px; border: 1px solid #4b5563; background: linear-gradient(180deg, #172033, #0b1220); }
-  .vg-answer-word { font-size: 28px; font-weight: 800; color: #f9fafb; text-align: center; }
-  .vg-answer-phonetic { font-size: 15px; color: var(--muted); text-align: center; margin-top: 2px; }
-  .vg-answer-meaning { margin-top: 12px; font-size: 16px; line-height: 1.65; color: #e5e7eb; text-align: left; }
-  .vg-answer .vg-btn { margin-top: 16px; }
-  .vg-answer-countdown { margin-top: 12px; color: var(--muted); font-size: 14px; text-align: center; }
+  .vg-answer { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+  .vg-answer .vg-btn.primary { flex: none; width: auto; min-height: 44px; margin-top: 0; padding: 8px 12px; font-size: 14px; }
+  .vg-answer-countdown { flex: 1; min-width: 0; color: var(--muted); font-size: 14px; text-align: center; }
   #vg-voice-toggle[aria-pressed="true"] { color: var(--green); border-color: var(--green); }
   .vg-btn { width: 100%; min-height: 52px; border: none; border-radius: 11px; font-size: 17px; font-weight: 700; cursor: pointer; }
   .vg-btn.primary { background: var(--blue); color: #fff; margin-top: 16px; }
@@ -459,9 +456,6 @@
         <div class="vg-voice" id="vg-voice" hidden><i></i><span id="vg-voice-text" data-en="Listening">监听中</span></div>
       </div>
       <section class="vg-answer" id="vg-answer" hidden>
-        <div class="vg-answer-word" id="vg-answer-word"></div>
-        <div class="vg-answer-phonetic" id="vg-answer-phonetic"></div>
-        <div class="vg-answer-meaning" id="vg-answer-meaning"></div>
         <div class="vg-answer-countdown" id="vg-answer-countdown"></div>
         <button class="vg-btn primary" id="vg-continue" type="button" data-en="Continue">继续</button>
       </section>

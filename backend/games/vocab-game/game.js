@@ -1770,9 +1770,12 @@
         if (label) label.textContent = choice ? choice.text : ''
       })
       const unknown = this._byId('vg-unknown')
-      if (unknown) unknown.disabled = false
+      if (unknown) {
+        unknown.disabled = false
+        unknown.hidden = false
+      }
       this._setHidden('vg-answer', true)
-      // 答案页会滚到「继续」；换题时回到顶部，露出单词和语音开关。
+      // 换题时回到顶部，露出单词和语音开关。
       if (this.env && typeof this.env.scrollTo === 'function') this.env.scrollTo(0, 0)
       this._renderQuestionBar(this.now())
       this._setVoiceCapsule(this.voiceOk ? 'listening' : 'off')
@@ -1794,24 +1797,14 @@
     }
 
     _renderAnswer() {
-      const question = this.state.question
-      if (!question) return
-      this._setText('vg-answer-word', question.word)
-      this._setText('vg-answer-phonetic', formatPhonetic(question.phonetic))
-      this._setText('vg-answer-meaning', question.full || question.short)
+      if (!this.state.question) return
+      this._setHidden('vg-unknown', true)
       this._renderAnswerCountdown(this.now())
       const cont = this._byId('vg-continue')
       if (cont) cont.textContent = this.voiceOk ? t('点击或说“继续”') : t('继续')
       this._setHidden('vg-answer', false)
       this._renderQuestionBar(this.now())
       this._setVoiceCapsule(this.voiceOk ? 'listening' : 'off')
-      const panel = this._byId('vg-answer')
-      const continueButton = this._byId('vg-continue')
-      const target = continueButton || panel
-      if (target && typeof target.scrollIntoView === 'function') {
-        // 小屏上答案面板可能在折叠区下方，自动滚到可见位置。
-        try { target.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch (_) { target.scrollIntoView() }
-      }
     }
 
     _setOptionsDisabled(disabled) {
