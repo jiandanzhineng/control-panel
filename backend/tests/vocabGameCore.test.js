@@ -425,8 +425,9 @@ test('旧存档没有 settings 时补默认值，设置合并取 u 大的那份'
   const old = core.normalizeSave({ words: { a: { k: 1, due: 3, last: 1 } }, plans: {} })
   assert.deepStrictEqual(
     { bank: old.settings.bank, newPerDay: old.settings.newPerDay, inputMode: old.settings.inputMode },
-    { bank: 'cet4', newPerDay: 20, inputMode: 'touch' }
+    { bank: 'cet4', newPerDay: 20, inputMode: 'voice' }
   )
+  assert.strictEqual(core.normalizeSettings({ inputMode: 'touch' }).inputMode, 'touch')
   const newer = { v: 1, words: {}, plans: {}, settings: { bank: 'ielts', newPerDay: 50, u: 200 } }
   const older = { v: 1, words: {}, plans: {}, settings: { bank: 'cet6', newPerDay: 10, u: 100 } }
   assert.strictEqual(core.mergeSaves(older, newer).settings.bank, 'ielts')

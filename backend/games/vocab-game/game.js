@@ -39,7 +39,7 @@
     newPerDay: 20,
     reviewCap: 100,
     questionTime: 20,
-    inputMode: 'touch',
+    inputMode: 'voice',
     autoSpeak: true,
     punishUnknown: true,
     shockVoltage: 15,
@@ -323,7 +323,6 @@
         this._renderHome()
       })
       on('vg-home-btn', 'click', () => this.backToStart())
-      on('vg-stop-btn', 'click', () => this.emergencyStop())
       on('vg-continue', 'click', () => this.continueQuestion())
       on('vg-voice-toggle', 'click', () => this.toggleVoice())
       on('vg-unknown', 'click', () => this.markUnknown())
@@ -1469,8 +1468,6 @@
       this._setHidden('vg-settings', view !== 'settings')
       this._setHidden('vg-play', !play)
       this._setHidden('vg-qbar-wrap', !play)
-      // 急停只在学习中显示。
-      this._setHidden('vg-stop-bar', !play)
       if (this._byId('vg-root') && this._byId('vg-root').classList) {
         this._byId('vg-root').classList.toggle('wide', play)
       }
@@ -1812,7 +1809,7 @@
       const continueButton = this._byId('vg-continue')
       const target = continueButton || panel
       if (target && typeof target.scrollIntoView === 'function') {
-        // 小屏上答案面板可能在折叠区下方，自动滚到可见位置；避开底部固定的紧急停止。
+        // 小屏上答案面板可能在折叠区下方，自动滚到可见位置。
         try { target.scrollIntoView({ behavior: 'smooth', block: 'center' }) } catch (_) { target.scrollIntoView() }
       }
     }

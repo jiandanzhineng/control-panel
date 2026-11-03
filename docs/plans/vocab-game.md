@@ -30,7 +30,7 @@
 | `newPerDay` | 0–200 | 20 | 每日新词数 |
 | `reviewCap` | 0–500 | 100 | 每日复习上限；超出顺延，到期最早的先出 |
 | `questionTime` | 0–120 | 20 | 每题限时（秒，0 = 不限），超时算答错 |
-| `inputMode` | `touch`/`voice` | `touch` | 选择方式：点选 / 语音（语音模式也能点） |
+| `inputMode` | `touch`/`voice` | `voice` | 默认语音，可切换点选；语音模式也能点 |
 | `autoSpeak` | bool | true | 出题时朗读单词 |
 | `punishUnknown` | bool | true | 点「不认识」也电击 |
 

@@ -10,7 +10,7 @@
   "title": "背单词",
   "description": "英文单词四选一中文释义，带自动朗读和语音选择。选错、超时或点「不认识」会电击并显示完整释义，单词当天排到队尾，答对一次才算过。旧词首答正确后复习间隔逐次翻倍，进度和设置走账号云同步。",
   "howTo": "1. 映射电击设备（必需），可选映射自动锁\n2. 可在这里改电击强度/时长、整体时间上限，并选择是否自动进入本日学习\n3. 登录客户端账号后进入游戏；首页选词书、开始学习，学习设置在游戏内「设置」页改\n4. 点选中文释义，也可以开语音模式说「第一个」到「第四个」\n5. 今日计划全部答对一次即完成并解锁；点「再学一组」可继续加新词",
-  "version": "1.1.3",
+  "version": "1.1.4",
   "permissions": ["microphone"],
   "models": [
     { "task": "asr", "id": "sense-voice-small-int8", "optional": true }
@@ -119,7 +119,7 @@
   :root { color-scheme: dark; --bg:#111827; --panel:#1f2937; --deep:#0b1220; --text:#e5e7eb; --muted:#9ca3af; --line:#374151; --red:#ef4444; --green:#22c55e; --amber:#f59e0b; --blue:#2563eb; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
-  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 14px 14px calc(84px + env(safe-area-inset-bottom, 0px)); min-height: 100vh; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif; padding: 14px 14px calc(14px + env(safe-area-inset-bottom, 0px)); min-height: 100vh; }
   button { font-family: inherit; }
   .vg-root { position: relative; width: 100%; max-width: 720px; margin: 0 auto; }
   .vg-root.wide { max-width: 940px; }
@@ -235,7 +235,8 @@
   .vg-switch.on { background: var(--blue); }
   .vg-switch.on i { left: 25px; }
   .vg-settings-note { margin: 10px 2px 0; font-size: 12px; line-height: 1.5; color: #93a5c4; }
-  .vg-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 2px 0 8px; font-size: 12px; color: var(--muted); }
+  .vg-status { display: grid; gap: 4px; padding: 0 0 8px; font-size: 12px; color: var(--muted); }
+  .vg-status-main, .vg-status-stats { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .vg-home-btn { min-height: 38px; padding: 4px 10px 4px 0; border: none; background: transparent; color: #93c5fd; font-size: 15px; font-weight: 700; cursor: pointer; }
   .vg-home-btn:hover { color: #bfdbfe; }
   .vg-bank { font-size: 15px; font-weight: 700; color: #f9fafb; margin-right: 2px; }
@@ -266,7 +267,8 @@
   .vg-opt.wrong { border-color: var(--red); background: rgba(239,68,68,.13); animation: vg-shake .26s ease 2; }
   .vg-opt.wrong .vg-badge { border-color: var(--red); color: #fecaca; background: rgba(239,68,68,.2); }
   @keyframes vg-shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
-  .vg-unknown { display: block; margin: 12px auto 0; padding: 10px 16px; border: none; background: transparent; color: var(--muted); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .vg-study-actions { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; }
+  .vg-unknown { display: block; margin: 0; min-height: 40px; padding: 8px 12px; border: none; background: transparent; color: var(--muted); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
   .vg-unknown:hover { color: var(--text); }
   .vg-answer { margin-top: 14px; padding: 18px; border-radius: 14px; border: 1px solid #4b5563; background: linear-gradient(180deg, #172033, #0b1220); }
   .vg-answer-word { font-size: 28px; font-weight: 800; color: #f9fafb; text-align: center; }
@@ -278,23 +280,35 @@
   .vg-btn { width: 100%; min-height: 52px; border: none; border-radius: 11px; font-size: 17px; font-weight: 700; cursor: pointer; }
   .vg-btn.primary { background: var(--blue); color: #fff; margin-top: 16px; }
   .vg-btn.primary:disabled { opacity: .45; cursor: default; }
-  .vg-voice { position: fixed; right: 14px; bottom: calc(86px + env(safe-area-inset-bottom, 0px)); z-index: 25; display: inline-flex; align-items: center; gap: 7px; padding: 8px 13px; border-radius: 999px; background: rgba(31,41,55,.94); border: 1px solid var(--line); color: #d1d5db; font-size: 12px; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+  .vg-voice { display: inline-flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); color: #d1d5db; font-size: 12px; }
   .vg-voice i { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
   .vg-voice.recognizing i { background: var(--amber); }
   .vg-voice.missed i { background: var(--red); }
-  .vg-toast { position: fixed; left: 50%; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 26; max-width: min(90vw, 420px); padding: 9px 16px; border-radius: 9px; background: rgba(17,24,39,.96); border: 1px solid #4b5563; color: #f3f4f6; font-size: 13px; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
-  .vg-stop { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; padding: 10px 110px calc(10px + env(safe-area-inset-bottom, 0px)) 14px; background: linear-gradient(180deg, rgba(17,24,39,0), rgba(17,24,39,.96) 30%); }
-  .vg-stop button { display: block; width: 100%; max-width: 940px; margin: 0 auto; min-height: 52px; border: none; border-radius: 10px; background: #b91c1c; color: #fff; font-size: 16px; font-weight: 700; cursor: pointer; }
-  .vg-stop button:hover { background: #dc2626; }
+  .vg-toast { position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 26; max-width: min(90vw, 420px); padding: 9px 16px; border-radius: 9px; background: rgba(17,24,39,.96); border: 1px solid #4b5563; color: #f3f4f6; font-size: 13px; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,.4); }
   .vg-gate { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 24px; background: rgba(9,13,22,.94); }
   .vg-gate-box { width: 100%; max-width: 420px; text-align: center; }
   .vg-gate-box h2 { margin: 0 0 8px; font-size: 24px; color: #f9fafb; }
   .vg-gate-box p { margin: 0 0 20px; font-size: 13px; line-height: 1.6; color: var(--muted); }
   .vg-gate-box button { width: 100%; min-height: 60px; border: none; border-radius: 14px; background: var(--blue); color: #fff; font-size: 19px; font-weight: 800; cursor: pointer; }
   [hidden] { display: none !important; }
-  @media (max-width: 520px) { .vg-options { grid-template-columns: 1fr; } }
+  @media (max-width: 520px) {
+    .vg-options { grid-template-columns: 1fr; gap: 8px; margin-top: 10px; }
+    .vg-status-main, .vg-status-stats { gap: 5px; }
+    .vg-home-btn { min-height: 36px; font-size: 14px; padding-right: 6px; }
+    .vg-status-stats { font-size: 11px; }
+    .vg-chip { padding: 2px 6px; gap: 3px; }
+    .vg-time-label { display: none; }
+    .vg-qbar { margin-bottom: 10px; }
+    .vg-word-card { padding: 14px 12px 12px; border-radius: 14px; }
+    .vg-word { font-size: 32px; }
+    .vg-phonetic-row { margin-top: 4px; }
+    .vg-phonetic { font-size: 14px; }
+    .vg-opt { gap: 9px; min-height: 52px; font-size: 16px; line-height: 1.35; padding: 8px 10px; }
+    .vg-badge { width: 26px; height: 26px; font-size: 13px; }
+    body.voice-mode .vg-opt-hint { display: none; }
+  }
   @media (max-width: 420px) {
-    body { padding: 10px 10px calc(78px + env(safe-area-inset-bottom, 0px)); }
+    body { padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px)); }
     .vg-home-title { font-size: 20px; }
     .vg-task-card { padding: 16px 14px; border-radius: 17px; }
     .vg-task-metrics { gap: 12px; }
@@ -310,11 +324,6 @@
     .vg-stepper input { width: 48px; }
     .vg-status { gap: 5px; font-size: 11px; }
     .vg-bank { font-size: 14px; }
-    .vg-chip { padding: 2px 7px; }
-    .vg-word-card { padding: 22px 12px 18px; }
-    .vg-word { font-size: 36px; }
-    .vg-opt { min-height: 56px; font-size: 17px; padding: 10px 12px; }
-    .vg-stop button { min-height: 50px; font-size: 15px; }
   }
 </style>
 </head>
@@ -416,14 +425,18 @@
     </section>
     <section class="vg-view" id="vg-play" hidden>
       <header class="vg-status" id="vg-status">
+        <div class="vg-status-main">
         <button class="vg-home-btn" id="vg-home-btn" type="button">‹ <span data-en="Home">首页</span></button>
         <span class="vg-bank" id="vg-bank">四级</span>
         <button class="vg-home-btn" id="vg-voice-toggle" type="button" aria-pressed="false" data-en="Enable voice">开启语音</button>
+        <span class="vg-dot offline" id="vg-sync-dot-play" title="离线"></span>
+        </div>
+        <div class="vg-status-stats">
         <span class="vg-chip"><span data-en="New">新词</span> <b id="vg-new">0/0</b></span>
         <span class="vg-chip"><span data-en="Review">复习</span> <b id="vg-review">0/0</b></span>
         <span class="vg-chip"><span data-en="Left">剩余</span> <b id="vg-left">0</b></span>
-        <span class="vg-chip"><span data-en="Total left">总时间</span> <b id="vg-total">—</b></span>
-        <span class="vg-dot offline" id="vg-sync-dot-play" title="离线"></span>
+        <span class="vg-chip"><span class="vg-time-label" data-en="Total left">总时间</span> <b id="vg-total">—</b></span>
+        </div>
       </header>
       <div class="vg-qbar" id="vg-qbar-wrap"><i id="vg-qbar" style="width:100%"></i></div>
       <div class="vg-word-card">
@@ -441,7 +454,10 @@
         <button class="vg-opt" type="button" data-index="3"><span class="vg-badge">3</span><span class="vg-opt-text"></span><span class="vg-opt-hint" data-en="3rd">第三个</span></button>
         <button class="vg-opt" type="button" data-index="4"><span class="vg-badge">4</span><span class="vg-opt-text"></span><span class="vg-opt-hint" data-en="4th">第四个</span></button>
       </div>
-      <button class="vg-unknown" id="vg-unknown" type="button" data-en="Don't know">不认识</button>
+      <div class="vg-study-actions">
+        <button class="vg-unknown" id="vg-unknown" type="button" data-en="Don't know">不认识</button>
+        <div class="vg-voice" id="vg-voice" hidden><i></i><span id="vg-voice-text" data-en="Listening">监听中</span></div>
+      </div>
       <section class="vg-answer" id="vg-answer" hidden>
         <div class="vg-answer-word" id="vg-answer-word"></div>
         <div class="vg-answer-phonetic" id="vg-answer-phonetic"></div>
@@ -451,9 +467,7 @@
       </section>
     </section>
   </div>
-  <div class="vg-voice" id="vg-voice" hidden><i></i><span id="vg-voice-text" data-en="Listening">监听中</span></div>
   <div class="vg-toast" id="vg-toast" hidden></div>
-  <div class="vg-stop" id="vg-stop-bar" hidden><button id="vg-stop-btn" type="button" data-en="Emergency stop">紧急停止</button></div>
   <div class="vg-gate" id="vg-gate" hidden>
     <div class="vg-gate-box">
       <h2 data-en="Tap to start">点一下开始</h2>

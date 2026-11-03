@@ -19,7 +19,7 @@
     newPerDay: 20,
     reviewCap: 100,
     questionTime: 20,
-    inputMode: 'touch',
+    inputMode: 'voice',
     autoSpeak: true,
     punishUnknown: true
   }
@@ -438,7 +438,7 @@
       newPerDay: clampInt(src.newPerDay, DEFAULT_SETTINGS.newPerDay, 0, 200),
       reviewCap: clampInt(src.reviewCap, DEFAULT_SETTINGS.reviewCap, 0, 500),
       questionTime: clampInt(src.questionTime, DEFAULT_SETTINGS.questionTime, 0, 120),
-      inputMode: String(src.inputMode) === 'voice' ? 'voice' : 'touch',
+      inputMode: src.inputMode === 'touch' ? 'touch' : DEFAULT_SETTINGS.inputMode,
       autoSpeak: src.autoSpeak !== false,
       punishUnknown: src.punishUnknown !== false,
       u: toNumber(src.u, 0)
