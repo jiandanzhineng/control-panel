@@ -10,7 +10,7 @@
   "title": "背单词",
   "description": "英文单词四选一中文释义，带自动朗读和语音选择。选错、超时或点「不认识」会电击，正确选项标绿，错选项标红，单词当天排到队尾，答对一次才算过。旧词首答正确后复习间隔逐次翻倍，进度和设置走账号云同步。",
   "howTo": "1. 映射电击设备（必需），可选映射自动锁\n2. 可在这里改电击强度/时长、整体时间上限，并选择是否自动进入本日学习\n3. 登录客户端账号后进入游戏；首页选词书、开始学习，学习设置在游戏内「设置」页改\n4. 点选中文释义，也可以开语音模式说「第一个」到「第四个」\n5. 今日计划全部答对一次即完成并解锁；点「再学一组」可继续加新词",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "permissions": ["microphone"],
   "models": [
     { "task": "asr", "id": "sense-voice-small-int8", "optional": true }
@@ -247,12 +247,16 @@
   .vg-qbar > i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg,#22c55e,#4ade80); transition: width .12s linear, background .2s ease; }
   .vg-qbar > i.urgent { background: linear-gradient(90deg,#dc2626,#ef4444); }
   .vg-view { width: 100%; }
-  .vg-word-card { background: var(--deep); border: 1px solid var(--line); border-radius: 18px; padding: 30px 18px 24px; text-align: center; }
+  .vg-word-card { position: relative; background: var(--deep); border: 1px solid var(--line); border-radius: 18px; padding: 30px 18px 24px; text-align: center; }
+  .vg-shock { position: absolute; top: 10px; right: 10px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: #fbbf24; background: #422006; border: 1px solid #92400e; pointer-events: none; }
+  .vg-shock[hidden] { display: none; }
+  .vg-shock svg { width: 20px; height: 20px; fill: currentColor; }
   .vg-word { font-size: 42px; line-height: 1.15; font-weight: 800; letter-spacing: .5px; color: #f9fafb; word-break: break-word; }
   .vg-phonetic-row { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; min-height: 30px; }
   .vg-phonetic { font-size: 17px; color: var(--muted); }
   .vg-speak { width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); color: #d1d5db; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
   .vg-speak:hover { border-color: #6b7280; color: #fff; }
+  .vg-speak.speaking { color: #60a5fa; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,.15); }
   .vg-speak svg { width: 17px; height: 17px; fill: currentColor; }
   .vg-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
   .vg-opt { position: relative; display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 12px 14px; border: 2px solid var(--line); border-radius: 13px; background: var(--panel); color: var(--text); font-size: 18px; line-height: 1.4; text-align: left; cursor: pointer; transition: border-color .15s ease, background .15s ease, transform .1s ease; }
@@ -437,10 +441,11 @@
       </header>
       <div class="vg-qbar" id="vg-qbar-wrap"><i id="vg-qbar" style="width:100%"></i></div>
       <div class="vg-word-card">
+        <span class="vg-shock" id="vg-shock" role="status" aria-label="电击中" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 10-13h-7l1-7z"/></svg></span>
         <div class="vg-word" id="vg-word">—</div>
         <div class="vg-phonetic-row">
           <span class="vg-phonetic" id="vg-phonetic"></span>
-          <button class="vg-speak" id="vg-speak" type="button" title="重播" data-en-title="Play again">
+          <button class="vg-speak" id="vg-speak" type="button" title="重播" data-en-title="Play again" aria-label="重播" aria-pressed="false">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3a4.5 4.5 0 0 0-2.5-4.03v8.05A4.5 4.5 0 0 0 16.5 12zM14 3.23v2.06a7 7 0 0 1 0 13.42v2.06a9 9 0 0 0 0-17.54z"/></svg>
           </button>
         </div>

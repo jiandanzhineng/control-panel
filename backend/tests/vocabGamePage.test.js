@@ -184,6 +184,99 @@ function makeGameWithDevices() {
 const hasLockOpen = calls => calls.some(c => c.id === 'lock' && c.action === 'setOpen' && c.params.open === true)
 const hasShockStop = calls => calls.some(c => c.id === 'shock' && c.action === 'stop')
 
+test('手机原生朗读结束后才释放语音屏蔽，旧朗读完成不影响重播', async () => {
+  jest.useFakeTimers()
+  const game = makeGame()
+  const endings = []
+  let now = 1000
+  game.now = () => now
+  game.deviceApi = { speech: { speak: jest.fn(() => new Promise(resolve => endings.push(resolve))), stop: async () => {} } }
+  game.voice.ignoreUntil = jest.fn()
+  const button = { classList: { toggle: jest.fn() }, setAttribute: jest.fn() }
+  game.doc = { getElementById: id => id === 'vg-speak' ? button : null }
+  try {
+    assert.strictEqual(game.speakWord('apple', true), true)
+    assert.deepStrictEqual(game.deviceApi.speech.speak.mock.calls[0][0], { text: 'apple' })
+    now = 4000
+    jest.advanceTimersByTime(3000)
+    assert.strictEqual(game.voice.ignoreUntil.mock.calls.at(-1)[0], 4500)
+    game.speakWord('banana', true)
+    const timer = game.speechTimer
+    endings[0]({ completed: false })
+    await Promise.resolve()
+    assert.strictEqual(game.speechTimer, timer)
+    endings[1]({ completed: true })
+    await Promise.resolve()
+    assert.strictEqual(game.speechTimer, null)
+    assert.strictEqual(game.voice.ignoreUntil.mock.calls.at(-1)[0], 4500)
+    expect(button.setAttribute.mock.calls.filter(c => c[0] === 'aria-pressed').at(-1)).toEqual(['aria-pressed', 'false'])
+  } finally {
+    game.stopSpeaking()
+    jest.useRealTimers()
+  }
+})
+
+test('原生朗读失败给出反馈，退出页面停止朗读', async () => {
+  const game = makeGame()
+  const stop = jest.fn(async () => {})
+  game.deviceApi = { speech: { speak: async () => { throw Error('no English voice') }, stop } }
+  game._toast = jest.fn()
+  game.speakWord('apple', true)
+  await Promise.resolve()
+  await Promise.resolve()
+  assert.strictEqual(game.speechTimer, null)
+  assert.ok(game._toast.mock.calls[0][0].includes('朗读不可用'))
+  game._onPageHide()
+  assert.ok(stop.mock.calls.length >= 2)
+})
+
+test('电击提示只在指令成功后显示，停止后消失，过期回执不能重新点亮', async () => {
+  jest.useFakeTimers()
+  const { game } = makeGameWithDevices()
+  const indicator = { hidden: true }
+  game.doc = { getElementById: id => id === 'vg-shock' ? indicator : null }
+  try {
+    game.doShock('wrong')
+    assert.strictEqual(indicator.hidden, true)
+    await Promise.resolve()
+    assert.strictEqual(indicator.hidden, false)
+    game.stopShock()
+    assert.strictEqual(indicator.hidden, true)
+    let finish
+    game._shockDevice = () => ({ invoke: () => new Promise(resolve => { finish = resolve }) })
+    game.doShock('timeout')
+    const startDone = finish
+    game.stopShock()
+    startDone({ ok: true })
+    await Promise.resolve()
+    assert.strictEqual(indicator.hidden, true)
+  } finally {
+    jest.useRealTimers()
+  }
+})
+
+test('电击启动拒绝或未映射时不显示提示', async () => {
+  jest.useFakeTimers()
+  const game = makeGame()
+  const indicator = { hidden: true }
+  game.doc = { getElementById: id => id === 'vg-shock' ? indicator : null }
+  try {
+    assert.strictEqual(game.doShock('wrong'), false)
+    game._shockDevice = () => ({ invoke: async () => ({ success: false }) })
+    game.doShock('wrong')
+    await Promise.resolve()
+    assert.strictEqual(indicator.hidden, true)
+    game._shockDevice = () => ({ invoke: async () => { throw Error('offline') } })
+    game.doShock('wrong')
+    await Promise.resolve()
+    await Promise.resolve()
+    assert.strictEqual(indicator.hidden, true)
+    game.stopShock()
+  } finally {
+    jest.useRealTimers()
+  }
+})
+
 test('未捕获错误也会停电击并解锁', () => {
   const { calls, listeners } = makeGameWithDevices()
   listeners.unhandledrejection({ reason: new Error('boom') })

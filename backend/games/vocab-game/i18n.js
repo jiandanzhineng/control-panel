@@ -51,6 +51,8 @@
       "待同步": "Pending sync",
       "离线": "Offline",
       "重播": "Play again",
+      "电击中": "Shock active",
+      "朗读不可用，请检查系统英文语音": "Pronunciation unavailable. Check the system English voice.",
       "高考": "Gaokao",
       "四级": "CET-4",
       "六级": "CET-6",

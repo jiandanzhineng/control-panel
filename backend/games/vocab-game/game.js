@@ -213,6 +213,8 @@
       this.answerTimer = null
       this.shockTimer = null
       this.shockGen = 0
+      this.speechGen = 0
+      this.speechTimer = null
       this.toastTimer = null
       this.voiceMissTimer = null
       this.voiceOk = false
@@ -373,6 +375,7 @@
     }
 
     _safetyAbort(reason) {
+      this.stopSpeaking()
       this._log('未捕获错误，已停电击并解锁: ' + reason, 'error')
       this.stopShock()
       this.setLock(true)
@@ -815,6 +818,7 @@
     }
 
     _stopVoice() {
+      this.stopSpeaking()
       this.voiceStartGen += 1
       this.voiceStarting = false
       this.voiceOk = false
@@ -839,6 +843,7 @@
     }
     nextQuestion() {
       if (this.state.view !== 'playing' || this.state.answered) return
+      this.stopSpeaking()
       this.state.answerEndsAt = 0
       this.state.pendingAdvance = false
       let question = null
@@ -1091,6 +1096,7 @@
       if (this.state.paused) return
       this.state.paused = true
       this.state.pausedAt = this.now()
+      this.stopSpeaking()
       this.stopShock()
       if (this.voiceOk) this.voice.ignoreUntil(this.state.pausedAt + 200)
       this._log('页面不可见，暂停倒计时并关闭电击', 'warning')
@@ -1191,7 +1197,16 @@
       this._log('电击（' + (reason || 'wrong') + '）：' + voltage + 'V / ' + seconds + '秒', 'warning')
       try {
         const result = dev.invoke('shock', 'start', { voltage: voltage })
-        if (result && typeof result.catch === 'function') result.catch(() => {})
+        const started = value => {
+          if (gen !== this.shockGen || value == null || value === false || value.success === false) return
+          this._setShockActive(true)
+        }
+        const failed = error => {
+          if (gen === this.shockGen) this._setShockActive(false)
+          this._log('电击启动失败: ' + ((error && error.message) || error), 'warning')
+        }
+        if (result && typeof result.then === 'function') result.then(started).catch(failed)
+        else started(result)
       } catch (error) {
         this._log('电击启动失败: ' + ((error && error.message) || error), 'warning')
       }
@@ -1200,6 +1215,7 @@
 
     stopShock(gen) {
       if (gen != null && Number(gen) !== this.shockGen) return false
+      this._setShockActive(false)
       if (this.shockTimer) {
         this.timers.clearTimeout(this.shockTimer)
         this.shockTimer = null
@@ -1212,6 +1228,13 @@
         if (result && typeof result.catch === 'function') result.catch(() => {})
       } catch (_) {}
       return true
+    }
+
+    _setShockActive(active) {
+      const indicator = this._byId('vg-shock')
+      if (!indicator) return
+      indicator.hidden = !active
+      if (typeof indicator.setAttribute === 'function') indicator.setAttribute('aria-label', t('电击中'))
     }
 
     _lockDevice() {
@@ -1247,29 +1270,79 @@
     }
 
     speakWord(word, manual) {
-      const synth = this.env && this.env.speechSynthesis
-      const Utterance = this.env && this.env.SpeechSynthesisUtterance
-      if (!synth || !Utterance || typeof synth.speak !== 'function') return false
       const text = String(word || '').trim()
       if (!text) return false
-      const start = this.now()
-      this.voice.ignoreUntil(start + 500 + text.length * 120)
+      const speech = this.deviceApi && this.deviceApi.speech
+      const synth = this.env && this.env.speechSynthesis
+      const Utterance = this.env && this.env.SpeechSynthesisUtterance
+      const native = speech && typeof speech.speak === 'function'
+      if (!native && (!synth || !Utterance || typeof synth.speak !== 'function')) {
+        if (manual) this._toast(t('朗读不可用，请检查系统英文语音'), 3000)
+        return false
+      }
+      this.stopSpeaking()
+      const gen = this.speechGen
+      this._setSpeaking(true)
+      const ignore = () => this.voice.ignoreUntil(this.now() + 500)
+      ignore()
+      this.speechTimer = this.timers.setInterval(ignore, 100)
+      const release = () => {
+        if (gen !== this.speechGen) return
+        if (this.speechTimer) this.timers.clearInterval(this.speechTimer)
+        this.speechTimer = null
+        this._setSpeaking(false)
+        ignore()
+      }
+      const failed = error => {
+        if (gen !== this.speechGen) return
+        release()
+        this._log('单词朗读失败: ' + ((error && error.message) || error), 'warning')
+        if (manual) this._toast(t('朗读不可用，请检查系统英文语音'), 3000)
+      }
       try {
-        if (typeof synth.cancel === 'function') synth.cancel()
+        if (native) {
+          Promise.resolve(speech.speak({ text: text })).then(release).catch(failed)
+          if (manual) this._log('重播单词: ' + text, 'info')
+          return true
+        }
         const utterance = new Utterance(text)
         utterance.lang = 'en-US'
         utterance.rate = 0.9
-        const release = () => {
-          this.voice.ignoreUntil(this.now() + 500)
-        }
         utterance.onend = release
-        utterance.onerror = release
+        utterance.onerror = failed
         synth.speak(utterance)
         if (manual) this._log('重播单词: ' + text, 'info')
         return true
-      } catch (_) {
+      } catch (error) {
+        failed(error)
         return false
       }
+    }
+
+    _setSpeaking(active) {
+      const button = this._byId('vg-speak')
+      if (!button) return
+      if (button.classList) button.classList.toggle('speaking', active)
+      if (typeof button.setAttribute === 'function') {
+        button.setAttribute('aria-pressed', String(active))
+        button.setAttribute('aria-label', t('重播'))
+      }
+    }
+
+    stopSpeaking() {
+      this.speechGen += 1
+      if (this.speechTimer) {
+        this.timers.clearInterval(this.speechTimer)
+        this.speechTimer = null
+        this.voice.ignoreUntil(this.now() + 500)
+      }
+      this._setSpeaking(false)
+      try {
+        const speech = this.deviceApi && this.deviceApi.speech
+        if (speech && typeof speech.stop === 'function') Promise.resolve(speech.stop()).catch(() => {})
+        const synth = this.env && this.env.speechSynthesis
+        if (synth && typeof synth.cancel === 'function') synth.cancel()
+      } catch (_) {}
     }
     _onVoiceResult(result) {
       if (!this.voiceOk || this.state.paused) return
@@ -1355,6 +1428,7 @@
     }
 
     _onPageHide() {
+      this.stopSpeaking()
       this.stopShock()
       this.setLock(true)
       if (this.plan) {
