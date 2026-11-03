@@ -3,6 +3,7 @@
 const express = require('express');
 const accountService = require('../services/accountService');
 const localSession = require('../services/localSessionService');
+const wechatQr = require('../services/wechatQrService');
 const { sendError } = require('../utils/http');
 
 const router = express.Router();
@@ -51,6 +52,18 @@ for(const action of ['code','login','bind']) router.post('/phone/'+action,async 
  if((action==='bind'||(action==='code'&&body.purpose&&body.purpose!=='login'))&&!token) return sendError(res,'MISSING_TOKEN','缺少 Bearer token',401);
  const input=action==='code'?{phone:body.phone,purpose:body.purpose||'login'}:{challengeId:body.challengeId,code:body.code,...(action==='bind'?{oldChallengeId:body.oldChallengeId,oldCode:body.oldCode}:{})};
  try{const {status,data}=await accountService[action==='code'?'phoneCode':action==='bind'?'phoneBind':'phoneLogin'](input,token);res.status(status).json(data);}catch(e){handleUpstreamError(res,e);}
+});
+
+router.post('/wechat/qr/start', async (_req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try { res.json(await wechatQr.start()); } catch (e) { handleUpstreamError(res, e); }
+});
+router.post('/wechat/qr/status', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const { id, secret } = req.body || {};
+  if (typeof id !== 'string' || !/^[A-Za-z0-9]{8,32}$/.test(id) || typeof secret !== 'string' || !/^[A-Za-z0-9]{24}$/.test(secret))
+    return sendError(res, 'INVALID_QR', '无效二维码', 400);
+  try { res.json(await wechatQr.status({ id, secret })); } catch (e) { handleUpstreamError(res, e); }
 });
 
 router.post('/register' , async (req, res) => {

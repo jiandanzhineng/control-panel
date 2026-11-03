@@ -1,7 +1,6 @@
 <template>
   <el-form label-position="top" @submit.prevent="submit" class="phone-form">
-    <h3>{{ t(binding ? "account.phoneBind" : "account.phoneLogin") }}</h3>
-    <p>{{ t("account.phoneHint") }}</p>
+    <h3 v-if="binding">{{ t("account.phoneBind") }}</h3>
     <p v-if="phoneMasked">{{ phoneMasked }}</p>
     <template v-if="changing">
       <el-button :disabled="busy || oldRetry > 0" @click="send(true)">{{
@@ -21,28 +20,25 @@
       ><el-input
         v-model="phone"
         type="tel"
+        autocomplete="tel"
         placeholder="+86"
         @input="
           challenge = '';
           code = '';
         "
     /></el-form-item>
-    <el-button :disabled="busy || retry > 0 || !phone" @click="send(false)">{{
-      retry > 0
-        ? t("account.phoneRetry", { seconds: retry })
-        : t("account.phoneSend")
-    }}</el-button>
     <el-form-item :label="t('account.smsCode')"
-      ><el-input
+      ><div class="code-row"><el-input
         v-model="code"
         inputmode="numeric"
         maxlength="6"
         autocomplete="one-time-code"
         @keyup.enter="submit"
-    /></el-form-item>
+    /><el-button :disabled="busy || retry > 0 || !phone" @click="send(false)">{{ retry > 0 ? t("account.phoneRetry", { seconds: retry }) : t("account.phoneSend") }}</el-button></div></el-form-item>
     <el-alert v-if="error" :title="error" type="error" :closable="false" />
     <el-button
       type="primary"
+      class="phone-submit"
       :loading="busy"
       :disabled="
         !challenge ||
@@ -50,8 +46,9 @@
         (changing && (!oldChallenge || oldCode.length !== 6))
       "
       @click="submit"
-      >{{ t("account.phoneConfirm") }}</el-button
+      >{{ t(binding ? "account.phoneConfirm" : "account.login") }}</el-button
     >
+    <p>{{ t("account.phoneHint") }}</p>
   </el-form>
 </template>
 <script setup lang="ts">
@@ -146,7 +143,7 @@ async function submit() {
 </script>
 <style scoped>
 .phone-form {
-  margin-top: 16px;
+  margin-top: 0;
 }
 .phone-form p {
   font-size: 13px;
@@ -156,4 +153,8 @@ async function submit() {
 .phone-form > .el-button {
   margin: 8px 0;
 }
+.code-row { display: flex; gap: 10px; width: 100%; }
+.code-row .el-input { min-width: 0; flex: 1; }
+.code-row > .el-button { margin: 0; min-height: 46px; border-radius: 10px; }
+.phone-submit { width: 100%; min-height: 46px; border-radius: 10px; font-weight: 600; }
 </style>
