@@ -116,3 +116,10 @@ export function phoneCode(phone:string|undefined,purpose:'login'|'bind'|'change'
 }
 export function phoneLogin(challengeId:string,code:string) {return request<AuthResponse>('/phone/login',{method:'POST',body:{challengeId,code}});}
 export function phoneBind(body:{challengeId:string;code:string;oldChallengeId?:string;oldCode?:string}) {return request<{user:AuthUser}>('/phone/bind',{method:'POST',body,token:getToken()||undefined});}
+
+export interface WechatQr { id: string; webSecret: string; image: string; expiresAt: string }
+export type WechatQrStatus = { status: 'pending' | 'expired' | 'invalid' } | ({ status: 'ok' } & AuthResponse);
+export function startWechatQr() { return request<WechatQr>('/wechat/qr/start', { method: 'POST' }); }
+export function pollWechatQr(qr: WechatQr) {
+  return request<WechatQrStatus>('/wechat/qr/status', { method: 'POST', body: { id: qr.id, secret: qr.webSecret } });
+}

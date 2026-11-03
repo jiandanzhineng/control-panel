@@ -55,3 +55,5 @@ agent 查到的事实、配置位置、命令、踩坑。按主题，详情在 `
 
 - OpenPanel 事件、导出凭证位置、`tools/op-stats.ps1` 用法见 [analytics](note/analytics.md)。
 - 诊断日志上传链路、国内库查询见 [diagnostics](note/diagnostics.md)。
+
+- 登录布局与PC微信扫码：见 [登录布局](note/login-layout.md)。

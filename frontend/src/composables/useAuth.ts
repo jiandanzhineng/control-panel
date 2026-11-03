@@ -106,6 +106,7 @@ export function useAuth() {
     checkSession,
     login,
     phoneLogin,
+    acceptWechatSession: (session: authApi.AuthResponse) => persistSession(session.token, session.user),
     phoneBind,
     register,
     logout,
