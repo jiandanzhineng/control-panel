@@ -343,6 +343,9 @@ registerProcessor('vg-recorder', VGRecorder)
       this.blockedUntil = 0
       this.audioContext = null
       this.stream = null
+      this.micPromise = null
+      this.micError = null
+      this.micGen = 0
       this.sourceNode = null
       this.analyser = null
       this.workletNode = null
@@ -406,6 +409,7 @@ registerProcessor('vg-recorder', VGRecorder)
         return Promise.resolve(null)
       }
       this.micError = null
+      const gen = this.micGen
       this.micPromise = nav.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -413,8 +417,15 @@ registerProcessor('vg-recorder', VGRecorder)
           noiseSuppression: true,
           autoGainControl: true
         }
+      }).then(stream => {
+        if (gen !== this.micGen) {
+          stream.getTracks().forEach(track => track.stop())
+          return null
+        }
+        this.stream = stream
+        return stream
       }).catch(error => {
-        this.micError = error || new Error('MIC_UNAVAILABLE')
+        if (gen === this.micGen) this.micError = error || new Error('MIC_UNAVAILABLE')
         return null
       })
       return this.micPromise
@@ -473,20 +484,9 @@ registerProcessor('vg-recorder', VGRecorder)
     }
 
     async _startMic() {
-      const nav = (this.env && this.env.navigator) || (typeof navigator !== 'undefined' ? navigator : null)
-      if (!nav || !nav.mediaDevices || typeof nav.mediaDevices.getUserMedia !== 'function') {
-        const error = new Error('MIC_UNAVAILABLE')
-        error.code = 'MIC_UNAVAILABLE'
-        throw error
-      }
-      this.stream = await nav.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
-        }
-      })
+      // 复用点击时 primeMic 申请的流，避免同一手机同时打开两路录音。
+      this.stream = await this.primeMic()
+      if (!this.stream) throw this.micError || new Error('MIC_UNAVAILABLE')
       const track = this.stream.getAudioTracks()[0]
       if (track) {
         track.onended = () => this._emitStatus('mic-error')
@@ -695,6 +695,9 @@ registerProcessor('vg-recorder', VGRecorder)
 
     async stop() {
       this.running = false
+      this.micGen += 1
+      this.micPromise = null
+      this.micError = null
       if (this.tickTimer) {
         this.timers.clearInterval(this.tickTimer)
         this.tickTimer = null

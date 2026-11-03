@@ -112,6 +112,99 @@ function seedPlan(game, ids, done, newIds) {
   return game.plan
 }
 
+function reviewGame() {
+  let now = 1000
+  const game = makeGame({ now: () => now })
+  game.config.autoSpeak = false
+  game.timers = { setTimeout: () => 1, clearTimeout() {}, setInterval: () => 1, clearInterval() {} }
+  game.doShock = jest.fn()
+  seedPlan(game, ['alpha', 'bravo', 'charlie'], [], ['alpha', 'bravo', 'charlie'])
+  game.state.view = 'playing'
+  game.nextQuestion()
+  return { game, advance: ms => { now += ms; game._tick() } }
+}
+
+globalThis.test.each(['wrong', 'timeout', 'unknown'])('%s 显示答案 10 秒后自动下一题，错词仍在队尾且不重复电击', reason => {
+  const { game, advance } = reviewGame()
+  const first = game.state.question.id
+  game._wrongAnswer(reason, 0)
+  assert.strictEqual(game.doc.getElementById('vg-answer-countdown').textContent, '10 秒后自动下一题')
+  advance(9999)
+  assert.strictEqual(game.state.view, 'answer')
+  advance(1)
+  assert.strictEqual(game.state.view, 'playing')
+  assert.notStrictEqual(game.state.question.id, first)
+  assert.strictEqual(game.queue.next(), 'charlie')
+  assert.strictEqual(game.queue.next(), first)
+  assert.strictEqual(game.doShock.mock.calls.length, 1)
+})
+
+test('手动继续后旧的答案倒计时不会再跳过一题', () => {
+  const { game, advance } = reviewGame()
+  game._wrongAnswer('wrong', 0)
+  advance(3000)
+  game.continueQuestion()
+  const seq = game.state.questionSeq
+  advance(7000)
+  assert.strictEqual(game.state.questionSeq, seq)
+  assert.strictEqual(game.state.view, 'playing')
+})
+
+test('答案展示暂停不推进，恢复后保留剩余展示时间', () => {
+  const { game, advance } = reviewGame()
+  game._wrongAnswer('wrong', 0)
+  advance(4000)
+  game.pause()
+  advance(60000)
+  assert.strictEqual(game.state.view, 'answer')
+  game.resume()
+  advance(5999)
+  assert.strictEqual(game.state.view, 'answer')
+  advance(1)
+  assert.strictEqual(game.state.view, 'playing')
+})
+
+globalThis.test.each(['backToStart', 'emergencyStop'])('%s 后旧的答案倒计时不会重新启动学习', method => {
+  const { game, advance } = reviewGame()
+  game._wrongAnswer('wrong', 0)
+  game[method]()
+  advance(10000)
+  assert.strictEqual(game.state.view, 'home')
+  assert.strictEqual(game.state.question, null)
+})
+
+test('整体时间到时结束，不被答案自动下一题覆盖', () => {
+  const { game, advance } = reviewGame()
+  game._wrongAnswer('wrong', 0)
+  game.state.totalEndsAt = game.state.answerEndsAt
+  advance(10000)
+  assert.strictEqual(game.state.view, 'home')
+  assert.strictEqual(game.lastResult, 'ended')
+})
+
+test('学习页可以直接开启语音并识别第一个、第二个，关闭后释放录音', async () => {
+  const game = makeGame({ deviceApi: { speech: { status: async () => ({ ready: true }), transcribe: async () => ({ text: '' }) } } })
+  const calls = []
+  game.state.view = 'playing'
+  game.voice = { prime: () => calls.push('prime'), primeMic: async () => calls.push('mic'), start: async () => calls.push('start'), stop: async () => calls.push('stop') }
+  await game.toggleVoice()
+  assert.strictEqual(game.voiceOk, true)
+  assert.strictEqual(game.save.settings.inputMode, 'voice')
+  assert.strictEqual(game.doc.getElementById('vg-voice-toggle').textContent, '语音已开启')
+  const answer = jest.fn()
+  game.answer = answer
+  game.state.questionSeq = 1
+  game.state.question = { choices: [{}, {}] }
+  game._onVoiceResult({ text: '第一个', seq: 1 })
+  game._onVoiceResult({ text: '第二个', seq: 1 })
+  expect(answer).toHaveBeenNthCalledWith(1, 1)
+  expect(answer).toHaveBeenNthCalledWith(2, 2)
+  await game.toggleVoice()
+  assert.strictEqual(game.voiceOk, false)
+  assert.strictEqual(game.save.settings.inputMode, 'touch')
+  assert.ok(calls.includes('stop'))
+})
+
 async function waitFor(fn, timeout) {
   const started = Date.now()
   while (Date.now() - started < (timeout || 2000)) {

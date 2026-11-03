@@ -33,6 +33,7 @@
   const BANK_EN = { gaokao: 'Gaokao', cet4: 'CET-4', cet6: 'CET-6', ielts: 'IELTS' }
   const SETTINGS_KEYS = ['bank', 'newPerDay', 'reviewCap', 'questionTime', 'inputMode', 'autoSpeak', 'punishUnknown']
   const SHOCK_KEYS = ['shockVoltage', 'shockDuration']
+  const ANSWER_REVIEW_MS = 10000
   const DEFAULT_CONFIG = {
     bank: 'cet4',
     newPerDay: 20,
@@ -202,6 +203,7 @@
         correctIndex: 0,
         questionSeq: 0,
         questionEndsAt: 0,
+        answerEndsAt: 0,
         totalEndsAt: 0,
         answered: false,
         pendingAdvance: false,
@@ -215,6 +217,8 @@
       this.voiceMissTimer = null
       this.voiceOk = false
       this.voiceFallback = false
+      this.voiceStarting = false
+      this.voiceStartGen = 0
       this.voiceMode = String(this.config.inputMode) === 'voice'
       this.visibilityHandler = null
       this.unloadHandler = null
@@ -321,6 +325,7 @@
       on('vg-home-btn', 'click', () => this.backToStart())
       on('vg-stop-btn', 'click', () => this.emergencyStop())
       on('vg-continue', 'click', () => this.continueQuestion())
+      on('vg-voice-toggle', 'click', () => this.toggleVoice())
       on('vg-unknown', 'click', () => this.markUnknown())
       on('vg-speak', 'click', () => {
         if (this.state.question) this.speakWord(this.state.question.word, true)
@@ -737,23 +742,62 @@
 
     async _startVoice() {
       if (!this.voiceMode) return false
-      const speech = this.deviceApi && this.deviceApi.speech
-      if (!speech || typeof speech.transcribe !== 'function') return this._voiceFallback('no-speech-api')
-      let status = null
+      const gen = ++this.voiceStartGen
+      this.voiceStarting = true
+      this._renderVoiceToggle()
       try {
-        status = await this._withTimeout(Promise.resolve().then(() => speech.status()), 1500)
-      } catch (_) {
-        status = null
+        const speech = this.deviceApi && this.deviceApi.speech
+        if (!speech || typeof speech.transcribe !== 'function') return this._voiceFallback('no-speech-api')
+        let status = null
+        try {
+          status = await this._withTimeout(Promise.resolve().then(() => speech.status()), 1500)
+        } catch (_) {
+          status = null
+        }
+        if (gen !== this.voiceStartGen) return false
+        if (status && status.ready === false) return this._voiceFallback(status.reason || 'not-ready')
+        try {
+          await this.voice.start()
+          if (gen !== this.voiceStartGen) {
+            await this.voice.stop()
+            return false
+          }
+          this.voiceOk = true
+          this.voiceFallback = false
+          this._setVoiceCapsule('listening')
+          if (this.state.view === 'answer') this._renderAnswer()
+          return true
+        } catch (error) {
+          if (gen !== this.voiceStartGen) return false
+          return this._voiceFallback((error && error.code) || (error && error.message))
+        }
+      } finally {
+        if (gen === this.voiceStartGen) this.voiceStarting = false
+        this._renderVoiceToggle()
       }
-      if (status && status.ready === false) return this._voiceFallback(status.reason || 'not-ready')
-      try {
-        await this.voice.start()
-        this.voiceOk = true
-        this._setVoiceCapsule('listening')
-        return true
-      } catch (error) {
-        return this._voiceFallback((error && error.code) || (error && error.message))
+    }
+
+    async toggleVoice() {
+      if (this.voiceStarting || this.state.paused || (this.state.view !== 'playing' && this.state.view !== 'answer')) return false
+      const enabled = !this.voiceOk
+      // 点击的用户手势内申请麦克风；点选模式始终不占用录音。
+      if (enabled) {
+        this.voice.prime()
+        this.voice.primeMic()
       }
+      this._applySettingChange({ inputMode: enabled ? 'voice' : 'touch' })
+      if (enabled) return this._startVoice()
+      this._stopVoice()
+      if (this.state.view === 'answer') this._renderAnswer()
+      return true
+    }
+
+    _renderVoiceToggle() {
+      const button = this._byId('vg-voice-toggle')
+      if (!button) return
+      button.textContent = this.voiceStarting ? t('语音准备中…') : this.voiceOk ? t('语音已开启') : t('开启语音')
+      button.disabled = this.voiceStarting
+      if (typeof button.setAttribute === 'function') button.setAttribute('aria-pressed', String(this.voiceOk))
     }
 
     _voiceFallback(reason) {
@@ -772,7 +816,10 @@
     }
 
     _stopVoice() {
+      this.voiceStartGen += 1
+      this.voiceStarting = false
       this.voiceOk = false
+      this._renderVoiceToggle()
       this._setVoiceCapsule('off')
       try {
         const stopping = this.voice.stop()
@@ -793,6 +840,7 @@
     }
     nextQuestion() {
       if (this.state.view !== 'playing' || this.state.answered) return
+      this.state.answerEndsAt = 0
       this.state.pendingAdvance = false
       let question = null
       while (this.queue.length) {
@@ -905,6 +953,7 @@
       this.state.questionEndsAt = 0
       this.state.selected = selected || 0
       this.state.view = 'answer'
+      this.state.answerEndsAt = now + ANSWER_REVIEW_MS
       this._setOptionsDisabled(true)
       VC.recordAnswer(this.save, question.id, {
         correct: false,
@@ -921,7 +970,8 @@
     }
 
     continueQuestion() {
-      if (this.state.view !== 'answer' || !this.state.question) return
+      if (this.state.view !== 'answer' || !this.state.question || this.state.paused) return
+      this.state.answerEndsAt = 0
       const id = this.state.question.id
       if (this._checkDay()) {
         this.state.view = 'playing'
@@ -1014,6 +1064,7 @@
       this.state.view = 'home'
       this.state.question = null
       this.state.questionEndsAt = 0
+      this.state.answerEndsAt = 0
       this.state.answered = false
       this.state.pendingAdvance = false
       this.state.paused = false
@@ -1058,6 +1109,7 @@
       const now = this.now()
       const delta = Math.max(0, now - (this.state.pausedAt || now))
       if (this.state.questionEndsAt) this.state.questionEndsAt += delta
+      if (this.state.answerEndsAt) this.state.answerEndsAt += delta
       if (this.state.totalEndsAt) this.state.totalEndsAt += delta
       this.state.paused = false
       this.state.pausedAt = 0
@@ -1076,14 +1128,21 @@
     _tick() {
       const now = this.now()
       if (this.state.paused) return
-      if (this.state.view === 'playing' && this.state.questionEndsAt && now >= this.state.questionEndsAt) {
-        this._wrongAnswer('timeout', 0)
-        return
-      }
       if (this.state.totalEndsAt && now >= this.state.totalEndsAt) {
         this._log('到达整体时间上限，自动结束', 'warning')
         this.endGame('timeout')
         return
+      }
+      if (this.state.view === 'playing' && this.state.questionEndsAt && now >= this.state.questionEndsAt) {
+        this._wrongAnswer('timeout', 0)
+        return
+      }
+      if (this.state.view === 'answer' && this.state.answerEndsAt) {
+        if (now >= this.state.answerEndsAt) {
+          this.continueQuestion()
+          return
+        }
+        this._renderAnswerCountdown(now)
       }
       this._renderQuestionBar(now)
       this._renderTimeLeft(now)
@@ -1687,6 +1746,7 @@
     }
 
     _renderStatus() {
+      this._renderVoiceToggle()
       this._setText('vg-bank', this.bankName || '—')
       const stats = this.plan ? VC.planStats(this.plan) : { newDone: 0, newTotal: 0, reviewDone: 0, reviewTotal: 0, remaining: 0 }
       this._setText('vg-new', stats.newDone + '/' + stats.newTotal)
@@ -1715,6 +1775,8 @@
       const unknown = this._byId('vg-unknown')
       if (unknown) unknown.disabled = false
       this._setHidden('vg-answer', true)
+      // 答案页会滚到「继续」；换题时回到顶部，露出单词和语音开关。
+      if (this.env && typeof this.env.scrollTo === 'function') this.env.scrollTo(0, 0)
       this._renderQuestionBar(this.now())
       this._setVoiceCapsule(this.voiceOk ? 'listening' : 'off')
     }
@@ -1740,6 +1802,7 @@
       this._setText('vg-answer-word', question.word)
       this._setText('vg-answer-phonetic', formatPhonetic(question.phonetic))
       this._setText('vg-answer-meaning', question.full || question.short)
+      this._renderAnswerCountdown(this.now())
       const cont = this._byId('vg-continue')
       if (cont) cont.textContent = this.voiceOk ? t('点击或说“继续”') : t('继续')
       this._setHidden('vg-answer', false)
@@ -1760,6 +1823,13 @@
       Array.prototype.forEach.call(buttons, button => { button.disabled = !!disabled })
       const unknown = this._byId('vg-unknown')
       if (unknown) unknown.disabled = !!disabled
+    }
+
+    _renderAnswerCountdown(now) {
+      const seconds = Math.max(0, Math.ceil((this.state.answerEndsAt - now) / 1000))
+      const el = this._byId('vg-answer-countdown')
+      const text = t('{seconds} 秒后自动下一题', { seconds: seconds })
+      if (el && el.textContent !== text) el.textContent = text
     }
 
     _highlight(correctIndex, selected) {
@@ -1811,6 +1881,7 @@
       this.state.view = 'home'
       this.state.question = null
       this.state.questionEndsAt = 0
+      this.state.answerEndsAt = 0
       this.state.paused = false
       this.state.pendingAdvance = false
       this.state.answered = false

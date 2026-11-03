@@ -87,6 +87,38 @@ function makeListener() {
   return { listener, captured }
 }
 
+test('用户手势预申请的麦克风被 start 复用，停止后释放并允许重新开启', async () => {
+  const track = { stop: jest.fn() }
+  const stream = { getAudioTracks: () => [track], getTracks: () => [track] }
+  const getUserMedia = jest.fn(async () => stream)
+  const listener = new voice.VoiceCommandListener({ window: { navigator: { mediaDevices: { getUserMedia } } } })
+  const context = { state: 'running', createMediaStreamSource: () => ({ connect() {}, disconnect() {} }), close: async () => {} }
+  listener.audioContext = context
+  listener._connectRecorder = async () => {}
+  await listener.primeMic()
+  await listener._startMic()
+  assert.strictEqual(getUserMedia.mock.calls.length, 1)
+  await listener.stop()
+  assert.strictEqual(track.stop.mock.calls.length, 1)
+  listener.audioContext = context
+  await listener.primeMic()
+  await listener._startMic()
+  assert.strictEqual(getUserMedia.mock.calls.length, 2)
+  await listener.stop()
+})
+
+test('停止后才获得授权的麦克风流立即释放，不留下后台录音', async () => {
+  let grant
+  const track = { stop: jest.fn() }
+  const listener = new voice.VoiceCommandListener({ window: { navigator: { mediaDevices: { getUserMedia: () => new Promise(resolve => { grant = resolve }) } } } })
+  const pending = listener.primeMic()
+  await listener.stop()
+  grant({ getTracks: () => [track] })
+  assert.strictEqual(await pending, null)
+  assert.strictEqual(track.stop.mock.calls.length, 1)
+  assert.strictEqual(listener.stream, null)
+})
+
 test('语音切片按开始采集时的题号归属，不按切片时的题号', () => {
   const { listener, captured } = makeListener()
   listener.seq = 1

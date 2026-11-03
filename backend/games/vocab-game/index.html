@@ -10,7 +10,7 @@
   "title": "背单词",
   "description": "英文单词四选一中文释义，带自动朗读和语音选择。选错、超时或点「不认识」会电击并显示完整释义，单词当天排到队尾，答对一次才算过。旧词首答正确后复习间隔逐次翻倍，进度和设置走账号云同步。",
   "howTo": "1. 映射电击设备（必需），可选映射自动锁\n2. 可在这里改电击强度/时长、整体时间上限，并选择是否自动进入本日学习\n3. 登录客户端账号后进入游戏；首页选词书、开始学习，学习设置在游戏内「设置」页改\n4. 点选中文释义，也可以开语音模式说「第一个」到「第四个」\n5. 今日计划全部答对一次即完成并解锁；点「再学一组」可继续加新词",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "permissions": ["microphone"],
   "models": [
     { "task": "asr", "id": "sense-voice-small-int8", "optional": true }
@@ -273,6 +273,8 @@
   .vg-answer-phonetic { font-size: 15px; color: var(--muted); text-align: center; margin-top: 2px; }
   .vg-answer-meaning { margin-top: 12px; font-size: 16px; line-height: 1.65; color: #e5e7eb; text-align: left; }
   .vg-answer .vg-btn { margin-top: 16px; }
+  .vg-answer-countdown { margin-top: 12px; color: var(--muted); font-size: 14px; text-align: center; }
+  #vg-voice-toggle[aria-pressed="true"] { color: var(--green); border-color: var(--green); }
   .vg-btn { width: 100%; min-height: 52px; border: none; border-radius: 11px; font-size: 17px; font-weight: 700; cursor: pointer; }
   .vg-btn.primary { background: var(--blue); color: #fff; margin-top: 16px; }
   .vg-btn.primary:disabled { opacity: .45; cursor: default; }
@@ -416,6 +418,7 @@
       <header class="vg-status" id="vg-status">
         <button class="vg-home-btn" id="vg-home-btn" type="button">‹ <span data-en="Home">首页</span></button>
         <span class="vg-bank" id="vg-bank">四级</span>
+        <button class="vg-home-btn" id="vg-voice-toggle" type="button" aria-pressed="false" data-en="Enable voice">开启语音</button>
         <span class="vg-chip"><span data-en="New">新词</span> <b id="vg-new">0/0</b></span>
         <span class="vg-chip"><span data-en="Review">复习</span> <b id="vg-review">0/0</b></span>
         <span class="vg-chip"><span data-en="Left">剩余</span> <b id="vg-left">0</b></span>
@@ -443,6 +446,7 @@
         <div class="vg-answer-word" id="vg-answer-word"></div>
         <div class="vg-answer-phonetic" id="vg-answer-phonetic"></div>
         <div class="vg-answer-meaning" id="vg-answer-meaning"></div>
+        <div class="vg-answer-countdown" id="vg-answer-countdown"></div>
         <button class="vg-btn primary" id="vg-continue" type="button" data-en="Continue">继续</button>
       </section>
     </section>
