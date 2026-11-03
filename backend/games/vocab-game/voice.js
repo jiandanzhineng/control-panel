@@ -1,8 +1,10 @@
 /**
- * 背单词游戏语音采集与识别（Vocabulary Game voice）
+ * 背单词游戏语音输入（Vocabulary Game voice）
+ * 手机优先使用宿主 DeviceAPI.speech.commands，持续 KWS 检测固定口令。
+ * 未提供 commands 的宿主保留下面的 VAD / 转写兼容路径。
  * 采集链路（VoiceDetector、PcmRingBuffer、重采样、WAV 编码、AudioWorklet）复制自
  * backend/games/reading-game/reading-core.js（朗读游戏，2026-11-01），
- * 识别走宿主 DeviceAPI.speech.transcribe（本地 SenseVoice 优先）。
+ * 兼容路径走宿主 DeviceAPI.speech.transcribe。
  *
  * 与朗读游戏的差异：这里只需要“说一句话”的短口令，VAD 检测到一段语音结束后
  * 切片上传；朗读单词期间及之后 0.5 秒的音频由 game.js 调用 ignoreUntil() 丢弃。
@@ -331,6 +333,8 @@ registerProcessor('vg-recorder', VGRecorder)
       this.speech = opts.speech !== undefined
         ? opts.speech
         : (this.deviceApi && this.deviceApi.speech) || null
+      this.commands = this.speech && this.speech.commands
+      this.commandGen = 0
       this.timers = opts.timers || defaultTimers()
       this.fetchFn = opts.fetch || (this.env && typeof this.env.fetch === 'function' ? this.env.fetch.bind(this.env) : null)
       this.now = typeof opts.now === 'function' ? opts.now : () => Date.now()
@@ -367,6 +371,11 @@ registerProcessor('vg-recorder', VGRecorder)
       this.micWarned = false
     }
 
+    _updateCommands() {
+      if (!this.commands || !this.running) return
+      this.commands.update({ generation: this.commandGen, seq: this.seq, blockedUntil: this.blockedUntil })
+    }
+
     setSeq(seq) {
       this.seq = Number(seq) || 0
       this.pendingSegment = null
@@ -374,6 +383,7 @@ registerProcessor('vg-recorder', VGRecorder)
       this.segStartedAt = 0
       this.segSeq = 0
       this.lastVoiceAt = 0
+      this._updateCommands()
     }
 
     // 朗读单词期间（以及结束后 0.5 秒）丢弃音频，防止识别到游戏的发音。
@@ -382,10 +392,12 @@ registerProcessor('vg-recorder', VGRecorder)
       if (until > this.blockedUntil) this.blockedUntil = until
       this.segStartedAt = 0
       this.lastVoiceAt = 0
+      this._updateCommands()
     }
 
     // 必须在用户手势里同步调用（iOS / Android WebView 限制）。
     prime() {
+      if (this.commands) return
       if (!this.audioContext) {
         const Ctx = this._audioCtor()
         if (Ctx) {
@@ -399,6 +411,7 @@ registerProcessor('vg-recorder', VGRecorder)
 
     // 在同一个用户手势里尽早申请麦克风；start() 会复用这次请求。
     primeMic() {
+      if (this.commands) return Promise.resolve(null)
       if (this.testAudioUrl) return Promise.resolve(null)
       if (this.micPromise) return this.micPromise
       const nav = (this.env && this.env.navigator) || (typeof navigator !== 'undefined' ? navigator : null)
@@ -446,6 +459,31 @@ registerProcessor('vg-recorder', VGRecorder)
 
     async start() {
       if (this.running) return true
+      if (this.commands) {
+        const gen = ++this.commandGen
+        this.running = true
+        try {
+          const result = await this.commands.start({ generation: gen, seq: this.seq, blockedUntil: this.blockedUntil }, event => {
+            if (!this.running || gen !== this.commandGen || !event || event.generation !== gen) return
+            if (event.code) {
+              this._emitStatus('command-error', event.code)
+              return
+            }
+            if (event.seq !== this.seq || this.now() < this.blockedUntil) return
+            this.onResult({ text: event.text, command: event.command, seq: event.seq, mode: 'kws' })
+          })
+          if (gen !== this.commandGen || !this.running) return false
+          if (!result || !result.ready) throw new Error('NO_KWS')
+          this._emitStatus('listening')
+          return true
+        } catch (error) {
+          if (gen === this.commandGen) {
+            this.running = false
+            Promise.resolve(this.commands.stop(gen)).catch(() => {})
+          }
+          throw error
+        }
+      }
       if (!this.speech || typeof this.speech.transcribe !== 'function') {
         const error = new Error('NO_STT')
         error.code = 'NO_STT'
@@ -695,6 +733,10 @@ registerProcessor('vg-recorder', VGRecorder)
 
     async stop() {
       this.running = false
+      const gen = this.commandGen++
+      if (this.commands) {
+        try { await this.commands.stop(gen) } catch (_) {}
+      }
       this.micGen += 1
       this.micPromise = null
       this.micError = null

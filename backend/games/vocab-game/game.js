@@ -749,10 +749,10 @@
       this._renderVoiceToggle()
       try {
         const speech = this.deviceApi && this.deviceApi.speech
-        if (!speech || typeof speech.transcribe !== 'function') return this._voiceFallback('no-speech-api')
+        if (!speech || (!speech.commands && typeof speech.transcribe !== 'function')) return this._voiceFallback('no-speech-api')
         let status = null
         try {
-          status = await this._withTimeout(Promise.resolve().then(() => speech.status()), 1500)
+          status = await this._withTimeout(Promise.resolve().then(() => speech.commands ? speech.commands.status() : speech.status()), 1500)
         } catch (_) {
           status = null
         }
@@ -1353,8 +1353,10 @@
         this._missed()
         return
       }
-      const command = VC.parseVoiceCommand(text)
-      this._log('语音识别: ' + text + ' → ' + JSON.stringify(command), 'info')
+      const command = result.mode === 'kws'
+        ? ({ choice_1: { action: 'choice', index: 1 }, choice_2: { action: 'choice', index: 2 }, choice_3: { action: 'choice', index: 3 }, choice_4: { action: 'choice', index: 4 }, continue: { action: 'continue' }, unknown: { action: 'unknown' } }[result.command] || { action: 'ignore' })
+        : VC.parseVoiceCommand(text)
+      this._log((result.mode === 'kws' ? '口令触发: ' : '语音识别: ') + text + ' → ' + JSON.stringify(command), 'info')
       if (this.state.view === 'answer') {
         if (command.action === 'continue') this.continueQuestion()
         else this._missed()
@@ -1371,8 +1373,13 @@
       }
     }
 
-    _onVoiceStatus(status) {
+    _onVoiceStatus(status, detail) {
       if (!this.voiceOk) return
+      if (status === 'command-error') {
+        this._voiceFallback(detail || 'NO_KWS')
+        this._renderVoiceToggle()
+        return
+      }
       if (status === 'recognizing') this._setVoiceCapsule('recognizing')
       else if (status === 'mic-error') {
         this._setVoiceCapsule('error')

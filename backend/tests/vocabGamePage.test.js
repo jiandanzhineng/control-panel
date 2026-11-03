@@ -40,6 +40,55 @@ test('旧题目的语音结果丢弃，不会误答当前题', () => {
   assert.deepStrictEqual(game.plan.done, [])
 })
 
+test('手机 KWS 直接触发口令，不开网页麦克风、不调用转写，朗读及旧题结果丢弃', async () => {
+  let callback
+  let now = 1000
+  const results = []
+  const commands = { start: jest.fn(async (options, cb) => { callback = cb; return { ready: true } }), update: jest.fn(), stop: jest.fn(async () => {}) }
+  const transcribe = jest.fn()
+  const getUserMedia = jest.fn()
+  const listener = new voice.VoiceCommandListener({ window: { navigator: { mediaDevices: { getUserMedia } } }, speech: { commands, transcribe }, now: () => now, onResult: r => results.push(r) })
+  listener.prime()
+  await listener.primeMic()
+  listener.setSeq(7)
+  await listener.start()
+  const generation = commands.start.mock.calls[0][0].generation
+  callback({ generation, seq: 7, text: '第一个' })
+  assert.strictEqual(results.length, 1)
+  listener.ignoreUntil(2000)
+  callback({ generation, seq: 7, text: '第二个' })
+  now = 2100
+  listener.setSeq(8)
+  callback({ generation, seq: 7, text: '第二个' })
+  callback({ generation, seq: 8, text: '第三个' })
+  assert.strictEqual(results.length, 2)
+  assert.strictEqual(results[1].mode, 'kws')
+  assert.strictEqual(getUserMedia.mock.calls.length, 0)
+  assert.strictEqual(transcribe.mock.calls.length, 0)
+  await listener.stop()
+  callback({ generation, seq: 8, text: '第四个' })
+  assert.strictEqual(results.length, 2)
+})
+
+test('中英 KWS 结果按口令编号执行四选一、继续与不认识', () => {
+  const game = makeGame()
+  game.state.question.choices = Array(4).fill({})
+  game.answer = jest.fn()
+  game.markUnknown = jest.fn()
+  game.continueQuestion = jest.fn()
+  for (let i = 1; i <= 4; i++) {
+    game._onVoiceResult({ seq: 2, text: ['first', 'second', 'third', 'fourth'][i - 1], command: 'choice_' + i, mode: 'kws' })
+    assert.strictEqual(game.answer.mock.calls[i - 1][0], i)
+  }
+  game._onVoiceResult({ seq: 2, text: "don't know", command: 'unknown', mode: 'kws' })
+  assert.strictEqual(game.markUnknown.mock.calls.length, 1)
+  game.state.view = 'answer'
+  game._onVoiceResult({ seq: 2, text: 'continue', command: 'continue', mode: 'kws' })
+  assert.strictEqual(game.continueQuestion.mock.calls.length, 1)
+  game._onVoiceResult({ seq: 1, text: 'continue', command: 'continue', mode: 'kws' })
+  assert.strictEqual(game.continueQuestion.mock.calls.length, 1)
+})
+
 test('旧题目的自动跳题定时器触发时丢弃', () => {
   const game = makeGame()
   game.state.answered = true
