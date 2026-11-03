@@ -26,7 +26,9 @@
 
 ## 工具链
 
-- Go 免安装版：`C:\Users\46907\AppData\Local\GoPortable\go1.27.0-full\go\bin\go.exe`，在 `game-platform/` 下 `go test ./...`；生产构建用 `game-platform/Dockerfile`。
+- 项目最低 Go 版本由 `game-platform/go.mod` 固定为 `1.27.3`，Docker 构建镜像同步固定补丁版本。Windows 的 `C:\Program Files\Go\bin\go.exe` 允许 `GOTOOLCHAIN=auto`，在模块目录运行时自动选择满足要求的工具链；用 `go version` / `go env GOROOT` 核对，不能只检查仓库根目录的全局版本。
+- Go 检查在 `.github/workflows/check-game-platform.yml`：按 go.mod 安装工具链，执行模块校验、测试、vet、govulncheck 和 Linux 静态构建。部署前用相同工具链运行这些检查，再以 `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=true -ldflags="-s -w"` 生成二进制。
+- 原生 systemd 部署同样需要使用上述补丁工具链，不能只改 Dockerfile。切换后检查 `/proc/<MainPID>/exe` 的 Go build info、构建提交与上传文件 SHA256；保留旧 release 和 SQLite `.backup`，健康检查失败立即切回旧 release。
 - BrowserOS neo 走系统代理 `127.0.0.1:7990` 时，Windows `ProxyOverride` 需含 `*.undersilicon.cn`，否则 game API 请求可能断连。
 
 ## 已知坑
