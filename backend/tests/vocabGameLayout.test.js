@@ -491,6 +491,46 @@ test('原生口令模式自动进入并启动录音，不要求网页音频上�
   game._stopVoice()
 })
 
+test('手机缺少原生口令接口时仍自动进入，不显示网页麦克风提醒', async () => {
+  const doc = fakeDoc()
+  doc.getElementById('vg-gate').hidden = true
+  const game = makeGame({ document: doc, deviceApi: { speech: { requiresUserGesture: false } } })
+  game.autoStart = true
+  game.voiceMode = true
+  game.save.words.alpha = { k: 1, due: 3, last: 1, wrong: 0, u: 1 }
+  game.plan = { bank: 'cet4', ids: ['bravo'], done: [], extra: 0, newIds: ['bravo'], u: 1 }
+  game._handleStart = jest.fn(() => game._startVoice())
+
+  assert.strictEqual(await game._maybeAutoEnter(), true)
+  assert.strictEqual(game._handleStart.mock.calls.length, 1)
+  assert.strictEqual(game.voiceOk, false)
+  assert.strictEqual(game.voiceFallback, true)
+  assert.strictEqual(doc.getElementById('vg-gate').hidden, true)
+})
+
+test('手机录音启动失败走语音降级，不显示网页麦克风提醒', async () => {
+  const doc = fakeDoc()
+  doc.getElementById('vg-gate').hidden = true
+  const commands = {
+    status: jest.fn(async () => ({ ready: true })),
+    start: jest.fn(async () => { throw Object.assign(new Error('Denied'), { code: 'MIC_DENIED' }) }),
+    update: jest.fn(),
+    stop: jest.fn(async () => {})
+  }
+  const game = makeGame({ document: doc, deviceApi: { speech: { requiresUserGesture: false, commands } } })
+  game.autoStart = true
+  game.voiceMode = true
+  game.save.words.alpha = { k: 1, due: 3, last: 1, wrong: 0, u: 1 }
+  game.plan = { bank: 'cet4', ids: ['bravo'], done: [], extra: 0, newIds: ['bravo'], u: 1 }
+  game._handleStart = jest.fn(() => game._startVoice())
+
+  assert.strictEqual(await game._maybeAutoEnter(), true)
+  assert.strictEqual(commands.start.mock.calls.length, 1)
+  assert.strictEqual(game.voiceOk, false)
+  assert.strictEqual(game.voiceFallback, true)
+  assert.strictEqual(doc.getElementById('vg-gate').hidden, true)
+})
+
 test('网页录音模式仍保留无法自动启用音频时的点击提示', async () => {
   const doc = fakeDoc()
   doc.getElementById('vg-gate').hidden = true

@@ -605,6 +605,9 @@
     }
 
     async _tryPrimeWithoutGesture() {
+      const speech = this.deviceApi && this.deviceApi.speech
+      // 手机宿主统一处理麦克风授权，不显示网页点击启用提示。
+      if (speech && speech.requiresUserGesture === false) return true
       // 原生口令采集不经过网页 AudioContext；权限由宿主启动录音时申请。
       if (this.voice.commands) return true
       try {
