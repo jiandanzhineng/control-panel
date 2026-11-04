@@ -605,6 +605,8 @@
     }
 
     async _tryPrimeWithoutGesture() {
+      // 原生口令采集不经过网页 AudioContext；权限由宿主启动录音时申请。
+      if (this.voice.commands) return true
       try {
         this.voice.prime()
         await this.voice.primeMic()

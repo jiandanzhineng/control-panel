@@ -459,6 +459,53 @@ test('自动进入：有历史且未完成时直接开始；语音模式起不�
   assert.strictEqual(okStarted, 1)
 })
 
+test('原生口令模式自动进入并启动录音，不要求网页音频上下文或额外点击', async () => {
+  const doc = fakeDoc()
+  doc.getElementById('vg-gate').hidden = true
+  const getUserMedia = jest.fn()
+  const AudioContext = jest.fn()
+  const commands = {
+    status: jest.fn(async () => ({ ready: true })),
+    start: jest.fn(async () => ({ ready: true })),
+    update: jest.fn(),
+    stop: jest.fn(async () => {})
+  }
+  const game = makeGame({
+    document: doc,
+    window: { ...bankEnv(), AudioContext, navigator: { mediaDevices: { getUserMedia } } },
+    deviceApi: { speech: { commands } }
+  })
+  game.autoStart = true
+  game.voiceMode = true
+  game.save.words.alpha = { k: 1, due: 3, last: 1, wrong: 0, u: 1 }
+  game.plan = { bank: 'cet4', ids: ['bravo'], done: [], extra: 0, newIds: ['bravo'], u: 1 }
+  game._handleStart = jest.fn(() => game._startVoice())
+
+  assert.strictEqual(await game._maybeAutoEnter(), true)
+  assert.strictEqual(game._handleStart.mock.calls.length, 1)
+  assert.strictEqual(commands.start.mock.calls.length, 1)
+  assert.strictEqual(game.voiceOk, true)
+  assert.strictEqual(doc.getElementById('vg-gate').hidden, true)
+  assert.strictEqual(AudioContext.mock.calls.length, 0)
+  assert.strictEqual(getUserMedia.mock.calls.length, 0)
+  game._stopVoice()
+})
+
+test('网页录音模式仍保留无法自动启用音频时的点击提示', async () => {
+  const doc = fakeDoc()
+  doc.getElementById('vg-gate').hidden = true
+  const game = makeGame({ document: doc })
+  game.autoStart = true
+  game.voiceMode = true
+  game.save.words.alpha = { k: 1, due: 3, last: 1, wrong: 0, u: 1 }
+  game.plan = { bank: 'cet4', ids: ['bravo'], done: [], extra: 0, newIds: ['bravo'], u: 1 }
+  game._handleStart = jest.fn()
+
+  assert.strictEqual(await game._maybeAutoEnter(), false)
+  assert.strictEqual(game._handleStart.mock.calls.length, 0)
+  assert.strictEqual(doc.getElementById('vg-gate').hidden, false)
+})
+
 test('自动进入：今日已完成或没有学习记录时停在首页', async () => {
   const game = makeGame()
   game.autoStart = true
