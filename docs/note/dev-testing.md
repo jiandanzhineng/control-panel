@@ -28,4 +28,4 @@
 
 ## git worktree
 
-- worktree 不带 node_modules：把主仓的 `node_modules`、`play-registry/node_modules` 用目录联接（`New-Item -ItemType Junction`）链进来，`backend`/`frontend` 的 node_modules 要单独 `npm install`。
+- worktree 不带 node_modules。发布验证时，根目录、`backend`、`frontend` 必须分别执行独立 `npm ci`；不要用主仓目录联接作为发布构建依据，部分依赖本身可能是指向临时缓存的联接。
