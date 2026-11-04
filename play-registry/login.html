@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title data-i18n-title="loginTitle">登录 · 硅基之下游戏库</title>
-<meta name="description" content="登录硅基之下游戏库投稿工作台，使用与控制面板 App 相同的邮箱账号。" />
+<meta name="description" content="登录硅基之下游戏库投稿工作台，使用与控制面板 App 相同的手机号或邮箱账号。" />
 <meta name="robots" content="noindex" />
 <meta name="theme-color" content="#0e0d0c" />
 <link rel="stylesheet" href="assets/css/site.css" />
@@ -40,7 +40,7 @@
       <h1 data-i18n="authH1">投稿工作台</h1>
       <p data-i18n="authLead">把你做的游戏交给审核，上架后玩家在控制面板里直接玩。</p>
       <ol class="auth-points">
-        <li><span class="k">01</span><div><strong data-i18n="authPoint1">一个账号，处处通用</strong><span data-i18n="authPoint1Desc">与控制面板 App、商城使用同一邮箱账号</span></div></li>
+        <li><span class="k">01</span><div><strong data-i18n="authPoint1">一个账号，处处通用</strong><span data-i18n="authPoint1Desc">与控制面板 App、商城使用同一账号</span></div></li>
         <li><span class="k">02</span><div><strong data-i18n="authPoint2">ZIP 或 Git 地址</strong><span data-i18n="authPoint2Desc">浏览器直传 ZIP，或提交公开 GitHub / GitLab 仓库</span></div></li>
         <li><span class="k">03</span><div><strong data-i18n="authPoint3">人工审核，自动上架</strong><span data-i18n="authPoint3Desc">审核意见与进度在工作台实时可见</span></div></li>
         <li><span class="k">04</span><div><strong data-i18n="authPoint4">按月结算奖励金</strong><span data-i18n="authPoint4Desc">按游玩表现发放到你的商城账号</span></div></li>
@@ -56,7 +56,11 @@
     <div class="auth-box">
       <p class="auth-checking" id="auth-checking" hidden data-i18n="authChecking">已登录，正在跳转…</p>
 
-      <div data-auth-view="login">
+      <div class="auth-methods" role="tablist" aria-label="登录方式" data-i18n-aria-label="authMethodLabel">
+        <button type="button" role="tab" id="method-phone" aria-controls="view-phone" aria-selected="true" data-auth-go="phone" data-i18n="phoneMethod">手机验证码</button>
+        <button type="button" role="tab" id="method-email" aria-controls="view-email" aria-selected="false" tabindex="-1" data-auth-go="login" data-i18n="emailMethod">邮箱密码</button>
+      </div>
+      <div data-auth-view="login" id="view-email" role="tabpanel" aria-labelledby="method-email" hidden>
         <h2 data-i18n="authLoginH2">登录</h2>
         <p class="auth-sub" data-i18n="authLoginSub">使用控制面板 App 的邮箱账号</p>
         <form id="login-form" class="auth-form" novalidate>
@@ -78,9 +82,22 @@
           <p class="form-error" role="alert" hidden></p>
           <button class="btn btn-primary btn-block" type="submit" data-i18n="authLoginBtn">登录</button>
         </form>
+
         <p class="auth-switch"><span data-i18n="authNoAccount">还没有账号？</span><button type="button" data-auth-go="register" data-i18n="authToRegister">注册</button></p>
       </div>
 
+      <div data-auth-view="phone" id="view-phone" role="tabpanel" aria-labelledby="method-phone">
+        <h2 data-i18n="phoneLogin">手机验证码登录</h2>
+        <p class="auth-sub" data-i18n="phoneSubtitle">验证码登录，无需记住密码。</p>
+        <form id="phone-form" class="auth-form">
+          <div class="field"><label for="phone-number" data-i18n="phoneNumber">手机号</label><input id="phone-number" name="phone" type="tel" autocomplete="tel" placeholder="+86" required /></div>
+          <div class="field"><label for="phone-code" data-i18n="phoneCode">短信验证码</label><div class="auth-code-row"><input id="phone-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required /><button type="button" id="phone-send" class="btn" data-i18n="phoneSend">发送验证码</button></div></div>
+          <label class="check"><input type="checkbox" name="remember" checked /><span data-i18n="authRemember">保持登录</span></label>
+          <p class="form-error" role="alert" hidden></p>
+          <button type="submit" class="btn btn-primary btn-block" data-i18n="phoneLogin">手机验证码登录</button>
+        </form>
+        <p class="auth-account-hint" data-i18n="phoneHint">中国大陆 +86。已有邮箱账号请先在 App 或商城绑定手机号，避免创建两个账号。</p>
+      </div>
       <div data-auth-view="register" hidden>
         <h2 data-i18n="authRegisterH2">创建账号</h2>
         <p class="auth-sub" data-i18n="authRegisterSub">注册后同样可登录控制面板 App 与商城</p>

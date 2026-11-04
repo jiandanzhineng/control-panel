@@ -12,6 +12,7 @@ jest.mock('../services/accountService', () => {
   return {
     UpstreamError,
     register: jest.fn(),
+    phoneStatus:jest.fn(),phoneCode:jest.fn(),phoneLogin:jest.fn(),phoneBind:jest.fn(),
     login: jest.fn(),
     logout: jest.fn(),
     recovery: jest.fn(),
@@ -27,6 +28,8 @@ jest.mock('../utils/logger', () => ({
   warn: jest.fn(),
 }));
 
+jest.mock('../services/wechatQrService', () => ({ start: jest.fn(), status: jest.fn() }));
+const wechatQr = require('../services/wechatQrService');
 const accountService = require('../services/accountService');
 
 function createApp() {
@@ -148,4 +151,33 @@ describe('auth routes', () => {
     expect(deleteRes.status).toBe(204);
     expect(accountService.deleteMe).toHaveBeenCalledWith('jwt-token');
   });
+});
+
+it('phone routes preserve bearer binding and pass nullable email without local account creation',async()=>{
+ const phoneUser={...USER,email:null,provider:'phone',phoneVerified:true,phoneMasked:'+86138****0000'};
+ accountService.phoneCode.mockResolvedValue({status:200,data:{challengeId:'challenge',retryAfter:60,expiresIn:300}});
+ let res=await request(createApp()).post('/api/auth/phone/code').set('authorization','Bearer current').send({phone:'13800000000',purpose:'bind',accountId:'attacker'});
+ expect(res.status).toBe(200);expect(accountService.phoneCode).toHaveBeenCalledWith({phone:'13800000000',purpose:'bind'},'current');
+ res=await request(createApp()).post('/api/auth/phone/bind').send({challengeId:'challenge',code:'123456'});expect(res.status).toBe(401);
+ accountService.phoneLogin.mockResolvedValue({status:200,data:{token:'phone-token',user:phoneUser}});
+ res=await request(createApp()).post('/api/auth/phone/login').send({challengeId:'challenge',code:'123456'});expect(res.status).toBe(200);expect(res.body.user.email).toBeNull();
+ accountService.phoneBind.mockRejectedValue(new accountService.UpstreamError(409,'CONFLICT','phone in use'));
+ res=await request(createApp()).post('/api/auth/phone/bind').set('authorization','Bearer current').send({challengeId:'challenge',code:'123456'});expect(res.status).toBe(409);
+});
+
+
+it('desktop QR proxy validates input and forwards only the QR proof', async () => {
+  const app = createApp();
+  const invalid = await request(app).post('/api/auth/wechat/qr/status').send({ id: 'bad', secret: 'bad' });
+  expect(invalid.status).toBe(400);
+  expect(wechatQr.status).not.toHaveBeenCalled();
+  wechatQr.start.mockResolvedValue({ id: 'abcdefgh12345678', webSecret: 'a'.repeat(24), image: 'data:image/png;base64,test' });
+  const started = await request(app).post('/api/auth/wechat/qr/start').send({ accountId: 'attacker' });
+  expect(started.status).toBe(200);
+  expect(started.headers['cache-control']).toBe('no-store');
+  wechatQr.status.mockResolvedValue({ status: 'ok', token: 'center-token', user: USER });
+  const input = { id: 'abcdefgh12345678', secret: 'a'.repeat(24) };
+  const result = await request(app).post('/api/auth/wechat/qr/status').send({ ...input, accountId: 'attacker', token: 'fake' });
+  expect(wechatQr.status).toHaveBeenCalledWith(input);
+  expect(result.body).toEqual({ status: 'ok', token: 'center-token', user: USER });
 });

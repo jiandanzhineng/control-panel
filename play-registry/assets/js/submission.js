@@ -39,7 +39,7 @@
 
   function showDashboard(user) {
     if (dashboard) dashboard.hidden = false;
-    if (emailSlot) emailSlot.textContent = t('dashSignedIn', { email: user.email });
+    if (emailSlot) emailSlot.textContent = t('dashSignedIn', { email: user.email || user.phoneMasked || user.id });
     if (adminLink) adminLink.hidden = user.role !== 'admin';
     if (authorLink) authorLink.hidden = false;
   }

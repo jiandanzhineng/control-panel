@@ -285,3 +285,11 @@ test('register 走身份服务 /auth/register 并沿用同一套登录流程', a
   assert.strictEqual(ctx.localStorage.getItem('game-platform-mobile-token'), 'tok2');
   await flush();
 });
+
+test('phone login and restoration keep central ID when email is absent',async()=>{
+ const user={id:'phone-author',email:null,phoneMasked:'+86138****0000',role:'author'};
+ const ctx=makeContext({fetch:(url)=>String(url).includes('/auth/phone/login')?jsonResponse(200,{token:'phone-token',user}):jsonResponse(200,{user})});
+ const result=await ctx.auth.phoneLogin('challenge','123456',true);
+ assert.equal(result.id,user.id);assert.equal(result.phoneMasked,user.phoneMasked);
+ assert.equal(ctx.auth.user().id,user.id);assert.equal((await ctx.auth.verify()).id,user.id);
+});

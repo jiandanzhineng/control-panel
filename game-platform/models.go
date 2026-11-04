@@ -3,9 +3,11 @@ package main
 import "encoding/json"
 
 type User struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	PhoneMasked   string `json:"phoneMasked,omitempty"`
+	PhoneVerified bool   `json:"phoneVerified"`
+	ID            string `json:"id"`
+	Email         string `json:"email"`
+	Role          string `json:"role"`
 }
 
 type Submission struct {

@@ -94,12 +94,13 @@ func loadGameIDOwnership(ctx context.Context, q queryer, gameID string) (gameIDO
 
 // assignedOwner 是 game_owners 的一行。
 type assignedOwner struct {
-	GameID     string `json:"gameId"`
-	AuthorID   string `json:"authorId"`
-	AuthorName string `json:"authorName"`
-	Email      string `json:"email"`
-	SetBy      string `json:"setBy"`
-	SetAt      int64  `json:"setAt"`
+	GameID      string `json:"gameId"`
+	AuthorID    string `json:"authorId"`
+	AuthorName  string `json:"authorName"`
+	Email       string `json:"email"`
+	PhoneMasked string `json:"phoneMasked,omitempty"`
+	SetBy       string `json:"setBy"`
+	SetAt       int64  `json:"setAt"`
 }
 
 // loadAssignedOwner 读 game_owners 里该 game_id 的指定归属；没有则返回零值。
@@ -118,7 +119,7 @@ func loadAssignedOwner(ctx context.Context, q queryer, gameID string) (assignedO
 
 // listAssignedOwners 列出全部手工指定的归属，附作者邮箱。
 func (a *App) listAssignedOwners(ctx context.Context) ([]assignedOwner, error) {
-	rows, err := a.db.QueryContext(ctx, `SELECT o.game_id, o.author_id, o.author_name, o.set_by, o.set_at, COALESCE(i.email, '')
+	rows, err := a.db.QueryContext(ctx, `SELECT o.game_id, o.author_id, o.author_name, o.set_by, o.set_at, COALESCE(i.email, ''),COALESCE(i.phone_masked, '')
 		FROM game_owners o LEFT JOIN identities i ON i.id = o.author_id
 		ORDER BY o.game_id ASC`)
 	if err != nil {
@@ -128,7 +129,7 @@ func (a *App) listAssignedOwners(ctx context.Context) ([]assignedOwner, error) {
 	out := []assignedOwner{}
 	for rows.Next() {
 		var owner assignedOwner
-		if err := rows.Scan(&owner.GameID, &owner.AuthorID, &owner.AuthorName, &owner.SetBy, &owner.SetAt, &owner.Email); err != nil {
+		if err := rows.Scan(&owner.GameID, &owner.AuthorID, &owner.AuthorName, &owner.SetBy, &owner.SetAt, &owner.Email, &owner.PhoneMasked); err != nil {
 			return nil, err
 		}
 		out = append(out, owner)
@@ -168,7 +169,7 @@ func (a *App) gameOwner(ctx context.Context, q queryer, gameID string) (assigned
 	}
 	owner := assignedOwner{GameID: gameID, AuthorID: ownership.OwnerAuthorID, AuthorName: ownership.OwnerAuthorName}
 	// 邮箱只用于展示与商城定位，查不到也不影响归属。
-	_ = q.QueryRowContext(ctx, `SELECT email FROM identities WHERE id = ?`, owner.AuthorID).Scan(&owner.Email)
+	_ = q.QueryRowContext(ctx, `SELECT COALESCE(email,''),phone_masked FROM identities WHERE id = ?`, owner.AuthorID).Scan(&owner.Email, &owner.PhoneMasked)
 	return owner, nil
 }
 

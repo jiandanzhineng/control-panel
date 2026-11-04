@@ -36,6 +36,7 @@ agent 查到的事实、配置位置、命令、踩坑。按主题，详情在 `
 ## 游戏平台
 
 - 背单词离线固定口令、PC 采集桥和回归入口见 [vocab-commands](note/vocab-commands.md)。
+- PC/游戏站的手机号身份、迁移与本地验收：见 [手机号登录](note/phone-login.md)。
 
 - 生产服务器、发版回滚、OSS 与缓存规则见 [game-platform-deploy](note/game-platform-deploy.md)。
 - 创作者分成表结构、接口、game_id 归属优先级见 [creator-payout](note/creator-payout.md)。
@@ -55,3 +56,5 @@ agent 查到的事实、配置位置、命令、踩坑。按主题，详情在 `
 
 - OpenPanel 事件、导出凭证位置、`tools/op-stats.ps1` 用法见 [analytics](note/analytics.md)。
 - 诊断日志上传链路、国内库查询见 [diagnostics](note/diagnostics.md)。
+
+- 登录布局与PC微信扫码：见 [登录布局](note/login-layout.md)。

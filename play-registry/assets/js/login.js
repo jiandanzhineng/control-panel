@@ -12,18 +12,19 @@
     views[view.getAttribute('data-auth-view')] = view;
   });
   var forms = {
+    phone: document.getElementById('phone-form'),
     login: document.getElementById('login-form'),
     register: document.getElementById('register-form'),
     recover: document.getElementById('recover-form')
   };
   var done = document.getElementById('recover-done');
-  var current = 'login';
+  var current = 'phone';
 
   function t(key) { return auth.t(key); }
 
   function viewOf(hash) {
-    if (hash === '#register' || hash === '#recover') return hash.slice(1);
-    return 'login';
+    if (hash === '#register' || hash === '#recover' || hash === '#phone') return hash.slice(1);
+    return hash === '#login' ? 'login' : 'phone';
   }
 
   function formError(form) { return form ? form.querySelector('.form-error') : null; }
@@ -65,12 +66,21 @@
     if (done) done.hidden = true;
     if (forms.recover) forms.recover.hidden = false;
     current = name;
+    var methods = box.querySelector('.auth-methods');
+    if (methods) {
+      methods.hidden = name !== 'phone' && name !== 'login';
+      Array.prototype.forEach.call(methods.querySelectorAll('[role="tab"]'), function (tab) {
+        var selected = tab.getAttribute('data-auth-go') === name;
+        tab.setAttribute('aria-selected', String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+      });
+    }
     if (email) {
       var target = emailInput(name);
       if (target && !target.value) target.value = email;
     }
     if (updateHash !== false) {
-      var hash = name === 'login' ? '' : '#' + name;
+      var hash = name === 'phone' ? '' : '#' + name;
       try { history.replaceState(null, '', location.pathname + location.search + hash); } catch (_) {}
     }
     focusFirstEmpty(views[name]);
@@ -133,6 +143,25 @@
     form.addEventListener('input', function () { clearError(form); });
   });
 
+  var phoneChallenge='', phoneRetry=0;
+  var sendPhone=document.getElementById('phone-send');
+  if(sendPhone) sendPhone.addEventListener('click',function(){
+    sendPhone.disabled=true;clearError(forms.phone);
+    auth.phoneCode(forms.phone.phone.value.trim()).then(function(data){
+      phoneChallenge=data.challengeId;phoneRetry=data.retryAfter;
+      sendPhone.textContent=String(phoneRetry)+'s';
+      var timer=setInterval(function(){phoneRetry--;sendPhone.textContent=phoneRetry>0?String(phoneRetry)+'s':t('phoneSend');if(phoneRetry<=0){clearInterval(timer);sendPhone.disabled=false;}},1000);
+    }).catch(function(err){showError(forms.phone,err.message);sendPhone.disabled=false;});
+  });
+  if(forms.phone) {
+    forms.phone.phone.addEventListener('input',function(){phoneChallenge='';forms.phone.code.value='';});
+    forms.phone.addEventListener('submit',function(event){
+      event.preventDefault();if(!phoneChallenge){showError(forms.phone,t('phoneRequestFirst'));return;}
+      setBusy(forms.phone,true,'authLoggingIn');
+      auth.phoneLogin(phoneChallenge,forms.phone.code.value,forms.phone.remember.checked).then(redirectAfterAuth).catch(function(err){showError(forms.phone,err.status===401?t('phoneInvalid'):err.message);setBusy(forms.phone,false);});
+    });
+  }
+
   /* ---------- 登录 ---------- */
 
   if (forms.login) forms.login.addEventListener('submit', function (event) {
@@ -193,6 +222,17 @@
     }).catch(function (err) {
       showError(form, err && err.message ? err.message : t('authErrServer'));
       setBusy(form, false);
+    });
+  });
+
+
+  Array.prototype.forEach.call(box.querySelectorAll('.auth-methods [role="tab"]'), function (tab) {
+    tab.addEventListener('keydown', function (event) {
+      if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].indexOf(event.key) < 0) return;
+      event.preventDefault();
+      var name = event.key === 'Home' ? 'phone' : event.key === 'End' ? 'login' : current === 'phone' ? 'login' : 'phone';
+      switchView(name);
+      box.querySelector('[role="tab"][data-auth-go="' + name + '"]').focus();
     });
   });
 
