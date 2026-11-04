@@ -35,6 +35,8 @@ agent 查到的事实、配置位置、命令、踩坑。按主题，详情在 `
 
 ## 游戏平台
 
+- 背单词离线固定口令、PC 采集桥和回归入口见 [vocab-commands](note/vocab-commands.md)。
+
 - 生产服务器、发版回滚、OSS 与缓存规则见 [game-platform-deploy](note/game-platform-deploy.md)。
 - 创作者分成表结构、接口、game_id 归属优先级见 [creator-payout](note/creator-payout.md)。
 - 站点页面入口、百度统计、游戏条目约定见 [site-games](note/site-games.md)。

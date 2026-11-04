@@ -148,4 +148,20 @@ describe('bridgeService speech actions', () => {
       result: { ready: false, reason: 'REMOTE_LOCKED' },
     });
   });
+
+  it('requires a host-issued vocabulary token for offline commands', async () => {
+    ws.emit('message', Buffer.from(JSON.stringify({ id: 'k1', action: 'speechCommandsStart', generation: 1, seq: 1, gameId: 'vocab-game' })));
+    await expect(waitForReply(ws, 'k1')).resolves.toMatchObject({ code: 'NO_KWS' });
+    const token = require('../services/gameLaunchTokenService').issue('vocab-game');
+    ws = new FakeWs();
+    MockWebSocketServer.instance.emit('connection', ws, {});
+    ws.emit('message', Buffer.from(JSON.stringify({ id: 'reinit', action: 'init', deviceMap: {}, params: {}, gameToken: token })));
+    ws.emit('message', Buffer.from(JSON.stringify({ id: 'k2', action: 'speechCommandsStatus' })));
+    await expect(waitForReply(ws, 'k2')).resolves.toMatchObject({ result: { ready: true, mode: 'kws' } });
+    mockRemoteStatus.mockReturnValue({ active: true });
+    ws.emit('message', Buffer.from(JSON.stringify({ id: 'k3', action: 'speechCommandsStart', generation: 1, seq: 1 })));
+    await expect(waitForReply(ws, 'k3')).resolves.toMatchObject({ code: 'NO_KWS' });
+    expect(mockTranscribe).not.toHaveBeenCalled();
+    expect(mockStatus).not.toHaveBeenCalled();
+  });
 });

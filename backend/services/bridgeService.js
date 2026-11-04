@@ -11,6 +11,7 @@ const wsUpgradeRouter = require('./wsUpgradeRouter');
 const sttService = require('./sttService');
 const gameLaunchTokenService = require('./gameLaunchTokenService');
 const gameCloudService = require('./gameCloudService');
+const { VocabCommandSession, MODEL: VOCAB_KWS_MODEL } = require('../voice/vocabCommandSession');
 // 玩法载体事件（本机开始/退出一次玩法）：远程占用仲裁（remoteGameService）订阅
 const playCarrierBus = require('./playCarrierBus');
 
@@ -45,6 +46,7 @@ class GameSession {
     this.shockCount = 0;
     this.shockStopTimer = null;
     this.shockStopTargets = new Set();
+    this.commandSpeech = null;
   }
 
   send(data) {
@@ -61,6 +63,7 @@ class GameSession {
 
   destroy() {
     this.active = false;
+    this.commandSpeech?.dispose();
     if (this.pendingCloseTimer) {
       clearTimeout(this.pendingCloseTimer);
       this.pendingCloseTimer = null;
@@ -186,6 +189,8 @@ function init(server) {
 
     ws.on('close', () => {
       if (session) {
+        // 设备退出宽限不适用于麦克风：断开即释放识别流。
+        session.commandSpeech?.dispose();
         scheduleGracefulClose(session);
       }
     });
@@ -312,6 +317,45 @@ function handleMessage(session, msg) {
           .catch((error) => session.send({
             id, error: error?.message || String(error), code: error?.code || null,
           }));
+        break;
+      }
+
+      case 'speechCommandsStatus': {
+        const reason = remoteSpeechReason();
+        const supported = resolveSessionGameId(session) === 'vocab-game';
+        session.send({ id, result: {
+          ready: supported && !reason, mode: 'kws', model: VOCAB_KWS_MODEL,
+          ...(reason ? { reason: 'REMOTE_LOCKED' } : {}),
+        } });
+        break;
+      }
+
+      case 'speechCommandsStart': {
+        if (remoteSpeechReason() || resolveSessionGameId(session) !== 'vocab-game') {
+          session.send({ id, error: '当前游戏不可使用本机口令', code: 'NO_KWS' });
+          break;
+        }
+        if (!session.commandSpeech) session.commandSpeech = new VocabCommandSession({ send: data => session.send(data) });
+        session.commandSpeech.start(msg)
+          .then(result => session.send({ id, result }))
+          .catch(error => session.send({ id, error: error.message, code: error.code || 'NO_KWS' }));
+        break;
+      }
+
+      case 'speechCommandsUpdate': {
+        session.commandSpeech?.update(msg);
+        break;
+      }
+
+      case 'speechCommandsAudio': {
+        if (remoteSpeechReason()) session.commandSpeech?.stop();
+        else session.commandSpeech?.accept(msg);
+        break;
+      }
+
+      case 'speechCommandsStop': {
+        session.commandSpeech?.stop(msg.generation);
+        session.send({ id, result: { ok: true } });
         break;
       }
 

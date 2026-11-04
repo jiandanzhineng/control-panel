@@ -27,6 +27,99 @@
   let paramsData = {};
   let gameToken = '';
   let idCounter = 0;
+  let commandState = null;
+  let commandAudioLoading = null;
+
+  function loadCommandAudio() {
+    if (window.VocabCommandAudio) return Promise.resolve(window.VocabCommandAudio);
+    if (!commandAudioLoading) commandAudioLoading = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = WS_URL.replace(/^ws/, 'http').replace(/\/bridge$/, '/bridge-api/vocab-command-audio.js');
+      script.onload = () => resolve(window.VocabCommandAudio);
+      script.onerror = () => { commandAudioLoading = null; reject(new Error('KWS audio capture unavailable')); };
+      document.head.appendChild(script);
+    });
+    return commandAudioLoading;
+  }
+
+  function closeCommandCapture() {
+    const state = commandState;
+    commandState = null;
+    if (state) {
+      state.closed = true;
+      state.capture?.stop();
+    }
+    return state;
+  }
+
+  function createVocabCommands() {
+    document.addEventListener('visibilitychange', async () => {
+      const state = commandState;
+      if (!state) return;
+      state.suspended = document.hidden;
+      if (state.suspended) {
+        state.capture?.stop();
+        sendFire({ action: 'speechCommandsUpdate', ...state.options, blockedUntil: Number.MAX_SAFE_INTEGER });
+      } else {
+        state.options.blockedUntil = Math.max(state.options.blockedUntil || 0, Date.now() + 300);
+        sendFire({ action: 'speechCommandsUpdate', ...state.options });
+        try {
+          const Capture = await loadCommandAudio();
+          if (commandState !== state || state.suspended) return;
+          state.capture = new Capture(window);
+          await state.capture.start(state.onFrame, state.onError);
+        } catch (error) { state.onError(error); }
+      }
+    });
+    return {
+      status: () => sendRequest({ action: 'speechCommandsStatus' }),
+      async start(options, callback) {
+        const previous = closeCommandCapture();
+        if (previous) sendFire({ action: 'speechCommandsStop', generation: previous.options.generation });
+        const state = { options: { ...options }, callback, capture: null, closed: false, suspended: document.hidden };
+        state.onFrame = audio => {
+          if (commandState !== state || state.closed || state.suspended || Date.now() < state.options.blockedUntil) return;
+          if (!ws || ws.readyState !== 1 || ws.bufferedAmount > 65536) return;
+          sendFire({ action: 'speechCommandsAudio', generation: state.options.generation, seq: state.options.seq, audio });
+        };
+        state.onError = error => {
+          if (commandState !== state) return;
+          closeCommandCapture();
+          sendFire({ action: 'speechCommandsStop', generation: state.options.generation });
+          callback({ generation: state.options.generation, code: error?.name || 'MIC_UNAVAILABLE' });
+        };
+        commandState = state;
+        try {
+          const result = await sendRequest({ action: 'speechCommandsStart', ...state.options });
+          if (commandState !== state || state.closed || !result?.ready) return { ready: false };
+          const Capture = await loadCommandAudio();
+          if (commandState !== state || state.closed) return { ready: false };
+          if (state.suspended) return { ...result, ready: true };
+          state.capture = new Capture(window);
+          const ready = await state.capture.start(state.onFrame, state.onError);
+          return { ...result, ready: (ready || state.suspended) && commandState === state && !state.closed };
+        } catch (error) {
+          state.capture?.stop();
+          if (commandState === state) {
+            closeCommandCapture();
+            sendFire({ action: 'speechCommandsStop', generation: state.options.generation });
+          }
+          throw error;
+        }
+      },
+      update(options) {
+        if (!commandState || options.generation !== commandState.options.generation) return;
+        Object.assign(commandState.options, options);
+        sendFire({ action: 'speechCommandsUpdate', ...options,
+          ...(commandState.suspended ? { blockedUntil: Number.MAX_SAFE_INTEGER } : {}) });
+      },
+      stop(generation) {
+        if (!commandState || (generation != null && generation !== commandState.options.generation)) return Promise.resolve({ ok: true });
+        const state = closeCommandCapture();
+        return sendRequest({ action: 'speechCommandsStop', generation: state.options.generation });
+      },
+    };
+  }
 
   function genId() { return 'req_' + (++idCounter) + '_' + Date.now(); }
 
@@ -117,6 +210,8 @@
     };
     ws.onclose = function (evt) {
       rejectPendingOnClose();
+      const stopped = closeCommandCapture();
+      if (stopped) stopped.callback({ generation: stopped.options.generation, code: 'BRIDGE_DISCONNECTED' });
       if (evt && (evt.code === 1000 || evt.code === 4000)) return;
       setTimeout(connect, 2000);
     };
@@ -124,6 +219,13 @@
 
   function handleEvent(msg) {
     switch (msg.event) {
+      case 'speechCommand': {
+        const state = commandState;
+        const data = msg.data;
+        if (state && !state.suspended && !state.closed && data && data.generation === state.options.generation && data.seq === state.options.seq
+          && Date.now() >= state.options.blockedUntil) state.callback(data);
+        break;
+      }
       case 'capabilityEvent': {
         var key = msg.deviceId + ':' + msg.capability + ':' + msg.eventName;
         var cbs = subCallbacks.get(key);
@@ -322,6 +424,7 @@
   if (metaEl) {
     try {
       var meta = JSON.parse(metaEl.textContent);
+      if (meta.id === 'vocab-game') window.DeviceAPI.speech.commands = createVocabCommands();
       if (meta.params) {
         var defaults = {};
         meta.params.forEach(function (p) { if (p.key && p.default !== undefined) defaults[p.key] = p.default; });
@@ -349,6 +452,11 @@
       window.DeviceAPI.localeTag = localeTagStr || (window.DeviceAPI.locale === 'en' ? 'en-US' : 'zh-CN');
     }
   } catch (_) {}
+
+  window.addEventListener?.('pagehide', () => {
+    const stopped = closeCommandCapture();
+    if (stopped) sendFire({ action: 'speechCommandsStop', generation: stopped.options.generation });
+  });
 
   connect();
 })();
