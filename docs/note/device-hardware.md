@@ -1,7 +1,7 @@
 # 具体设备硬件与协议速查
 
 ## 役次元杯 YCY-FJB-03
-广播名 `YCY-FJB-03`，真机地址 `FF:26:02:28:4C:CD`。GATT `FF40/FF41写/FF42通知`。控制帧 6 字节 `35 12 旋转 震动 第三轴 校验`（旋转 0–40）。品牌页连上后有旋转/震动/第三轴滑条。连上后灯不闪是正常连接态。
+广播名 `YCY-FJB-03`，真机地址 `FF:26:02:28:4C:CD`。GATT `FF40/FF41写/FF42通知`。控制帧 6 字节 `35 12 旋转 震动 第三轴 校验`（旋转 0–40）；第三轴是加热，旋转字节 0–20 正转、21–40 反转（来自未合并的 `archive/feat/ycy-capability-contract`，该分支把旋转/震动/加热做成 0–100 独立能力并带 `reverse`）。品牌页连上后有旋转/震动/第三轴滑条。连上后灯不闪是正常连接态。
 
 ## SOSEXY（繁野啵啵贝）
 广播名 `SOSEXY`，内部类型 `SOSEXY_PID0004`，品牌码 `sosexy`。GATT `EE01/EE02通知/EE03写`；strength 0–255 同时映射震动与吸吮，独立 vibration/suction 直接 0–100，shock 映射微电流。协议 `backend/brands/protocols/sosexy.js`。页面展示「繁野 / 啵啵贝」，不归役次元。
