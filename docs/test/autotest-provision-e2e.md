@@ -25,7 +25,7 @@ idf.py set-target esp32c3
 idf.py build
 ```
 
-把 merge 出来的镜像放到 `.tmp/fwserver/firmware/latest/`，并写一份 `version.json`：
+把 merge 出来的镜像放到 `tmp/fwserver/firmware/latest/`，并写一份 `version.json`：
 
 ```json
 {
@@ -45,15 +45,15 @@ idf.py build
 
 `size_bytes` 和 `sha256` 必须和实际文件一致，否则烧录前的校验会失败。
 
-起一个静态服务托管这个目录（脚本可放 `.tmp/fwserver.js`，监听 `127.0.0.1:3999`，
-把 `req.url` 映射到 `.tmp/fwserver/` 下的文件即可）。
+起一个静态服务托管这个目录（脚本可放 `tmp/fwserver.js`，监听 `127.0.0.1:3999`，
+把 `req.url` 映射到 `tmp/fwserver/` 下的文件即可）。
 
 ## 启动后端
 
 ```bash
 cd backend
 PORT=3100 \
-BACKEND_DATA_DIR=<仓库>/.tmp/e2e-data \
+BACKEND_DATA_DIR=<仓库>/tmp/e2e-data \
 FIRMWARE_BASE_URL=http://127.0.0.1:3999 \
 node index.js
 ```
