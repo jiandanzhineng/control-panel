@@ -425,6 +425,11 @@ window.gameHostNav = {
   },
 };
 
+// 客户端控制：前端把当前路由上报给主进程（/api/client/state 与 client.route 事件用）。
+window.clientApi = {
+  reportRoute: (path) => ipcRenderer.send('client:route-changed', path),
+};
+
 // 重写 fetch，将相对路径 /api/* 指向本机后端
 const origFetch = window.fetch.bind(window);
 window.fetch = (input, init) => {

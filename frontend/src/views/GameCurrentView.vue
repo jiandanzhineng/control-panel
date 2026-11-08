@@ -52,7 +52,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { trackPlayEnd } from '../playAnalytics';
-import { clearActivePlay } from '../composables/useActivePlay';
+import { clearActivePlay, setActivePlay } from '../composables/useActivePlay';
 import { listenDeviceButtonPress } from '../composables/useButtonStart';
 import { listenVoicePhrase } from '../composables/useVoiceStart';
 import { DEFAULT_MIC_ID } from '../play/voiceStart';
@@ -180,6 +180,17 @@ function startVoiceWaiting() {
 }
 
 onMounted(() => {
+  // agent 通过 /api/client/games/:id/launch 直接跳到这里时，没有经过配置页的
+  // setActivePlay；补一次，让游戏库页的「当前运行」提示条与用户手动启动一致。
+  const gameId = String(route.query.id || '');
+  if (gameId) {
+    setActivePlay({
+      carrierType: 'game',
+      id: gameId,
+      title: String(route.query.title || gameId),
+      resume: { name: 'game_current', query: { ...route.query } },
+    });
+  }
   if (waitingForVoice.value) {
     startVoiceWaiting();
     return;

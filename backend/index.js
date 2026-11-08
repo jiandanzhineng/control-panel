@@ -8,6 +8,7 @@ const deviceWatchdogService = require('./services/deviceWatchdogService');
 const mqttService = require('./services/mqttService');
 const mdnsService = require('./services/mdnsService');
 const logService = require('./services/logService');
+const eventBus = require('./services/eventBus');
 const bridgeService = require('./services/bridgeService');
 const voiceTriggerWs = require('./services/voiceTriggerWs');
 const gameService = require('./services/gameService');
@@ -57,6 +58,9 @@ try {
 }
 
 deviceService.initDeviceList();
+// 全局事件流：设备侧由 deviceService 直接发布；游戏启停/状态在这里挂到载体总线与 HostRuntime。
+eventBus.attachGameCarrier();
+eventBus.attachGameHost(gameHostService);
 
 let runtimeServicesStartPromise = null;
 let runtimeServicesStopPromise = null;
@@ -203,6 +207,8 @@ app.use('/api/devices', require('./routes/devices'));
 app.use('/api/serial', require('./routes/serialConnections'));
 app.use('/api/wired-flash', require('./routes/wiredFlash'));
 app.use('/api/device-watchdog', require('./routes/deviceWatchdog'));
+app.use('/api/events', require('./routes/events'));
+app.use('/api/client', require('./routes/client'));
 app.use('/api/device-types', require('./routes/deviceTypes'));
 app.use('/api/device-capabilities', require('./routes/deviceCapabilities'));
 app.use('/api/games', require('./routes/games'));

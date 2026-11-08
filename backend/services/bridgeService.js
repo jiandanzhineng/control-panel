@@ -1053,11 +1053,19 @@ function transcribeForSession(msg) {
 // 本机（页面式游戏 / 插件）开始与退出玩法：广播给远程占用仲裁。
 // bridge 的 init 就是「本机开始一次玩法」；复位路径（显式退出 / 被顶替 / 宽限超时）即退出。
 function notifyCarrierStart() {
-  playCarrierBus.emitPlayCarrierStart({ kind: 'bridge' });
+  // iframe 游戏没有单独的 gameId 通道：启动时签发的令牌能反查游戏 id，
+  // 让全局事件流（game.started）与远程占用仲裁拿到同一个 id。
+  const gameId = activeSession?.gameToken
+    ? (require('./gameLaunchTokenService').resolve(activeSession.gameToken) || null)
+    : null;
+  playCarrierBus.emitPlayCarrierStart({ kind: 'bridge', gameId });
 }
 
 function notifyCarrierExit(reason) {
-  playCarrierBus.emitPlayCarrierExit({ kind: 'bridge', reason });
+  const gameId = activeSession?.gameToken
+    ? (require('./gameLaunchTokenService').resolve(activeSession.gameToken) || null)
+    : null;
+  playCarrierBus.emitPlayCarrierExit({ kind: 'bridge', reason, gameId });
 }
 
 function getActiveSessions() {

@@ -12,6 +12,7 @@ const mqttClient = require('./mqttClientService');
 const deviceConnections = require('./deviceConnectionService');
 const nicknameService = require('./nicknameService');
 const firmwareOtaService = require('./firmwareOtaService');
+const eventBus = require('./eventBus');
 
 const SAVE_DELAY_MS = 1000;
 let saveTimer = null;
@@ -80,6 +81,9 @@ function addDevice(deviceData) {
 
   state.devices.push(newDevice);
   saveDevices();
+  // 只进全局事件流，不走 deviceListChangeHandlers：added 是事件流新增语义，
+  // 既有订阅方（投影/远程）只关心 connected/disconnected/removed，保持原行为。
+  eventBus.publish('device.added', { deviceId: newDevice.id, device: toApiDevice(newDevice) });
 }
 
 async function disconnectDeviceConnections(deviceId, connectionType = null) {
@@ -105,13 +109,14 @@ async function removeDevice(deviceId) {
     // 必须在 await 之后重新定位，用旧下标 splice 会删错设备、漏删本该删的那台。
     const index = state.devices.findIndex(device => device.id === deviceId);
     if (index === -1) return;
+    const removedSnapshot = toApiDevice(state.devices[index]);
     state.devices.splice(index, 1);
     saveDevices();
 
     if (state.selectedDeviceId === deviceId) {
       state.selectedDeviceId = null;
     }
-    emitDeviceListChange('removed', deviceId);
+    emitDeviceListChange('removed', deviceId, removedSnapshot);
   }
 }
 
@@ -309,10 +314,21 @@ function onDeviceListChange(handler) {
   };
 }
 
-function emitDeviceListChange(reason, deviceId = null) {
+function emitDeviceListChange(reason, deviceId = null, deviceSnapshot = null) {
   for (const handler of deviceListChangeHandlers) {
     try { handler({ reason, deviceId }); } catch (_) {}
   }
+  // 全局事件流：只把增删/上下线映射为对外事件（type-changed 等内部变更不单列）
+  if (!deviceId) return;
+  const typeByReason = {
+    removed: 'device.removed',
+    connected: 'device.connected',
+    disconnected: 'device.disconnected',
+  };
+  const type = typeByReason[reason];
+  if (!type) return;
+  const device = deviceSnapshot || (reason === 'removed' ? null : toApiDevice(getDeviceById(deviceId)));
+  eventBus.publish(type, { deviceId, device });
 }
 
 function onDeviceRawMessage(handler) {
@@ -337,6 +353,8 @@ function emitDeviceDataChange(device, changes, prevData, nextData) {
       logger.warn('Device', '设备数据变更回调执行错误');
     }
   }
+  // 同设备 200ms 合并（eventBus 内部节流），避免高频上报刷爆事件流
+  eventBus.publishDeviceUpdated(device.id, changes, nextData || device.data || {});
 }
 
 // 可选：提供只读快照（避免外部直接修改内部 state）

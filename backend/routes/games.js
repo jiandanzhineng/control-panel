@@ -3,25 +3,9 @@ const router = express.Router();
 const { sendError } = require('../utils/http');
 const gameService = require('../services/gameService');
 const gameCacheService = require('../services/gameCacheService');
-const bridgeService = require('../services/bridgeService');
+const gameLaunchService = require('../services/gameLaunchService');
 const gameHost = require('../game-runtime/gameHostService');
 const gameCoreResolver = require('../game-runtime/gameCoreResolver');
-const remoteSession = require('../services/remoteSessionService');
-const gameLaunchTokenService = require('../services/gameLaunchTokenService');
-
-// 主控端远程模式下开始一次玩法：被控端登记为一次远程占用（ADR-0004 玩法唯一性）。
-// 被控端本地玩法运行中会以 HOST_PLAY_ACTIVE 拒绝 → 启动必须失败可见（游戏不启动）。
-async function occupyRemotePlay(id, g) {
-  if (!remoteSession.isOperatorRemoteMode()) return null;
-  return remoteSession.occupyPlay({ gameId: id, gameName: g?.name || g?.title || id });
-}
-
-// 释放占用：只有「确实登记过」的主控端才需要（本机模式与占用释放都是空操作）。
-async function releaseRemotePlay(id) {
-  if (!remoteSession.isOperatorRemoteMode()) return;
-  if (!remoteSession.localPlay?.()) return;
-  await remoteSession.releasePlay({ gameId: id }).catch(() => {});
-}
 
 // 抓取第三方游戏网页，解析内联 game-manifest，返回与本地游戏一致的结构
 // 必须在 /:id 之前注册，避免被参数路由捕获
@@ -115,71 +99,31 @@ router.get('/:id/meta', (req, res) => {
 
 router.post('/:id/start', async (req, res) => {
   try {
-    const localAppProcessService = require('../services/localAppProcessService');
     const { deviceMapping = {}, parameters = {}, source = 'local', defer = false } = req.body || {};
-    const normalizedMap = {};
-    for (const [k, v] of Object.entries(deviceMapping)) {
-      normalizedMap[k] = Array.isArray(v) ? v : (v ? [v] : []);
-    }
-    if (gameHost.isHostGame(req.params.id)) {
-      if (defer) {
-        return res.json({
-          ok: true,
-          deferred: true,
-          deviceMap: normalizedMap,
-          params: parameters,
-          runtime: { mode: 'host', gameId: req.params.id },
-        });
-      }
-      await occupyRemotePlay(req.params.id, gameService.getGameById(req.params.id));
-      await localAppProcessService.stopAll();
-      try { bridgeService.exitCurrent(); } catch (_) {}
-      const started = gameHost.start({
-        gameId: req.params.id,
-        deviceMap: normalizedMap,
-        params: parameters,
-        source,
-      });
-      const g = gameService.getGameById(req.params.id);
-      return res.json({
-        ok: true,
-        gamePath: g?.gamePath || null,
-        deviceMap: started.deviceMap,
-        params: started.snapshot?.params || parameters,
-        runtime: { mode: 'host', ...started },
-      });
-    }
-    const g = gameService.getGameById(req.params.id);
-    if (!g && !req.body?.gamePath && !req.body?.externalUrl) {
-      return sendError(res, 'GAME_NOT_FOUND', '游戏不存在', 404);
-    }
-    await occupyRemotePlay(req.params.id, g);
-    await localAppProcessService.stopAll();
-    // 页面游戏云存档的 gameId 由宿主持有：签发一次启动令牌，前端拼进 iframe URL，
-    // bridge init 回传后按令牌解析游戏 id（页面传来的 gameId 一律忽略）。
-    const gameToken = gameLaunchTokenService.issue(g?.id);
-    res.json({
-      ok: true,
-      gamePath: g?.gamePath || req.body?.gamePath || null,
-      deviceMap: normalizedMap,
-      params: parameters,
-      runtime: gameToken ? { mode: 'iframe', gameToken } : { mode: 'iframe' },
+    const result = await gameLaunchService.startGame({
+      gameId: req.params.id,
+      deviceMapping,
+      parameters,
+      source,
+      defer,
+      gamePath: req.body?.gamePath || null,
+      externalUrl: req.body?.externalUrl || null,
     });
+    res.json(result);
   } catch (e) {
     // 被控端本地玩法运行中（HOST_PLAY_ACTIVE）：409 让主控端界面把「启动被拒」显示清楚
-    const status = e?.code === 'HOST_PLAY_ACTIVE' ? 409 : 500;
+    const status = e?.code === 'HOST_PLAY_ACTIVE' ? 409 : (e?.code === 'GAME_NOT_FOUND' ? 404 : 500);
     sendError(res, e?.code || 'GAME_START_FAILED', e?.message || String(e), status);
   }
 });
 
 router.post('/stop-current', async (req, res) => {
   try {
-    await releaseRemotePlay(req.body?.gameId);
-    const localAppProcessService = require('../services/localAppProcessService');
-    await localAppProcessService.stopAll();
-    const host = gameHost.stop({ reason: 'explicit-exit' });
-    const bridge = bridgeService.exitCurrent();
-    res.json({ ...bridge, host });
+    const result = await gameLaunchService.stopCurrentPlay({
+      gameId: req.body?.gameId,
+      reason: 'explicit-exit',
+    });
+    res.json(result);
   } catch (e) {
     sendError(res, 'GAME_STOP_FAILED', e?.message || String(e), 500);
   }
