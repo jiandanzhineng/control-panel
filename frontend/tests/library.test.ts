@@ -9,6 +9,7 @@ import {
   formatSize,
   hueForId,
   isCachedGame,
+  isTestGame,
   matchesQuery,
   mergeGames,
   mostRecentGame,
@@ -17,6 +18,7 @@ import {
   type LibraryGame,
   type LocalGame,
   type RemoteGame,
+  TEST_GAME_IDS,
 } from '../src/play/library.ts'
 
 const local = (patch: Partial<LocalGame>): LocalGame => ({ id: 'g1', name: '本地游戏', source: 'builtin', ...patch })
@@ -155,4 +157,52 @@ test('formatSize, hueForId and firstGlyph are display helpers', () => {
   assert.equal(firstGlyph(' 设备控制台'), '设')
   assert.equal(firstGlyph('reading'), 'R')
   assert.equal(firstGlyph(''), '?')
+})
+
+test('isTestGame detects test manifests, ids and titles', () => {
+  const card = (patch: Parameters<typeof mergeGames>[0][number]) => mergeGames([local(patch)], [])[0]
+  assert.equal(isTestGame(card({ id: 'plain', name: 'Reading game' })), false)
+  assert.equal(isTestGame(card({ id: 'flagged', name: 'Flagged', test: true })), true)
+  assert.equal(isTestGame(card({ id: 'categorized', name: 'Categorized', category: 'test' })), true)
+  assert.equal(isTestGame(card({ id: 'tagged', name: 'Tagged', tags: ['test'] })), true)
+  assert.equal(isTestGame(card({ id: 'manifest-test', name: 'M', manifest: { test: true } })), true)
+  assert.equal(isTestGame(card({ id: 'manifest-tag', name: 'M', manifest: { tags: ['test'] } })), true)
+  assert.equal(isTestGame(card({ id: 'device-control', name: '设备控制台' })), true)
+  for (const id of TEST_GAME_IDS) assert.equal(isTestGame(card({ id, name: id })), true)
+  assert.equal(isTestGame(card({ id: 'qa-runtime-20260905', name: 'Game Platform QA' })), true)
+  assert.equal(isTestGame(card({ id: 'zz-hr-probe', name: '心率探针（联调）' })), true)
+  assert.equal(isTestGame(card({ id: 'zz-anything', name: 'ZZ' })), true)
+  assert.equal(isTestGame(card({ id: 'plain2', name: '打字速度测试' })), false)
+  assert.equal(isTestGame(card({ id: 'plain3', name: '寸止（测试）' })), true)
+  assert.equal(isTestGame(card({ id: 'plain4', name: '寸止测试版' })), true)
+  assert.equal(isTestGame(mergeGames([], [remote({ id: 'remote-test', title: 'R', manifest: { test: true } })])[0]), true)
+})
+
+test('filterGames keeps test games only in the test filter', () => {
+  const cards = mergeGames(
+    [
+      local({ id: 'a', name: 'Alpha', lastPlayed: 900 }),
+      local({ id: 'zz-hr-probe', name: '心率探针（联调）', lastPlayed: 999 }),
+    ],
+    [
+      remote({ id: 'a', title: 'Alpha' }),
+      remote({ id: 'qa-runtime-20260905', title: 'Game Platform QA', description: 'qa' }),
+    ],
+  )
+  assert.deepEqual(filterGames(cards, 'all').map((g) => g.id), ['a'])
+  assert.deepEqual(filterGames(cards, 'local').map((g) => g.id), ['a'])
+  assert.deepEqual(filterGames(cards, 'online').map((g) => g.id), ['a'])
+  assert.deepEqual(filterGames(cards, 'test').map((g) => g.id).sort(), ['qa-runtime-20260905', 'zz-hr-probe'])
+  assert.deepEqual(filterGames(cards, 'test', '心率').map((g) => g.id), ['zz-hr-probe'])
+  assert.deepEqual(filterGames(cards, 'all', 'qa'), [])
+  assert.equal(cards.length, 3)
+})
+
+test('mostRecentGame ignores test games', () => {
+  const cards = mergeGames(
+    [local({ id: 'a', name: 'Alpha', lastPlayed: 100 }), local({ id: 'qa-x', name: 'QA rig', lastPlayed: 999 })],
+    [],
+  )
+  assert.equal(mostRecentGame(cards)?.id, 'a')
+  assert.equal(mostRecentGame(mergeGames([local({ id: 'qa-only', name: 'QA', lastPlayed: 1 })], [])), null)
 })

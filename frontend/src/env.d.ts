@@ -35,8 +35,10 @@ interface UpdateStatus {
 
 interface Window {
   windowApi?: {
+    customTitleBar?: boolean;
     getSettings: () => Promise<WindowSettings>;
     setSettings: (settings: WindowSettings) => Promise<WindowSettings>;
+    setTitleBarTheme: (payload: { color: string; symbolColor: string }) => Promise<boolean>;
   };
   ycyBleApi?: {
     isSupported: () => boolean;

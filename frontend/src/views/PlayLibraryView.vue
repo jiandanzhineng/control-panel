@@ -7,6 +7,32 @@
         <p class="lib-subtitle">{{ t('plays.desc') }}</p>
       </div>
       <div class="lib-header__actions">
+        <div class="lib-contribute">
+          <!-- 远程主控模式下 /browser 被锁，投稿页打不开，直接隐藏 -->
+          <el-tooltip
+            v-if="!remoteSession.isOperatorRemote.value"
+            :content="t('plays.submitTip')"
+            placement="bottom"
+            :show-after="250"
+            popper-class="lib-reward-tooltip"
+          >
+            <el-button class="lib-contribute__btn" :icon="Upload" @click="submitGame">
+              {{ t('plays.submitGame') }}
+              <span class="lib-reward">{{ t('plays.rewarded') }}</span>
+            </el-button>
+          </el-tooltip>
+          <el-tooltip
+            :content="t('plays.suggestTip')"
+            placement="bottom"
+            :show-after="250"
+            popper-class="lib-reward-tooltip"
+          >
+            <el-button class="lib-contribute__btn" :icon="ChatLineSquare" @click="suggestGame">
+              {{ t('plays.suggestGame') }}
+              <span class="lib-reward">{{ t('plays.rewarded') }}</span>
+            </el-button>
+          </el-tooltip>
+        </div>
         <el-button :icon="TopRight" @click="openSite">{{ t('plays.openSite') }}</el-button>
         <el-dropdown trigger="click" :disabled="busy.refresh || busy.upload" @command="onHeaderCommand">
           <button class="icon-btn" :title="t('plays.more')" :aria-label="t('plays.more')">
@@ -57,17 +83,18 @@
 
     <div class="lib-toolbar">
       <div class="lib-filters" role="tablist">
-        <button
-          v-for="tab in filterTabs"
-          :key="tab.key"
-          class="lib-filter"
-          :class="{ 'is-active': filter === tab.key }"
-          role="tab"
-          :aria-selected="filter === tab.key"
-          @click="filter = tab.key"
-        >
-          {{ t(tab.label) }}<span class="lib-filter__count mono">{{ tab.count }}</span>
-        </button>
+        <template v-for="tab in filterTabs" :key="tab.key">
+          <span v-if="tab.key === 'test'" class="lib-filters__divider" aria-hidden="true" />
+          <button
+            class="lib-filter"
+            :class="{ 'is-active': filter === tab.key, 'lib-filter--test': tab.key === 'test' }"
+            role="tab"
+            :aria-selected="filter === tab.key"
+            @click="filter = tab.key"
+          >
+            {{ t(tab.label) }}<span class="lib-filter__count mono">{{ tab.count }}</span>
+          </button>
+        </template>
       </div>
       <div class="lib-toolbar__right">
         <span v-if="registryLoading" class="lib-hint">{{ t('plays.onlineSyncing') }}</span>
@@ -193,7 +220,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Close, Loading, MoreFilled, Operation, Reading, Refresh, Search, TopRight, Upload } from '@element-plus/icons-vue';
+import { ChatLineSquare, Close, Loading, MoreFilled, Operation, Reading, Refresh, Search, TopRight, Upload } from '@element-plus/icons-vue';
 import { track } from '../analytics';
 import { trackPlayEnd } from '../playAnalytics';
 import { clearActivePlay, setActivePlay, useActivePlay } from '../composables/useActivePlay';
@@ -208,6 +235,7 @@ import {
   firstGlyph,
   formatSize,
   hueForId,
+  isTestGame,
   matchesQuery,
   mergeGames,
   mostRecentGame,
@@ -225,7 +253,7 @@ interface GameCard extends LibraryGame {
   chips: DeviceChip[];
   overflow: number;
   running: boolean;
-  badgeTone: 'local' | 'online' | 'update' | 'running';
+  badgeTone: 'local' | 'online' | 'update' | 'running' | 'test';
   badgeText: string;
   meta: string;
   runtime: RuntimeTag | null;
@@ -312,6 +340,9 @@ function toGameCard(game: LibraryGame): GameCard {
   } else if (game.updateAvailable) {
     badgeTone = 'update';
     badgeText = t('plays.badgeUpdate', { version: game.remoteVersion || '' });
+  } else if (isTestGame(game)) {
+    badgeTone = 'test';
+    badgeText = t('plays.badgeTest');
   } else if (!game.local) {
     badgeTone = 'online';
     badgeText = t('plays.badgeOnline');
@@ -321,7 +352,7 @@ function toGameCard(game: LibraryGame): GameCard {
     parts.push(`v${game.version}`);
     parts.push(playedText(game.lastPlayed));
   } else {
-    parts.push(t('plays.badgeOnline'));
+    parts.push(isTestGame(game) ? t('plays.badgeTest') : t('plays.badgeOnline'));
     const size = formatSize(game.packageSize);
     if (size) parts.push(size);
   }
@@ -344,12 +375,20 @@ const gameCards = computed(() =>
 
 const filterTabs = computed(() => {
   const all = mergedGames.value;
-  return [
-    { key: 'all' as LibraryFilter, label: 'plays.filter.all', count: all.length + plugins.value.length + localApps.value.length },
+  const tabs = [
+    { key: 'all' as LibraryFilter, label: 'plays.filter.all', count: filterGames(all, 'all').length + plugins.value.length + localApps.value.length },
     { key: 'local' as LibraryFilter, label: 'plays.filter.local', count: filterGames(all, 'local').length },
     { key: 'online' as LibraryFilter, label: 'plays.filter.online', count: filterGames(all, 'online').length },
     { key: 'apps' as LibraryFilter, label: 'plays.filter.apps', count: plugins.value.length + localApps.value.length },
   ];
+  const testCount = filterGames(all, 'test').length;
+  if (testCount > 0) tabs.push({ key: 'test' as LibraryFilter, label: 'plays.filter.test', count: testCount });
+  return tabs;
+});
+
+// 「测试」tab 只在有测试游戏时出现；删光后若仍停在该 tab，回到「全部」
+watch(filterTabs, (tabs) => {
+  if (!tabs.some((tab) => tab.key === filter.value)) filter.value = 'all';
 });
 
 function hostOf(url?: string): string {
@@ -388,7 +427,11 @@ const hasVisible = computed(
 );
 
 const emptyText = computed(() =>
-  search.value.trim() ? t('plays.emptySearch') : t('plays.empty'),
+  search.value.trim()
+    ? t('plays.emptySearch')
+    : filter.value === 'test'
+      ? t('plays.emptyTest')
+      : t('plays.empty'),
 );
 
 function coverStyle(id: string): Record<string, string> {
@@ -397,6 +440,19 @@ function coverStyle(id: string): Record<string, string> {
 
 function openSite() {
   router.push({ name: 'browser' });
+}
+
+/** 投稿游戏：打开游戏站投稿页（站内 webview）。 */
+function submitGame() {
+  track('library_submit_click');
+  router.push({ name: 'browser', query: { url: siteUrl('submit.html') } });
+}
+
+/** 玩法建议：商城工单系统（与客户端同一账号中心），交给系统浏览器打开。 */
+function suggestGame() {
+  track('library_suggest_click');
+  const prefix = locale.value === 'en' ? 'en' : 'zh';
+  window.open(`https://shop.undersilicon.cn/${prefix}/profile/feedback/new`, '_blank');
 }
 
 async function loadRegistry(force = false) {
@@ -672,8 +728,47 @@ onMounted(loadAll);
 .lib-header__actions {
   display: flex;
   flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 8px;
+}
+
+/* 「投稿游戏 / 玩法建议」：一组低调的次要按钮，右上角挂「采纳有奖」小签 */
+.lib-contribute {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lib-contribute__btn {
+  position: relative;
+  overflow: visible;
+}
+
+/* EP 默认相邻按钮 margin-left:12px，统一用容器 gap 控制间距 */
+.lib-header__actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+.lib-reward {
+  position: absolute;
+  top: -9px;
+  right: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--warning-border);
+  border-radius: 999px;
+  /* 不透明底：避免按钮边框从半透明角标中透出来 */
+  background: linear-gradient(var(--warning-bg), var(--warning-bg)), var(--bg-app);
+  box-shadow: 0 0 0 2px var(--bg-app);
+  color: var(--el-color-warning);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0;
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 .icon-btn {
@@ -832,6 +927,32 @@ onMounted(loadAll);
 
 .lib-filter.is-active .lib-filter__count {
   color: var(--accent);
+}
+
+/* 「测试」：分组末位，用细分隔线隔开，整体更安静 */
+.lib-filters__divider {
+  align-self: center;
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--border-subtle);
+}
+
+.lib-filter--test {
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.lib-filter--test:hover {
+  color: var(--text-secondary);
+}
+
+.lib-filter--test.is-active {
+  color: var(--text-secondary);
+}
+
+.lib-filter--test.is-active .lib-filter__count {
+  color: var(--text-faint);
 }
 
 .lib-toolbar__right {

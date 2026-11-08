@@ -202,7 +202,7 @@ html[data-theme='light'] {
 }
 
 /* 主题切换过渡（仅背景/文字/边框，避免 transform 类动画串场） */
-body, .sidebar, .main-container, .main-header, .feature-card, .card, .el-card {
+body, .sidebar, .main-container, .feature-card, .card, .el-card {
   transition: background-color 0.25s ease, border-color 0.25s ease, color 0.25s ease;
 }
 
@@ -684,9 +684,20 @@ html[data-theme='light'] .lib-cover {
   white-space: nowrap;
 }
 
-.lib-badge--online {
+.lib-badge--online,
+.lib-badge--test {
   border-style: dashed;
   color: var(--text-muted);
+}
+.lib-badge--test {
+  background: color-mix(in srgb, var(--bg-app) 72%, transparent);
+  font-weight: 500;
+}
+
+/* 投稿/建议按钮的悬停说明较长，限制宽度换行，避免贴边截断 */
+.el-popper.lib-reward-tooltip {
+  max-width: 300px;
+  line-height: 1.55;
 }
 
 .lib-badge--update,

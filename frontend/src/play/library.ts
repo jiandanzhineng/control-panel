@@ -1,7 +1,7 @@
 // 游戏库合并 / 排序 / 筛选的纯逻辑（不依赖 Vue 与 i18n，便于 node 单测）。
 // 规则见 docs/plans/game-library-redesign.md「合并规则」。
 
-export type LibraryFilter = 'all' | 'local' | 'online' | 'apps';
+export type LibraryFilter = 'all' | 'local' | 'online' | 'apps' | 'test';
 export type GameLaunch = 'local' | 'remote';
 
 export interface GameDevice {
@@ -56,6 +56,32 @@ export interface LibraryGame {
 
 export function titleOf(game: { title?: string; name?: string; id?: string }): string {
   return String(game.title || game.name || game.id || '');
+}
+
+/** 内置的测试游戏（设备控制台等），按 id 强制归入「测试」。 */
+export const TEST_GAME_IDS = ['device-control'];
+
+/** 条目或 manifest 上的测试标记：test === true / category === 'test' / tags 含 'test'。 */
+function hasTestMark(game: LocalGame | RemoteGame | null | undefined): boolean {
+  if (!game) return false;
+  const row = game as unknown as Record<string, unknown>;
+  const manifest = row.manifest && typeof row.manifest === 'object'
+    ? (row.manifest as Record<string, unknown>)
+    : null;
+  return [row, manifest].some(
+    (m) => !!m && (m.test === true || m.category === 'test'
+      || (Array.isArray(m.tags) && (m.tags as unknown[]).includes('test'))),
+  );
+}
+
+/** 测试游戏：用于联调的条目，不进「全部/本机/在线」，也不进「继续上次」。 */
+export function isTestGame(game: LibraryGame): boolean {
+  if (!game) return false;
+  if (hasTestMark(game.local) || hasTestMark(game.remote)) return true;
+  const id = String(game.id || '');
+  if (TEST_GAME_IDS.includes(id) || /^(qa-|zz-)/i.test(id)) return true;
+  // 只认明确的测试字样（「联调」「（测试）」「测试版」、独立的 QA），避免「打字速度测试」之类正常游戏被误判
+  return /联调|[（(]测试[)）]|测试版|(^|[^A-Za-z])QA([^A-Za-z]|$)/i.test(String(game.title || ''));
 }
 
 interface ParsedVersion {
@@ -203,20 +229,23 @@ export function matchesQuery(value: { title?: string; description?: string }, qu
   return String(value.title || '').toLowerCase().includes(q) || String(value.description || '').toLowerCase().includes(q);
 }
 
-/** 筛选：本机 = 从本机启动；在线 = 从在线启动（可更新条目算在线）。 */
+/** 筛选：测试游戏单独成组，不计入全部/本机/在线；本机 = 有本机副本；在线 = 在线库里有。 */
 export function filterGames(games: LibraryGame[], filter: LibraryFilter, query = ''): LibraryGame[] {
   const list = games.filter((g) => matchesQuery(g, query));
-  if (filter === 'local') return list.filter((g) => g.local !== null);
-  // 「在线」= 在线库里有的游戏（含本机已装），与「本机」可重叠
-  if (filter === 'online') return list.filter((g) => g.remote !== null);
+  if (filter === 'test') return list.filter(isTestGame);
   if (filter === 'apps') return [];
-  return list;
+  const normal = list.filter((g) => !isTestGame(g));
+  if (filter === 'local') return normal.filter((g) => g.local !== null);
+  // 「在线」= 在线库里有的游戏（含本机已装），与「本机」可重叠
+  if (filter === 'online') return normal.filter((g) => g.remote !== null);
+  return normal;
 }
 
+/** 最近游玩：跳过测试游戏，「继续上次」永远不会指向它们。 */
 export function mostRecentGame(games: LibraryGame[]): LibraryGame | null {
   let best: LibraryGame | null = null;
   for (const game of games) {
-    if (!game.lastPlayed) continue;
+    if (!game.lastPlayed || isTestGame(game)) continue;
     if (!best || game.lastPlayed > (best.lastPlayed || 0)) best = game;
   }
   return best;
