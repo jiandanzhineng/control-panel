@@ -601,6 +601,7 @@ import { needsFrontendOccupy } from '../remote/remotePlay';
 import { currentLocale } from '../i18n';
 import { localeTag } from '../i18n/locale';
 import { localizePlay } from '../i18n/play';
+import { isParamVisible, withHiddenDefaults } from '../utils/paramVisibility';
 
 import {
   Setting,
@@ -771,6 +772,8 @@ const schemaEntries = computed(() => {
   }
   const mapped = list
     .filter((p: any) => {
+      // hidden 参数不显示；visibleWhen 只看当前参数值，不修改被隐藏参数的值。
+      if (!isParamVisible(p, parameters)) return false;
       const dep = p.device;
       if (!dep) return true;
       const role = requiredDevices.value.find(rd => String(rd.id) === String(dep));
@@ -1311,6 +1314,8 @@ async function loadAll() {
       ? saved.params
       : ((m as any).lastParams && typeof (m as any).lastParams === 'object' ? (m as any).lastParams : null);
     Object.assign(parameters, savedParams || defaults);
+    // hidden 参数忽略保存值：配置页不显示，启动时一律回落到 manifest 默认值。
+    Object.assign(parameters, withHiddenDefaults((m as any)?.params, parameters));
 
     // 设备映射：优先 localStorage 回填（校验在线），否则按能力默认选第一台在线设备
     for (const rd of requiredDevices.value) {
@@ -1574,6 +1579,8 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
   startBusy.value = true;
   try {
     saveConfig();
+    // 启动参数：hidden 参数一律用 manifest 默认值，忽略本地保存的旧值。
+    const launchParameters = withHiddenDefaults((play.value as any)?.params, parameters);
     const installedGamePath = await installRemoteGameIfNeeded();
     await savePlayedGame(installedGamePath);
     if (!(await occupyRemotePlayIfNeeded())) return;
@@ -1593,7 +1600,7 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
       const started = await requestGameStart(
         playId.value,
         { ...deviceMapping },
-        { ...parameters },
+        launchParameters,
         mode !== 'immediate',
         {
           gamePath: installedGamePath || (play.value as any)?.gamePath || String(route.query.gamePath || ''),
@@ -1609,7 +1616,7 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
         if (started.deferred) {
           hostQuery.startMode = mode;
           hostQuery.deviceMap = JSON.stringify({ ...deviceMapping });
-          hostQuery.params = JSON.stringify({ ...parameters });
+          hostQuery.params = JSON.stringify(launchParameters);
           if (startTriggerDeviceId.value) hostQuery.startTriggerDeviceId = startTriggerDeviceId.value;
           if (mode === 'voice') {
             hostQuery.voicePhraseLabel = voicePhraseText.value;
@@ -1623,7 +1630,7 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
       const resumeQuery: Record<string, string> = {
         id: playId.value,
         deviceMap: JSON.stringify({ ...deviceMapping }),
-        params: JSON.stringify({ ...parameters }),
+        params: JSON.stringify(launchParameters),
         locale: currentLocale(),
         localeTag: localeTag(currentLocale()),
       };
@@ -1649,7 +1656,7 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           deviceMap: { ...deviceMapping },
-          params: { ...parameters },
+          params: launchParameters,
           locale: currentLocale(),
           localeTag: localeTag(currentLocale()),
         }),

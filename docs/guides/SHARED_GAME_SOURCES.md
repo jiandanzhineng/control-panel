@@ -4,13 +4,13 @@
 
 | 游戏 | 当前版本 | PC 页面与资源来源 |
 | --- | --- | --- |
-| 喝尿解锁 `drink-pee-unlock` | 2.3.5 | `backend/games/drink-pee-unlock/` |
-| 女仆偷懒惩罚 `maid-punishment` | 2.2.2 | `backend/games/maid-punishment/` |
+| 喝尿解锁 `drink-pee-unlock` | 2.3.6 | `backend/games/drink-pee-unlock/` |
+| 女仆偷懒惩罚 `maid-punishment` | 2.2.3 | `backend/games/maid-punishment/` |
 | 盆底肌训练 `pelvic-training` | 2.1.3 | `backend/games/pelvic-training/` |
-| 气压寸止 `pressure-edging` | 2.1.3 | `backend/games/pressure-edging/` |
-| 寸止升级版 `pressure-edging-v2` | 2.2.2 | `backend/games/pressure-edging-v2/` |
-| 气压突变寸止 `surge-edging` | 1.4.2 | `play-registry/games/surge-edging/` |
-| 俯卧撑 `pushup-detection` | 2.1.5 | `backend/games/pushup-detection/` |
+| 气压寸止 `pressure-edging` | 2.1.4 | `backend/games/pressure-edging/` |
+| 寸止升级版 `pressure-edging-v2` | 2.2.3 | `backend/games/pressure-edging-v2/` |
+| 气压突变寸止 `surge-edging` | 1.4.3 | `play-registry/games/surge-edging/` |
+| 俯卧撑 `pushup-detection` | 2.1.6 | `backend/games/pushup-detection/` |
 
 ## 规则与渲染
 

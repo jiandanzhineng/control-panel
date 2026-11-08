@@ -10,7 +10,7 @@
   "title": "女仆偷懒惩罚",
   "description": "保持踮脚站立；按下按钮会电击；长时间未受罚时 TD01 逐步增强刺激。可配合自动锁。",
   "howTo": "1. 映射电击设备（必需）\n2. 可选：QTZ/踮脚传感器、TD01、自动锁\n3. 设置时长与电击强度\n4. 开始后保持踮脚，偷懒会被惩罚",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "runtime": "host",
   "core": "game-core.js",
   "events": "v2",
@@ -107,7 +107,8 @@
       "max": 30,
       "step": 1,
       "device": "shock",
-      "required": false
+      "required": false,
+      "visibleWhen": { "key": "progressiveIntensity", "equals": true }
     },
     {
       "key": "allowUnsafeIntensity",
@@ -194,7 +195,8 @@
       "max": 2000,
       "step": 50,
       "device": "tiptoeSensor",
-      "required": false
+      "required": false,
+      "hidden": true
     },
     {
       "key": "shockDurationSeconds",
@@ -202,7 +204,7 @@
       "default": 10,
       "label": "单次电击时长",
       "unit": "秒",
-      "description": "分离式运行下电击的持续时间（宿主最长 10 秒）",
+      "description": "每次电击持续的时间（最长 10 秒）",
       "group": "advanced",
       "min": 1,
       "max": 10,
@@ -249,7 +251,7 @@
         "manualStart": "When on, wait for the lock button before the timer starts.",
         "tiptoePressureThreshold": "Pressure above this means standing flat (not on tiptoe).",
         "tiptoeDebounceMs": "Debounce for tiptoe state changes.",
-        "shockDurationSeconds": "How long one shock lasts in host-runtime mode (host cap: 10s)."
+        "shockDurationSeconds": "How long one shock lasts (host cap: 10s)."
       },
       "paramUnits": {
         "duration": "min",

@@ -25,6 +25,25 @@ function createCore(gameId, params, random) {
   return coreResolver.createCore(String(gameId || ''), { params, random });
 }
 
+// hidden 参数只用于工程实现，配置页不显示：启动/改参时一律回落到 manifest 默认值，
+// 避免设备或旧页面把保存过的值带进来。未声明 default 的 hidden 参数保持原值。
+function forceHiddenDefaults(gameId, params) {
+  const input = (params && typeof params === 'object' && !Array.isArray(params)) ? { ...params } : {};
+  let specs = [];
+  try {
+    const row = coreResolver.listHostGames().find((game) => String(game.id) === String(gameId));
+    specs = Array.isArray(row?.params) ? row.params : [];
+  } catch (_) {
+    return input;
+  }
+  for (const spec of specs) {
+    if (spec?.hidden === true && spec.key && Object.prototype.hasOwnProperty.call(spec, 'default')) {
+      input[spec.key] = spec.default;
+    }
+  }
+  return input;
+}
+
 // 核心是否要求通用设备事件：manifest.events === 'v2'。
 // 缺省（含两个内置核心与所有既有包）走 legacy 通道，行为与接线前逐字一致。
 // 已解析过的包按 id 记住结果：设备数据是热路径，不能每次变化都重扫游戏列表。
@@ -172,7 +191,7 @@ class GameHostService {
     if (this.session) this.stop({ reason: 'replaced' });
     this.endedSnapshot = null;
     const nowMs = this.now();
-    const core = createCore(String(gameId), params, this.random);
+    const core = createCore(String(gameId), forceHiddenDefaults(gameId, params), this.random);
     const runtime = new GameCoreRuntime(core);
     const normalized = normalizeDeviceMap(deviceMap);
     const session = {
@@ -238,7 +257,7 @@ class GameHostService {
   }
 
   setParams(params) {
-    return this._withSession((session) => session.runtime.core.setParams(params));
+    return this._withSession((session) => session.runtime.core.setParams(forceHiddenDefaults(session.gameId, params)));
   }
 
   action(action, payload) {
