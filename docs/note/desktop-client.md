@@ -31,3 +31,7 @@
 - `electron/main.js`：`titleBarStyle:'hidden'` + `titleBarOverlay`（高 39，留出标题栏 40px 的底部 1px 分隔线）；IPC `window:set-titlebar-theme` 同步原生按钮配色。
 - 前端 `components/AppTitleBar.vue`：侧栏开关、品牌、面包屑、拖拽区；主题变化时读 `--bg-app`/`--text-muted` 传给主进程。改 main.js 后需重启 Electron 才生效。
 - 截原生窗口（含系统按钮）：CDP `Page.captureScreenshot` 已能拍到 WCO 区域，不要用屏幕截图（会抢用户前台窗口）。
+
+## 应用图标
+
+- 源文件 `assets/icon.svg`（≤32px 用 `assets/icon-small.svg`，去掉引脚）。改完运行 `node tools/render-icon.cjs && python -I tools/build-icon-ico.py`，生成 `assets/icon.ico`（安装包/任务栏/托盘/窗口）、`assets/icon.png`、`frontend/public/favicon.png`；标题栏品牌图 `frontend/public/brand-mark.png` 取 32px 渲染图。
