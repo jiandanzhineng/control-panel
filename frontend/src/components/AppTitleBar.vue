@@ -13,17 +13,8 @@
     </button>
 
     <div class="tb-brand">
-      <svg class="tb-logo" width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-        <defs>
-          <linearGradient id="app-titlebar-brand" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="var(--accent)" />
-            <stop offset="100%" stop-color="var(--accent-deep)" />
-          </linearGradient>
-        </defs>
-        <rect width="18" height="18" rx="5" fill="url(#app-titlebar-brand)" />
-        <circle cx="9" cy="9" r="3" fill="none" stroke="#fff" stroke-width="1.5" stroke-opacity="0.95" />
-        <circle cx="9" cy="9" r="1.1" fill="#fff" />
-      </svg>
+      <!-- 应用图标（assets/icon-small.svg 渲染的 32px 版），与任务栏图标一致 -->
+      <img class="tb-logo" src="/brand-mark.png" width="18" height="18" alt="" aria-hidden="true" />
       <span class="tb-brand-name">{{ t('app.name') }}</span>
     </div>
 

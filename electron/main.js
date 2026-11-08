@@ -22,7 +22,7 @@ const { createLocalAppWindowController, attachGameMediaPermissions } = require('
 const { createBleMainIntegration } = require('./ble/mainIntegration.js');
 const { createBrandBleMainIntegration } = require('./ble/brandMainIntegration.js');
 const { createQuitCoordinator } = require('./shutdownCoordinator.js');
-const { createAppTray } = require('./tray.js');
+const { createAppTray, getTrayIconPath } = require('./tray.js');
 const {
   UPDATE_FEEDS,
   parseLatestYmlVersion,
@@ -731,6 +731,8 @@ function createWindow() {
     // 默认收起原生菜单栏（File/Edit/View/...），按 Alt 可临时唤出；
     // 菜单本身保留，故 Ctrl+Shift+I 等默认快捷键仍可用
     autoHideMenuBar: true,
+    // 窗口/任务栏图标：开发态默认是 Electron 图标，显式指定为应用图标
+    icon: getTrayIconPath(),
     // Windows 使用自绘标题栏：隐藏原生标题栏，保留右上角系统按钮（WCO）。
     // 高度 39 = 标题栏 40px 减底部 1px 分隔线，避免按钮区盖住分隔线。
     // 其余平台保持系统默认外观。

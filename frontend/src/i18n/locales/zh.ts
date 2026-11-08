@@ -1,6 +1,6 @@
 const zh = {
   app: {
-    name: '控制面板',
+    name: '硅基之下控制中心',
     title: '硅基之下',
   },
   shell: {

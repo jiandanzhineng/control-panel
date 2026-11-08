@@ -1,6 +1,6 @@
 const en = {
   app: {
-    name: 'Control Panel',
+    name: 'UnderSilicon Control Center',
     title: 'UnderSilicon',
   },
   shell: {

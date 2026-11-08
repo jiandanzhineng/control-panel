@@ -1,4 +1,5 @@
 const { formatElectronText } = require('./locale');
+const { getTrayIconPath } = require('./tray');
 
 function withTitleHint(title, locale = 'zh') {
   const hint = formatElectronText(locale, 'titleHint');
@@ -107,6 +108,7 @@ function createLocalAppWindowController({
     win = new BrowserWindow({
       width: 1280,
       height: 800,
+      icon: getTrayIconPath(),
       title: withTitleHint(title, locale),
       autoHideMenuBar: true,
       webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
