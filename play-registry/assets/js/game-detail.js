@@ -27,6 +27,13 @@
     }
   }
 
+  function capLabel(c) {
+    try {
+      if (window.SiteI18n && window.SiteI18n.capLabel) return window.SiteI18n.capLabel(c);
+    } catch (_) {}
+    return String(c == null ? '' : c);
+  }
+
   function esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
@@ -97,7 +104,7 @@
     return '<ul class="detail-device-list">' + devices.map(function (d) {
       var req = d.required ? '<span class="badge required">' + esc(t("required")) + "</span>" : '<span class="badge">' + esc(t("optional")) + "</span>";
       var caps = (d.capabilities || []).map(function (c) {
-        return '<span class="badge">' + esc(c) + "</span>";
+        return '<span class="badge">' + esc(capLabel(c)) + "</span>";
       }).join("");
       return '<li class="detail-device">'
         + '<div class="detail-device-head">'

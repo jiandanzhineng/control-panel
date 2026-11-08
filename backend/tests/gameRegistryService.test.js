@@ -86,4 +86,54 @@ describe('gameRegistryService', () => {
       ],
     });
   });
+
+  it('carries i18n from entry.manifest and falls back to top-level i18n', async () => {
+    mockRegistry({
+      schemaVersion: 2,
+      games: [
+        {
+          id: 'with-manifest',
+          title: 'With Manifest',
+          version: '1.0.0',
+          path: 'games/with-manifest/index.html',
+          devices: [{ id: 'role', label: 'Role' }],
+          manifest: {
+            i18n: {
+              en: { title: 'Manifest EN', description: 'EN desc', devices: { role: 'English role' } },
+            },
+          },
+        },
+        {
+          id: 'legacy',
+          title: 'Legacy',
+          version: '1.0.0',
+          path: 'games/legacy/index.html',
+          i18n: { zh: { title: '旧条目' } },
+        },
+      ],
+    });
+
+    const service = require('../services/gameRegistryService');
+    const list = await service.listForClient({ force: true });
+    const withManifest = list.games.find((g) => g.id === 'with-manifest');
+    expect(withManifest.i18n.en).toMatchObject({
+      title: 'Manifest EN',
+      description: 'EN desc',
+      devices: { role: 'English role' },
+    });
+    const legacy = list.games.find((g) => g.id === 'legacy');
+    expect(legacy.i18n.zh.title).toBe('旧条目');
+
+    const detail = await service.getGameById('with-manifest');
+    expect(detail.i18n.en.title).toBe('Manifest EN');
+  });
+
+  it('returns the fetch error when no cached registry is available', async () => {
+    global.fetch = jest.fn().mockRejectedValue(new Error('offline'));
+    const service = require('../services/gameRegistryService');
+    const list = await service.listForClient({ force: true });
+    expect(list.games).toEqual([]);
+    expect(list.stale).toBe(true);
+    expect(list.error).toMatch(/offline/);
+  });
 });

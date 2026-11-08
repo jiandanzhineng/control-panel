@@ -2,6 +2,7 @@
 
 > 自动生成，勿手改。更新：`python E:\smart\tools\memory-index\memory_index.py --path <本层级目录>`
 
+- 2026-11-08 [游戏库合并本地与在线游戏](2026-11-08-game-library-merge.md) — 本地游戏与在线游戏合并为「游戏库」，在线游戏原生列出，网页嵌入降为「游戏站」
 - 2026-11-04 [PC 背单词离线口令](2026-11-04-vocab-kws-commands.md) — PC 背单词语音答题采用手机同款离线固定口令 KWS
 - 2026-11-03 [优化PC和游戏站登录布局，PC加入微信扫码](2026-11-03-login-layout-and-wechat.md) — 优化PC和游戏站登录布局，PC加入微信扫码
 - 2026-11-03 [背单词朗读与电击提示](2026-11-03-vocab-speech-shock-feedback.md) — 修复手机端单词播放，电击触发时显示小闪电

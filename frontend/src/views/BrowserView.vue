@@ -13,6 +13,7 @@
     @navigate="navigate"
   >
     <template #toolbar-actions>
+      <el-button size="small" :icon="Back" plain @click="goLibrary">{{ t('browser.backToLibrary') }}</el-button>
       <el-tag v-if="grantStatus.origin" size="small" :type="grantStatus.granted ? 'success' : 'info'" effect="plain">
         {{ grantStatus.granted ? t('browser.granted') : t('browser.notGranted') }}
       </el-tag>
@@ -47,7 +48,7 @@
     <webview
       ref="webviewEl"
       class="webview"
-      :src="HOME"
+      :src="initialSrc"
       partition="persist:browser"
       allowpopups
     ></webview>
@@ -65,12 +66,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { Warning } from '@element-plus/icons-vue';
+import { Back, Warning } from '@element-plus/icons-vue';
 import PlayCarrierShell from '../components/PlayCarrierShell.vue';
+import { currentLocale } from '../i18n';
 
 interface PluginMatcher {
   id: string;
@@ -86,10 +88,22 @@ type DetectedPlay =
 
 const { t } = useI18n();
 const router = useRouter();
+const route = useRoute();
 const HOME = import.meta.env.VITE_BROWSER_HOME_URL || 'https://game.undersilicon.cn/';
+const SITE_ORIGIN = (() => {
+  try { return new URL(HOME).origin; } catch { return ''; }
+})();
 
+/** 支持从游戏库跳转时用 ?url= 直接打开指定页面（如 game-intro.html?id=...）。 */
+function initialUrlFromQuery(): string {
+  const raw = Array.isArray(route.query.url) ? route.query.url[0] : route.query.url;
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  return /^https?:\/\//i.test(value) ? value : HOME;
+}
+
+const initialSrc = initialUrlFromQuery();
 const webviewEl = ref<any>(null);
-const currentUrl = ref(HOME);
+const currentUrl = ref(initialSrc);
 const loading = ref(false);
 const canBack = ref(false);
 const canForward = ref(false);
@@ -101,6 +115,7 @@ const grantStatus = ref<{ granted: boolean; origin: string; expiresAt?: number }
 
 let detectTimer: number | undefined;
 let grantTimer: number | undefined;
+let localeSyncing = false;
 
 function normalizeUrl(s: string): string {
   const t = s.trim();
@@ -119,6 +134,36 @@ function goBack() { try { webviewEl.value?.goBack(); } catch {} }
 function goForward() { try { webviewEl.value?.goForward(); } catch {} }
 function reload() { try { webviewEl.value?.reload(); } catch {} }
 function goHome() { navigate(HOME); }
+function goLibrary() { router.push({ name: 'play_library' }); }
+
+function isSiteUrl(url: string): boolean {
+  try {
+    return !!SITE_ORIGIN && new URL(url).origin === SITE_ORIGIN;
+  } catch {
+    return false;
+  }
+}
+
+/** 游戏站跟随客户端语言：站点把语言存在 localStorage['site-locale']（zh/en）。 */
+async function syncSiteLocale() {
+  const wv = webviewEl.value;
+  if (!wv || localeSyncing) return;
+  let url = '';
+  try { url = wv.getURL(); } catch { return; }
+  if (!isSiteUrl(url)) return;
+  const want = currentLocale();
+  try {
+    const got = await wv.executeJavaScript("localStorage.getItem('site-locale')");
+    if (got === want) return;
+    localeSyncing = true;
+    await wv.executeJavaScript(`localStorage.setItem('site-locale', ${JSON.stringify(want)})`);
+    wv.reload();
+  } catch {
+    /* 页面未就绪时忽略，下一次 dom-ready 再试 */
+  } finally {
+    window.setTimeout(() => { localeSyncing = false; }, 600);
+  }
+}
 
 function retryLoad() {
   loadError.value = false;
@@ -278,6 +323,7 @@ function bindEvents() {
   const wv = webviewEl.value;
   if (!wv) return;
   wv.addEventListener('did-start-loading', () => { loading.value = true; loadError.value = false; });
+  wv.addEventListener('dom-ready', () => { void syncSiteLocale(); });
   wv.addEventListener('did-stop-loading', () => { loading.value = false; });
   wv.addEventListener('did-navigate', onNavigated);
   wv.addEventListener('did-navigate-in-page', onNavigated);
@@ -300,6 +346,21 @@ onMounted(() => {
   // webview 需在元素 attach 后绑定事件
   setTimeout(bindEvents, 0);
   grantTimer = window.setInterval(refreshGrantStatus, 2000);
+});
+watch(() => route.query.url, () => {
+  const target = initialUrlFromQuery();
+  const wv = webviewEl.value;
+  if (!wv) return;
+  if (target === HOME) {
+    // query.url 被清空（如点侧边栏「游戏站」）→ 回到站点首页
+    let current = '';
+    try { current = wv.getURL(); } catch {}
+    if (current && current !== HOME) {
+      try { wv.loadURL(HOME); } catch {}
+    }
+    return;
+  }
+  try { wv.loadURL(target); } catch { /* webview 未就绪 */ }
 });
 onBeforeUnmount(() => {
   if (detectTimer) clearTimeout(detectTimer);

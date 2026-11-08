@@ -189,7 +189,7 @@ const routeTitle = computed(() => {
 let disposeGameHostNav: (() => void) | null = null
 let disposeLocalAppWindow: (() => void) | null = null
 
-// 本地游戏相关页面（/plays、配置、运行）统一高亮「本地游戏」入口
+// 游戏库相关页面（/plays、配置、运行）统一高亮「游戏库」入口
 const menuActive = computed(() => (route.path.startsWith('/plays') ? '/plays' : route.path))
 
 // 沉浸式页面隐藏全局顶栏（面包屑），避免与页面自带工具栏叠加

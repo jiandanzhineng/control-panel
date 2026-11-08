@@ -35,6 +35,8 @@ agent 查到的事实、配置位置、命令、踩坑。按主题，详情在 `
 
 ## 游戏平台
 
+- PC 游戏库页（本机+在线合并、游戏站嵌入）的文件位置与数据源见 [game-library](note/game-library.md)。
+
 - 背单词离线固定口令、PC 采集桥和回归入口见 [vocab-commands](note/vocab-commands.md)。
 - PC/游戏站的手机号身份、迁移与本地验收：见 [手机号登录](note/phone-login.md)。
 
