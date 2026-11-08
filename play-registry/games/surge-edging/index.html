@@ -273,7 +273,72 @@
       "description": "开启语音播报",
       "group": "core"
     }
-  ]
+  ],
+  "i18n": {
+    "en": {
+      "title": "Pressure surge edging",
+      "description": "A three-stage edging variant. No need to fine-tune pressure and no worry about leaks, with a countdown added at the end.",
+      "howTo": "1. Map air-pressure sensor and TD01 (required)\n2. Optional: shock, lock\n3. Adjust the surge window and rise threshold as needed\n4. Fine-tune the mid pressure with on-screen buttons",
+      "devices": {
+        "sensor": "Air-pressure sensor",
+        "motor": "TD01 stimulator",
+        "punish": "Shock punisher",
+        "lock": "Auto lock"
+      },
+      "params": {
+        "duration": "Duration",
+        "endCalmLock": "Takeoff before end",
+        "surgeWindowSec": "Surge detection window",
+        "surgeRiseKpa": "Surge rise threshold",
+        "midOffsetKpa": "Mid pressure offset",
+        "maxMotorIntensity": "TD01 max intensity",
+        "lowPressureDelay": "Cooldown delay",
+        "maxEdgeSec": "Max edge duration",
+        "gradualIncrease": "Calm-phase ramp",
+        "randomPercent": "Intensity jitter",
+        "minSurgeMs": "Min surge duration",
+        "sendIntervalMs": "Intensity send interval",
+        "midDelay": "Mid-stage hold time",
+        "midIntensityMin": "Mid intensity floor",
+        "midIntensityMax": "Mid intensity ceiling",
+        "shockVoltage": "Shock intensity",
+        "shockDuration": "Shock duration",
+        "voiceEnabled": "Voice prompts"
+      },
+      "paramDescriptions": {
+        "duration": "Round duration.",
+        "endCalmLock": "Length of the high-intensity takeoff stage before the end.",
+        "surgeWindowSec": "Time window over which the pressure rise is measured. A longer window also treats slow rises as surges, making detection more sensitive.",
+        "surgeRiseKpa": "If pressure rises above this value within a short time, it counts as near-edge and stimulation stops at once. Lower is more sensitive.",
+        "midOffsetKpa": "After each edge, the excited-stage threshold is set to that peak minus this offset. Larger enters the excited stage sooner.",
+        "maxMotorIntensity": "Stimulation cap (1–255). Male TD may disconnect over 50.",
+        "lowPressureDelay": "How long stimulation fully stops after each edge.",
+        "maxEdgeSec": "Max time in the edge stage. Going over forces cooldown so an accidental pressure swing cannot lock the game in the edge stage.",
+        "gradualIncrease": "Max intensity rise per second during the calm stage.",
+        "randomPercent": "Random percent jitter on target intensity.",
+        "minSurgeMs": "A surge must last at least this long to count, filtering out single-point spikes.",
+        "sendIntervalMs": "How often intensity is sent to TD01. Raise it if the device responds slowly; the edge stop command is sent immediately.",
+        "midDelay": "Minimum time to stay in the excited stage to avoid voice lines switching back and forth.",
+        "midIntensityMin": "In the excited stage, higher pressure lowers intensity down to this floor.",
+        "midIntensityMax": "Intensity at the moment the excited stage starts; it falls toward the floor as pressure rises. Must be between 10 and the TD01 max intensity, otherwise it defaults to 20 (capped at max intensity).",
+        "shockVoltage": "Shock voltage when a surge enters the edge stage.",
+        "shockDuration": "Duration of one shock.",
+        "voiceEnabled": "Play voice lines."
+      },
+      "paramUnits": {
+        "duration": "min",
+        "endCalmLock": "s",
+        "surgeWindowSec": "s",
+        "lowPressureDelay": "s",
+        "maxEdgeSec": "s",
+        "gradualIncrease": "/s",
+        "minSurgeMs": "ms",
+        "sendIntervalMs": "ms",
+        "midDelay": "s",
+        "shockDuration": "s"
+      }
+    }
+  }
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>
