@@ -29,3 +29,4 @@
 ## git worktree
 
 - worktree 不带 node_modules。发布验证时，根目录、`backend`、`frontend` 必须分别执行独立 `npm ci`；不要用主仓目录联接作为发布构建依据，部分依赖本身可能是指向临时缓存的联接。
+- **删 worktree 前先拆 node_modules 联接**：worktree 里的 `node_modules`（根、backend、frontend、play-registry）若是联接到主仓，`git worktree remove --force` 会顺着联接把主仓依赖清空。先 `cmd /c rmdir <worktree>\node_modules`（各处都拆）再删 worktree；已清空的话在主仓四处分别 `npm ci` 恢复。
