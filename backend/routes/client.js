@@ -9,6 +9,7 @@ function statusFor(code) {
     case 'CLIENT_UNAVAILABLE': return 503;
     case 'GAME_NOT_FOUND': return 404;
     case 'HOST_PLAY_ACTIVE': return 409;
+    case 'AGENT_GAME_NOT_REGISTERED': return 403;
     case 'INVALID_REQUEST':
     case 'INVALID_WINDOW_ACTION':
     case 'INVALID_SCREENSHOT_FORMAT':

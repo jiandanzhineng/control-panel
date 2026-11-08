@@ -79,6 +79,13 @@ async function startGame({
     error.code = 'GAME_NOT_FOUND';
     throw error;
   }
+  // agent 发起的页面游戏靠启动令牌把 bridge 会话关联到 agent 限幅；
+  // 未登记的外部页面签不出令牌，限幅会失效，所以 agent 只能启动已登记的游戏。
+  if (agentClientId && !game?.id) {
+    const error = new Error('agent 只能启动游戏库中已登记的游戏');
+    error.code = 'AGENT_GAME_NOT_REGISTERED';
+    throw error;
+  }
   await occupyRemotePlay(id, game);
   await localAppProcessService.stopAll();
   // 页面游戏云存档的 gameId 由宿主持有：签发一次启动令牌，前端拼进 iframe URL。

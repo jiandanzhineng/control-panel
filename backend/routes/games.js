@@ -113,7 +113,7 @@ router.post('/:id/start', async (req, res) => {
     res.json(result);
   } catch (e) {
     // 被控端本地玩法运行中（HOST_PLAY_ACTIVE）：409 让主控端界面把「启动被拒」显示清楚
-    const status = e?.code === 'HOST_PLAY_ACTIVE' ? 409 : (e?.code === 'GAME_NOT_FOUND' ? 404 : 500);
+    const status = e?.code === 'HOST_PLAY_ACTIVE' ? 409 : (e?.code === 'GAME_NOT_FOUND' ? 404 : (e?.code === 'AGENT_GAME_NOT_REGISTERED' ? 403 : 500));
     sendError(res, e?.code || 'GAME_START_FAILED', e?.message || String(e), status);
   }
 });
