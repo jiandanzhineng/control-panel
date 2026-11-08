@@ -11,6 +11,7 @@ agent 查到的事实、配置位置、命令、踩坑。按主题，详情在 `
 ## 游戏运行时
 
 - HostRuntime 模块、JS Core 契约、`/api/game-runtime` 与原始 UI 托管渲染见 [host-runtime](note/host-runtime.md)。
+- manifest 参数 `hidden`（不显示、启动强制默认）/ `visibleWhen`（按另一参数显示）：PC 在 `frontend/src/utils/paramVisibility.ts` 与 `gameHostService.forceHiddenDefaults`，手机在 `lib/features/games/runtime/game_param_groups.dart`；各游戏分组方案见 `docs/plans/game-param-ux.md`。手机 Windows 跑 game_host 测试需把 pub cache 里 `flutter_js-0.8.7/windows/shared` 加进 PATH。
 - 远程游戏测试环境、虚拟设备检查路径、无头验证方法见 [remote-game-testing](note/remote-game-testing.md)。
 - 背单词词库由 ECDICT 生成，脚本用法、字段、统计与许可证见 [vocab-bank](note/vocab-bank.md)。
 

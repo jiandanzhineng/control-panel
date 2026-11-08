@@ -10,7 +10,7 @@
   "title": "朗读游戏",
   "description": "朗读屏幕上的文字。停下来不读或长时间不按原文读会先警告再电击。支持反复朗读，以及逐级遮字的背诵玩法；语音识别失败只会少电，不会多电。",
   "howTo": "1. 映射电击设备（必需），可选映射自动锁\n2. 选择玩法：朗读（可设遍数）或背诵（第一遍不遮字，之后逐级遮字）\n3. 在「朗读文本」里填写或修改要读的文字（已有默认短文）\n4. 调整沉默/离稿时限、过关正确率与电击强度\n5. 开始后游戏自动启动，允许麦克风，先安静 3 秒再朗读",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "permissions": ["microphone"],
   "models": [
     { "task": "asr", "id": "sense-voice-small-int8", "optional": true }
@@ -64,7 +64,8 @@
       "unit": "遍",
       "label": "朗读遍数",
       "description": "朗读玩法要读几遍；1 遍就是原来的单次朗读（背诵玩法不使用）",
-      "group": "core"
+      "group": "core",
+      "visibleWhen": { "key": "mode", "equals": "read" }
     },
     {
       "key": "restSeconds",
@@ -76,7 +77,7 @@
       "unit": "秒",
       "label": "两遍之间休息",
       "description": "休息期间不监听、不电击；0 表示不休息直接开始下一遍",
-      "group": "core"
+      "group": "advanced"
     },
     {
       "key": "passRate",
@@ -96,7 +97,7 @@
       "default": true,
       "label": "正确率不足时电击",
       "description": "每遍读完正确率低于过关正确率时电一下提醒；识别不稳定（出错、变慢、结尾未确认）的那遍不电",
-      "group": "core"
+      "group": "advanced"
     },
     {
       "key": "maskStart",
@@ -108,7 +109,8 @@
       "unit": "%",
       "label": "起始遮字比例",
       "description": "背诵第一级不遮字（通读），过关后从这个比例开始遮",
-      "group": "advanced"
+      "group": "advanced",
+      "visibleWhen": { "key": "mode", "equals": "recite" }
     },
     {
       "key": "maskStep",
@@ -120,7 +122,8 @@
       "unit": "%",
       "label": "每级增加遮字",
       "description": "每升一级多遮的比例，封顶 100%",
-      "group": "advanced"
+      "group": "advanced",
+      "visibleWhen": { "key": "mode", "equals": "recite" }
     },
     {
       "key": "hintChars",
@@ -132,7 +135,8 @@
       "unit": "字",
       "label": "卡壳提示字数",
       "description": "背诵时被电击后，从当前位置往后还原成文字的字数",
-      "group": "advanced"
+      "group": "advanced",
+      "visibleWhen": { "key": "mode", "equals": "recite" }
     },
     {
       "key": "silenceBonus",
@@ -144,7 +148,8 @@
       "unit": "秒",
       "label": "每级放宽停顿",
       "description": "背诵每升一级，沉默时限额外增加的秒数",
-      "group": "advanced"
+      "group": "advanced",
+      "visibleWhen": { "key": "mode", "equals": "recite" }
     },
     {
       "key": "silenceLimit",
@@ -253,7 +258,8 @@
       "description": "递增后的强度不会超过这个值（未允许时仍受 30V 限制）",
       "group": "advanced",
       "device": "shock",
-      "required": false
+      "required": false,
+      "visibleWhen": { "key": "shockStep", "gt": 0 }
     },
     {
       "key": "cooldown",
@@ -289,7 +295,8 @@
       "unit": "秒",
       "label": "识别窗口",
       "description": "每次上传给语音识别的音频长度",
-      "group": "advanced"
+      "group": "advanced",
+      "hidden": true
     },
     {
       "key": "segmentHop",
@@ -301,7 +308,8 @@
       "unit": "秒",
       "label": "识别间隔",
       "description": "每隔多久上传一段音频，窗口之间会重叠",
-      "group": "advanced"
+      "group": "advanced",
+      "hidden": true
     },
     {
       "key": "totalTime",
@@ -325,7 +333,8 @@
       "unit": "毫秒",
       "label": "语音识别超时",
       "description": "单次识别请求的超时时间，超时记为未知，不惩罚",
-      "group": "advanced"
+      "group": "advanced",
+      "hidden": true
     },
     {
       "key": "beep",

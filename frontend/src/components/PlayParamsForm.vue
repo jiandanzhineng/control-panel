@@ -56,6 +56,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { visibleParams } from '../utils/paramVisibility'
 
 const { t } = useI18n()
 const props = withDefaults(defineProps<{
@@ -77,8 +78,9 @@ function group(items: Array<Record<string, any>>) {
     items: items.filter((item) => String(item.group || 'other') === key),
   }))
 }
-const basicSections = computed(() => group(props.params.filter((item) => item.required !== false && item.group !== 'advanced')))
-const advancedSections = computed(() => group(props.params.filter((item) => item.required === false || item.group === 'advanced')))
+const shownParams = computed(() => visibleParams(props.params, props.model))
+const basicSections = computed(() => group(shownParams.value.filter((item) => item.required !== false && item.group !== 'advanced')))
+const advancedSections = computed(() => group(shownParams.value.filter((item) => item.required === false || item.group === 'advanced')))
 const advancedCount = computed(() => advancedSections.value.reduce((count, section) => count + section.items.length, 0))
 defineEmits<{ submit: [value: Record<string, any>]; reset: [] }>()
 </script>

@@ -10,7 +10,7 @@
   "title": "气压突变寸止",
   "description": "三阶段寸止改版，不用微调气压，不怕漏气，末尾增加倒计时",
   "howTo": "1. 映射气压传感器与 TD01（必需）\n2. 可选：电击、自动锁\n3. 按需调整突变窗口/抬升阈值\n4. 可用界面按钮微调中间压力",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "devices": [
     {
       "id": "sensor",
@@ -78,7 +78,7 @@
       "default": 1.5,
       "label": "突变检测窗口",
       "unit": "秒",
-      "description": "窗口越长，对突变越敏感；检测窗口宽度 τ：当前气压 − 本窗口[-τ,0]最小值 ≥ 阈值视为突变",
+      "description": "在多长时间内比较气压的升高幅度。窗口越长，缓慢的升高也会被当成突变，越灵敏",
       "group": "advanced",
       "min": 0.5,
       "max": 5.0,
@@ -91,7 +91,7 @@
       "default": 1.0,
       "label": "突变抬升阈值",
       "unit": "kPa",
-      "description": "当前气压 − 本窗口最小值 ≥ 此值视为突变，进入边缘期",
+      "description": "气压在短时间内突然升高超过这个值，就判定为接近边缘并立即停止刺激。越小越灵敏",
       "group": "core",
       "min": 0.2,
       "max": 5.0,
@@ -103,18 +103,19 @@
       "default": 0.8,
       "label": "中间压偏移",
       "unit": "kPa",
-      "description": "中间压力 = 本次边缘期峰值 - 该偏移，每次边缘期自动更新",
-      "group": "core",
+      "description": "每次边缘后，把「兴奋阶段」门槛设为这次峰值减去该值，越大越早进入兴奋阶段",
+      "group": "advanced",
       "min": 0.1,
       "max": 3.0,
-      "step": 0.1
+      "step": 0.1,
+      "required": false
     },
     {
       "key": "maxMotorIntensity",
       "type": "number",
       "default": 50,
       "label": "TD01最大强度",
-      "description": "刺激强度上限（0-255）",
+      "description": "刺激强度上限（1–255）。男用 TD 超过 50 可能断联，请谨慎",
       "group": "difficulty",
       "min": 1,
       "max": 255,
@@ -127,11 +128,12 @@
       "default": 10,
       "label": "冷却延迟",
       "unit": "秒",
-      "description": "边缘期结束后强度保持为零的冷却时长",
-      "group": "difficulty",
+      "description": "每次边缘后完全停止刺激的时长",
+      "group": "advanced",
       "min": 0,
       "max": 60,
-      "step": 1
+      "step": 1,
+      "required": false
     },
     {
       "key": "maxEdgeSec",
@@ -152,11 +154,12 @@
       "default": 2,
       "label": "平静期缓升",
       "unit": "每秒",
-      "description": "平静期强度每秒抬升幅度，同时作为强度递增上限（目标强度每秒最多升这么多）",
-      "group": "difficulty",
+      "description": "平静阶段强度每秒最多上升多少",
+      "group": "advanced",
       "min": 0.1,
       "max": 50,
-      "step": 0.5
+      "step": 0.5,
+      "required": false
     },
     {
       "key": "randomPercent",
@@ -182,7 +185,8 @@
       "min": 50,
       "max": 1500,
       "step": 10,
-      "required": false
+      "required": false,
+      "hidden": true
     },
     {
       "key": "sendIntervalMs",
@@ -190,7 +194,7 @@
       "default": 1000,
       "label": "强度下发间隔",
       "unit": "毫秒",
-      "description": "如果发现跳蛋响应延迟可以增大间隔；平静期/中期每隔此时长下发一次最新强度（默认1秒）；边缘期触发时立即发送停止命令（归零不受限速）。低频率确保 MQTT 命令链路不积压",
+      "description": "多久给 TD01 发一次强度。设备响应有延迟时可调大；边缘时的停止命令会立即发送",
       "group": "advanced",
       "min": 200,
       "max": 5000,
@@ -203,7 +207,7 @@
       "default": 5,
       "label": "中期防回落时长",
       "unit": "秒",
-      "description": "进入中期后的前 midDelay 秒内不因压力回落切换到平静期（防止语音反复切换）；边缘期触发不受影响",
+      "description": "进入兴奋阶段后至少保持多少秒，避免语音来回切换",
       "group": "advanced",
       "min": 0,
       "max": 20,
@@ -215,22 +219,24 @@
       "type": "number",
       "default": 5,
       "label": "中期强度下限",
-      "description": "中期强度下限 dmin：P≥P1+ΔP 时维持的最小强度",
-      "group": "difficulty",
+      "description": "兴奋阶段压力越高强度越低，最低降到这个值",
+      "group": "advanced",
       "min": 0,
       "max": 10,
-      "step": 1
+      "step": 1,
+      "required": false
     },
     {
       "key": "midIntensityMax",
       "type": "number",
       "default": 20,
       "label": "中期强度上限",
-      "description": "中期强度上限 dmax：P=P1 时的强度，P∈[P1,P1+ΔP] 线性过渡；有效范围 10~Dmax，越界自动替换为 min(20, Dmax)",
-      "group": "difficulty",
+      "description": "刚进入兴奋阶段时的强度，压力越高逐渐降到下限。须在 10 到 TD01 最大强度之间，否则自动取 20（不超过最大强度）",
+      "group": "advanced",
       "min": 10,
       "max": 100,
-      "step": 1
+      "step": 1,
+      "required": false
     },
     {
       "key": "shockVoltage",
@@ -252,11 +258,12 @@
       "label": "电击持续",
       "unit": "秒",
       "description": "单次电击时间",
-      "group": "punish",
+      "group": "advanced",
       "min": 0.5,
       "max": 10,
       "step": 0.5,
-      "device": "punish"
+      "device": "punish",
+      "required": false
     },
     {
       "key": "voiceEnabled",
@@ -266,7 +273,72 @@
       "description": "开启语音播报",
       "group": "core"
     }
-  ]
+  ],
+  "i18n": {
+    "en": {
+      "title": "Pressure surge edging",
+      "description": "A three-stage edging variant. No need to fine-tune pressure and no worry about leaks, with a countdown added at the end.",
+      "howTo": "1. Map air-pressure sensor and TD01 (required)\n2. Optional: shock, lock\n3. Adjust the surge window and rise threshold as needed\n4. Fine-tune the mid pressure with on-screen buttons",
+      "devices": {
+        "sensor": "Air-pressure sensor",
+        "motor": "TD01 stimulator",
+        "punish": "Shock punisher",
+        "lock": "Auto lock"
+      },
+      "params": {
+        "duration": "Duration",
+        "endCalmLock": "Takeoff before end",
+        "surgeWindowSec": "Surge detection window",
+        "surgeRiseKpa": "Surge rise threshold",
+        "midOffsetKpa": "Mid pressure offset",
+        "maxMotorIntensity": "TD01 max intensity",
+        "lowPressureDelay": "Cooldown delay",
+        "maxEdgeSec": "Max edge duration",
+        "gradualIncrease": "Calm-phase ramp",
+        "randomPercent": "Intensity jitter",
+        "minSurgeMs": "Min surge duration",
+        "sendIntervalMs": "Intensity send interval",
+        "midDelay": "Mid-stage hold time",
+        "midIntensityMin": "Mid intensity floor",
+        "midIntensityMax": "Mid intensity ceiling",
+        "shockVoltage": "Shock intensity",
+        "shockDuration": "Shock duration",
+        "voiceEnabled": "Voice prompts"
+      },
+      "paramDescriptions": {
+        "duration": "Round duration.",
+        "endCalmLock": "Length of the high-intensity takeoff stage before the end.",
+        "surgeWindowSec": "Time window over which the pressure rise is measured. A longer window also treats slow rises as surges, making detection more sensitive.",
+        "surgeRiseKpa": "If pressure rises above this value within a short time, it counts as near-edge and stimulation stops at once. Lower is more sensitive.",
+        "midOffsetKpa": "After each edge, the excited-stage threshold is set to that peak minus this offset. Larger enters the excited stage sooner.",
+        "maxMotorIntensity": "Stimulation cap (1–255). Male TD may disconnect over 50.",
+        "lowPressureDelay": "How long stimulation fully stops after each edge.",
+        "maxEdgeSec": "Max time in the edge stage. Going over forces cooldown so an accidental pressure swing cannot lock the game in the edge stage.",
+        "gradualIncrease": "Max intensity rise per second during the calm stage.",
+        "randomPercent": "Random percent jitter on target intensity.",
+        "minSurgeMs": "A surge must last at least this long to count, filtering out single-point spikes.",
+        "sendIntervalMs": "How often intensity is sent to TD01. Raise it if the device responds slowly; the edge stop command is sent immediately.",
+        "midDelay": "Minimum time to stay in the excited stage to avoid voice lines switching back and forth.",
+        "midIntensityMin": "In the excited stage, higher pressure lowers intensity down to this floor.",
+        "midIntensityMax": "Intensity at the moment the excited stage starts; it falls toward the floor as pressure rises. Must be between 10 and the TD01 max intensity, otherwise it defaults to 20 (capped at max intensity).",
+        "shockVoltage": "Shock voltage when a surge enters the edge stage.",
+        "shockDuration": "Duration of one shock.",
+        "voiceEnabled": "Play voice lines."
+      },
+      "paramUnits": {
+        "duration": "min",
+        "endCalmLock": "s",
+        "surgeWindowSec": "s",
+        "lowPressureDelay": "s",
+        "maxEdgeSec": "s",
+        "gradualIncrease": "/s",
+        "minSurgeMs": "ms",
+        "sendIntervalMs": "ms",
+        "midDelay": "s",
+        "shockDuration": "s"
+      }
+    }
+  }
 }
 </script>
 <script src="/bridge-api/device-api-bridge.js"></script>
