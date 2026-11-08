@@ -686,6 +686,7 @@ function registerClientControlHost() {
 }
 
 function parseAuthorizedGameHostRequest(event, req) {
+  const origin = getWebviewOrigin(event.sender);
   const { enabled: developerModeEnabled } = externalGameAccessService.getStatus();
   const locale = currentAppLocale();
   gameHost.assertAllowedOrigin(origin, { developerModeEnabled, locale });

@@ -80,7 +80,8 @@ async function startGame({
   await occupyRemotePlay(id, game);
   await localAppProcessService.stopAll();
   // 页面游戏云存档的 gameId 由宿主持有：签发一次启动令牌，前端拼进 iframe URL。
-  const gameToken = gameLaunchTokenService.issue(game?.id || id);
+  // 只给已登记的游戏签令牌（未登记的外部页面不带云存档身份），与原路由一致。
+  const gameToken = gameLaunchTokenService.issue(game?.id);
   return {
     ok: true,
     gamePath: game?.gamePath || gamePath || null,
