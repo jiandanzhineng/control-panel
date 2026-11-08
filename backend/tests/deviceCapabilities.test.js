@@ -52,6 +52,17 @@ describe('device capability registry', () => {
     expect(cunzhi.resolveCapabilityValue('tiptoePressure', { pressure1: 37.5 })).toBe(37.5);
   });
 
+  it('shock start keeps an explicit 0V and defaults only when omitted', () => {
+    const { shock } = require('../devices/capabilities');
+    const sent = [];
+    shock.actions.start({ writeProps: (props) => sent.push(props) }, { voltage: 0 });
+    shock.actions.start({ writeProps: (props) => sent.push(props) }, {});
+    expect(sent).toEqual([
+      { voltage: 0, shock: 1 },
+      { voltage: 24, shock: 1 },
+    ]);
+  });
+
   it('builds default strength update messages through bindings', () => {
     const td01 = registry.getDeviceType('TD01');
     const sent = [];

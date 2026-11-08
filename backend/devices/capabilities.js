@@ -2,7 +2,7 @@ const shock = {
   key: 'shock',
   name: '电击控制',
   actions: {
-    start: (ctx, params) => ctx.writeProps({ voltage: params.voltage || 24, shock: 1 }),
+    start: (ctx, params) => ctx.writeProps({ voltage: params.voltage ?? 24, shock: 1 }),
     stop: (ctx) => ctx.writeProps({ shock: 0 }),
   },
   actionParams: {
