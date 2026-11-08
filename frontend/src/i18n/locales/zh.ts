@@ -1294,6 +1294,21 @@ const zh = {
       occupancyReleased: '玩法占用已释放',
     },
   },
+  agentLease: {
+    active: 'AI 控制中 · 上限 {limit}%',
+    title: 'AI 正在控制设备',
+    defaultLimit: '默认上限',
+    capabilities: {
+      strength: '强度',
+      shock: '电击',
+      vibration: '震动',
+      suction: '吸吮',
+      estim: '多路电击',
+      motors: '电机',
+      pump: '泵',
+    },
+    fieldCaps: '输出字段上限',
+  },
   electron: {
     showWindow: '显示主窗口',
     quit: '退出',

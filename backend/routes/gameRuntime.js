@@ -84,6 +84,7 @@ router.post('/start', async (req, res) => {
       deviceMap: body.deviceMap,
       params: body.params,
       source: body.source || 'local',
+      agentClientId: req.agentClientId || null,
     }));
   } catch (error) {
     handleError(res, error);
@@ -92,6 +93,8 @@ router.post('/start', async (req, res) => {
 
 router.post('/params', (req, res) => {
   try {
+    // agent 操作了用户局：把本局标记为 agent 控制，后续 tick 输出同样限幅
+    if (req.agentClientId) gameHost.markAgentControl(req.agentClientId);
     res.json(gameHost.setParams(req.body?.params));
   } catch (error) {
     handleError(res, error);
@@ -100,6 +103,7 @@ router.post('/params', (req, res) => {
 
 router.post('/action', (req, res) => {
   try {
+    if (req.agentClientId) gameHost.markAgentControl(req.agentClientId);
     res.json(gameHost.action(req.body?.action, req.body?.payload));
   } catch (error) {
     handleError(res, error);
@@ -108,6 +112,7 @@ router.post('/action', (req, res) => {
 
 router.post('/sensor', (req, res) => {
   try {
+    if (req.agentClientId) gameHost.markAgentControl(req.agentClientId);
     res.json(gameHost.pushSensor(req.body || {}));
   } catch (error) {
     handleError(res, error);
@@ -116,6 +121,7 @@ router.post('/sensor', (req, res) => {
 
 router.post('/tick', (req, res) => {
   try {
+    if (req.agentClientId) gameHost.markAgentControl(req.agentClientId);
     const nowMs = req.body?.nowMs;
     res.json(gameHost.tick(Number.isFinite(Number(nowMs)) ? Number(nowMs) : undefined));
   } catch (error) {

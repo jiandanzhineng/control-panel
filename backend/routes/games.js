@@ -108,6 +108,7 @@ router.post('/:id/start', async (req, res) => {
       defer,
       gamePath: req.body?.gamePath || null,
       externalUrl: req.body?.externalUrl || null,
+      agentClientId: req.agentClientId || null,
     });
     res.json(result);
   } catch (e) {

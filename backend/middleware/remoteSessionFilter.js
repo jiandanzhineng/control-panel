@@ -93,6 +93,8 @@ const NEVER_LOCKED = [
   // 客户端控制：控制的是「本机」窗口、路由、截图与本机玩法载体，
   // 远程主控模式下这些仍是本机操作（主控端页面本来就可跳转/启停本机游戏），必须放行。
   /^\/client(\/|$)/,
+  // agent 租约：控制的是本机 agent 的限幅阈值，不触碰被控端设备，远程模式下仍按本机处理。
+  /^\/agent-control(\/|$)/,
 ];
 
 function isLockedRoute(method, path) {

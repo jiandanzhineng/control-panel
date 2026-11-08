@@ -142,6 +142,7 @@ async function launchGame({
   deviceMap = {},
   parameters = {},
   show = true,
+  agentClientId = null,
 } = {}) {
   if (!isAvailable()) throw clientUnavailableError();
   const id = String(gameId || '').trim();
@@ -167,7 +168,8 @@ async function launchGame({
     gameId: id,
     deviceMapping: deviceMap,
     parameters,
-    source: 'local',
+    source: agentClientId ? 'agent' : 'local',
+    agentClientId,
   });
   const mode = started?.runtime?.mode === 'host' ? 'host' : 'iframe';
   const query = new URLSearchParams();

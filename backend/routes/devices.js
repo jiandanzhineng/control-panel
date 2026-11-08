@@ -196,7 +196,7 @@ router.post('/:id/message', async (req, res) => {
     }
     res.json(await deviceService.sendDeviceMessageAndWait(id, message));
   } catch (e) {
-    sendError(res, e.code || 'DEVICE_MESSAGE_FAILED', e.message || String(e), 500);
+    sendError(res, e.code || 'DEVICE_MESSAGE_FAILED', e.message || String(e), e.status || 500);
   }
 });
 
@@ -383,7 +383,7 @@ router.post('/:id/operations/:operationKey', async (req, res) => {
       stack: e.stack,
       errorCode: e.code || 'DEVICE_OPERATION_FAILED'
     });
-    sendError(res, 'DEVICE_OPERATION_FAILED', e.message || String(e), 500);
+    sendError(res, 'DEVICE_OPERATION_FAILED', e.message || String(e), e.status || 500);
   }
 });
 
@@ -396,6 +396,11 @@ function getCapabilityRouteStatus(code) {
     case 'DEVICE_CAPABILITY_NOT_SUPPORTED':
     case 'DEVICE_CAPABILITY_ACTION_NOT_SUPPORTED':
       return 400;
+    case 'AGENT_OUTPUT_REJECTED':
+    case 'INVALID_CLIENT_ID':
+      return 400;
+    case 'AGENT_LEASE_REQUIRED':
+      return 428;
     default:
       return 500;
   }

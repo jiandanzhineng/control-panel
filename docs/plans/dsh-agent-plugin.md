@@ -35,6 +35,19 @@
   - `game.started` 事件在 iframe 真正连上 bridge / HostRuntime 启动时发出，不是 `/api/games/:id/start` 返回时。
 - 前端通过 IPC 上报当前路由（`client:route-changed`），主进程接收 `navigate` 指令时复用现有 `game-host:navigate` 通道或新增 `client:navigate`。
 
+### A4 agent 租约与输出限幅（安全兜底）
+
+插件层的阈值缩放管不住游戏 manifest 默认参数、游戏代码硬编码、payload 与固件默认值，因此在后端最终写设备处再兜一层。
+
+- 租约：`POST /api/agent-control/lease {clientId, ttlSec, limits}` 创建/续租（同 clientId 覆盖 limits 与过期时间），`DELETE /api/agent-control/lease/:clientId` 释放，`GET /api/agent-control/status` 只读。`limits` 语义与插件一致：`{default, capabilities:{strength,shock,vibration,suction,estim,motors,pump}}`（0–100 百分比）。
+- 请求头 `X-Agent-Client: <clientId>`：任何设备写请求必须有有效租约，否则 `428 AGENT_LEASE_REQUIRED`；停止/归零请求豁免。有效租约把来源放进 AsyncLocalStorage。
+- 玩法标记：带此头启动的游戏（`/api/games/:id/start`、`/api/game-runtime/start`、`/api/client/games/:id/launch`）在 session 上记 agentClientId；iframe 游戏由启动令牌关联。租约释放/过期即停掉该 agent 发起的玩法。
+- 钳制汇聚点：`deviceConnectionService.send()`（所有 transport 下发前）与 `virtualDeviceService.interceptCommand()`。按能力百分比 × 字段硬上限（floor）逐字段钳制；非有限数字的输出字段、未知字段/品牌/命令/通道一律拒绝；停止永远放行。字段知识复用 `remoteOutputGuard`。
+- 远程主控模式下 agent 来源的投影写入同样先过本层，再走现有远程链路；无 `X-Agent-Client` 的用户手动操作完全不变。
+- 事件 `agent.lease`（created/updated/released/expired）；客户端标题栏显示「AI 控制中 · 上限 X%」，悬停显示各能力上限。
+- `/api/agent-control` 只允许回环；`remoteSessionFilter` 的 `NEVER_LOCKED` 已入表。
+- 测试：jest 覆盖租约生命周期、换算表、428、能力动作/预置操作/message/HostRuntime/bridge/虚拟设备、pump 缺省 ss、motors 点号键、非数字值、租约过期停玩法；`npm --prefix backend test -- --runInBand`、前端测试与构建。
+
 ### A3 其他
 
 - 设备能力描述：`GET /api/device-capabilities` 的 `capabilityConfig.<cap>.actionParams.<action>.<field>` 给出机器可读参数范围（`{type,min,max,default}`，布尔/字符串/动态对象也标注）；B 用它按百分比缩放阈值。

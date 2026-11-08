@@ -70,6 +70,7 @@ router.post('/games/:id/launch', async (req, res) => {
       deviceMap: req.body?.deviceMap || req.body?.deviceMapping || {},
       parameters: req.body?.parameters || {},
       show: req.body?.show !== false,
+      agentClientId: req.agentClientId || null,
     }));
   } catch (error) {
     handleError(res, error);
