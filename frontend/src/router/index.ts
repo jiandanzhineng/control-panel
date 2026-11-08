@@ -43,7 +43,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/remote-projection', redirect: '/devices' },
   { path: '/test', name: 'test', component: AutoTest, meta: { titleKey: 'autoTest.platform' } },
 
-  // 本地游戏（游戏 + 插件统一入口）
+  // 游戏库（游戏 + 插件 + 本机应用统一入口）
   { path: '/plays', name: 'play_library', component: PlayLibraryView, meta: { titleKey: 'nav.plays' } },
   { path: '/plays/:type/:id/config', name: 'play_config', component: PlayConfigView, meta: { titleKey: 'playConfig.title' } },
   // 运行态（全屏覆盖层，靠「启动」进入、「停止」退出，不进侧边栏）

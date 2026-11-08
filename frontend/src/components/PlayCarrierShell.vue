@@ -124,6 +124,8 @@ function submitNavigate() {
 /* 游戏 iframe / 插件 webview 为全屏覆盖层 */
 .play-carrier-shell.is-overlay {
   position: fixed;
+  /* 让出顶部 40px 自绘标题栏：Windows 下它是唯一的窗口拖动区，且右上角有系统按钮 */
+  top: 40px;
   z-index: 2000;
 }
 

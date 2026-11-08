@@ -46,6 +46,13 @@
     return out;
   }
 
+  function capLabel(c) {
+    try {
+      if (window.SiteI18n && window.SiteI18n.capLabel) return window.SiteI18n.capLabel(c);
+    } catch (_) {}
+    return String(c == null ? '' : c);
+  }
+
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -68,7 +75,7 @@
     var keys = Object.keys(set).sort();
     var html = '<span class="chip ' + (activeFilter === 'all' ? 'active' : '') + '" data-filter="all">' + t('filterAll') + '</span>';
     keys.forEach(function (k) {
-      html += '<span class="chip" data-filter="' + esc(k) + '">' + esc(k) + ' <span style="opacity:.6">' + set[k] + '</span></span>';
+      html += '<span class="chip" data-filter="' + esc(k) + '">' + esc(capLabel(k)) + ' <span style="opacity:.6">' + set[k] + '</span></span>';
     });
     filters.innerHTML = html;
     filters.querySelectorAll('.chip').forEach(function (el) {
@@ -96,8 +103,8 @@
 
   function cardHtml(g) {
     var caps = capabilityChips(g);
-    var reqDevices = (g.devices || []).filter(function (d) { return d.required; }).map(function (d) { return d.id; });
-    var badges = caps.map(function (c) { return '<span class="badge">' + esc(c) + '</span>'; }).join('');
+    var reqDevices = (g.devices || []).filter(function (d) { return d.required; }).map(function (d) { return d.label || d.id; });
+    var badges = caps.map(function (c) { return '<span class="badge">' + esc(capLabel(c)) + '</span>'; }).join('');
     if (reqDevices.length) {
       badges += '<span class="badge required">' + t('required') + ': ' + esc(reqDevices.join(', ')) + '</span>';
     }

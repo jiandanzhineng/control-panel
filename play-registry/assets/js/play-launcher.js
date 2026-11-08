@@ -36,6 +36,20 @@
   }
 
   function el(id) { return document.getElementById(id); }
+  function capLabel(c) {
+    try {
+      if (window.SiteI18n && window.SiteI18n.capLabel) return window.SiteI18n.capLabel(c);
+    } catch (_) {}
+    return String(c == null ? '' : c);
+  }
+
+  function deviceLabel(d) {
+    try {
+      if (window.SiteI18n && window.SiteI18n.deviceLabel) return window.SiteI18n.deviceLabel(d);
+    } catch (_) {}
+    return String((d && (d.label || d.id)) || '');
+  }
+
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -295,12 +309,12 @@
         html += '<div class="form-section"><h4>' + t('deviceMap') + '</h4>';
         devs.forEach(function (d) {
           var req = d.required ? '<span class="req">' + t('required') + '</span>' : '<span class="opt">' + t('optional') + '</span>';
-          var caps = (d.capabilities || []).join(', ');
+          var caps = (d.capabilities || []).map(capLabel).join(', ');
           var candidates = online.filter(function (p) { return canMap(d, p); });
           setDefaultMapping(d, candidates);
           html += '<div class="map-row" data-logical="' + esc(d.id) + '">'
             + '<div class="map-meta">'
-            + '<span class="map-lid">' + esc(d.id) + '</span> ' + req
+            + '<span class="map-lid">' + esc(deviceLabel(d)) + '</span> ' + req
             + '<span class="map-caps">' + t('caps', { caps: esc(caps || t('none')) }) + '</span>'
             + '</div>'
             + '<div class="map-options" role="group" aria-label="' + esc(d.id) + ' 设备映射">'

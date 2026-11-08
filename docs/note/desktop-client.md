@@ -25,3 +25,9 @@
 - 数据监控：期间设备 `report_delay_ms=100`，前端每次变化立即刷新不防抖。
 - MQTT 日志只保留「解析MQTT消息」一条，topic 合并在该条上。
 - 品牌页保留连上后的试控。
+
+## 自绘标题栏（Windows）
+
+- `electron/main.js`：`titleBarStyle:'hidden'` + `titleBarOverlay`（高 39，留出标题栏 40px 的底部 1px 分隔线）；IPC `window:set-titlebar-theme` 同步原生按钮配色。
+- 前端 `components/AppTitleBar.vue`：侧栏开关、品牌、面包屑、拖拽区；主题变化时读 `--bg-app`/`--text-muted` 传给主进程。改 main.js 后需重启 Electron 才生效。
+- 截原生窗口（含系统按钮）：CDP `Page.captureScreenshot` 已能拍到 WCO 区域，不要用屏幕截图（会抢用户前台窗口）。

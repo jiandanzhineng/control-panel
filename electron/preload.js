@@ -373,8 +373,11 @@ window.provisionApi = {
 };
 
 window.windowApi = {
+  // Windows 下窗口使用自绘标题栏（原生系统按钮保留），前端据此预留右上角空间
+  customTitleBar: process.platform === 'win32',
   getSettings: () => ipcRenderer.invoke('window:get-settings'),
   setSettings: (settings) => ipcRenderer.invoke('window:set-settings', settings),
+  setTitleBarTheme: (payload) => ipcRenderer.invoke('window:set-titlebar-theme', payload),
 };
 
 window.updateApi = {

@@ -778,7 +778,18 @@
     });
   }
 
-  root.SiteI18n = { messages: M, locale: locale, isEn: isEn, t: t, apply: apply, setLocale: setLocale };
+  // 设备能力名：manifest 里是英文 key，展示时按当前语言翻译；未知能力原样显示。
+  var CAPS = {
+    zh: { weight: '称重', reporting: '数据上报', sphincterPressure: '提肛气压', tiptoePressure: '踮脚压力', distance: '距离', buttonInput: '按键', shock: '电击', estim: '电刺激', strength: '强度控制', vibration: '震动', suction: '吸吮', motors: '电机', pump: '气泵', lock: '锁定', heartRate: '心率', attitude: '姿态' },
+    en: { weight: 'Weight', reporting: 'Reporting', sphincterPressure: 'Sphincter pressure', tiptoePressure: 'Tiptoe pressure', distance: 'Distance', buttonInput: 'Button', shock: 'Shock', estim: 'E-stim', strength: 'Intensity', vibration: 'Vibration', suction: 'Suction', motors: 'Motors', pump: 'Pump', lock: 'Lock', heartRate: 'Heart rate', attitude: 'Attitude' }
+  };
+  function capLabel(cap) {
+    var key = String(cap == null ? '' : cap);
+    var table = CAPS[current] || CAPS.zh;
+    return table[key] || key;
+  }
+
+  root.SiteI18n = { messages: M, locale: locale, isEn: isEn, t: t, apply: apply, setLocale: setLocale, capLabel: capLabel };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () { bind(); apply(); });

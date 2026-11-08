@@ -1,5 +1,14 @@
 const { formatElectronText } = require('./locale');
 
+// 应用图标；单测里 electron 是精简 mock，取不到时不设图标
+function appIconPath() {
+  try {
+    return require('./tray').getTrayIconPath();
+  } catch {
+    return undefined;
+  }
+}
+
 function withTitleHint(title, locale = 'zh') {
   const hint = formatElectronText(locale, 'titleHint');
   const fallback = locale === 'en' ? 'Xiaoya' : '小雅';
@@ -107,6 +116,7 @@ function createLocalAppWindowController({
     win = new BrowserWindow({
       width: 1280,
       height: 800,
+      icon: appIconPath(),
       title: withTitleHint(title, locale),
       autoHideMenuBar: true,
       webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },

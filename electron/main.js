@@ -22,7 +22,7 @@ const { createLocalAppWindowController, attachGameMediaPermissions } = require('
 const { createBleMainIntegration } = require('./ble/mainIntegration.js');
 const { createBrandBleMainIntegration } = require('./ble/brandMainIntegration.js');
 const { createQuitCoordinator } = require('./shutdownCoordinator.js');
-const { createAppTray } = require('./tray.js');
+const { createAppTray, getTrayIconPath } = require('./tray.js');
 const {
   UPDATE_FEEDS,
   parseLatestYmlVersion,
@@ -130,6 +130,32 @@ function writeWindowSettings(settings) {
     'utf-8',
   );
   return normalized;
+}
+
+// 自绘标题栏原生按钮配色：记住上次主题，避免浅色用户启动时右上角先闪一下深色
+const DEFAULT_TITLEBAR_THEME = { color: '#141417', symbolColor: '#a1a1aa' };
+
+function getTitleBarThemePath() {
+  return path.join(path.dirname(getWindowSettingsPath()), 'titlebar-theme.json');
+}
+
+function readTitleBarTheme() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(getTitleBarThemePath(), 'utf-8'));
+    if (typeof saved?.color === 'string' && typeof saved?.symbolColor === 'string') {
+      return { color: saved.color, symbolColor: saved.symbolColor };
+    }
+  } catch {}
+  return { ...DEFAULT_TITLEBAR_THEME };
+}
+
+function writeTitleBarTheme(theme) {
+  try {
+    const prev = readTitleBarTheme();
+    if (prev.color === theme.color && prev.symbolColor === theme.symbolColor) return;
+    fs.mkdirSync(path.dirname(getTitleBarThemePath()), { recursive: true });
+    fs.writeFileSync(getTitleBarThemePath(), JSON.stringify(theme), 'utf-8');
+  } catch {}
 }
 
 function currentAppLocale() {
@@ -649,6 +675,21 @@ function registerWindowIpcHandlers() {
   ipcMain.handle('window:set-settings', (_event, settings = {}) => {
     return applyWindowSettings(writeWindowSettings(settings));
   });
+  // Windows 自绘标题栏：前端主题切换时同步原生按钮区的背景/符号颜色。
+  ipcMain.handle('window:set-titlebar-theme', (_event, payload = {}) => {
+    if (process.platform !== 'win32') return false;
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    const color = typeof payload.color === 'string' && payload.color ? payload.color : '#141417';
+    const symbolColor =
+      typeof payload.symbolColor === 'string' && payload.symbolColor ? payload.symbolColor : '#a1a1aa';
+    try {
+      mainWindow.setTitleBarOverlay({ color, symbolColor, height: 39 });
+      writeTitleBarTheme({ color, symbolColor });
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 async function askCloseBehavior() {
@@ -690,6 +731,17 @@ function createWindow() {
     // 默认收起原生菜单栏（File/Edit/View/...），按 Alt 可临时唤出；
     // 菜单本身保留，故 Ctrl+Shift+I 等默认快捷键仍可用
     autoHideMenuBar: true,
+    // 窗口/任务栏图标：开发态默认是 Electron 图标，显式指定为应用图标
+    icon: getTrayIconPath(),
+    // Windows 使用自绘标题栏：隐藏原生标题栏，保留右上角系统按钮（WCO）。
+    // 高度 39 = 标题栏 40px 减底部 1px 分隔线，避免按钮区盖住分隔线。
+    // 其余平台保持系统默认外观。
+    ...(process.platform === 'win32'
+      ? {
+          titleBarStyle: 'hidden',
+          titleBarOverlay: { ...readTitleBarTheme(), height: 39 },
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: false,

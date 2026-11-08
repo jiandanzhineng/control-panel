@@ -1748,20 +1748,20 @@ onUnmounted(() => {
 .game-config-surface {
   max-width: 900px;
   padding: 20px 16px 40px;
-  background: #f8fafc;
-  color: #1e293b;
+  background: var(--bg-app);
+  color: var(--text-primary);
 }
 
 .game-config-surface .el-card {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, .05);
-  background: #fff;
+  box-shadow: var(--shadow-light);
+  background: var(--bg-surface);
 }
 
 .game-config-surface .el-card__header {
   padding: 16px 20px;
-  border-bottom-color: #f1f5f9;
+  border-bottom-color: var(--border-subtle);
 }
 
 .game-config-surface .el-card__body {
@@ -1770,14 +1770,14 @@ onUnmounted(() => {
 
 .game-config-surface .param-section-title {
   border-radius: 8px;
-  background: #f1f5f9;
+  background: var(--bg-elevated);
 }
 
 .game-config-surface .action-section {
   padding: 14px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  background: #fff;
+  background: var(--bg-surface);
 }
 
 .config-header-card,
