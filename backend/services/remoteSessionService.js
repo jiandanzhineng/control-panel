@@ -2,6 +2,7 @@ const remoteGameService = require('./remoteGameService');
 const remoteProjectionService = require('./remoteProjectionService');
 const { randomUUID } = require('crypto');
 const logService = require('./logService');
+const eventBus = require('./eventBus');
 
 // 远程会话编排层：同时拉起「远程游戏（主房间）」与「设备投影」两条链路并统一授权。
 // 主房间的房间码是唯一对外给用户的码；投影房间码只经主房间下发给被授权的那个 userId。
@@ -198,6 +199,7 @@ class RemoteSessionService {
     this._attach();
     this._scheduleRenewal(this.state);
     this._logEvent('ok', 'session.create', null, { joinCode: this.state.joinCode });
+    this._publishModeEvent();
     return this.getStatus();
   }
 
@@ -235,6 +237,7 @@ class RemoteSessionService {
     this._lastSessionId = this.state.sessionId;
     this._attach();
     this._startPing();
+    this._publishModeEvent();
     return this.getStatus();
   }
 
@@ -268,6 +271,7 @@ class RemoteSessionService {
     this._logEvent('ok', 'session.authorize', target, { projectionRoomId: state.projectionRoomId });
     await this._inviteOperator(state, target);
     this._scheduleAuthorizeRetry(state);
+    this._publishModeEvent();
     return this.getStatus();
   }
 
@@ -290,6 +294,8 @@ class RemoteSessionService {
     // 撤权后操作方设备表必须立刻回到只有本机设备。投影侧的「空清单」是 MQTT 广播，
     // 房主离线/丢包时操作方收不到，这里由编排层轮询兜底一次。
     await this._pruneOperatorProjection();
+    this._publishModeEvent();
+    this._publishRevoked('revoked');
     return this.getStatus();
   }
 
@@ -326,6 +332,8 @@ class RemoteSessionService {
     state.peerUserId = null;
     state.projectionAuthorizedUserId = null;
     state.phase = 'waiting';
+    this._publishModeEvent();
+    this._publishRevoked('kicked', target);
     return this.getStatus();
   }
 
@@ -383,6 +391,8 @@ class RemoteSessionService {
     this._markEnded(reason, state.sessionId);
     this._gameNames.clear();
     this._logEvent('ok', 'session.stop', null, { reason });
+    this._publishModeEvent();
+    this._publishRevoked(reason);
     return this.getStatus();
   }
 
@@ -401,6 +411,31 @@ class RemoteSessionService {
   projectionRoomId() {
     const state = this.state;
     return this.isOperatorRemoteMode() ? state.projectionRoomId : null;
+  }
+
+  /** 客户端/事件流用的三态模式：local | remote-operator | remote-controlled。 */
+  getMode() {
+    const state = this.state;
+    if (!state) return 'local';
+    if (this.isOperatorRemoteMode()) return 'remote-operator';
+    if (state.role === 'owner') return 'remote-controlled';
+    return 'local';
+  }
+
+  _publishModeEvent() {
+    eventBus.publish('session.mode', {
+      mode: this.getMode(),
+      sessionId: this.state?.sessionId || null,
+      role: this.state?.role || null,
+    });
+  }
+
+  _publishRevoked(reason, userId = null) {
+    eventBus.publish('session.revoked', {
+      reason: reason || null,
+      userId: userId || null,
+      role: this.state?.role || null,
+    });
   }
 
   /** 主控端把设备相关写操作转成主房间语义命令（被控端执行后返回结果）。 */
@@ -601,6 +636,8 @@ class RemoteSessionService {
       this._markEnded(event.reason || 'ended');
       this._teardown();
       this._logEvent('ok', 'session.ended', null, { reason: event.reason || null });
+      this._publishModeEvent();
+      this._publishRevoked(event.reason || 'ended');
       // 被控端只关掉自己那侧房间（stop/踢出/离线）：主控端的投影链路与设备表要自己收掉
       void this._teardownOperatorLinks();
     }
@@ -616,6 +653,8 @@ class RemoteSessionService {
       if (event.type === 'ended') {
         this._markEnded(event.reason || 'ended');
         this._logEvent('ok', 'session.ended', null, { reason: event.reason || null });
+        this._publishModeEvent();
+        this._publishRevoked(event.reason || 'ended');
         // 投影链路自己结束了（房主关掉他那侧房间）：主控端把链路与设备表收干净
         void this._teardownOperatorLinks();
       }
@@ -659,6 +698,8 @@ class RemoteSessionService {
       this._markEnded(event.reason || 'ended');
       this._teardown();
       this._logEvent('ok', 'session.ended', null, { reason: event.reason || null });
+      this._publishModeEvent();
+      this._publishRevoked(event.reason || 'ended');
       // 被控端只关掉自己那侧房间：主控端的投影链路与设备表要自己收掉
       void this._teardownOperatorLinks();
     }
@@ -704,6 +745,8 @@ class RemoteSessionService {
       state.projectionRoomId = status?.roomId || invite?.projectionRoomId || null;
       state.projectionJoinRetry = false;
       this._logEvent('ok', 'session.projection-join', null, { roomId: state.projectionRoomId });
+      // 主控端拿到投影房间后 isOperatorRemoteMode 可能已经成立，模式切换要通知客户端
+      this._publishModeEvent();
     } catch (error) {
       state.projectionRoomId = null;
       state.lastError = error?.message || String(error);
@@ -852,6 +895,8 @@ class RemoteSessionService {
       await this.game.revoke().catch(() => {});
       // 操作方设备表回到只有本机设备：投影侧的空清单是 MQTT 广播，房主离线/丢包时收不到
       await this._pruneOperatorProjection();
+      this._publishModeEvent();
+      this._publishRevoked(event?.reason || 'revoked', event?.userId || null);
     } finally {
       this._cascadingRevoke = false;
     }

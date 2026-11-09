@@ -10,6 +10,7 @@ const browserDeviceGrantService = require('./browserDeviceGrantService');
 const wsUpgradeRouter = require('./wsUpgradeRouter');
 const sttService = require('./sttService');
 const gameLaunchTokenService = require('./gameLaunchTokenService');
+const agentControl = require('./agentControlService');
 const gameCloudService = require('./gameCloudService');
 const { VocabCommandSession, MODEL: VOCAB_KWS_MODEL } = require('../voice/vocabCommandSession');
 // 玩法载体事件（本机开始/退出一次玩法）：远程占用仲裁（remoteGameService）订阅
@@ -35,6 +36,10 @@ class GameSession {
     this.origin = config.origin || '';
     // 宿主签发的游戏启动令牌；云存档的游戏 id 只能由它解析，页面传的 gameId 一律忽略。
     this.gameToken = typeof config.gameToken === 'string' ? config.gameToken : null;
+    // agent 发起的玩法：bridge 会话的设备输出全部按该 agent 租约限幅。
+    this.agentClientId = typeof config.agentClientId === 'string' && config.agentClientId
+      ? config.agentClientId
+      : null;
     this.subscriptions = new Map();
     this.propertySubscriptions = new Map();
     this.valueSubscriptions = new Map();
@@ -170,6 +175,8 @@ function init(server) {
           deviceMap: config.deviceMap,
           params: config.params,
           gameToken: config.gameToken,
+          // 启动令牌由宿主机签发：agent 启动的 iframe 游戏在这里继承 agent 来源。
+          agentClientId: gameLaunchTokenService.resolveEntry?.(config.gameToken)?.agentClientId || null,
         });
         sessions.set(session.id, session);
         activeSession = session;
@@ -201,28 +208,41 @@ function init(server) {
   deviceService.onDeviceRawMessage(({ deviceId, payload }) => handleRawMessageForBridge(deviceId, payload));
 }
 
+function runWithSessionAgent(session, fn) {
+  return session?.agentClientId
+    ? agentControl.runWithClient(session.agentClientId, fn)
+    : fn();
+}
+
+/** 租约释放/过期：停掉该 agent 发起的 iframe 玩法（含设备复位）。 */
+function stopAgentSession(clientId) {
+  if (!activeSession || !clientId || activeSession.agentClientId !== clientId) return false;
+  resetActiveSession('agent-lease-ended');
+  return true;
+}
+
 function handleMessage(session, msg) {
   const { id, action } = msg;
 
   try {
     switch (action) {
       case 'invoke': {
-        session.send({ id, result: invokeForSession(session, msg) });
+        session.send({ id, result: runWithSessionAgent(session, () => invokeForSession(session, msg)) });
         break;
       }
 
       case 'writeProps': {
-        session.send({ id, result: writePropsForSession(session, msg) });
+        session.send({ id, result: runWithSessionAgent(session, () => writePropsForSession(session, msg)) });
         break;
       }
 
       case 'operate': {
-        session.send({ id, result: operateForSession(session, msg) });
+        session.send({ id, result: runWithSessionAgent(session, () => operateForSession(session, msg)) });
         break;
       }
 
       case 'sendMessage': {
-        session.send({ id, result: sendMessageForSession(session, msg) });
+        session.send({ id, result: runWithSessionAgent(session, () => sendMessageForSession(session, msg)) });
         break;
       }
 
@@ -1053,11 +1073,19 @@ function transcribeForSession(msg) {
 // 本机（页面式游戏 / 插件）开始与退出玩法：广播给远程占用仲裁。
 // bridge 的 init 就是「本机开始一次玩法」；复位路径（显式退出 / 被顶替 / 宽限超时）即退出。
 function notifyCarrierStart() {
-  playCarrierBus.emitPlayCarrierStart({ kind: 'bridge' });
+  // iframe 游戏没有单独的 gameId 通道：启动时签发的令牌能反查游戏 id，
+  // 让全局事件流（game.started）与远程占用仲裁拿到同一个 id。
+  const gameId = activeSession?.gameToken
+    ? (require('./gameLaunchTokenService').resolve(activeSession.gameToken) || null)
+    : null;
+  playCarrierBus.emitPlayCarrierStart({ kind: 'bridge', gameId });
 }
 
 function notifyCarrierExit(reason) {
-  playCarrierBus.emitPlayCarrierExit({ kind: 'bridge', reason });
+  const gameId = activeSession?.gameToken
+    ? (require('./gameLaunchTokenService').resolve(activeSession.gameToken) || null)
+    : null;
+  playCarrierBus.emitPlayCarrierExit({ kind: 'bridge', reason, gameId });
 }
 
 function getActiveSessions() {
@@ -1075,6 +1103,7 @@ module.exports = {
   closeSession,
   exitCurrent,
   resetActiveSession,
+  stopAgentSession,
   runBrowserCommand,
   exitBrowserOrigin,
   getAllDeviceMap,

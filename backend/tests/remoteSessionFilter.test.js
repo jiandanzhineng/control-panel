@@ -167,6 +167,18 @@ describe('remote session filter', () => {
     expect(remoteSession.command).not.toHaveBeenCalled();
   });
 
+  test('allows event stream and client control routes in operator remote mode', async () => {
+    enableOperatorMode();
+    const app = createApp();
+    // 事件流只读；client 控制的是本机窗口/路由/截图/本机玩法载体，远程模式下也必须放行
+    await request(app).get('/api/events/stream').expect(200);
+    await request(app).get('/api/events/recent').expect(200);
+    await request(app).get('/api/client/state').expect(200);
+    await request(app).post('/api/client/window').send({ action: 'show' }).expect(200);
+    await request(app).post('/api/client/navigate').send({ path: '/home' }).expect(200);
+    await request(app).post('/api/client/games/demo/launch').send({}).expect(200);
+  });
+
   test('hides local devices and devices from other projection rooms', async () => {
     enableOperatorMode();
     const app = createApp();

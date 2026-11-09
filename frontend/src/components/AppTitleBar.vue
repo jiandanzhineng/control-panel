@@ -33,6 +33,22 @@
       </template>
     </nav>
 
+    <el-tooltip v-if="agentLease" placement="bottom" :show-after="150">
+      <template #content>
+        <div class="agent-lease-tip">
+          <div class="agent-lease-tip__title">{{ t('agentLease.title') }}</div>
+          <div class="agent-lease-tip__row">{{ t('agentLease.defaultLimit') }}: {{ agentLease.limits.default }}%</div>
+          <div v-for="[key, pct] in agentCapabilityRows" :key="key" class="agent-lease-tip__row">
+            {{ capabilityLabel(key) }}: {{ pct }}%
+          </div>
+        </div>
+      </template>
+      <div class="tb-agent-badge" role="status">
+        <span class="tb-agent-dot" aria-hidden="true" />
+        <span>{{ t('agentLease.active', { limit: agentLease.limits.default }) }}</span>
+      </div>
+    </el-tooltip>
+
     <div class="tb-drag-space" aria-hidden="true" />
   </header>
 </template>
@@ -43,6 +59,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { Expand, Fold } from '@element-plus/icons-vue'
 import { useTheme } from '../composables/useTheme'
+import { useAgentLease } from '../composables/useAgentLease'
 import { router } from '../router'
 
 defineProps<{ collapsed: boolean }>()
@@ -51,6 +68,19 @@ const emit = defineEmits<{ (e: 'toggle-sidebar'): void }>()
 const { t } = useI18n()
 const route = useRoute()
 const { resolved } = useTheme()
+const { lease: agentLease } = useAgentLease()
+
+const CAPABILITY_ORDER = ['strength', 'shock', 'vibration', 'suction', 'estim', 'motors', 'pump']
+const agentCapabilityRows = computed(() => {
+  const caps = agentLease.value?.limits.capabilities || {}
+  return CAPABILITY_ORDER
+    .filter((key) => caps[key] !== undefined)
+    .map((key) => [key, caps[key]] as const)
+})
+
+function capabilityLabel(key: string) {
+  return t(`agentLease.capabilities.${key}`)
+}
 
 // Electron Windows 壳：右上角原生按钮区需要前端让出空间
 const customTitleBar = !!(window as any).windowApi?.customTitleBar
@@ -197,6 +227,58 @@ a.tb-crumb:hover {
   flex: 1 1 auto;
   min-width: 12px;
   height: 100%;
+}
+
+.tb-agent-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  -webkit-app-region: no-drag;
+  cursor: default;
+}
+
+.tb-agent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: agent-dot-pulse 2s ease-out infinite;
+}
+
+@keyframes agent-dot-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  70% { box-shadow: 0 0 0 5px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.agent-lease-tip {
+  min-width: 132px;
+  line-height: 1.6;
+  font-size: 12px;
+}
+
+.agent-lease-tip__title {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.agent-lease-tip__row {
+  opacity: 0.9;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tb-agent-dot { animation: none; }
 }
 
 /* 窄窗口：面包屑可收缩省略，不滑进系统按钮区 */

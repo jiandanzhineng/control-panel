@@ -16,18 +16,22 @@ function prune(now = Date.now()) {
 }
 
 /** 按游戏 id 签发一次令牌；id 不合法（如外部游戏的稳定 id）返回 null。 */
-function issue(gameId) {
+function issue(gameId, { agentClientId = null } = {}) {
   const id = typeof gameId === 'string' ? gameId : '';
   if (!GAME_ID_RE.test(id)) return null;
   const token = crypto.randomBytes(24).toString('base64url');
   const now = Date.now();
   prune(now);
-  tokens.set(token, { gameId: id, expiresAt: now + TOKEN_TTL_MS });
+  tokens.set(token, {
+    gameId: id,
+    agentClientId: typeof agentClientId === 'string' && agentClientId ? agentClientId : null,
+    expiresAt: now + TOKEN_TTL_MS,
+  });
   return token;
 }
 
-/** 令牌 → 游戏 id；未知或过期返回 null。 */
-function resolve(token) {
+/** 令牌 → 完整条目（含签发时的 agent 来源）；未知或过期返回 null。 */
+function resolveEntry(token) {
   if (typeof token !== 'string' || !token || token.length > MAX_TOKEN_LENGTH) return null;
   const entry = tokens.get(token);
   if (!entry) return null;
@@ -35,7 +39,12 @@ function resolve(token) {
     tokens.delete(token);
     return null;
   }
-  return entry.gameId;
+  return entry;
+}
+
+/** 令牌 → 游戏 id；未知或过期返回 null。 */
+function resolve(token) {
+  return resolveEntry(token)?.gameId || null;
 }
 
 function _resetForTests() {
@@ -45,6 +54,7 @@ function _resetForTests() {
 module.exports = {
   issue,
   resolve,
+  resolveEntry,
   _resetForTests,
   GAME_ID_RE,
   TOKEN_TTL_MS,

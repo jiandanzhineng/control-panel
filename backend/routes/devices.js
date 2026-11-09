@@ -196,7 +196,7 @@ router.post('/:id/message', async (req, res) => {
     }
     res.json(await deviceService.sendDeviceMessageAndWait(id, message));
   } catch (e) {
-    sendError(res, e.code || 'DEVICE_MESSAGE_FAILED', e.message || String(e), 500);
+    sendError(res, e.code || 'DEVICE_MESSAGE_FAILED', e.message || String(e), e.status || 500);
   }
 });
 
@@ -215,11 +215,15 @@ router.put('/:id/control-connection', (req, res) => {
   }
 });
 
-// 更新设备元数据（例如名称），并通知设备
+// 更新设备元数据（例如名称），并通知设备。
+// 只允许元数据字段：PATCH 的 body 会原样下发设备，不能借此写 power/voltage。
 router.patch('/:id', (req, res) => {
   try {
     const id = req.params.id;
-    const patch = req.body || {};
+    const raw = req.body || {};
+    const patch = {};
+    if (typeof raw.name === 'string') patch.name = raw.name;
+    if (typeof raw.nickname === 'string') patch.nickname = raw.nickname;
     const dev = deviceService.updateDeviceMeta(id, patch);
     if (!dev) return sendError(res, 'DEVICE_NOT_FOUND', '设备不存在', 404);
     try {
@@ -379,7 +383,7 @@ router.post('/:id/operations/:operationKey', async (req, res) => {
       stack: e.stack,
       errorCode: e.code || 'DEVICE_OPERATION_FAILED'
     });
-    sendError(res, 'DEVICE_OPERATION_FAILED', e.message || String(e), 500);
+    sendError(res, 'DEVICE_OPERATION_FAILED', e.message || String(e), e.status || 500);
   }
 });
 
@@ -392,6 +396,11 @@ function getCapabilityRouteStatus(code) {
     case 'DEVICE_CAPABILITY_NOT_SUPPORTED':
     case 'DEVICE_CAPABILITY_ACTION_NOT_SUPPORTED':
       return 400;
+    case 'AGENT_OUTPUT_REJECTED':
+    case 'INVALID_CLIENT_ID':
+      return 400;
+    case 'AGENT_LEASE_REQUIRED':
+      return 428;
     default:
       return 500;
   }
@@ -404,7 +413,9 @@ function getCapabilityRouteStatus(code) {
 // 请求体：{ input: { ...动作参数 } }（也兼容裸对象或 { params } 写法）。
 router.post('/:id/capabilities/:capability/actions/:action', async (req, res) => {
   const { id, capability, action } = req.params;
-  const input = (req.body && req.body.input) || (req.body && req.body.params) || req.body || {};
+  const input = (req.body && req.body.input !== undefined)
+    ? req.body.input
+    : (req.body && req.body.params !== undefined) ? req.body.params : (req.body || {});
   try {
     const result = await deviceService.invokeDeviceCapabilityAndWait(id, capability, action, input);
     res.json({ success: true, ...(result || {}) });

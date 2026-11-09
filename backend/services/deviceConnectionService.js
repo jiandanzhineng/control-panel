@@ -1,4 +1,5 @@
 const VALID_TRANSPORTS = new Set(['mqtt', 'serial', 'ble', 'remote', 'brand', 'brandBle']);
+const agentControl = require('./agentControlService');
 
 const devices = new Map();
 
@@ -101,15 +102,27 @@ function send(deviceId, message = {}) {
     throw createError('DEVICE_OFFLINE', `Device ${deviceId} has no active connection`);
   }
 
+  // 最终汇聚点：所有 transport（MQTT/串口/BLE/品牌/远程投影）下发前的最后一道闸门。
+  // agent 来源（请求上下文或玩法标记）在这里按租约逐字段钳制；手动操作原样透传。
+  let outbound = message;
+  const agentClientId = agentControl.currentClientId();
+  if (agentClientId) {
+    // 延迟 require：deviceService 在模块顶层 require 本文件，避免循环依赖。
+    const device = require('./deviceService').getDeviceById(deviceId);
+    outbound = agentControl.guardDeviceMessage({
+      clientId: agentClientId, device, message,
+    }).message;
+  }
+
   // Never retry on another transport: the command may have executed before a
   // transport reported an error.
-  const result = connection.adapter.send(message);
+  const result = connection.adapter.send(outbound);
   connection.lastActivity = Date.now();
   return {
     ok: true,
     connectionType: connection.type,
     controlConnection: connection.type,
-    message,
+    message: outbound,
     result,
   };
 }

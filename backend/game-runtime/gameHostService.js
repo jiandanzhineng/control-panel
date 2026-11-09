@@ -5,6 +5,7 @@ const coreResolver = require('./gameCoreResolver');
 const { GameCoreRuntime } = require('./gameCoreRuntime');
 const { GameStateStream } = require('./gameStateStream');
 const remoteOutputGuard = require('../services/remoteOutputGuard');
+const agentControl = require('../services/agentControlService');
 // 玩法载体事件：HostRuntime 起停也通知远程占用仲裁（与 bridgeService 共用一条总线）
 const playCarrierBus = require('../services/playCarrierBus');
 
@@ -182,7 +183,7 @@ class GameHostService {
     };
   }
 
-  start({ gameId, deviceMap, params, source = 'local' } = {}) {
+  start({ gameId, deviceMap, params, source = 'local', agentClientId = null } = {}) {
     if (!isHostGame(gameId)) {
       const error = new Error('该游戏尚未接入 HostRuntime');
       error.code = 'GAME_NOT_HOSTED';
@@ -209,6 +210,8 @@ class GameHostService {
       tickTimer: null,
       // 远程会话：本局是主控端起在跑，核心设备意图必须过远程限幅与锁存看门狗
       remoteOutput: (source || 'local') === 'remote',
+      // agent 发起的玩法：本局所有设备意图都按该 agent 租约限幅；租约过期即停局
+      agentClientId: typeof agentClientId === 'string' && agentClientId ? agentClientId : null,
     };
     this.session = session;
     const started = core.start(nowMs);
@@ -231,6 +234,22 @@ class GameHostService {
 
   pause() {
     return this._withSession((session, nowMs) => session.runtime.core.pause(nowMs));
+  }
+
+  /** agent 用带 X-Agent-Client 的请求操作了用户局：把本局标记为 agent 控制（后续输出都限幅）。 */
+  markAgentControl(clientId) {
+    const id = typeof clientId === 'string' ? clientId : '';
+    if (!id || !this.session || this.session.agentClientId) return false;
+    this.session.agentClientId = id;
+    return true;
+  }
+
+  /** 租约释放/过期：停掉该 agent 发起的 HostRuntime 玩法。 */
+  stopAgentPlay(clientId) {
+    const session = this.session;
+    if (!session || !clientId || session.agentClientId !== clientId) return false;
+    this.stop({ reason: 'agent-lease-ended' });
+    return true;
   }
 
   resume() {
@@ -346,6 +365,18 @@ class GameHostService {
   }
 
   _executeEffects(session, effects, nowMs) {
+    // 玩法标记优先于请求上下文：tick 定时器/设备事件回调里没有 ALS，但执行意图时
+    // 用该玩法的 agentClientId 重新包一层，保证写设备调用带上正确来源。
+    if (session.agentClientId) {
+      agentControl.runWithClient(session.agentClientId, () => {
+        this._executeEffectsInner(session, effects, nowMs);
+      });
+      return;
+    }
+    this._executeEffectsInner(session, effects, nowMs);
+  }
+
+  _executeEffectsInner(session, effects, nowMs) {
     for (const effect of effects) {
       try {
         this._executeEffect(session, effect, nowMs);

@@ -76,6 +76,14 @@ export const router = createRouter({
   routes,
 });
 
+// 客户端控制：把当前页面（含 query）上报给 Electron 主进程，供 /api/client/state 与事件流使用。
+router.afterEach((to) => {
+  const clientApi = (window as any).clientApi;
+  if (clientApi && typeof clientApi.reportRoute === 'function') {
+    clientApi.reportRoute(to.fullPath);
+  }
+});
+
 // 主控端远程模式下：被锁页面直接拦下并提示（与侧栏置灰同一份规则）。
 router.beforeEach(async (to) => {
   const { useRemoteSession } = await import('../composables/useRemoteSession');

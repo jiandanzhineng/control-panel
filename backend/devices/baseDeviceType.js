@@ -61,6 +61,7 @@ class BaseDeviceType {
       key: capabilityKey,
       name: override.name || base.name || capabilityKey,
       actions: override.actions || base.actions || {},
+      actionParams: override.actionParams || base.actionParams || {},
       value: override.value || base.value || null,
       monitorData: Array.isArray(override.monitorData)
         ? override.monitorData
@@ -101,6 +102,7 @@ class BaseDeviceType {
         key: cap.key,
         name: cap.name,
         actions: cap.actions,
+        actionParams: cap.actionParams,
         monitorData: cap.monitorData,
       };
     }

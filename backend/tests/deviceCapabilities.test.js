@@ -1,5 +1,5 @@
 const registry = require('../devices/registry');
-const { validateActionInput } = require('../devices/capabilities');
+const { validateActionInput, getCapabilityDefinition } = require('../devices/capabilities');
 const express = require('express');
 const request = require('supertest');
 
@@ -52,6 +52,17 @@ describe('device capability registry', () => {
     expect(cunzhi.resolveCapabilityValue('tiptoePressure', { pressure1: 37.5 })).toBe(37.5);
   });
 
+  it('shock start keeps an explicit 0V and defaults only when omitted', () => {
+    const { shock } = require('../devices/capabilities');
+    const sent = [];
+    shock.actions.start({ writeProps: (props) => sent.push(props) }, { voltage: 0 });
+    shock.actions.start({ writeProps: (props) => sent.push(props) }, {});
+    expect(sent).toEqual([
+      { voltage: 0, shock: 1 },
+      { voltage: 24, shock: 1 },
+    ]);
+  });
+
   it('builds default strength update messages through bindings', () => {
     const td01 = registry.getDeviceType('TD01');
     const sent = [];
@@ -101,6 +112,24 @@ describe('device capability routes', () => {
     expect(res.body.typeCapabilityMap.CUNZHI01).toEqual(expect.arrayContaining(['strength', 'sphincterPressure', 'tiptoePressure', 'shock']));
     expect(res.body.typeCapabilityMap.ZIDONGSUO).toEqual(expect.arrayContaining(['lock', 'buttonInput']));
     expect(res.body.typeCapabilityMap.other).toBeUndefined();
+    expect(res.body.capabilityConfig.strength.actionParams.set.value)
+      .toMatchObject({ type: 'number', min: 0, max: 255 });
+    expect(res.body.capabilityConfig.distance.actionParams.configure.lowBand)
+      .toMatchObject({ type: 'number', min: 0, max: 999999 });
+  });
+
+  it('exposes machine-readable action params and numeric ranges', () => {
+    expect(getCapabilityDefinition('strength').actionParams.set.value)
+      .toMatchObject({ type: 'number', min: 0, max: 255 });
+    expect(getCapabilityDefinition('vibration').actionParams.set.value)
+      .toMatchObject({ type: 'number', min: 0, max: 100 });
+    expect(getCapabilityDefinition('shock').actionParams.start.voltage)
+      .toMatchObject({ type: 'number', min: 0, max: 100 });
+    expect(getCapabilityDefinition('reporting').actionParams.setReportDelay.ms)
+      .toMatchObject({ type: 'number', min: 0, max: 99999 });
+    expect(getCapabilityDefinition('lock').actionParams.setOpen.open.type).toBe('boolean');
+    expect(getCapabilityDefinition('estim').actionParams.set.intensity)
+      .toMatchObject({ type: 'number', min: 0, max: 255 });
   });
 
   it('returns base config for unknown device types', async () => {

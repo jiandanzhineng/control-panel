@@ -3,6 +3,8 @@
 > 自动生成，勿手改。更新：`python E:\smart\tools\memory-index\memory_index.py --path <本层级目录>`
 
 - 2026-11-09 [游戏参数只折叠不隐藏](2026-11-09-game-params-fold-not-hide.md) — 游戏配置参数精简时只折叠进高级设置，不隐藏、不删除，想调仍能调
+- 2026-11-09 [命令行工具 undersilicon-cli](2026-11-09-undersilicon-cli.md) — CLI 补齐常用控制，发 npm 包 undersilicon-cli，限幅可选开启
+- 2026-11-08 [DeepSeek Harness（dsh）插件：让 AI agent 控制设备与客户端](2026-11-08-dsh-agent-plugin.md) — 做 dsh 插件给用户用，agent 可看/控本机及已授权远程设备与客户端，可写脚本订阅事件
 - 2026-11-08 [游戏库合并本地与在线游戏](2026-11-08-game-library-merge.md) — 本地游戏与在线游戏合并为「游戏库」，在线游戏原生列出，网页嵌入降为「游戏站」
 - 2026-11-08 [游戏库测试分类、投稿/建议入口与自绘标题栏](2026-11-08-library-contribute-and-titlebar.md) — 测试游戏单独分类；游戏库顶部加投稿与玩法建议（采纳有奖）；游戏站只留游戏库入口；自绘标题栏
 - 2026-11-04 [PC 背单词离线口令](2026-11-04-vocab-kws-commands.md) — PC 背单词语音答题采用手机同款离线固定口令 KWS

@@ -1294,6 +1294,21 @@ const en = {
       occupancyReleased: 'Play occupancy released',
     },
   },
+  agentLease: {
+    active: 'AI control · cap {limit}%',
+    title: 'AI is controlling devices',
+    defaultLimit: 'Default cap',
+    capabilities: {
+      strength: 'Strength',
+      shock: 'Shock',
+      vibration: 'Vibration',
+      suction: 'Suction',
+      estim: 'Multi-channel estim',
+      motors: 'Motors',
+      pump: 'Pump',
+    },
+    fieldCaps: 'Output field caps',
+  },
   electron: {
     showWindow: 'Show main window',
     quit: 'Quit',
