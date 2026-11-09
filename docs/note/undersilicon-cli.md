@@ -29,3 +29,4 @@
 
 1. 改 `device-cli/package.json` 版本，`npm --prefix device-cli test`，`npm pack --dry-run` 看文件清单。
 2. `node E:\smart\project\dsh-undersilicon\tools\npm-publish-web.cjs <device-cli 绝对路径>`（后台跑，把打印的 `AUTH_URL` 给用户在浏览器确认 2FA）。
+3. 坑：用户确认前 npm 的 `-/v1/done` 接口返回 404，原脚本把 404 当错误立即退出（2026-11-09 两次都这样失败）。轮询要把 404 当成「还没确认」继续等，最长等 10 分钟。
