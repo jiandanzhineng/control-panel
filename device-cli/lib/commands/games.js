@@ -88,7 +88,10 @@ async function startGame(ctx) {
       deviceMap, parameters, show
     }, { timeoutMs: 60000 });
   } catch (error) {
-    if (error.status !== 503 || error.code !== 'CLIENT_UNAVAILABLE') throw error;
+    // 503：客户端窗口未注册；404/405 且不是 GAME_NOT_FOUND：旧版客户端没有该接口。
+    const clientDown = error.status === 503 && error.code === 'CLIENT_UNAVAILABLE';
+    const legacy = (error.status === 404 || error.status === 405) && error.code !== 'GAME_NOT_FOUND';
+    if (!clientDown && !legacy) throw error;
     via = 'backend';
     result = await api.post(`/games/${encodeURIComponent(id)}/start`, {
       deviceMapping: deviceMap,

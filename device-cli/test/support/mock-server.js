@@ -43,7 +43,8 @@ function typeConfig(type) {
 /**
  * 进程内 mock：覆盖 CLI 用到的全部后端接口。
  * 选项：clientAvailable（false 时 /client/* 返回 503）、remoteMode（stop-all 423）、
- * unsupportedLease（租约接口 404）、events 消息自动推送。
+ * unsupportedLease（租约接口 404）、legacyClient（旧正式版：/client/* 路由不存在，Express 默认 404）、
+ * events 消息自动推送。
  */
 function createMockServer(options = {}) {
   const state = {
@@ -52,6 +53,7 @@ function createMockServer(options = {}) {
     unsupportedLease: options.unsupportedLease === true,
     failStopCurrent: options.failStopCurrent === true,
     unsupportedAgent: options.unsupportedAgent === true,
+    legacyClient: options.legacyClient === true,
     requests: [],
     leases: new Map(),
     sse: new Set(),
@@ -211,6 +213,10 @@ async function handle(state, req, res) {
       ? { available: true, version: 'test', window: { visible: true }, route: '/devices', locale: 'zh-CN' }
       : { available: false, version: 'test', window: null, route: null });
   }
+  if (path.startsWith('/api/client/') && state.legacyClient) {
+    res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+    return res.end(`<pre>Cannot ${req.method} ${path}</pre>`);
+  }
   if (path.startsWith('/api/client/') && !state.clientAvailable) {
     return fail(res, 503, 'CLIENT_UNAVAILABLE', 'client control host is not registered');
   }
@@ -235,6 +241,7 @@ async function handle(state, req, res) {
   if (path.startsWith('/api/client/games/') && path.endsWith('/launch') && req.method === 'POST') {
     if (!state.clientAvailable) return fail(res, 503, 'CLIENT_UNAVAILABLE', 'client control host is not registered');
     const id = path.split('/')[4];
+    if (id === 'missing') return fail(res, 404, 'GAME_NOT_FOUND', 'game not found');
     state.game = { id, source: 'client-launch' };
     return json(res, 200, {
       ok: true, gameId: id, mode: 'iframe', started: true,
