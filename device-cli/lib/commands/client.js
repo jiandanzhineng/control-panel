@@ -45,11 +45,30 @@ async function routes(ctx) {
   });
 }
 
+// Git Bash（MSYS）会把 `/plays` 改写成 `C:/Program Files/Git/plays`。
+// 遇到 Windows 绝对路径时，按页面清单做后缀匹配还原成路由。
+async function resolveRoutePath(api, input) {
+  const raw = String(input).trim();
+  if (!/^[A-Za-z]:[\\/]/.test(raw)) return raw.startsWith('/') ? raw : `/${raw}`;
+  const mangled = raw.replace(/\\/g, '/');
+  const [pathPart, query = ''] = mangled.split('?');
+  const routes = await api.get('/client/routes');
+  const match = (Array.isArray(routes) ? routes : [])
+    .map((route) => route.path)
+    .filter((path) => typeof path === 'string' && pathPart.toLowerCase().endsWith(path.toLowerCase()))
+    .sort((a, b) => b.length - a.length)[0];
+  if (!match) {
+    throw new UsageError(`页面路径被终端改写成了 ${raw}，请改写成不带斜杠的形式，例如 undersilicon open plays`, 'open');
+  }
+  return query ? `${match}?${query}` : match;
+}
+
 async function open(ctx) {
   const { api, out, json, baseUrl, parsed } = ctx;
-  const target = parsed.positionals[0];
-  if (!target) throw new UsageError('缺少页面路径，用法: undersilicon open <path> [--no-show]', 'open');
+  const input = parsed.positionals[0];
+  if (!input) throw new UsageError('缺少页面路径，用法: undersilicon open <path> [--no-show]', 'open');
   const show = parsed.values['no-show'] !== true;
+  const target = await resolveRoutePath(api, input);
   const result = await api.post('/client/navigate', { path: target, show });
   const payload = { ok: true, command: 'open', baseUrl, path: target, show, result };
   if (json) {
@@ -57,7 +76,7 @@ async function open(ctx) {
     return;
   }
   out.kv({
-    路径: result?.route ?? target,
+    路径: target,
     窗口: JSON.stringify(result?.window ?? null),
     显示窗口: show
   });

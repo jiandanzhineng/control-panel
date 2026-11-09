@@ -46,8 +46,10 @@ async function run(ctx) {
     out.kv({ 状态: '当前客户端不支持客户端控制接口，请更新客户端' });
   } else {
     const state = client.data || {};
-    out.kv({
-      可用: state.available,
+    if (!state.available) {
+      out.kv({ 可用: '否（客户端窗口未运行，只有后端；窗口/截图/页面命令不可用）' });
+    } else out.kv({
+      可用: '是',
       版本: state.version ?? '',
       路由: state.route ?? '',
       窗口: state.window ? JSON.stringify(state.window) : '',

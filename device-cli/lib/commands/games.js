@@ -102,14 +102,25 @@ async function startGame(ctx) {
     out.jsonOut(payload);
     return;
   }
+  const started = result?.started || result || {};
+  const runtime = started.runtime || {};
   out.kv({
     游戏: id,
-    启动路径: via === 'client' ? 'client launch' : 'backend start（客户端未就绪，已回退）',
-    显示窗口: show,
-    设备映射: JSON.stringify(deviceMap),
-    参数: JSON.stringify(parameters),
-    结果: JSON.stringify(result ?? null)
+    启动方式: via === 'client' ? '客户端启动' : '纯后端启动（客户端未打开，已回退）',
+    载体: result?.mode || runtime.mode || started.runtimeMode || '',
+    会话: runtime.sessionId || '',
+    设备映射: JSON.stringify(started.deviceMap || deviceMap),
+    生效参数: JSON.stringify(started.params || parameters)
   });
+  out.text('完整结果用 --json 查看');
+}
+
+function snapshotSummary(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return '';
+  const parts = [snapshot.title, snapshot.phaseText || snapshot.phase];
+  if (snapshot.ended) parts.push(`已结束${snapshot.endReason ? `（${snapshot.endReason}）` : ''}`);
+  else if (snapshot.paused) parts.push('已暂停');
+  return parts.filter(Boolean).join(' · ');
 }
 
 async function stopGame(ctx) {
@@ -120,7 +131,11 @@ async function stopGame(ctx) {
     out.jsonOut(payload);
     return;
   }
-  out.kv({ 结果: JSON.stringify(result ?? null) });
+  const host = result?.host;
+  out.kv({
+    结果: result?.ok === false ? '失败' : '已停止',
+    状态: host ? snapshotSummary(host.snapshot) || (host.running ? '运行中' : '未运行') : ''
+  });
 }
 
 async function gameStatus(ctx) {
@@ -138,7 +153,7 @@ async function gameStatus(ctx) {
     来源: status?.source ?? '',
     会话: status?.sessionId ?? '',
     设备映射: JSON.stringify(status?.deviceMap ?? {}),
-    快照: JSON.stringify(status?.snapshot ?? null)
+    状态: snapshotSummary(status?.snapshot)
   });
 }
 

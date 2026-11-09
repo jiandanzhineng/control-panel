@@ -107,7 +107,7 @@ function json(res, status, payload) {
 }
 
 function fail(res, status, code, message) {
-  json(res, status, { code, message });
+  json(res, status, { error: { code, message } });
 }
 
 function fieldCapsFor(limits = {}) {

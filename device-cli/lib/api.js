@@ -80,11 +80,14 @@ function createApi({ baseUrl, clientId = null, fetchImpl = globalThis.fetch } = 
         try { data = text ? JSON.parse(text) : null; } catch { data = text; }
       }
       if (!response.ok) {
+        // 后端标准错误是 {error:{code,message}}，也兼容平铺的 {code,message} / {error:'文本'}。
+        const nested = data && typeof data.error === 'object' && data.error ? data.error : null;
         const message = typeof data === 'string'
           ? data || response.statusText
-          : data?.message || data?.error || response.statusText;
+          : nested?.message || data?.message ||
+            (typeof data?.error === 'string' ? data.error : '') || response.statusText;
         throw new ApiError(message || `请求失败 (${response.status})`, {
-          code: data?.code || `HTTP_${response.status}`,
+          code: nested?.code || data?.code || `HTTP_${response.status}`,
           status: response.status,
           data,
           path,

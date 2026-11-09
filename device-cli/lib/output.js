@@ -6,6 +6,33 @@ function normalizeValue(value) {
   return String(value);
 }
 
+// 终端里中日韩字符与全角符号占两列，按显示宽度对齐表格。
+function displayWidth(text) {
+  let width = 0;
+  for (const ch of String(text)) {
+    const code = ch.codePointAt(0);
+    const wide = (code >= 0x1100 && code <= 0x115f) || (code >= 0x2e80 && code <= 0xa4cf) ||
+      (code >= 0xac00 && code <= 0xd7a3) || (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xfe30 && code <= 0xfe4f) || (code >= 0xff00 && code <= 0xff60) ||
+      (code >= 0xffe0 && code <= 0xffe6) || (code >= 0x1f300 && code <= 0x1faff);
+    width += wide ? 2 : 1;
+  }
+  return width;
+}
+
+const MAX_CELL_WIDTH = 120;
+
+// 文本模式下过长的单元格截断，完整内容用 --json 查看。
+function truncate(text) {
+  if (displayWidth(text) <= MAX_CELL_WIDTH) return text;
+  let out = '';
+  for (const ch of text) {
+    if (displayWidth(out + ch) > MAX_CELL_WIDTH - 1) break;
+    out += ch;
+  }
+  return `${out}…`;
+}
+
 function renderTable(rows, headers) {
   if (!rows || rows.length === 0) return '(empty)';
   const columns = headers || Array.from(
@@ -14,11 +41,12 @@ function renderTable(rows, headers) {
       return set;
     }, new Set())
   );
-  const values = rows.map((row) => columns.map((column) => normalizeValue(row[column])));
+  const values = rows.map((row) => columns.map((column) => truncate(normalizeValue(row[column]))));
   const widths = columns.map((column, index) =>
-    Math.max(String(column).length, ...values.map((line) => line[index].length))
+    Math.max(displayWidth(column), ...values.map((line) => displayWidth(line[index])))
   );
-  const join = (cells) => cells.map((cell, i) => String(cell).padEnd(widths[i], ' ')).join(' | ');
+  const pad = (cell, width) => `${cell}${' '.repeat(Math.max(0, width - displayWidth(cell)))}`;
+  const join = (cells) => cells.map((cell, i) => pad(String(cell), widths[i])).join(' | ').trimEnd();
   const header = join(columns);
   const divider = widths.map((width) => '-'.repeat(width)).join('-+-');
   return `${header}\n${divider}\n${values.map(join).join('\n')}`;
