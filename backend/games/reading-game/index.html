@@ -10,7 +10,7 @@
   "title": "朗读游戏",
   "description": "朗读屏幕上的文字。停下来不读或长时间不按原文读会先警告再电击。支持反复朗读，以及逐级遮字的背诵玩法；语音识别失败只会少电，不会多电。",
   "howTo": "1. 映射电击设备（必需），可选映射自动锁\n2. 选择玩法：朗读（可设遍数）或背诵（第一遍不遮字，之后逐级遮字）\n3. 在「朗读文本」里填写或修改要读的文字（已有默认短文）\n4. 调整沉默/离稿时限、过关正确率与电击强度\n5. 开始后游戏自动启动，允许麦克风，先安静 3 秒再朗读",
-  "version": "1.1.7",
+  "version": "1.1.8",
   "permissions": ["microphone"],
   "models": [
     { "task": "asr", "id": "sense-voice-small-int8", "optional": true }
@@ -295,8 +295,7 @@
       "unit": "秒",
       "label": "识别窗口",
       "description": "每次上传给语音识别的音频长度",
-      "group": "advanced",
-      "hidden": true
+      "group": "advanced"
     },
     {
       "key": "segmentHop",
@@ -308,8 +307,7 @@
       "unit": "秒",
       "label": "识别间隔",
       "description": "每隔多久上传一段音频，窗口之间会重叠",
-      "group": "advanced",
-      "hidden": true
+      "group": "advanced"
     },
     {
       "key": "totalTime",
@@ -333,8 +331,7 @@
       "unit": "毫秒",
       "label": "语音识别超时",
       "description": "单次识别请求的超时时间，超时记为未知，不惩罚",
-      "group": "advanced",
-      "hidden": true
+      "group": "advanced"
     },
     {
       "key": "beep",

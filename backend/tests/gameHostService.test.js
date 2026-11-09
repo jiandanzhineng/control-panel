@@ -134,7 +134,7 @@ describe('game host runtime', () => {
     expect(host.getStatus().errors.length).toBeGreaterThan(0);
   });
 
-  test('hidden params always fall back to manifest defaults', () => {
+  test('advanced params folded in the UI stay adjustable on the host', () => {
     const devices = baseDevices();
     const { host } = createHost(devices);
     host.start({
@@ -142,9 +142,9 @@ describe('game host runtime', () => {
       deviceMap: { sensor: ['s1'], motor: ['m1'] },
       params: { duration: 10, minSurgeMs: 900 },
     });
-    expect(host.getStatus().snapshot.params.minSurgeMs).toBe(100);
+    expect(host.getStatus().snapshot.params.minSurgeMs).toBe(900);
     host.setParams({ minSurgeMs: 800, surgeRiseKpa: 1.2 });
-    expect(host.getStatus().snapshot.params.minSurgeMs).toBe(100);
+    expect(host.getStatus().snapshot.params.minSurgeMs).toBe(800);
     expect(host.getStatus().snapshot.params.surgeRiseKpa).toBe(1.2);
   });
 
