@@ -9,7 +9,7 @@
 - `lib/lease.js`：`POST /agent-control/lease`，404/405 直接报错退出（不降级为不限幅）；之后本进程请求都带 `X-Agent-Client`。clientId 默认 `undersilicon-cli`，多条命令共享同一租约。
 - `lib/commands/*`：每个文件导出命令定义 `{name, aliases, usage, write, noLease, run}`。`stop` 设 `noLease`。
 - 急停：`/device-watchdog/stop-all`，423 时改 `/remote-session/emergency-stop`，再 `/games/stop-current`。
-- `game:start`：先 `/client/games/:id/launch {deviceMap}`，503 `CLIENT_UNAVAILABLE` 回退 `/games/:id/start {deviceMapping}`。
+- `game:start`：先 `/client/games/:id/launch {deviceMap}`；503 `CLIENT_UNAVAILABLE`（窗口未运行）或 404/405 且非 `GAME_NOT_FOUND`（1.0.41 及更早没有该接口）时回退 `/games/:id/start {deviceMapping}`。
 
 ## 坑
 

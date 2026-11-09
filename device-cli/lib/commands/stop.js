@@ -9,6 +9,17 @@ function stepResult(name, ok, detail, error) {
   };
 }
 
+// 文本模式只给摘要（停了哪些设备、停了什么玩法），完整结果用 --json。
+function summarize(detail) {
+  if (!detail || typeof detail !== 'object') return '';
+  if (Array.isArray(detail.stopped)) {
+    const ids = detail.stopped.map((item) => (item && typeof item === 'object' ? item.deviceId : item)).filter(Boolean);
+    return ids.length ? `，已停 ${ids.join(', ')}` : '，没有需要停的设备';
+  }
+  const game = detail.host && detail.host.snapshot && detail.host.snapshot.gameId;
+  return game ? `，已结束 ${game}` : '';
+}
+
 async function run(ctx) {
   const { api, out, json, config } = ctx;
   const raw = ctx.parsed.values.reason;
@@ -62,7 +73,7 @@ async function run(ctx) {
     out.text('急停');
     for (const step of steps) {
       const status = step.ok ? '完成' : `失败（${step.error.code}: ${step.error.message}）`;
-      const detail = step.ok && step.detail !== undefined ? ` ${JSON.stringify(step.detail)}` : '';
+      const detail = step.ok ? summarize(step.detail) : '';
       out.text(`- ${step.step}：${status}${detail}`);
     }
   }
