@@ -13,7 +13,7 @@
 // 宿主只转发 deviceMap 里已映射设备的事件，且属性只在值真的变化时转发。
 
 const GAME_ID = 'maid-punishment';
-const VERSION = '2.2.3';
+const VERSION = '2.2.4';
 const TITLE = '女仆偷懒惩罚';
 
 const LOG_LIMIT = 10;          // 页面日志面板保留最近 10 条（game.js L46）
@@ -38,7 +38,7 @@ const PARAMS = [
   { key: 'td01ShockProbability', type: 'number', default: 0, min: 0, max: 100 },
   { key: 'manualStart', type: 'boolean', default: false },
   { key: 'tiptoePressureThreshold', type: 'number', default: 100, min: 1, max: 1000 },
-  { key: 'tiptoeDebounceMs', type: 'number', default: 300, min: 0, max: 2000, hidden: true },
+  { key: 'tiptoeDebounceMs', type: 'number', default: 300, min: 0, max: 2000 },
   { key: 'shockDurationSeconds', type: 'number', default: DEFAULT_SHOCK_SECONDS, min: 1, max: 10 },
 ];
 

@@ -6,7 +6,7 @@
 
 | 字段 | 含义 |
 |---|---|
-| `hidden: true` | 配置页（基础/高级/远程面板）都不显示；启动时该参数一律用 `default`，忽略保存过的旧值。用于纯工程参数。 |
+| `hidden: true` | 配置页（基础/高级/远程面板）都不显示；启动时该参数一律用 `default`，忽略保存过的旧值。机制保留，但内置游戏不使用（用户要求参数只折叠不隐藏，见 ADR 2026-11-09-game-params-fold-not-hide）。 |
 | `visibleWhen: { "key": "<另一参数>", "equals": 值或数组 }` | 只有当另一参数等于该值（数组表示「属于其中之一」）时才显示 |
 | `visibleWhen: { "key": "<另一参数>", "gt": 数字 }` | 只有当另一参数 > 该数字时才显示 |
 
@@ -23,7 +23,7 @@
 
 ## 三、各游戏改动（改 PC 源，递增游戏版本，再同步手机）
 
-记法：B=基础，A=高级（`group:"advanced"` 或 `required:false`），H=hidden。未列出的参数不变。
+记法：B=基础，A=高级（`group:"advanced"` 或 `required:false`）。原定 H（hidden）的工程参数已按用户要求改为放在高级里。未列出的参数不变。
 
 ### pressure-edging 气压寸止
 - B：duration, criticalPressure, maxMotorIntensity, shockVoltage, voiceEnabled
@@ -37,7 +37,7 @@
 ### surge-edging 气压突变寸止
 - B：duration, endCalmLock, surgeRiseKpa, maxMotorIntensity, shockVoltage, voiceEnabled
 - 改为 A：midOffsetKpa, lowPressureDelay, gradualIncrease, midIntensityMin, midIntensityMax, shockDuration
-- H：minSurgeMs
+- A（原定 hidden）：minSurgeMs
 - 文案改白话（去掉 τ、dmin、P1+ΔP 等公式）：
   - surgeRiseKpa：气压在短时间内突然升高超过这个值，就判定为接近边缘并立即停止刺激。越小越灵敏
   - surgeWindowSec：在多长时间内比较气压的升高幅度。窗口越长，缓慢的升高也会被当成突变，越灵敏
@@ -53,7 +53,7 @@
 
 ### maid-punishment 女仆偷懒惩罚
 - maxIntensityIncrease：`visibleWhen {key:progressiveIntensity, equals:true}`
-- H：tiptoeDebounceMs
+- A（原定 hidden）：tiptoeDebounceMs
 - shockDurationSeconds 文案：每次电击持续的时间（最长 10 秒）
 
 ### pushup-detection 俯卧撑
@@ -63,7 +63,7 @@
 ### drink-pee-unlock 喝水/液体收集解锁
 - B：mode, durationSec, targetWeight, pressureThreshold, shockIntensity, voiceEnabled
 - 改为 A：punishCooldownSec, shockDuration
-- H：stableWindowSec, tiptoeDebounceMs
+- A（原定 hidden）：stableWindowSec, tiptoeDebounceMs
 
 ### reading-game 朗读
 - B：customText, mode, passes, passRate, silenceLimit, shockIntensity
@@ -71,7 +71,7 @@
 - `visibleWhen {key:mode, equals:"read"}`：passes
 - `visibleWhen {key:mode, equals:"recite"}`：maskStart, maskStep, hintChars, silenceBonus
 - `visibleWhen {key:shockStep, gt:0}`：shockMax
-- H：segmentLen, segmentHop, sttTimeout
+- A（原定 hidden）：segmentLen, segmentHop, sttTimeout
 
 ### pelvic-training / vocab-game
 不改 manifest（设备隐藏后已足够少）。

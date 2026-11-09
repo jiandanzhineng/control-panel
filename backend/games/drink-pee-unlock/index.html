@@ -10,7 +10,7 @@
   "title": "喝水/液体收集解锁玩法",
   "description": "把水瓶或容器放电子秤上，喝水变轻或收集液体变重，达到目标重量变化或超时即自动解锁。可叠加提肛、踮脚监测。踮脚可用 QTZ 双脚踏或 CUNZHI01 压力检测。",
   "howTo": "1. 映射电子秤（必需）\n2. 可选：气压传感器、踮脚检测、电击、振动、自动锁\n3. 选择喝水/液体收集模式与目标重量\n4. 开始后按提示保持动作，达标或超时解锁",
-  "version": "2.3.6",
+  "version": "2.3.7",
   "devices": [
     {
       "id": "scale",
@@ -139,8 +139,7 @@
       "min": 5,
       "max": 120,
       "step": 1,
-      "required": false,
-      "hidden": true
+      "required": false
     },
     {
       "key": "pressureThreshold",
@@ -180,8 +179,7 @@
       "max": 2000,
       "step": 50,
       "device": "cunzhi",
-      "required": false,
-      "hidden": true
+      "required": false
     },
     {
       "key": "punishCooldownSec",

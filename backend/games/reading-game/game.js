@@ -115,7 +115,7 @@
       this.started = false
       this.title = t('朗读游戏')
       this.description = t('朗读屏幕上的文字，停下来或长时间不按原文读就会受到电击；支持反复朗读和逐级遮字的背诵玩法')
-      this.version = '1.1.7'
+      this.version = '1.1.8'
       this.author = '游戏设计师'
       this.random = typeof opts.random === 'function' ? opts.random : Math.random
       this.config = {
