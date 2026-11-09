@@ -147,11 +147,6 @@ describe('game host runtime', () => {
     expect(host.getStatus().snapshot.params.minSurgeMs).toBe(800);
     expect(host.getStatus().snapshot.params.surgeRiseKpa).toBe(1.2);
   });
-    expect(host.getStatus().snapshot.params.minSurgeMs).toBe(100);
-    host.setParams({ minSurgeMs: 800, surgeRiseKpa: 1.2 });
-    expect(host.getStatus().snapshot.params.minSurgeMs).toBe(100);
-    expect(host.getStatus().snapshot.params.surgeRiseKpa).toBe(1.2);
-  });
 
   test('effects follow role mapping and skip unsupported capabilities', () => {
     const devices = baseDevices();
