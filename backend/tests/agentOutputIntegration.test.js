@@ -126,6 +126,16 @@ describe('agent output limiting converges on every write path', () => {
     expect(virtualDeviceService.getDevice('vtd01').properties.power).toBe(127);
   });
 
+  it('delivers awaited preset operations to virtual devices (clamped)', async () => {
+    virtualDeviceService.createDevice({ id: 'vtd01-op', type: 'TD01' });
+    await agentControl.runWithClient('dsh-1', () => (
+      deviceService.executeDeviceOperationAndWait('vtd01-op', 'start', {})
+    ));
+    const commands = virtualDeviceService.getCommands('vtd01-op');
+    expect(commands.some((cmd) => cmd.action === 'writeProps' && cmd.props?.power === 127)).toBe(true);
+    expect(mqttClient.publish).not.toHaveBeenCalled();
+  });
+
   it('clamps HostRuntime shock intents (shockVoltage 50 → 20)', () => {
     addConnectedDevice({ id: 'dianji-host', name: 'DIANJI', type: 'DIANJI' });
     try {

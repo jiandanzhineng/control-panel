@@ -681,6 +681,8 @@ async function executeDeviceOperationAndWait(deviceId, operationKey, params = {}
   const pending = [];
   try {
     deviceType.invokeOperation(deviceId, operationKey, params, (id, message) => {
+      // 虚拟设备与不等待的 executeDeviceOperation 一致：落到模拟器（含 agent 限幅）。
+      if (_interceptVirtualWrite(id, message)) return message;
       pending.push(sendDeviceMessageAndWait(id, message));
       return message;
     });
