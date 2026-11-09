@@ -49,6 +49,7 @@ agent 查到的事实、配置位置、命令、踩坑。按主题，详情在 `
 
 - 窗口托盘、小雅窗口、更新、设备页行为见 [desktop-client](note/desktop-client.md)。
 - Agent 控制接口（全局事件流、客户端窗口/路由/截图/启动游戏、能力参数范围）见 [agent-control-api](note/agent-control-api.md)。
+- 命令行工具 `undersilicon-cli`（`device-cli/`，npm 发布、可选限幅、实测方法与坑）见 [undersilicon-cli](note/undersilicon-cli.md)。
 - 数字人安装目录、更新启动、日志与打包见 [digital-human](note/digital-human.md)。
 - 面板与游戏 i18n 约定见 [i18n](note/i18n.md)。
 
