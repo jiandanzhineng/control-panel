@@ -126,6 +126,13 @@ async function main(argv = process.argv.slice(2)) {
 }
 
 if (require.main === module) {
+  // 输出接到 head 等提前关闭的管道时静默退出，不打印 EPIPE 堆栈。
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on('error', (error) => {
+      if (error && error.code === 'EPIPE') process.exit(process.exitCode || 0);
+      throw error;
+    });
+  }
   main().catch((error) => {
     process.stderr.write(`${error?.message || String(error)}\n`);
     process.exitCode = 1;

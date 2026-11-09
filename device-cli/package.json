@@ -1,6 +1,6 @@
 {
   "name": "undersilicon-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "硅基之下控制中心的命令行工具，供用户和 AI agent 查看设备、控制输出与启动游戏",
   "bin": {
     "undersilicon": "./cli.js"
