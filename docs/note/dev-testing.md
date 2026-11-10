@@ -24,3 +24,4 @@
 ## git worktree
 
 - worktree 不带 node_modules：把主仓的 `node_modules`、`play-registry/node_modules` 用目录联接（`New-Item -ItemType Junction`）链进来，`backend`/`frontend` 的 node_modules 要单独 `npm install`。
+- **移动 worktree 要先断 junction**：`git worktree move` 遇 junction 会 Permission denied；用 `Move-Item` 更危险——会顺着 junction 把主仓 `node_modules` 内容掏空到新位置，还可能因 `default_app.asar` 等文件被锁而搬一半。正确做法：先 `cmd /c rmdir <wt>\node_modules` 断开 junction，再 `git worktree move`（或 `Move-Item` 后手动修 `.git`/`gitdir` 指向），最后重建 junction。删 worktree 同理，用 `tools/worktree/safe_remove.py`（先断联接再交给 git）。
