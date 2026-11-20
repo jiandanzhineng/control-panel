@@ -173,6 +173,22 @@
     return (cfg && cfg.name) || t;
   }
 
+  function cardTitle(d) {
+    if (d.nickname) return d.nickname;
+    var id = String(d.id || '');
+    var type = d.type || '';
+    var label = typeName(type, d);
+    var identity = id.replace(/^(?:ble|ycy|dglab|hrm):/i, '').replace(/[:-]/g, '');
+    var shortId = /^(?:[a-f\d]{12}|[a-f\d]{32})$/i.test(identity) ? identity.slice(-4) : id;
+    var name = String(d.name || '').trim();
+    // 保留自定义名称；兼容 MQTT、串口握手及品牌设备的默认名称。
+    var suffix = id.slice(-4);
+    var defaults = [id, type, label, label + '-' + suffix, 'base-' + suffix, label + ' ' + suffix];
+    if (name && !defaults.some(function (value) { return value.toLowerCase() === name.toLowerCase(); })) return name;
+    if (label === shortId) return label;
+    return [label, shortId].filter(Boolean).join(' · ');
+  }
+
   async function requestAccess() {
     if (!hasDeviceApi()) {
       renderMissingApiState();
@@ -372,7 +388,7 @@
       + '<div class="dev-head">'
         + '<span class="dev-status ' + (d.connected ? 'on' : 'off') + '" title="' + (d.connected ? t('online') : t('offline')) + '"></span>'
         + '<div class="dev-titles">'
-          + '<div class="dev-name">' + esc(d.nickname || d.name || d.id) + '</div>'
+          + '<div class="dev-name">' + esc(cardTitle(d)) + '</div>'
           + '<div class="dev-sub"><span class="dev-type">' + esc(typeName(d.type, d)) + '</span> · <code class="dev-id">' + esc(d.id) + '</code></div>'
         + '</div>'
         + '<div class="dev-meta">' + battery + '<span class="dev-last" data-last>' + esc(fmtAgo(d.lastReport)) + '</span></div>'
@@ -391,7 +407,13 @@
 
   function capLabel(cap, cfg) {
     var capCfg = cfg && cfg.capabilityConfig && cfg.capabilityConfig[cap];
-    return (capCfg && capCfg.name) || (CAP_CONTROL[cap] && CAP_CONTROL[cap].name) || cap;
+    var site = window.SiteI18n;
+    var lang = site && site.locale ? site.locale() : 'zh';
+    var localized = capCfg && capCfg.i18n && capCfg.i18n[lang];
+    var configured = (localized && localized.name) || (lang === 'zh' && capCfg && capCfg.name);
+    if (configured && configured !== cap) return configured;
+    var fallback = site && site.capLabel ? site.capLabel(cap) : cap;
+    return fallback !== cap ? fallback : (capCfg && capCfg.name) || cap;
   }
 
   function controlFor(cap) {
@@ -471,6 +493,7 @@
   function captureLiveEls(d, card) {
     deviceEls[d.id].monitor = {};
     card.querySelectorAll('[data-mon]').forEach(function (v) { deviceEls[d.id].monitor[v.getAttribute('data-mon')] = v; });
+    deviceEls[d.id].title = card.querySelector('.dev-name');
     deviceEls[d.id].last = card.querySelector('[data-last]');
     deviceEls[d.id].dataPre = card.querySelector('.dev-data-pre');
   }
@@ -483,6 +506,7 @@
       ref.monitor[key].textContent = (val === undefined || val === null) ? '--' : String(val);
     });
     if (ref.last) ref.last.textContent = fmtAgo(d.lastReport);
+    if (ref.title) ref.title.textContent = cardTitle(d);
     if (ref.card) {
       ref.card.classList.toggle('offline', !d.connected);
       var dot = ref.card.querySelector('.dev-status');

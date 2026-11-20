@@ -5,6 +5,18 @@
   var pollTimer = null;
   var lastSignature = null;
   var toastTimer = null;
+  // 只补 monitorSpec 未定义的字段，宿主提供的设备专属名称和单位优先。
+  var extraFields = {
+    report_delay_ms: { name: '上报间隔', unit: 'ms' },
+    voltage: { name: '电击电压' },
+    shock: { name: '电击状态' },
+    power: { name: '电机强度' },
+    strength: { name: '强度' },
+    device_type: { name: '设备类型' },
+    open: { name: '锁状态' },
+    low_band: { name: '近阈值', unit: 'mm' },
+    high_band: { name: '远阈值', unit: 'mm' }
+  };
 
   function L() { return (typeof GameI18n !== 'undefined' && GameI18n.t) ? GameI18n.t : function (zh) { return zh; }; }
   function t(zh, vars) { return L()(zh, vars); }
@@ -66,9 +78,16 @@
   function dataHtml(device) {
     var entries = Object.entries(device.data || {});
     if (!entries.length) return '';
+    var fields = new Map();
+    (device.monitorSpec || []).concat((device.typeConfig && device.typeConfig.monitorData) || []).forEach(function (field) {
+      fields.set(field.key, field);
+    });
     return '<div class="section"><div class="section-title">' + t('实时数据') + '</div><div class="data-grid">' + entries.map(function (entry) {
+      var key = entry[0];
+      var field = fields.get(key) || (Object.prototype.hasOwnProperty.call(extraFields, key) && extraFields[key]);
+      var label = field ? t(field.name) + (field.unit ? ' · ' + t(field.unit) : '') : key;
       var value = typeof entry[1] === 'object' ? JSON.stringify(entry[1]) : entry[1];
-      return '<div class="datum"><div class="datum-key">' + escapeHtml(entry[0]) + '</div><div class="datum-value" data-device="' + escapeHtml(device.id) + '" data-key="' + escapeHtml(entry[0]) + '">' + escapeHtml(value) + '</div></div>';
+      return '<div class="datum"><div class="datum-key">' + escapeHtml(label) + '</div><div class="datum-value" data-device="' + escapeHtml(device.id) + '" data-key="' + escapeHtml(key) + '">' + escapeHtml(value) + '</div></div>';
     }).join('') + '</div></div>';
   }
 

@@ -2,6 +2,7 @@ const { WebSocketServer } = require('ws');
 const deviceService = require('./deviceService');
 const deviceRegistry = require('../devices/registry');
 const { getCapabilityDefinition } = require('../devices/capabilities');
+const { monitorSpecByCapability } = require('../devices/monitorSpec');
 const logService = require('./logService');
 const virtualDeviceService = require('./virtualDeviceService');
 const { BRIDGE_INTERNAL_HEADER } = require('../constants/bridgeAccess');
@@ -598,20 +599,32 @@ function getEffectiveTypeConfig(device) {
   };
 }
 
+const monitorFieldsByKey = new Map(Object.values(monitorSpecByCapability).flat().map((field) => [field.key, field]));
+
 function listDevicesWithCapabilities() {
-  return deviceService.listDevicesForApi().map((d) => ({
-    id: d.id,
-    type: d.type,
-    name: d.name,
-    nickname: d.nickname,
-    connected: d.connected,
-    connectionType: d.connectionType,
-    controlConnection: d.controlConnection,
-    connections: d.connections || [],
-    data: d.data || {},
-    capabilities: getEffectiveCapabilities(d),
-    typeConfig: getEffectiveTypeConfig(d),
-  }));
+  return deviceService.listDevicesForApi().map((d) => {
+    const typeConfig = getEffectiveTypeConfig(d);
+    const data = d.data || {};
+    const configuredKeys = new Set((typeConfig.monitorData || []).map((field) => field.key));
+    // 类型专属元数据已在 typeConfig.monitorData 中；这里只补跨能力上报的字段（如品牌设备的电量）。
+    const monitorSpec = Object.keys(data)
+      .filter((key) => !configuredKeys.has(key) && monitorFieldsByKey.has(key))
+      .map((key) => monitorFieldsByKey.get(key));
+    return {
+      id: d.id,
+      type: d.type,
+      name: d.name,
+      nickname: d.nickname,
+      connected: d.connected,
+      connectionType: d.connectionType,
+      controlConnection: d.controlConnection,
+      connections: d.connections || [],
+      data,
+      capabilities: getEffectiveCapabilities(d),
+      typeConfig,
+      monitorSpec,
+    };
+  });
 }
 
 function getAllDeviceMap() {
