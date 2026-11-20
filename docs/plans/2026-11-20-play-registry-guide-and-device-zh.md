@@ -10,10 +10,10 @@
 | 2026-11-20 | 现状调研与初版方案 | 已完成 | `control-panel`、`ezs-docs`、`shop` 三仓盘点 |
 | 2026-11-20 | 评审修订 | 已完成 | 见下「评审结论」6 条 |
 | 2026-11-20 | 阶段 0：QTZ / PJ01 上架商城 | **已完成** | `distance-sensor`、`reciprocating-motor` 已上线，三方对账通过 |
-| 待启动 | 阶段 1：站点级硬件映射数据 | 待实施 | 新增 `game-hardware.json` + 商品快照同步脚本 |
-| 待启动 | 阶段 2：游戏 Manifest 补 `howTo` | 待实施 | 9 个玩法 + `device-control` 的中英 `howTo`，递增版本号 |
-| 待启动 | 阶段 3：游戏站导购与缺设备引导 | 待实施 | 介绍页、列表页、启动弹窗、顶栏页脚 |
-| 待启动 | 阶段 4：游戏站设备页补中文 | 待实施 | `devices.html`、`control.html`、`games/device-control` |
+| 2026-11-20 | 阶段 1：站点级硬件映射数据 | 待审（#15） | 新增 `game-hardware.json` + 商品快照同步脚本 |
+| 2026-11-20 | 阶段 2：游戏 Manifest 补 `howTo` | 待审（#15、#16） | 9 个玩法 + `device-control` 的中英 `howTo`，递增版本号 |
+| 2026-11-20 | 阶段 3：游戏站导购与缺设备引导 | 待审（#15） | 介绍页、列表页、启动弹窗、顶栏页脚 |
+| 2026-11-20 | 阶段 4：游戏站设备页补中文 | 待审（#16） | `devices.html`、`control.html`、`games/device-control` |
 
 ---
 
