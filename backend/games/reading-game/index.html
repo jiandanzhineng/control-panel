@@ -9,8 +9,8 @@
   "id": "reading-game",
   "title": "朗读游戏",
   "description": "朗读屏幕上的文字。停下来不读或长时间不按原文读会先警告再电击。支持反复朗读，以及逐级遮字的背诵玩法；语音识别失败只会少电，不会多电。",
-  "howTo": "1. 映射电击设备（必需），可选映射自动锁\n2. 选择玩法：朗读（可设遍数）或背诵（第一遍不遮字，之后逐级遮字）\n3. 在「朗读文本」里填写或修改要读的文字（已有默认短文）\n4. 调整沉默/离稿时限、过关正确率与电击强度\n5. 开始后游戏自动启动，允许麦克风，先安静 3 秒再朗读",
-  "version": "1.1.8",
+  "howTo": "1. 连接电击设备并贴好电极贴（必需），可选配自动锁；准备好麦克风。\n2. 选择「反复朗读」或「逐级遮字背诵」（首遍全文显示，后续每遍按比例遮挡字词），填入或使用默认文本。\n3. 进入游戏先安静 3 秒校准环境音，随后出声朗读；中途沉默超时或偏离原文会先警告再电击，读完全部遍数且正确率达标即过关解锁。",
+  "version": "1.1.9",
   "permissions": ["microphone"],
   "models": [
     { "task": "asr", "id": "sense-voice-small-int8", "optional": true }
@@ -346,7 +346,7 @@
     "en": {
       "title": "Reading game",
       "description": "Read the text on screen. Staying silent or not reading the original for too long warns first, then shocks. Supports repeated reading and recite mode with progressive character masking. Speech-recognition failures can only reduce shocks, never add them.",
-      "howTo": "1. Map a shock device (required); optionally map an auto lock\n2. Choose a mode: read (repeat for N passes) or recite (no masking on the first pass, then progressive masking)\n3. Edit the text to read in “Reading text” (a short default is filled in)\n4. Tune silence/off-script limits, pass rate and shock intensity\n5. The game starts automatically; allow the mic, stay quiet for 3 seconds, then read",
+      "howTo": "1. Connect the required shock device and apply its electrode pads. An auto lock is optional. Have a microphone ready.\n2. Choose repeated reading or progressive recitation (the full text is visible on the first pass, then words are gradually hidden). Enter your own text or use the default.\n3. Stay quiet for three seconds to calibrate ambient noise, then read aloud. Long pauses or going off-script trigger a warning, then a shock. Finish all passes and meet the accuracy target to unlock.",
       "devices": {
         "shock": "Shock device",
         "lock": "Auto lock"

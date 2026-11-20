@@ -11,6 +11,7 @@
       navDocs: '开发文档',
       navDeviceApi: 'DeviceAPI',
       navContribute: '投稿',
+      navShop: '官网商城',
       footerNote: '硅基之下游戏库 · UnderSilicon 控制面板 · 已发布内容由平台审核后同步',
       footerNoteGames: 'UnderSilicon 控制面板 · 远程玩法仓库 · 已发布内容由平台审核后同步',
       footerNoteControl: 'UnderSilicon 控制面板 · 设备控制中心 · 已发布内容由平台审核后同步',
@@ -328,6 +329,16 @@
       introBack: '返回游戏列表',
       introNeed: '需要准备什么',
       introHow: '怎么玩',
+      introStepSetup: '穿戴准备',
+      introStepPlay: '动作与奖惩规则',
+      introStepFinish: '通关解锁条件',
+      introTutorial: '查看完整图文教程 ↗',
+      introHardware: '需要哪件硬件',
+      introDeviceSlots: '逻辑设备槽位与能力明细',
+      hardwareKit: '推荐',
+      hardwareNoKit: '无需特定套件',
+      hardwareBuy: '去商城购买 ↗',
+      hardwareBuyModal: '去购买硬件 ↗',
       introParams: '可调参数',
       introSafety: '使用提醒',
       introSafetyBody: '请先确认设备连接正常，并在可随时停止的情况下开始。涉及刺激或锁定设备时，请预先确认安全边界，保持紧急停止方式可用。',
@@ -353,6 +364,7 @@
       navDocs: 'Docs',
       navDeviceApi: 'DeviceAPI',
       navContribute: 'Submit',
+      navShop: 'Official store',
       footerNote: 'UnderSilicon Games · control panel · reviewed and published by the platform',
       footerNoteGames: 'UnderSilicon control panel · remote play registry · reviewed and published by the platform',
       footerNoteControl: 'UnderSilicon control panel · device console · reviewed and published by the platform',
@@ -670,6 +682,16 @@
       introBack: 'Back to games',
       introNeed: 'What you need',
       introHow: 'How to play',
+      introStepSetup: 'Get set up',
+      introStepPlay: 'Actions, rewards and penalties',
+      introStepFinish: 'How to finish and unlock',
+      introTutorial: 'View the full illustrated tutorial ↗',
+      introHardware: 'Hardware you need',
+      introDeviceSlots: 'Device slots and capabilities',
+      hardwareKit: 'Recommended',
+      hardwareNoKit: 'No specific kit required',
+      hardwareBuy: 'Buy from the store ↗',
+      hardwareBuyModal: 'Buy hardware ↗',
       introParams: 'Parameters',
       introSafety: 'Safety notes',
       introSafetyBody: 'Confirm devices are connected and that you can stop at any time. For shock or lock devices, set safety limits first and keep an emergency stop available.',
@@ -727,6 +749,9 @@
       var key = el.getAttribute('data-i18n');
       if (!key) return;
       el.textContent = t(key);
+    });
+    Array.prototype.forEach.call(scope.querySelectorAll('[data-shop-nav]'), function (el) {
+      el.setAttribute('href', 'https://shop.undersilicon.cn/' + current + '?ref=play-nav');
     });
     Array.prototype.forEach.call(scope.querySelectorAll('[data-i18n-html]'), function (el) {
       var key = el.getAttribute('data-i18n-html');
