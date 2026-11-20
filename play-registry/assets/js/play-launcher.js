@@ -277,7 +277,7 @@
       .then(function (results) {
         devices = results[0] || [];
         typeCaps = (results[1] && results[1].typeCapabilityMap) || {};
-        renderDevicePicker(base);
+        return renderDevicePicker(base);
       })
       .catch(function (err) {
         var s = el('modal-status');
@@ -298,7 +298,11 @@
       status.className = 'modal-status ok';
     }
 
-    getManifest(currentGame).then ? getManifest(currentGame).then(renderForm) : renderForm(getManifest(currentGame));
+    var game = currentGame;
+    var catalog = window.ShopCatalog;
+    return Promise.all([getManifest(game), catalog && catalog.load()]).then(function (results) {
+      if (currentGame === game && el('modal').classList.contains('show')) renderForm(results[0]);
+    });
 
     function renderForm(manifest) {
       var html = '';
@@ -317,7 +321,7 @@
             + '<span class="map-lid">' + esc(deviceLabel(d)) + '</span> ' + req
             + '<span class="map-caps">' + t('caps', { caps: esc(caps || t('none')) }) + '</span>'
             + '</div>'
-            + '<div class="map-options" role="group" aria-label="' + esc(d.id) + ' 设备映射">'
+            + (candidates.length ? '<div class="map-options" role="group" aria-label="' + esc(d.id) + ' 设备映射">'
             + candidates.map(function (p) {
               var checked = (mapping[d.id] || []).indexOf(p.id) >= 0 ? ' checked' : '';
               return '<label class="map-option">'
@@ -326,8 +330,9 @@
                 + '<span class="map-device-type">' + esc(p.type) + '</span>'
                 + '</label>';
             }).join('')
-            + '</div>'
-            + (candidates.length === 0 ? '<span class="map-none">' + t('noMatchDevice') + '</span>' : '')
+            + '</div>' : '<div class="map-missing"><span class="map-none" data-i18n="noMatchDevice">' + t('noMatchDevice') + '</span>'
+              + (d.required ? '<div data-hardware-slot="' + esc(d.id) + '">' + missingHardwareHtml(game, d.id) + '</div>' : '')
+              + '</div>')
             + '</div>';
         });
         html += '</div>';
@@ -397,6 +402,25 @@
       });
     }
   }
+
+  function missingHardwareHtml(game, slotId) {
+    var catalog = window.ShopCatalog;
+    if (!catalog) return '';
+    var locale = window.SiteI18n && window.SiteI18n.isEn() ? 'en' : 'zh';
+    var item = catalog.itemForSlot(game.id, slotId, locale);
+    if (!item) return '';
+    return '<div class="map-hardware">' + esc(item.name) + ' · <a class="hardware-link" href="'
+      + esc(catalog.productUrl(item.slug, locale, 'modal', game.id)) + '" target="_blank" rel="noopener">'
+      + esc(t('hardwareBuyModal')) + '</a></div>';
+  }
+
+  document.addEventListener('site-locale-change', function () {
+    var body = el('modal-body');
+    if (!currentGame || !body) return;
+    body.querySelectorAll('[data-hardware-slot]').forEach(function (slot) {
+      slot.innerHTML = missingHardwareHtml(currentGame, slot.getAttribute('data-hardware-slot'));
+    });
+  });
 
   function validateStart(devs) {
     var missing = devs.filter(function (d) { return d.required && !mappingHasSelection(d.id); });

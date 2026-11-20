@@ -1,0 +1,113 @@
+{
+  "pressure-edging": {
+    "summary": "一台寸止一体机即可同时满足气压传感、震动刺激与电击惩罚，无需拆买多台分体模块。",
+    "summaryEn": "One CunZhi-01 all-in-one unit provides air-pressure sensing, vibration and shock feedback; no need to buy separate modules.",
+    "docPath": "/docs/player/cunzhi01",
+    "items": [
+      { "slug": "cunzhi01", "role": "kit", "note": "气压传感、震动与电击一体。", "noteEn": "Air-pressure sensing, vibration and shock in one unit." },
+      { "slug": "zidongsuo-auto-lock", "role": "optional", "note": "用于结束时自动解锁。", "noteEn": "Unlocks automatically at the end." },
+      { "slug": "lubricant-60ml", "role": "optional", "note": "搭配气压传感器佩戴。", "noteEn": "For use with the wearable pressure sensor." },
+      { "slug": "wear-pants", "role": "optional", "note": "辅助固定穿戴设备。", "noteEn": "Helps keep wearable equipment in place." },
+      { "slug": "reciprocating-motor", "role": "optional", "note": "女用往复电机方案。", "noteEn": "Reciprocating motor option for women." }
+    ]
+  },
+  "pressure-edging-v2": {
+    "summary": "寸止一体机单机配齐必需传感与刺激；女用可加炮机控制器。",
+    "summaryEn": "The CunZhi-01 all-in-one unit covers the required sensing and stimulation. A reciprocating motor controller is an option for women.",
+    "docPath": "/docs/player/cunzhi3step",
+    "items": [
+      { "slug": "cunzhi01", "role": "kit", "note": "配齐必需传感与刺激。", "noteEn": "Covers the required sensing and stimulation." },
+      { "slug": "zidongsuo-auto-lock", "role": "optional", "note": "用于结束时自动解锁。", "noteEn": "Unlocks automatically at the end." },
+      { "slug": "lubricant-60ml", "role": "optional", "note": "搭配气压传感器佩戴。", "noteEn": "For use with the wearable pressure sensor." },
+      { "slug": "reciprocating-motor", "role": "optional", "note": "女用往复电机方案。", "noteEn": "Reciprocating motor option for women." }
+    ]
+  },
+  "surge-edging": {
+    "summary": "寸止一体机单机配齐；按气压变化率判定，不怕轻微漏气。",
+    "summaryEn": "One CunZhi-01 all-in-one unit is enough. Detection uses the rate of pressure change, so minor air leaks are not a problem.",
+    "docPath": "/docs/player/surge-edging",
+    "items": [
+      { "slug": "cunzhi01", "role": "kit", "note": "一台即可配齐传感与刺激。", "noteEn": "One unit covers sensing and stimulation." },
+      { "slug": "zidongsuo-auto-lock", "role": "optional", "note": "用于结束时自动解锁。", "noteEn": "Unlocks automatically at the end." },
+      { "slug": "lubricant-60ml", "role": "optional", "note": "搭配气压传感器佩戴。", "noteEn": "For use with the wearable pressure sensor." }
+    ]
+  },
+  "pelvic-training": {
+    "summary": "寸止一体机含气压传感与电击；只想要传感可单买阔约传感器。",
+    "summaryEn": "The CunZhi-01 all-in-one unit includes air-pressure sensing and shock feedback. If you only need sensing, buy the constriction sensor separately.",
+    "docPath": "/docs/player/kegel-training",
+    "items": [
+      { "slug": "cunzhi01", "role": "kit", "note": "气压传感与电击一体。", "noteEn": "Air-pressure sensing and shock feedback in one unit." },
+      { "slug": "kuoyue-sensor", "role": "required", "note": "分体替代方案：仅检测气压。", "noteEn": "Standalone alternative for air-pressure sensing only." },
+      { "slug": "zidongsuo-auto-lock", "role": "optional", "note": "用于结束时自动解锁。", "noteEn": "Unlocks automatically at the end." },
+      { "slug": "lubricant-60ml", "role": "optional", "note": "搭配气压传感器佩戴。", "noteEn": "For use with the wearable pressure sensor." },
+      { "slug": "wear-pants", "role": "optional", "note": "辅助固定穿戴设备。", "noteEn": "Helps keep wearable equipment in place." }
+    ]
+  },
+  "drink-pee-unlock": {
+    "summary": "强制喝水玩法套装一站配齐；单买只需电子秤。",
+    "summaryEn": "The drink training kit comes with everything you need. If buying separately, only the electronic scale is required.",
+    "docPath": "/docs/player/drink-pee-unlock",
+    "items": [
+      { "slug": "force-drink", "role": "kit", "note": "喝水/液体收集玩法套装。", "noteEn": "Complete kit for drinking and liquid collection modes." },
+      { "slug": "electronic-scale", "role": "required", "note": "检测水瓶或容器的重量变化。", "noteEn": "Measures changes in the bottle or container weight." },
+      { "slug": "cunzhi01-host", "role": "optional", "note": "可加入电击反馈。", "noteEn": "Adds optional shock feedback." },
+      { "slug": "zidongsuo-auto-lock", "role": "optional", "note": "用于结束时自动解锁。", "noteEn": "Unlocks automatically at the end." },
+      { "slug": "niaohu-gag", "role": "optional", "note": "液体收集模式可用来导流。", "noteEn": "For directing liquid into the container in collection mode." }
+    ]
+  },
+  "maid-punishment": {
+    "summary": "踮脚惩罚玩法v2套装一站配齐；也可用寸止一体机完整版（含踮脚传感器）。",
+    "summaryEn": "The Tiptoe Punishment V2 kit covers the full setup. The complete CunZhi-01 kit with a tiptoe sensor is another option.",
+    "docPath": "/docs/player/tiptoe-v2",
+    "items": [
+      { "slug": "tiptoe-v2", "role": "kit", "note": "踮脚惩罚玩法完整套装。", "noteEn": "Complete kit for tiptoe punishment." },
+      { "slug": "cunzhi01", "role": "kit", "note": "选择包含踮脚传感器的完整版。", "noteEn": "Choose the complete version with the tiptoe sensor." },
+      { "slug": "cunzhi01-host", "role": "required", "note": "分体方案的电击主机。", "noteEn": "Shock device for a separate-component setup." },
+      { "slug": "tiptoe-sensor", "role": "required", "note": "分体方案的脚后跟压力检测。", "noteEn": "Heel pressure detection for a separate-component setup." },
+      { "slug": "distance-sensor", "role": "optional", "note": "QTZ 双脚踏板方案，脚踏板需另配。", "noteEn": "QTZ dual-pedal alternative; pedals are sold separately." },
+      { "slug": "zidongsuo-auto-lock", "role": "optional", "note": "用于结束时自动解锁。", "noteEn": "Unlocks automatically at the end." }
+    ]
+  },
+  "pushup-detection": {
+    "summary": "QTZ 距离感应终端是唯一必需件；奖惩设备都可选。",
+    "summaryEn": "The QTZ Distance Sensor is the only required device. Reward and penalty devices are optional.",
+    "docPath": "/docs/player/pushup-game",
+    "items": [
+      { "slug": "distance-sensor", "role": "required", "note": "识别俯身和撑起动作。", "noteEn": "Detects the lowering and rising phases of a push-up." },
+      { "slug": "cunzhi01", "role": "optional", "note": "可提供震动奖励与电击惩罚。", "noteEn": "Adds vibration rewards and shock feedback." },
+      { "slug": "beidanci", "role": "optional", "note": "可提供电击惩罚。", "noteEn": "Adds optional shock feedback." },
+      { "slug": "zidongsuo-auto-lock", "role": "optional", "note": "用于结束时自动解锁。", "noteEn": "Unlocks automatically at the end." },
+      { "slug": "mini-vibe-2", "role": "optional", "note": "震动奖励，与往复电机共用输出槽，二选一。", "noteEn": "Vibration reward. Uses the same output slot as the reciprocating motor; choose one." },
+      { "slug": "reciprocating-motor", "role": "optional", "note": "往复电机方案，与跳蛋共用输出槽，二选一。", "noteEn": "Reciprocating motor option. Uses the same output slot as the vibrator; choose one." }
+    ]
+  },
+  "reading-game": {
+    "summary": "背单词电击强化器最省事；已有寸止01主机的加一副电极贴即可。",
+    "summaryEn": "The Vocabulary Shock Trainer is the simplest option. If you already have a CunZhi-01 main unit, just add a set of electrode pads.",
+    "docPath": "",
+    "items": [
+      { "slug": "beidanci", "role": "kit", "note": "一套配齐游戏所需电击设备。", "noteEn": "Complete shock feedback kit for the game." },
+      { "slug": "cunzhi01-host", "role": "required", "note": "可用已有主机替代套装，搭配电极贴。", "noteEn": "Use your existing main unit with pads instead of the kit." },
+      { "slug": "electrode-pad-wire", "role": "required", "note": "选用分体主机时需配电极贴和线。", "noteEn": "Pair these pads and wire with the standalone main unit." },
+      { "slug": "zidongsuo-auto-lock", "role": "optional", "note": "用于结束时自动解锁。", "noteEn": "Unlocks automatically at the end." }
+    ]
+  },
+  "vocab-game": {
+    "summary": "和朗读游戏一样，背单词电击强化器一件即可。",
+    "summaryEn": "As with the reading game, the Vocabulary Shock Trainer is all you need.",
+    "docPath": "",
+    "items": [
+      { "slug": "beidanci", "role": "kit", "note": "一套配齐游戏所需电击设备。", "noteEn": "Complete shock feedback kit for the game." },
+      { "slug": "cunzhi01-host", "role": "required", "note": "可用已有主机替代套装，搭配电极贴。", "noteEn": "Use your existing main unit with pads instead of the kit." },
+      { "slug": "electrode-pad-wire", "role": "required", "note": "选用分体主机时需配电极贴和线。", "noteEn": "Pair these pads and wire with the standalone main unit." },
+      { "slug": "zidongsuo-auto-lock", "role": "optional", "note": "用于结束时自动解锁。", "noteEn": "Unlocks automatically at the end." }
+    ]
+  },
+  "device-control": {
+    "summary": "无需特定套件，连接任意硅基之下自研或已兼容的第三方蓝牙设备即可调试。",
+    "summaryEn": "No specific kit is required. Connect any UnderSilicon device or a compatible third-party Bluetooth device to test it.",
+    "docPath": "",
+    "items": []
+  }
+}

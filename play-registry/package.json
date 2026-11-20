@@ -5,8 +5,10 @@
   "description": "UnderSilicon 控制面板的远程游戏仓库（静态站）。面板运行时拉取 registry.json，游戏经面板 gameProxy 同源加载。",
   "scripts": {
     "build": "node scripts/build-registry.js",
-    "build:site": "node scripts/build-registry.js && node scripts/build-site.js",
-    "test": "node --test test/extract.test.js test/gamehost.test.js test/baidu-tongji.test.js test/game-detail.test.js test/auth.test.js",
+    "build:site": "npm run check:shop-products && node scripts/build-registry.js && node scripts/build-site.js",
+    "sync:shop-products": "node scripts/sync-shop-products.js",
+    "check:shop-products": "node scripts/check-shop-products.js",
+    "test": "node --test test/extract.test.js test/gamehost.test.js test/baidu-tongji.test.js test/game-detail.test.js test/auth.test.js test/game-hardware.test.js",
     "serve": "npm run build:site && npx --yes serve .site"
   },
   "dependencies": {

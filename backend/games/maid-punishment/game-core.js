@@ -13,7 +13,7 @@
 // 宿主只转发 deviceMap 里已映射设备的事件，且属性只在值真的变化时转发。
 
 const GAME_ID = 'maid-punishment';
-const VERSION = '2.2.4';
+const VERSION = '2.2.5';
 const TITLE = '女仆偷懒惩罚';
 
 const LOG_LIMIT = 10;          // 页面日志面板保留最近 10 条（game.js L46）
