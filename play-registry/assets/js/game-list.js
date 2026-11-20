@@ -6,6 +6,7 @@
   var search = document.getElementById('search');
   var filters = document.getElementById('filters');
   var toastEl = document.getElementById('toast');
+  var catalog = window.ShopCatalog;
   var allGames = [];
   var activeFilter = 'all';
   function t(key, vars) {
@@ -101,6 +102,24 @@
     return t('introAuthor') + ': ' + g.authorName;
   }
 
+  function hardwareHtml(g) {
+    if (!catalog) return '';
+    var guide = catalog.guideFor(g.id);
+    if (!guide) return '';
+    if (!guide.items.length) return '<p class="game-hardware">' + esc(t('hardwareNoKit')) + '</p>';
+    var locale = window.SiteI18n && window.SiteI18n.isEn() ? 'en' : 'zh';
+    var items = catalog.itemsFor(g.id, locale);
+    var kits = items.filter(function (item) { return item.role === 'kit'; });
+    var required = items.filter(function (item) { return item.role === 'required'; });
+    var primary = kits.length ? kits : required;
+    if (!primary.length) return '';
+    return '<p class="game-hardware">' + esc(t(kits.length ? 'hardwareKit' : 'required')) + ': '
+      + primary.map(function (item) {
+        return '<a class="hardware-link" href="' + esc(catalog.productUrl(item.slug, locale, 'list', g.id))
+          + '" target="_blank" rel="noopener">' + esc(item.name) + '</a>';
+      }).join(kits.length ? ' / ' : ' + ') + '</p>';
+  }
+
   function cardHtml(g) {
     var caps = capabilityChips(g);
     var reqDevices = (g.devices || []).filter(function (d) { return d.required; }).map(function (d) { return d.label || d.id; });
@@ -121,6 +140,7 @@
       + '<p class="game-desc">' + esc(g.description || t('noDesc')) + '</p>'
       + (author ? '<div class="game-author">' + esc(author) + '</div>' : '')
       + '<div class="game-meta">' + badges + '</div>'
+      + hardwareHtml(g)
       + '<div class="game-card-foot">'
         + '<span class="game-size">' + (g.sha256 ? ('sha ' + g.sha256.slice(0, 8)) : '') + (g.size ? ' · ' + fmtSize(g.size) : '') + '</span>'
         + '<span class="game-actions">'
@@ -176,8 +196,8 @@
     render();
   }
 
-  loadFrom('registry.json')
-    .then(applyRegistry)
+  Promise.all([loadFrom('registry.json'), catalog && catalog.load()])
+    .then(function (data) { applyRegistry(data[0]); })
     .catch(function (err) {
       grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;">'
         + '<p style="font-size:16px;margin-bottom:6px;color:var(--warn);">' + t('registryFail') + '</p>'

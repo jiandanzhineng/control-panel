@@ -9,8 +9,8 @@
   "id": "surge-edging",
   "title": "气压突变寸止",
   "description": "三阶段寸止改版，不用微调气压，不怕漏气，末尾增加倒计时",
-  "howTo": "1. 映射气压传感器与 TD01（必需）\n2. 可选：电击、自动锁\n3. 按需调整突变窗口/抬升阈值\n4. 可用界面按钮微调中间压力",
-  "version": "1.4.4",
+  "howTo": "1. 佩戴寸止一体机（或气压传感器 + 刺激器），无需反复校准固定绝对气压，不怕轻微漏气。\n2. 平静期震动缓慢增强；系统实时捕捉短时间内的「气压突然抬升」，判定临近边缘立即停振（可选电击）并等待压力回落冷却。\n3. 循环多轮直至总倒计时结束，末尾冲刺后自动解锁。",
+  "version": "1.4.5",
   "devices": [
     {
       "id": "sensor",
@@ -277,7 +277,7 @@
     "en": {
       "title": "Pressure surge edging",
       "description": "A three-stage edging variant. No need to fine-tune pressure and no worry about leaks, with a countdown added at the end.",
-      "howTo": "1. Map air-pressure sensor and TD01 (required)\n2. Optional: shock, lock\n3. Adjust the surge window and rise threshold as needed\n4. Fine-tune the mid pressure with on-screen buttons",
+      "howTo": "1. Put on the CunZhi-01 all-in-one unit (or an air-pressure sensor and stimulator). You do not need to recalibrate a fixed pressure threshold, and small leaks are fine.\n2. Vibration rises slowly during the calm phase. A sudden rise in pressure signals that you are near the edge: vibration stops immediately, an optional shock is triggered, and the game waits for pressure to fall.\n3. Repeat until the overall timer expires. The lock opens automatically after the final sprint.",
       "devices": {
         "sensor": "Air-pressure sensor",
         "motor": "TD01 stimulator",

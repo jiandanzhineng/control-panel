@@ -9,6 +9,7 @@ const vm = require('node:vm');
 const ROOT = path.resolve(__dirname, '..');
 const I18N_SRC = fs.readFileSync(path.join(ROOT, 'assets/js/i18n.js'), 'utf8');
 const DETAIL_SRC = fs.readFileSync(path.join(ROOT, 'assets/js/game-detail.js'), 'utf8');
+const CATALOG_SRC = fs.readFileSync(path.join(ROOT, 'assets/js/shop-catalog.js'), 'utf8');
 
 const flush = () => new Promise((r) => setImmediate(r));
 
@@ -37,6 +38,7 @@ function makeContext(options) {
   };
   const state = { fetchCalls: [] };
   const document = {
+    currentScript: { src: 'https://site.example/assets/js/shop-catalog.js' },
     getElementById(id) { return elements[id] || null; },
     addEventListener(type, fn) { (document.listeners[type] = document.listeners[type] || []).push(fn); },
     dispatchEvent(ev) { (document.listeners[ev.type] || []).forEach((fn) => fn(ev)); },
@@ -52,6 +54,12 @@ function makeContext(options) {
       state.fetchCalls.push(String(url));
       if (String(url).indexOf('registry.json') >= 0) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ games: opts.games || [] }) });
+      }
+      if (opts.catalog) {
+        const file = new URL(url).pathname.split('/').pop();
+        if (['game-hardware.json', 'shop-products.json'].includes(file)) {
+          return Promise.resolve({ ok: true, json: () => require('../assets/data/' + file) });
+        }
       }
       return Promise.reject(new Error('unexpected ' + url));
     },
@@ -81,6 +89,22 @@ function load(ctx) {
   vm.runInContext(I18N_SRC, ctx);
   vm.runInContext(DETAIL_SRC, ctx);
 }
+
+test('导购卡按语言出链接，不给没有教程的玩法生成教程链接', async () => {
+  for (const [id, expected] of [
+    ['reading-game', 'https://shop.undersilicon.cn/en/products/beidanci?ref=play-detail-reading-game'],
+    ['vocab-game', 'https://shop.undersilicon.cn/en/products/beidanci?ref=play-detail-vocab-game'],
+    ['device-control', 'https://shop.undersilicon.cn/en?ref=play-detail-device-control'],
+  ]) {
+    const ctx = makeContext({ games: [{ id }], search: '?id=' + id, locale: 'en', catalog: true });
+    vm.runInContext(CATALOG_SRC, ctx);
+    load(ctx);
+    await flush();
+    const html = ctx.__elements['detail-content'].innerHTML;
+    assert.ok(html.includes(expected), id);
+    assert.doesNotMatch(html, /View the full illustrated tutorial/);
+  }
+});
 
 const DEMO = {
   id: 'demo',

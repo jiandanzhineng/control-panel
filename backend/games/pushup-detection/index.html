@@ -9,8 +9,8 @@
   "id": "pushup-detection",
   "title": "俯卧撑检测训练",
   "description": "用 QTZ 距离阈值识别俯卧撑上下动作。支持无动作惩罚、连击奖励（跳蛋/捶背）与自动锁。",
-  "howTo": "1. 映射 QTZ（必需）\n2. 可选：自动锁、电击、跳蛋、捶背\n3. 按身高调整下降/上升阈值\n4. 在时限内完成目标次数",
-  "version": "2.1.6",
+  "howTo": "1. 将 QTZ 距离传感器平放在胸口正下方地面，贴好可选电极贴、跳蛋/往复电机与自动锁。\n2. 按身高设好俯身「近距离阈值」与撑起「远距离阈值」：俯身低于近阈值再撑起高于远阈值计 1 次有效俯卧撑。\n3. 连续完成可触发振动奖励，超时不动会触发电击惩罚；规定时限内完成目标个数即解锁。",
+  "version": "2.1.7",
   "devices": [
     {
       "id": "qtz",
@@ -253,7 +253,7 @@
     "en": {
       "title": "Push-up trainer",
       "description": "Uses QTZ distance thresholds to detect push-up up/down. Idle punish, combo rewards (vibe / back-pat), and auto lock.",
-      "howTo": "1. Map QTZ (required)\n2. Optional: lock, shock, vibe, back-pat\n3. Adjust down/up thresholds for height\n4. Hit the target count within the time limit",
+      "howTo": "1. Lay the QTZ distance sensor flat on the floor directly beneath your chest. Set up any optional electrode pads, vibrator or reciprocating motor, and auto lock.\n2. Set the near threshold for lowering and the far threshold for rising based on your height. Going below the near threshold, then above the far threshold, counts as one push-up.\n3. Consecutive reps can earn vibration rewards; inactivity can trigger a shock penalty. Reach the target count within the time limit to unlock.",
       "devices": {
         "qtz": "QTZ distance sensor",
         "lock": "Auto lock",
