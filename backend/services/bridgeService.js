@@ -2,12 +2,18 @@ const { WebSocketServer } = require('ws');
 const deviceService = require('./deviceService');
 const deviceRegistry = require('../devices/registry');
 const { getCapabilityDefinition } = require('../devices/capabilities');
+const { monitorSpecByCapability } = require('../devices/monitorSpec');
 const logService = require('./logService');
 const virtualDeviceService = require('./virtualDeviceService');
 const { BRIDGE_INTERNAL_HEADER } = require('../constants/bridgeAccess');
 const externalGameAccessService = require('./externalGameAccessService');
 const browserDeviceGrantService = require('./browserDeviceGrantService');
 const wsUpgradeRouter = require('./wsUpgradeRouter');
+const sttService = require('./sttService');
+const gameLaunchTokenService = require('./gameLaunchTokenService');
+const agentControl = require('./agentControlService');
+const gameCloudService = require('./gameCloudService');
+const { VocabCommandSession, MODEL: VOCAB_KWS_MODEL } = require('../voice/vocabCommandSession');
 // 玩法载体事件（本机开始/退出一次玩法）：远程占用仲裁（remoteGameService）订阅
 const playCarrierBus = require('./playCarrierBus');
 
@@ -29,6 +35,12 @@ class GameSession {
     this.params = config.params || {};
     this.kind = config.kind || 'play';
     this.origin = config.origin || '';
+    // 宿主签发的游戏启动令牌；云存档的游戏 id 只能由它解析，页面传的 gameId 一律忽略。
+    this.gameToken = typeof config.gameToken === 'string' ? config.gameToken : null;
+    // agent 发起的玩法：bridge 会话的设备输出全部按该 agent 租约限幅。
+    this.agentClientId = typeof config.agentClientId === 'string' && config.agentClientId
+      ? config.agentClientId
+      : null;
     this.subscriptions = new Map();
     this.propertySubscriptions = new Map();
     this.valueSubscriptions = new Map();
@@ -40,6 +52,7 @@ class GameSession {
     this.shockCount = 0;
     this.shockStopTimer = null;
     this.shockStopTargets = new Set();
+    this.commandSpeech = null;
   }
 
   send(data) {
@@ -56,6 +69,7 @@ class GameSession {
 
   destroy() {
     this.active = false;
+    this.commandSpeech?.dispose();
     if (this.pendingCloseTimer) {
       clearTimeout(this.pendingCloseTimer);
       this.pendingCloseTimer = null;
@@ -148,8 +162,12 @@ function init(server) {
         const config = {
           deviceMap: msg.deviceMap || {},
           params: msg.params || {},
+          gameToken: msg.gameToken,
         };
         if (pendingDisconnect && activeSession === pendingDisconnect && isSameSessionConfig(pendingDisconnect, config)) {
+          // 同配置快速重连（页面刷新/崩溃重载）会销毁旧会话并清掉它的自动停止定时器，
+          // 旧页面发出的电击可能还没停，这里先补发 stop。
+          if (pendingDisconnect.shockStopTimer) stopShockTargets(pendingDisconnect);
           removeSession(pendingDisconnect);
         } else {
           replaceActiveSession();
@@ -157,6 +175,9 @@ function init(server) {
         session = new GameSession(ws, {
           deviceMap: config.deviceMap,
           params: config.params,
+          gameToken: config.gameToken,
+          // 启动令牌由宿主机签发：agent 启动的 iframe 游戏在这里继承 agent 来源。
+          agentClientId: gameLaunchTokenService.resolveEntry?.(config.gameToken)?.agentClientId || null,
         });
         sessions.set(session.id, session);
         activeSession = session;
@@ -176,6 +197,8 @@ function init(server) {
 
     ws.on('close', () => {
       if (session) {
+        // 设备退出宽限不适用于麦克风：断开即释放识别流。
+        session.commandSpeech?.dispose();
         scheduleGracefulClose(session);
       }
     });
@@ -186,28 +209,41 @@ function init(server) {
   deviceService.onDeviceRawMessage(({ deviceId, payload }) => handleRawMessageForBridge(deviceId, payload));
 }
 
+function runWithSessionAgent(session, fn) {
+  return session?.agentClientId
+    ? agentControl.runWithClient(session.agentClientId, fn)
+    : fn();
+}
+
+/** 租约释放/过期：停掉该 agent 发起的 iframe 玩法（含设备复位）。 */
+function stopAgentSession(clientId) {
+  if (!activeSession || !clientId || activeSession.agentClientId !== clientId) return false;
+  resetActiveSession('agent-lease-ended');
+  return true;
+}
+
 function handleMessage(session, msg) {
   const { id, action } = msg;
 
   try {
     switch (action) {
       case 'invoke': {
-        session.send({ id, result: invokeForSession(session, msg) });
+        session.send({ id, result: runWithSessionAgent(session, () => invokeForSession(session, msg)) });
         break;
       }
 
       case 'writeProps': {
-        session.send({ id, result: writePropsForSession(session, msg) });
+        session.send({ id, result: runWithSessionAgent(session, () => writePropsForSession(session, msg)) });
         break;
       }
 
       case 'operate': {
-        session.send({ id, result: operateForSession(session, msg) });
+        session.send({ id, result: runWithSessionAgent(session, () => operateForSession(session, msg)) });
         break;
       }
 
       case 'sendMessage': {
-        session.send({ id, result: sendMessageForSession(session, msg) });
+        session.send({ id, result: runWithSessionAgent(session, () => sendMessageForSession(session, msg)) });
         break;
       }
 
@@ -287,6 +323,81 @@ function handleMessage(session, msg) {
 
       case 'getDeviceMap': {
         session.send({ id, result: session.deviceMap });
+        break;
+      }
+
+      case 'speechStatus': {
+        session.send({ id, result: speechStatusForSession() });
+        break;
+      }
+
+      case 'speechToText': {
+        // 转写是异步的（上游可达 20s），结果/错误都用原 requestId 回发。
+        transcribeForSession(msg)
+          .then((result) => session.send({ id, result }))
+          .catch((error) => session.send({
+            id, error: error?.message || String(error), code: error?.code || null,
+          }));
+        break;
+      }
+
+      case 'speechCommandsStatus': {
+        const reason = remoteSpeechReason();
+        const supported = resolveSessionGameId(session) === 'vocab-game';
+        session.send({ id, result: {
+          ready: supported && !reason, mode: 'kws', model: VOCAB_KWS_MODEL,
+          ...(reason ? { reason: 'REMOTE_LOCKED' } : {}),
+        } });
+        break;
+      }
+
+      case 'speechCommandsStart': {
+        if (remoteSpeechReason() || resolveSessionGameId(session) !== 'vocab-game') {
+          session.send({ id, error: '当前游戏不可使用本机口令', code: 'NO_KWS' });
+          break;
+        }
+        if (!session.commandSpeech) session.commandSpeech = new VocabCommandSession({ send: data => session.send(data) });
+        session.commandSpeech.start(msg)
+          .then(result => session.send({ id, result }))
+          .catch(error => session.send({ id, error: error.message, code: error.code || 'NO_KWS' }));
+        break;
+      }
+
+      case 'speechCommandsUpdate': {
+        session.commandSpeech?.update(msg);
+        break;
+      }
+
+      case 'speechCommandsAudio': {
+        if (remoteSpeechReason()) session.commandSpeech?.stop();
+        else session.commandSpeech?.accept(msg);
+        break;
+      }
+
+      case 'speechCommandsStop': {
+        session.commandSpeech?.stop(msg.generation);
+        session.send({ id, result: { ok: true } });
+        break;
+      }
+
+      case 'cloudStatus': {
+        // 只看本地登录会话，不请求网络。
+        session.send({ id, result: gameCloudService.status() });
+        break;
+      }
+
+      case 'cloudGet': {
+        gameCloudService.get(resolveSessionGameId(session))
+          .then((result) => session.send({ id, result }))
+          .catch((error) => sendCloudError(session, id, error));
+        break;
+      }
+
+      case 'cloudPut': {
+        // msg.gameId / msg.data.gameId 都不看：游戏 id 只认宿主签发的启动令牌。
+        gameCloudService.put(resolveSessionGameId(session), msg.data, msg.baseVersion)
+          .then((result) => session.send({ id, result }))
+          .catch((error) => sendCloudError(session, id, error));
         break;
       }
 
@@ -488,20 +599,32 @@ function getEffectiveTypeConfig(device) {
   };
 }
 
+const monitorFieldsByKey = new Map(Object.values(monitorSpecByCapability).flat().map((field) => [field.key, field]));
+
 function listDevicesWithCapabilities() {
-  return deviceService.listDevicesForApi().map((d) => ({
-    id: d.id,
-    type: d.type,
-    name: d.name,
-    nickname: d.nickname,
-    connected: d.connected,
-    connectionType: d.connectionType,
-    controlConnection: d.controlConnection,
-    connections: d.connections || [],
-    data: d.data || {},
-    capabilities: getEffectiveCapabilities(d),
-    typeConfig: getEffectiveTypeConfig(d),
-  }));
+  return deviceService.listDevicesForApi().map((d) => {
+    const typeConfig = getEffectiveTypeConfig(d);
+    const data = d.data || {};
+    const configuredKeys = new Set((typeConfig.monitorData || []).map((field) => field.key));
+    // 类型专属元数据已在 typeConfig.monitorData 中；这里只补跨能力上报的字段（如品牌设备的电量）。
+    const monitorSpec = Object.keys(data)
+      .filter((key) => !configuredKeys.has(key) && monitorFieldsByKey.has(key))
+      .map((key) => monitorFieldsByKey.get(key));
+    return {
+      id: d.id,
+      type: d.type,
+      name: d.name,
+      nickname: d.nickname,
+      connected: d.connected,
+      connectionType: d.connectionType,
+      controlConnection: d.controlConnection,
+      connections: d.connections || [],
+      data,
+      capabilities: getEffectiveCapabilities(d),
+      typeConfig,
+      monitorSpec,
+    };
+  });
 }
 
 function getAllDeviceMap() {
@@ -880,35 +1003,102 @@ function scheduleShockAutoStop(session, physId, capability, actionName) {
   }
   session.shockStopTargets = session.shockStopTargets || new Set();
   session.shockStopTargets.add(physId);
+  // 留痕：宿主兜底停止是“游戏自身停止没发出去”时的最后保险，日志里要能看出它排在游戏停止之后
+  logService.info('BridgeShock', `auto-stop scheduled in ${duration}s target=${physId}`);
   session.shockStopTimer = setTimeout(() => {
     session.shockStopTimer = null;
     if (!session.active) return;
-    const targets = Array.from(session.shockStopTargets || []);
-    session.shockStopTargets = new Set();
-    for (const target of targets) {
-      try {
-        if (virtualDeviceService.isVirtualDevice(target)) {
-          virtualDeviceService.interceptCommand(target, { action: 'invoke', capability: 'shock', actionName: 'stop', params: {} });
-        } else {
-          deviceService.invokeDeviceCapability(target, 'shock', 'stop', {});
-        }
-      } catch (_) {}
-    }
+    logService.info('BridgeShock', `auto-stop fired targets=${Array.from(session.shockStopTargets || []).join(',')}`);
+    stopShockTargets(session);
   }, duration * 1000);
+}
+
+// 对会话登记过的电击目标发 stop，并清掉自动停止定时器。
+function stopShockTargets(session) {
+  if (session.shockStopTimer) {
+    clearTimeout(session.shockStopTimer);
+    session.shockStopTimer = null;
+  }
+  const targets = Array.from(session.shockStopTargets || []);
+  session.shockStopTargets = new Set();
+  for (const target of targets) {
+    try {
+      if (virtualDeviceService.isVirtualDevice(target)) {
+        virtualDeviceService.interceptCommand(target, { action: 'invoke', capability: 'shock', actionName: 'stop', params: {} });
+      } else {
+        deviceService.invokeDeviceCapability(target, 'shock', 'stop', {});
+      }
+    } catch (_) {}
+  }
 }
 
 function emitSystemLog(session, level, message, meta) {
   session.send({ event: 'systemLog', level, message, meta: meta || {} });
 }
 
+// ---------- 页面游戏云存档（契约见 docs/plans/vocab-game.md §4.2） ----------
+// 令牌由 /api/games/:id/start 按游戏签发，bridge init 回传；页面传来的 gameId 不参与。
+function resolveSessionGameId(session) {
+  return gameLaunchTokenService.resolve(session.gameToken);
+}
+
+// 409 冲突时把云端当前内容带回页面（err.remote），其余只回错误码。
+function sendCloudError(session, id, error) {
+  const payload = { id, error: error?.message || String(error), code: error?.code || null };
+  if (error?.remote) payload.remote = error.remote;
+  session.send(payload);
+}
+
+// ---------- 语音识别（游戏用，契约见 docs/plans/reading-game.md §3.2） ----------
+// 只给本机游戏用：远程会话 / 远程投影期间麦克风不在本机执行端，一律拒绝。
+function remoteSpeechReason() {
+  try {
+    if (require('./remoteSessionService').getStatus().active) return 'remote';
+  } catch (_) {}
+  try {
+    if (require('./remoteProjectionService').getStatus().active) return 'projection';
+  } catch (_) {}
+  return null;
+}
+
+function speechBlockedError(reason) {
+  const error = new Error(`远程${reason === 'projection' ? '投影' : '会话'}中不可用，断开后可用`);
+  error.code = 'NO_STT';
+  return error;
+}
+
+function speechStatusForSession() {
+  const reason = remoteSpeechReason();
+  if (reason) return { ready: false, mode: 'none', reason: 'REMOTE_LOCKED' };
+  return sttService.status();
+}
+
+function transcribeForSession(msg) {
+  const reason = remoteSpeechReason();
+  if (reason) return Promise.reject(speechBlockedError(reason));
+  return sttService.transcribe({
+    audio: msg.audio,
+    format: msg.format,
+    timeoutMs: msg.timeoutMs,
+  });
+}
+
 // 本机（页面式游戏 / 插件）开始与退出玩法：广播给远程占用仲裁。
 // bridge 的 init 就是「本机开始一次玩法」；复位路径（显式退出 / 被顶替 / 宽限超时）即退出。
 function notifyCarrierStart() {
-  playCarrierBus.emitPlayCarrierStart({ kind: 'bridge' });
+  // iframe 游戏没有单独的 gameId 通道：启动时签发的令牌能反查游戏 id，
+  // 让全局事件流（game.started）与远程占用仲裁拿到同一个 id。
+  const gameId = activeSession?.gameToken
+    ? (require('./gameLaunchTokenService').resolve(activeSession.gameToken) || null)
+    : null;
+  playCarrierBus.emitPlayCarrierStart({ kind: 'bridge', gameId });
 }
 
 function notifyCarrierExit(reason) {
-  playCarrierBus.emitPlayCarrierExit({ kind: 'bridge', reason });
+  const gameId = activeSession?.gameToken
+    ? (require('./gameLaunchTokenService').resolve(activeSession.gameToken) || null)
+    : null;
+  playCarrierBus.emitPlayCarrierExit({ kind: 'bridge', reason, gameId });
 }
 
 function getActiveSessions() {
@@ -926,6 +1116,7 @@ module.exports = {
   closeSession,
   exitCurrent,
   resetActiveSession,
+  stopAgentSession,
   runBrowserCommand,
   exitBrowserOrigin,
   getAllDeviceMap,

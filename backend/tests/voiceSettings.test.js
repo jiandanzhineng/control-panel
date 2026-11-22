@@ -60,8 +60,58 @@ describe('voice settings', () => {
     expect(again.body.ready).toBe(true);
   });
 
+  it('stores Tako TTS credentials locally and masks them from API responses', async () => {
+    const saved = await request(app()).post('/api/voice/settings')
+      .send({ tako_api_key: 'tako-secret-123456', tako_proxy: 'http://127.0.0.1:7990' });
+    expect(saved.status).toBe(200);
+    expect(saved.body.has_tako_key).toBe(true);
+    expect(saved.body.tako_key_masked).toMatch(/^tako/);
+    expect(saved.body.tako_proxy).toBe('http://127.0.0.1:7990');
+    expect(JSON.stringify(saved.body)).not.toContain('tako-secret-123456');
+    expect(voiceSettings.getTakoConfig()).toEqual({
+      api_key: 'tako-secret-123456', proxy: 'http://127.0.0.1:7990',
+    });
+  });
+
+  it('rejects non-HTTP Tako proxy schemes', async () => {
+    const res = await request(app()).post('/api/voice/settings')
+      .send({ tako_proxy: 'javascript:alert(1)' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('BAD_PROXY');
+  });
+
   it('rejects unknown route', async () => {
     const res = await request(app()).post('/api/voice/settings').send({ route: 'silicon' });
     expect(res.status).toBe(400);
+  });
+
+  it('stores a SiliconFlow key for speech recognition and masks it', async () => {
+    const saved = await request(app()).post('/api/voice/settings')
+      .send({ siliconflow_api_key: 'sk-siliconflow-abcdef123456' });
+    expect(saved.status).toBe(200);
+    expect(saved.body.has_sf_key).toBe(true);
+    expect(saved.body.sf_key_masked).toMatch(/^sk-s/);
+    expect(saved.body.stt_mode).toBe('own_key');
+    expect(JSON.stringify(saved.body)).not.toContain('sk-siliconflow-abcdef123456');
+    // 和 MiMo 通路互相独立：没动 route/api_key
+    expect(saved.body.route).toBe('panel');
+    expect(saved.body.has_key).toBe(false);
+
+    voiceSettings._resetForTests();
+    const again = await request(app()).get('/api/voice/status');
+    expect(again.body.has_sf_key).toBe(true);
+    expect(voiceSettings.getSiliconFlowKey()).toBe('sk-siliconflow-abcdef123456');
+  });
+
+  it('clears the SiliconFlow key with an empty string and falls back to relay/none', async () => {
+    await request(app()).post('/api/voice/settings').send({ siliconflow_api_key: 'sk-siliconflow-abcdef' });
+    const cleared = await request(app()).post('/api/voice/settings').send({ siliconflow_api_key: '' });
+    expect(cleared.body.has_sf_key).toBe(false);
+    expect(cleared.body.sf_key_masked).toBe('');
+    expect(cleared.body.stt_mode).toBe('none');
+
+    localSession.deposit('jwt-token', { id: 'u1' });
+    const signedIn = await request(app()).get('/api/voice/status');
+    expect(signedIn.body.stt_mode).toBe('relay');
   });
 });

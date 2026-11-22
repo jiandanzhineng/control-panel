@@ -51,6 +51,7 @@ describe('voice relay', () => {
     const [url, opts] = fetchMock.mock.calls[0];
     expect(url).toBe('https://api.xiaomimimo.com/v1/chat/completions');
     expect(opts.headers['api-key']).toBe('sk-live-key');
+    expect(JSON.parse(opts.body).model).toBe('mimo-v2.6-flash');
   });
 
   it('forwards official route to mimo-relay with panel JWT', async () => {
@@ -67,6 +68,18 @@ describe('voice relay', () => {
     expect(url).toMatch(/\/v1\/chat\/completions$/);
     expect(url).not.toContain('xiaomimimo.com');
     expect(opts.headers.Authorization).toBe('Bearer jwt-from-panel');
+    expect(JSON.parse(opts.body).model).toBe('mimo-v2.5-tts');
+  });
+
+  it('accepts v2.6-flash without changing the conversation or generation options', async () => {
+    localSession.deposit('jwt-from-panel', { id: '1' });
+    fetchMock.mockResolvedValue({
+      status: 200, headers: { get: () => 'application/json' }, text: async () => '{}',
+    });
+    const body = { model: 'mimo-v2.6-flash', messages: [{ role: 'user', content: 'hello' }], thinking: { type: 'disabled' } };
+    const res = await request(app()).post('/v1/chat/completions').send(body);
+    expect(res.status).toBe(200);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(body);
   });
 
   it('pipes SSE chunks and stops when the client drops', async () => {
@@ -104,5 +117,18 @@ describe('voice relay', () => {
       .send({ model: 'mimo-v2.5', messages: [] });
     expect(res.status).toBe(403);
     localSession.isLoopback.mockRestore();
+  });
+
+  it('preserves an upstream JSON error for a streaming request', async () => {
+    localSession.deposit('jwt-from-panel', { id: '1' });
+    fetchMock.mockResolvedValue({
+      status: 502, headers: { get: () => 'application/json' },
+      text: async () => JSON.stringify({ error: { code: 'UPSTREAM_AUTH_FAILED', message: 'contact administrator' } }),
+    });
+    const res = await request(app()).post('/v1/chat/completions')
+      .send({ model: 'mimo-v2.5', stream: true, messages: [] });
+    expect(res.status).toBe(502);
+    expect(res.headers['content-type']).toMatch(/application\/json/);
+    expect(res.body.error.code).toBe('UPSTREAM_AUTH_FAILED');
   });
 });

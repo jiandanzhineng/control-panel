@@ -1,18 +1,36 @@
 {
-  "name": "device-cli",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Device management CLI scaffold",
+  "name": "undersilicon-cli",
+  "version": "0.1.1",
+  "description": "硅基之下控制中心的命令行工具，供用户和 AI agent 查看设备、控制输出与启动游戏",
   "bin": {
-    "device-cli": "./cli.js"
+    "undersilicon": "./cli.js"
+  },
+  "main": "./cli.js",
+  "license": "MIT",
+  "author": "jiandanzhineng",
+  "homepage": "https://docs.undersilicon.cn/docs/developer/cli",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jiandanzhineng/control-panel.git",
+    "directory": "device-cli"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "files": [
+    "cli.js",
+    "lib/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
   },
   "scripts": {
     "start": "node cli.js",
-    "test:smoke": "node cli.js help",
-    "test:mock": "node scripts/selftest.mock.js",
-    "test": "npm run test:smoke && npm run test:mock"
-  },
-  "engines": {
-    "node": ">=18"
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:smoke": "node cli.js --version",
+    "test:mock": "node --test \"test/**/*.test.js\""
   }
 }

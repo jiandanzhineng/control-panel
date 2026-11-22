@@ -22,11 +22,14 @@
 - ESA 站点 `undersilicon.cn` 的既有 API/admin 缓存规则已补 `no_cache`，全局 CORS 规则排除 `game-api.undersilicon.cn`。
 - ESA 缓存规则 `506125495674880` 只匹配 `game.undersilicon.cn/registry.json`，浏览器与边缘均 `no_cache`、`bypass_all`；玩法页面和不可变资源用自动缓存。默认 registry 已验证为 `DYNAMIC`。
 - 公开 `registry.json` 的社区游戏带 `authorName`（投稿署名）；介绍页读该字段，缺署名且非 builtin 才显示未知作者。
-- 待审源包会过期：`sub_98042fefb077036af982bc100cef6284`（Gu，2026-09-21，三阶段寸止自动校准定时版）在库里仍是 `pending`，但 `ezs-game-submissions` 里的 `source.zip` 已被旧 7 天规则清掉（2026-10-25 查为 NoSuchKey），**这条投稿无法审核发布，只能让作者重传**。查源包是否存在：对 `ezs-game-submissions` 做 HEAD `submissions/<id>/source.zip`。
+- 待审源包会过期：`ezs-game-submissions` 里的 `submissions/<id>/source.zip` 会被生命周期清掉（2026-09-21 的 pending 稿即如此，2026-10-25 查为 NoSuchKey，无法再审核）。查源包是否存在：对 `ezs-game-submissions` 做 HEAD `submissions/<id>/source.zip`。
+- 2026-11-08 清理：作者 `01KX3D9EPHFZPKSJ4P1KBJY66S`（1604908432@qq.com，未绑手机）的 1 条 pending + 8 条 draft 已从 DB 删除；这批源包早已被生命周期清掉，OSS 只剩已发布的 `sub_1a1b94c341415fc3ece8000ffba712aa`。同账号 9-20 的投稿即 10-14 上线的 `pressure-edging-v2-calib` 2.3.9。删除前备份 `/var/lib/game-platform/game-platform.db.bak.20261108-submission-cleanup`。
 
 ## 工具链
 
-- Go 免安装版：`C:\Users\46907\AppData\Local\GoPortable\go1.27.0-full\go\bin\go.exe`，在 `game-platform/` 下 `go test ./...`；生产构建用 `game-platform/Dockerfile`。
+- 项目最低 Go 版本由 `game-platform/go.mod` 固定为 `1.27.3`，Docker 构建镜像同步固定补丁版本。Windows 的 `C:\Program Files\Go\bin\go.exe` 允许 `GOTOOLCHAIN=auto`，在模块目录运行时自动选择满足要求的工具链；用 `go version` / `go env GOROOT` 核对，不能只检查仓库根目录的全局版本。
+- Go 检查在 `.github/workflows/check-game-platform.yml`：按 go.mod 安装工具链，执行模块校验、测试、vet、govulncheck 和 Linux 静态构建。部署前用相同工具链运行这些检查，再以 `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -buildvcs=true -ldflags="-s -w"` 生成二进制。
+- 原生 systemd 部署同样需要使用上述补丁工具链，不能只改 Dockerfile。切换后检查 `/proc/<MainPID>/exe` 的 Go build info、构建提交与上传文件 SHA256；保留旧 release 和 SQLite `.backup`，健康检查失败立即切回旧 release。
 - BrowserOS neo 走系统代理 `127.0.0.1:7990` 时，Windows `ProxyOverride` 需含 `*.undersilicon.cn`，否则 game API 请求可能断连。
 
 ## 已知坑

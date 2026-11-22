@@ -38,6 +38,7 @@
             <div class="support-icon"><el-icon><EditPen /></el-icon></div>
             <h3>{{ t('support.feedback') }}</h3>
             <p class="support-tip">{{ t('support.feedbackTip') }}</p>
+            <p class="support-tip support-reward">{{ t('support.feedbackReward') }}</p>
             <el-link
               type="primary"
               :href="FEEDBACK_URL"
@@ -56,12 +57,18 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { ChatDotRound, ChatLineRound, EditPen, TopRight } from '@element-plus/icons-vue'
+import { useLocale } from '../i18n/useLocale'
 
 const { t } = useI18n()
-const FEEDBACK_URL = 'https://rcnhcfc58y3x.feishu.cn/share/base/form/shrcn9waNH8Jjmqe4JDvwu9DGql'
+const { appLocale } = useLocale()
+// 反馈统一走商城工单系统（与客户端同一账号中心，未登录会自动跳登录页）
+const FEEDBACK_URL = computed(
+  () => `https://shop.undersilicon.cn/${appLocale.value === 'en' ? 'en' : 'zh'}/profile/feedback/new`,
+)
 const QQ_NUMBER = '4690734'
 
 async function copyQQ() {
@@ -176,6 +183,12 @@ async function copyQQ() {
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.6;
+}
+
+.support-reward {
+  margin-top: -8px;
+  color: var(--accent);
+  font-size: 12px;
 }
 
 .qr-wrap {

@@ -39,60 +39,55 @@ func (a *App) close() error { return a.db.Close() }
 
 func (a *App) syncIdentity(ctx context.Context, user User) error {
 	user.Email = normalizeEmail(user.Email)
-	if user.ID == "" || user.Email == "" {
+	if user.ID == "" || (user.Email == "" && !user.PhoneVerified) {
 		return errors.New("mobile identity is incomplete")
 	}
-
 	tx, err := a.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-
-	var currentEmail string
-	err = tx.QueryRowContext(ctx, `SELECT email FROM identities WHERE id = ?`, user.ID).Scan(&currentEmail)
+	var email any
+	if user.Email != "" {
+		email = user.Email
+	}
+	var found string
+	err = tx.QueryRowContext(ctx, `SELECT id FROM identities WHERE id=?`, user.ID).Scan(&found)
 	if err == nil {
-		if currentEmail != user.Email {
-			if _, err := tx.ExecContext(ctx, `UPDATE identities SET email = ?, updated_at = ? WHERE id = ?`, user.Email, nowUnix(), user.ID); err != nil {
-				return err
-			}
+		_, err = tx.ExecContext(ctx, `UPDATE identities SET email=?,phone_masked=?,updated_at=? WHERE id=?`, email, user.PhoneMasked, nowUnix(), user.ID)
+		if err != nil {
+			return err
 		}
 		return tx.Commit()
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-
 	var emailOwner string
-	err = tx.QueryRowContext(ctx, `SELECT id FROM identities WHERE email = ?`, user.Email).Scan(&emailOwner)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		if _, err := tx.ExecContext(ctx, `INSERT INTO identities(id, email, created_at, updated_at) VALUES(?, ?, ?, ?)`, user.ID, user.Email, nowUnix(), nowUnix()); err != nil {
-			return err
-		}
-	case err != nil:
+	err = tx.QueryRowContext(ctx, `SELECT id FROM identities WHERE email=?`, email).Scan(&emailOwner)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
-	case strings.HasPrefix(emailOwner, "legacy:"):
-		// A historical platform account becomes owned by the mobile account only after
-		// the same email successfully authenticates with mobile.
-		legacyEmail := "migrated-" + strings.ReplaceAll(emailOwner, ":", "-") + "@invalid.local"
-		if _, err := tx.ExecContext(ctx, `UPDATE identities SET email = ? WHERE id = ?`, legacyEmail, emailOwner); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO identities(id, email, created_at, updated_at) VALUES(?, ?, ?, ?)`, user.ID, user.Email, nowUnix(), nowUnix()); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE submissions SET author_id = ? WHERE author_id = ?`, user.ID, emailOwner); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE submissions SET reviewed_by = ? WHERE reviewed_by = ?`, user.ID, emailOwner); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM identities WHERE id = ?`, emailOwner); err != nil {
-			return err
-		}
-	default:
+	}
+	if emailOwner != "" && !strings.HasPrefix(emailOwner, "legacy:") {
 		return errors.New("email is already associated with a different mobile account")
+	}
+	if emailOwner != "" {
+		if _, err = tx.ExecContext(ctx, `UPDATE identities SET email=NULL WHERE id=?`, emailOwner); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO identities(id,email,phone_masked,created_at,updated_at) VALUES(?,?,?,?,?)`, user.ID, email, user.PhoneMasked, nowUnix(), nowUnix()); err != nil {
+		return err
+	}
+	if emailOwner != "" {
+		for _, query := range []string{`UPDATE submissions SET author_id=? WHERE author_id=?`, `UPDATE submissions SET reviewed_by=? WHERE reviewed_by=?`, `UPDATE game_owners SET author_id=? WHERE author_id=?`, `UPDATE game_owners SET set_by=? WHERE set_by=?`, `UPDATE payout_reports SET author_id=? WHERE author_id=?`, `UPDATE payout_reports SET paid_by=? WHERE paid_by=?`} {
+			if _, err = tx.ExecContext(ctx, query, user.ID, emailOwner); err != nil {
+				return err
+			}
+		}
+		if _, err = tx.ExecContext(ctx, `DELETE FROM identities WHERE id=?`, emailOwner); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

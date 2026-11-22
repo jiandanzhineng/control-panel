@@ -99,7 +99,7 @@ test('locked routes only apply in operator remote mode', () => {
   assert.equal(isRouteLocked('/testing', true), false)
 })
 
-test('sidebar lock covers exactly the disabled menu entries', () => {
+test('menu/route lock covers the disabled entries (/browser is reached from the library)', () => {
   for (const path of ['/browser', '/network', '/account', '/settings', '/logs']) {
     assert.equal(isMenuItemLocked(path, true), true, path)
     assert.equal(isMenuItemLocked(path, false), false, path)

@@ -144,6 +144,22 @@ describe('bridgeService browser device sessions', () => {
     expect(mockInvokeDeviceCapability).not.toHaveBeenCalledWith('shock-1', 'shock', 'stop', {});
   });
 
+  it('passes through type monitor metadata and supplements fields from monitorSpec', () => {
+    const registry = require('../devices/registry');
+    const deviceService = require('../services/deviceService');
+    const { getMonitorSpec } = require('../devices/monitorSpec');
+    const button = { key: 'button0', name: '板载按键', unit: '状态', chart: false };
+    registry.getDeviceTypeConfig.mockReturnValueOnce({ monitorData: [button] });
+    deviceService.listDevicesForApi.mockReturnValueOnce([
+      { id: 'dan01', type: 'DAN01', data: { button0: 1, battery: 50, unknown: 2 } },
+    ]);
+    const bridgeService = require('../services/bridgeService');
+    const [device] = bridgeService.runBrowserCommand('https://example.com', 'getDevices', {});
+    expect(device.typeConfig.monitorData).toEqual([button]);
+    expect(device.monitorSpec).toEqual(getMonitorSpec('heartRate').filter(({ key }) => key === 'battery'));
+    expect(device.data).toEqual({ button0: 1, battery: 50, unknown: 2 });
+  });
+
   it('does not create an active browser session for read-only commands', () => {
     const bridgeService = require('../services/bridgeService');
     bridgeService.init({});

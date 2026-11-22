@@ -695,17 +695,21 @@ describe('maid-punishment：宿主运行时冒烟（虚拟设备）', () => {
     expect(virtual.calls.some((call) => call.id === 'vb_shock' && call.cmd.capability === 'shock')).toBe(true);
   });
 
-  test('设备数据变化触发的 step 是同步的：emit 返回时电击意图已下发', () => {
+  test('设备数据变化经宿主同步进入核心，防抖到点后立即电击', () => {
     const devices = DEVICES();
     const { host, setNow } = createHost(devices);
     host.start({
       gameId: 'maid-punishment',
       deviceMap: VMAP,
-      params: { duration: 10, tiptoeDebounceMs: 0 },
+      params: { duration: 10 },
     });
     setNow(100);
     devices.emit({ deviceId: 'c1', changes: { pressure1: { old: 0, new: 300 } }, nextData: { pressure1: 300 } });
-    // emit 内部走 pushSensor → tick，同步执行；无需等待 80ms 定时器
+    // hidden 参数 tiptoeDebounceMs 固定用 manifest 默认 300ms：先同步更新压力，到点后再判定违规
+    expect(host.getStatus().snapshot.pressure1).toBe(300);
+    expect(host.getStatus().snapshot.pressureViolated).toBe(false);
+    setNow(500);
+    host.tick(500);
     expect(devices.calls.some((call) => call.id === 'p1' && call.capability === 'shock' && call.action === 'start')).toBe(true);
     expect(host.getStatus().snapshot.isShocking).toBe(true);
   });
@@ -763,14 +767,17 @@ describe('maid-punishment：宿主运行时冒烟（虚拟设备）', () => {
     host.start({
       gameId: 'maid-punishment',
       deviceMap: VMAP,
-      params: { duration: 10, tiptoeDebounceMs: 0, tiptoePressureThreshold: 100 },
+      params: { duration: 10, tiptoePressureThreshold: 100 },
     });
     setNow(100);
     // 宿主把已映射设备的属性变化原样转发为 device-property（name = 设备属性名 pressure1），
     // core 同时接受 tiptoePressure / pressure1 / sphincterPressure。
     devices.emit({ deviceId: 'c1', changes: { pressure1: { old: 0, new: 300 } }, nextData: { pressure1: 300 } });
+    expect(host.getStatus().snapshot.pressure1).toBe(300);
+    // tiptoeDebounceMs 为 hidden 参数，固定使用 manifest 默认 300ms
+    setNow(500);
+    host.tick(500);
     const status = host.getStatus();
-    expect(status.snapshot.pressure1).toBe(300);
     expect(status.snapshot.pressureViolated).toBe(true);
     expect(devices.calls.some((call) => call.id === 'p1' && call.capability === 'shock')).toBe(true);
   });

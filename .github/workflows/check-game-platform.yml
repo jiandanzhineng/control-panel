@@ -1,0 +1,48 @@
+name: Game Platform Checks
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'game-platform/**'
+      - '.github/workflows/check-game-platform.yml'
+  pull_request:
+    paths:
+      - 'game-platform/**'
+      - '.github/workflows/check-game-platform.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: game-platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: game-platform/go.mod
+          cache-dependency-path: game-platform/go.sum
+      - name: Verify toolchain and dependencies
+        run: |
+          go version
+          go mod verify
+      - name: Test and vet
+        run: |
+          go test -count=1 ./...
+          go vet ./...
+      - name: Check reachable vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+      - name: Build production binary
+        env:
+          CGO_ENABLED: '0'
+          GOOS: linux
+          GOARCH: amd64
+        run: |
+          go build -trimpath -buildvcs=true -ldflags="-s -w" -o game-platform .
+          go version -m game-platform

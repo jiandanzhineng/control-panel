@@ -2,24 +2,14 @@
   <el-config-provider :locale="elementLocale">
   <div id="app">
     <div class="app-container">
+      <AppTitleBar :collapsed="isCollapsed" @toggle-sidebar="toggleSidebar" />
+
       <!-- 左侧导航栏 -->
-      <div 
+      <div
         class="sidebar"
         :class="{ 'sidebar-collapsed': isCollapsed }"
         :style="{ width: isCollapsed ? '64px' : '200px' }"
       >
-        <div class="sidebar-header">
-          <div v-if="!isCollapsed" class="logo">
-            <span>{{ t('app.name') }}</span>
-          </div>
-          <el-button 
-            :icon="isCollapsed ? Expand : Fold" 
-            @click="toggleSidebar"
-            class="toggle-btn"
-            text
-          />
-        </div>
-        
         <el-menu
           :default-active="menuActive"
           class="sidebar-menu"
@@ -47,16 +37,8 @@
             <template #title>{{ t('nav.remote') }}</template>
           </el-menu-item>
 
-          <el-tooltip
-            :disabled="!isMenuLocked('/browser')"
-            :content="t('remoteSession.lock.menu')"
-            placement="right"
-          >
-            <el-menu-item index="/browser" :disabled="isMenuLocked('/browser')" :class="{ 'menu-locked': isMenuLocked('/browser') }">
-              <el-icon><Compass /></el-icon>
-              <template #title>{{ t('nav.browser') }}</template>
-            </el-menu-item>
-          </el-tooltip>
+          <div v-if="!isCollapsed" class="menu-group-label">{{ t('nav.groupSystem') }}</div>
+          <div v-else class="menu-group-divider" role="separator" />
 
           <el-tooltip
             :disabled="!isMenuLocked('/network')"
@@ -117,22 +99,6 @@
       <div class="main-container" :style="isMobile ? { marginLeft: 0 } : { marginLeft: isCollapsed ? '64px' : '200px', width: 'calc(100% - ' + (isCollapsed ? '64px' : '200px') + ')' }">
         <!-- 远程会话条：两端共用，挂在顶栏之上，沉浸页也可见 -->
         <RemoteSessionBar />
-        <!-- 顶部工具栏：沉浸式页面（如在线游戏 webview）隐藏面包屑，避免与载体自带工具栏叠成多层 -->
-        <div v-if="!hideHeader" class="main-header">          <div class="header-content">
-            <!-- 移动端菜单按钮 -->
-            <el-button 
-              v-if="isMobile"
-              :icon="Menu" 
-              @click="toggleSidebar"
-              class="mobile-menu-btn"
-              text
-            />
-            <el-breadcrumb separator="/">
-              <el-breadcrumb-item :to="{ path: '/home' }">{{ t('nav.home') }}</el-breadcrumb-item>
-              <el-breadcrumb-item v-if="routeTitle && route.path !== '/home'">{{ routeTitle }}</el-breadcrumb-item>
-            </el-breadcrumb>
-          </div>
-        </div>
 
         <!-- 主要内容 -->
         <div class="main-content">
@@ -155,11 +121,12 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
-import { Monitor, VideoPlay, Connection, Expand, Fold, HomeFilled, Menu, Document, Compass, User, Service, Setting, Link } from '@element-plus/icons-vue'
+import { Monitor, VideoPlay, Connection, HomeFilled, Document, User, Service, Setting, Link } from '@element-plus/icons-vue'
 import { useAuth } from './composables/useAuth'
 import { useTheme } from './composables/useTheme'
 import { clearActivePlay } from './composables/useActivePlay'
 import { router } from './router'
+import AppTitleBar from './components/AppTitleBar.vue'
 import ThemeSwitch from './components/ThemeSwitch.vue'
 import RemoteSessionBar from './components/RemoteSessionBar.vue'
 import { useLocale } from './i18n/useLocale'
@@ -172,28 +139,23 @@ const { init: initTheme, dispose: disposeTheme } = useTheme()
 const { elementLocale, initFromDesktop } = useLocale()
 const remoteSession = useRemoteSession()
 
-// 主控端远程模式下：浏览器/网络/账号/设置/日志置灰（客服入口保持可用）
+// 主控端远程模式下：网络/账号/设置/日志置灰（客服入口保持可用）
 const isMenuLocked = (path: string) => isMenuItemLocked(path, remoteSession.isOperatorRemote.value)
 
 const route = useRoute()
 const isCollapsed = ref(false)
 const isMobile = ref(false)
 
-const routeTitle = computed(() => {
-  const key = String(route.meta.titleKey || '')
-  return key ? t(key) : ''
-})
-
 // GameHost 启动导航：Electron 主进程在 window.GameHost.launch 时通过 IPC 通知，
 // 前端跳转到原生配置页（source=remote）。非 Electron 环境下 gameHostNav 不存在。
 let disposeGameHostNav: (() => void) | null = null
 let disposeLocalAppWindow: (() => void) | null = null
 
-// 本地游戏相关页面（/plays、配置、运行）统一高亮「本地游戏」入口
-const menuActive = computed(() => (route.path.startsWith('/plays') ? '/plays' : route.path))
-
-// 沉浸式页面隐藏全局顶栏（面包屑），避免与页面自带工具栏叠加
-const hideHeader = computed(() => route.path === '/browser' || route.path.startsWith('/plays/game/current') || route.path.startsWith('/plays/game/runtime'))
+// 游戏库相关页面（游戏站/配置/运行）统一高亮「游戏库」入口
+const menuActive = computed(() => {
+  if (route.path === '/browser' || route.path.startsWith('/plays')) return '/plays'
+  return route.path
+})
 
 const checkMobile = () => {
   isMobile.value = window.innerWidth <= 768
@@ -278,10 +240,10 @@ html, body {
   background-color: var(--bg-app);
   border-right: 1px solid var(--border-subtle);
   transition: width 0.3s ease;
-  height: 100vh;
+  height: calc(100vh - 40px);
   overflow-y: auto;
   position: fixed;
-  top: 0;
+  top: 40px;
   left: 0;
   z-index: 1000;
 }
@@ -290,54 +252,33 @@ html, body {
   width: 64px !important;
 }
 
-.sidebar-header {
-  height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.logo {
-  color: var(--text-primary);
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.toggle-btn {
-  color: var(--text-muted) !important;
-  padding: 8px !important;
-  min-height: auto !important;
-}
-
-.toggle-btn:hover {
-  color: var(--text-primary) !important;
-  background-color: rgba(255, 255, 255, 0.06) !important;
-}
-
 .sidebar-menu {
   border: none;
   background-color: transparent;
+  padding-top: 8px;
   --el-menu-bg-color: transparent;
   --el-menu-text-color: var(--text-muted);
-  --el-menu-hover-bg-color: rgba(255, 255, 255, 0.05);
+  --el-menu-hover-bg-color: var(--hover-overlay);
   --el-menu-hover-text-color: var(--text-primary);
   --el-menu-active-color: var(--accent);
 }
 
 .sidebar-menu .el-menu-item {
+  height: 40px;
+  line-height: 40px;
+  font-size: 13.5px;
   color: var(--text-muted);
-  margin: 2px 8px;
-  border-radius: var(--radius-md);
+  margin: 2px 10px;
+  border-radius: 8px;
   position: relative;
 }
 
+.sidebar-menu .el-menu-item .el-icon {
+  font-size: 17px;
+}
+
 .sidebar-menu .el-menu-item:hover {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--hover-overlay);
   color: var(--text-primary);
 }
 
@@ -371,6 +312,24 @@ html, body {
 /* 折叠时菜单项去掉水平边距，保持图标居中 */
 .sidebar-collapsed .sidebar-menu .el-menu-item {
   margin: 2px 4px;
+}
+
+/* 菜单分组标题（展开） / 分隔线（折叠） */
+.menu-group-label {
+  padding: 16px 20px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.menu-group-divider {
+  height: 1px;
+  margin: 10px 14px;
+  background: var(--border-subtle);
 }
 
 /* 侧边栏吸底：菜单滚它的，底部固定主题切换 */
@@ -426,52 +385,11 @@ html, body {
 .main-container {
   width: 100%;
   height: 100vh;
+  padding-top: 40px;
   background-color: var(--bg-app);
   transition: margin-left 0.3s ease;
   display: flex;
   flex-direction: column;
-}
-
-.main-header {
-  background-color: var(--header-bg);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border-subtle);
-  padding: 0 16px;
-  height: 60px;
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  margin: 0;
-}
-
-.main-header :deep(.el-breadcrumb__inner) {
-  color: var(--text-muted);
-}
-
-.main-header :deep(.el-breadcrumb__inner.is-link:hover) {
-  color: var(--accent);
-}
-
-.main-header :deep(.el-breadcrumb__item:last-child .el-breadcrumb__inner) {
-  color: var(--text-primary);
-}
-
-.header-content {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.mobile-menu-btn {
-  color: var(--text-muted) !important;
-  padding: 8px !important;
-  min-height: auto !important;
-}
-
-.mobile-menu-btn:hover {
-  color: var(--text-primary) !important;
-  background-color: rgba(255, 255, 255, 0.06) !important;
 }
 
 .main-content {
@@ -487,7 +405,7 @@ html, body {
 
 .mobile-overlay {
   position: fixed;
-  top: 0;
+  top: 40px;
   left: 0;
   right: 0;
   bottom: 0;
@@ -514,34 +432,10 @@ html, body {
   .main-container {
     margin-left: 0 !important;
   }
-  
-  .main-header {
-    padding: 0 12px;
-    height: 56px;
-  }
-  
+
   .main-content {
     padding: 0;
     margin: 0;
-  }
-  
-  .sidebar-header {
-    height: 56px;
-    padding: 0 12px;
-  }
-  
-  .logo {
-    font-size: 16px;
-  }
-  
-  .toggle-btn {
-    padding: 12px !important;
-  }
-  
-  .sidebar-menu .el-menu-item {
-    height: 48px;
-    line-height: 48px;
-    font-size: 14px;
   }
 }
 
@@ -550,30 +444,13 @@ html, body {
     padding: 0;
     margin: 0;
   }
-  
-  .main-header {
-    padding: 0 8px;
-    height: 52px;
-  }
-  
+
   .sidebar:not(.sidebar-collapsed) {
     width: 220px !important;
   }
-  
-  .sidebar-header {
-    padding: 0 8px;
-    height: 52px;
-  }
-  
+
   .sidebar-menu .el-menu-item {
-    height: 44px;
-    line-height: 44px;
-    font-size: 13px;
     padding-left: 16px !important;
-  }
-  
-  .logo {
-    font-size: 15px;
   }
 }
 </style>

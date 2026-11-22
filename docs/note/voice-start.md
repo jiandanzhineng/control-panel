@@ -9,7 +9,7 @@
   - `decoder-epoch-13-avg-2-chunk-16-left-64.onnx`（760KB，该模型 decoder 无 int8）
   - `joiner-epoch-13-avg-2-chunk-16-left-64.int8.onnx`（87KB）
   - `tokens.txt`、`keywords.txt`
-- 识别在 `backend/voice/voiceTriggerService.js`（sherpa-onnx 1.13.8 Node/WASM；懒加载，进程内复用同一 KeywordSpotter，每条 WS 连接一条 stream）。
+- 识别在 `backend/voice/voiceTriggerService.js`（sherpa-onnx 1.13.8 Node/WASM；懒加载，按口令目录缓存 KeywordSpotter，每条会话一条 stream）。背单词使用独立口令目录，见 [vocab-commands](vocab-commands.md)。
 - WS 端点 `backend/services/voiceTriggerWs.js`：`/voice-trigger`，不带参数，目录内口令同时生效；协议 `ready`/`detected`/`error`。
 - 口令目录 `backend/voice/voicePhraseCatalog.js` 是唯一事实来源；前端从 `GET /api/voice/phrases` 取。
 - 打包：模型走 package.json 的 `extraResources` → `resources/voice-kws`，`sherpa-onnx` 走 `asarUnpack`。

@@ -17,8 +17,9 @@ const SAMPLE_RATE = 16000;
 const KEYWORDS_SCORE = 2.0;
 const KEYWORDS_THRESHOLD = 0.15;
 
-let spotter = null;
-let loading = null;
+// 关键词目录分别缓存，避免背单词与「语音开始」互相触发。
+const spotters = new Map();
+const loadings = new Map();
 
 function modelDir() {
   const packaged = process.resourcesPath
@@ -37,7 +38,7 @@ function pickModel(dir, prefix) {
   return path.join(dir, plain);
 }
 
-function buildConfig(dir) {
+function buildConfig(dir, catalog = phraseCatalog) {
   return {
     featConfig: { samplingRate: SAMPLE_RATE, featureDim: 80 },
     modelConfig: {
@@ -58,36 +59,37 @@ function buildConfig(dir) {
     numTrailingBlanks: 1,
     keywordsScore: KEYWORDS_SCORE,
     keywordsThreshold: KEYWORDS_THRESHOLD,
-    keywords: phraseCatalog.buildKeywordsText(),
+    keywords: catalog.buildKeywordsText(),
   };
 }
 
 /** 懒加载并复用 KeywordSpotter；并发调用共享同一次初始化。 */
-async function ensureSpotter() {
-  if (spotter) return spotter;
-  if (loading) return loading;
-  loading = (async () => {
+async function ensureSpotter(catalog = phraseCatalog) {
+  if (spotters.has(catalog)) return spotters.get(catalog);
+  if (loadings.has(catalog)) return loadings.get(catalog);
+  const loading = (async () => {
     const dir = modelDir();
     if (!fs.existsSync(path.join(dir, 'tokens.txt'))) {
       throw new Error(`语音模型未安装：${dir}`);
     }
     const sherpa = require('sherpa-onnx');
     const started = Date.now();
-    const instance = sherpa.createKws(buildConfig(dir));
-    spotter = instance;
+    const instance = sherpa.createKws(buildConfig(dir, catalog));
+    spotters.set(catalog, instance);
     logService.info('VoiceTrigger', `KWS 模型加载完成（${Date.now() - started}ms）`);
     return instance;
   })().catch((error) => {
-    loading = null;
+    loadings.delete(catalog);
     throw error;
   });
+  loadings.set(catalog, loading);
   return loading;
 }
 
 /** 为一路音频建流（每个 WS 连接一条），只监听目录里的固定口令。 */
-async function createSession() {
-  const instance = await ensureSpotter();
-  const stream = instance.createStream();
+async function createSession(catalog = phraseCatalog) {
+  const instance = await ensureSpotter(catalog);
+  let stream = instance.createStream();
   let closed = false;
   return {
     /** 喂一段 16kHz 单声道 Float32 PCM，返回本次检测到的口令（没有则 null）。 */
@@ -99,12 +101,20 @@ async function createSession() {
         instance.decode(stream);
         const result = instance.getResult(stream);
         if (result && result.keyword) {
-          instance.reset(stream);
-          const phrase = phraseCatalog.findPhraseByLabel(result.keyword);
-          if (phrase) hit = phrase;
+          const phrase = catalog.findPhraseByLabel(result.keyword);
+          stream.free();
+          stream = instance.createStream();
+          if (phrase) return phrase;
+          break;
         }
       }
       return hit;
+    },
+    // reset() 只清搜索结果，重建流才能同时清掉编码器历史。
+    reset() {
+      if (closed) return;
+      stream.free();
+      stream = instance.createStream();
     },
     close() {
       if (closed) return;
@@ -122,8 +132,8 @@ function warmUp() {
 }
 
 function resetForTest() {
-  spotter = null;
-  loading = null;
+  spotters.clear();
+  loadings.clear();
 }
 
 module.exports = {

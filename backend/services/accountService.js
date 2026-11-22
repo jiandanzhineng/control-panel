@@ -6,7 +6,7 @@
 const logger = require('../utils/logger');
 
 const ACCOUNT_API_URL = (process.env.ACCOUNT_API_URL || 'https://api.undersilicon.cn').replace(/\/+$/, '');
-const FETCH_TIMEOUT_MS = 8000;
+const FETCH_TIMEOUT_MS = 20000;
 
 class UpstreamError extends Error {
   constructor(status, code, message) {
@@ -17,10 +17,11 @@ class UpstreamError extends Error {
 }
 
 function withTimeout(promise, ms) {
+  let timer;
   return Promise.race([
     promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
-  ]);
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), ms); }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 // 调用远程账号 API。成功返回 { status, data }；失败抛 UpstreamError。
@@ -33,6 +34,7 @@ async function callUpstream(path, { method = 'GET', token, body } = {}) {
     resp = await withTimeout(fetch(`${ACCOUNT_API_URL}${path}`, {
       method,
       headers,
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       body: body ? JSON.stringify(body) : undefined,
     }), FETCH_TIMEOUT_MS);
   } catch (e) {
@@ -84,6 +86,10 @@ function deleteMe(token) {
 }
 
 module.exports = {
+  phoneStatus:()=>callUpstream('/auth/phone/status'),
+  phoneCode:(body,token)=>callUpstream('/auth/phone/code',{method:'POST',body,token}),
+  phoneLogin:(body)=>callUpstream('/auth/phone/login',{method:'POST',body}),
+  phoneBind:(body,token)=>callUpstream('/auth/phone/bind',{method:'POST',body,token}),
   UpstreamError,
   getBaseUrl,
   register,

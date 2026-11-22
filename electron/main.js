@@ -18,11 +18,11 @@ const { fileURLToPath, pathToFileURL } = require('url');
 const { BRIDGE_INTERNAL_HEADER } = require('../backend/constants/bridgeAccess.js');
 const externalGameAccessService = require('../backend/services/externalGameAccessService.js');
 const gameHost = require('./gameHost.js');
-const { createLocalAppWindowController } = require('./localAppWindow.js');
+const { createLocalAppWindowController, attachGameMediaPermissions } = require('./localAppWindow.js');
 const { createBleMainIntegration } = require('./ble/mainIntegration.js');
 const { createBrandBleMainIntegration } = require('./ble/brandMainIntegration.js');
 const { createQuitCoordinator } = require('./shutdownCoordinator.js');
-const { createAppTray } = require('./tray.js');
+const { createAppTray, getTrayIconPath } = require('./tray.js');
 const {
   UPDATE_FEEDS,
   parseLatestYmlVersion,
@@ -130,6 +130,32 @@ function writeWindowSettings(settings) {
     'utf-8',
   );
   return normalized;
+}
+
+// 自绘标题栏原生按钮配色：记住上次主题，避免浅色用户启动时右上角先闪一下深色
+const DEFAULT_TITLEBAR_THEME = { color: '#141417', symbolColor: '#a1a1aa' };
+
+function getTitleBarThemePath() {
+  return path.join(path.dirname(getWindowSettingsPath()), 'titlebar-theme.json');
+}
+
+function readTitleBarTheme() {
+  try {
+    const saved = JSON.parse(fs.readFileSync(getTitleBarThemePath(), 'utf-8'));
+    if (typeof saved?.color === 'string' && typeof saved?.symbolColor === 'string') {
+      return { color: saved.color, symbolColor: saved.symbolColor };
+    }
+  } catch {}
+  return { ...DEFAULT_TITLEBAR_THEME };
+}
+
+function writeTitleBarTheme(theme) {
+  try {
+    const prev = readTitleBarTheme();
+    if (prev.color === theme.color && prev.symbolColor === theme.symbolColor) return;
+    fs.mkdirSync(path.dirname(getTitleBarThemePath()), { recursive: true });
+    fs.writeFileSync(getTitleBarThemePath(), JSON.stringify(theme), 'utf-8');
+  } catch {}
 }
 
 function currentAppLocale() {
@@ -502,6 +528,163 @@ function getBackendBaseUrl() {
   return process.env.BACKEND_URL || 'http://127.0.0.1:5278';
 }
 
+// ---------- 客户端控制（/api/client/* → 主进程 → 渲染进程） ----------
+let clientCurrentRoute = null;
+let clientControlRegistered = false;
+
+function getClientControlService() {
+  try {
+    return getBackendModule(path.join('services', 'clientControlService.js'));
+  } catch (_) {
+    return null;
+  }
+}
+
+function currentClientWindowState() {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  return {
+    visible: !!win?.isVisible(),
+    focused: !!win?.isFocused(),
+    minimized: !!win?.isMinimized(),
+    maximized: !!win?.isMaximized(),
+  };
+}
+
+function reportClientWindow() {
+  const service = getClientControlService();
+  if (service) service.reportWindow(currentClientWindowState());
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function captureClientScreenshot({ format = 'png', maxWidth = 1280 } = {}) {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!win) {
+    const error = new Error('客户端窗口不可用');
+    error.code = 'CLIENT_UNAVAILABLE';
+    throw error;
+  }
+  let image = await win.webContents.capturePage();
+  let size = image.getSize();
+  // 隐藏窗口在部分平台会截到 0x0：临时显示后重试一次（不抢焦点）。
+  if (!size.width || !size.height) {
+    try { win.showInactive(); } catch (_) {}
+    await delay(150);
+    image = await win.webContents.capturePage();
+    size = image.getSize();
+  }
+  if (!size.width || !size.height) {
+    const error = new Error('截图失败：窗口没有可捕获的画面');
+    error.code = 'SCREENSHOT_FAILED';
+    throw error;
+  }
+  if (maxWidth > 0 && size.width > maxWidth) {
+    image = image.resize({ width: maxWidth });
+    size = image.getSize();
+  }
+  const buffer = format === 'jpeg' ? image.toJPEG(85) : image.toPNG();
+  return {
+    mime: format === 'jpeg' ? 'image/jpeg' : 'image/png',
+    data: buffer.toString('base64'),
+    width: size.width,
+    height: size.height,
+  };
+}
+
+function applyClientWindowAction(action) {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!win) {
+    const error = new Error('客户端窗口不可用');
+    error.code = 'CLIENT_UNAVAILABLE';
+    throw error;
+  }
+  switch (action) {
+    case 'show':
+      showMainWindow();
+      break;
+    case 'hide':
+      hideMainWindow();
+      break;
+    case 'focus':
+      showMainWindow();
+      win.focus();
+      break;
+    case 'minimize':
+      win.minimize();
+      break;
+    case 'maximize':
+      win.maximize();
+      break;
+    case 'restore':
+      if (win.isMinimized()) win.restore();
+      if (win.isMaximized()) win.unmaximize();
+      break;
+    default: {
+      const error = new Error(`不支持的窗口操作: ${action || '(空)'}`);
+      error.code = 'INVALID_WINDOW_ACTION';
+      throw error;
+    }
+  }
+}
+
+function clientAppVersion() {
+  try {
+    const pkg = require(path.join(getAppRoot(), 'package.json'));
+    if (pkg && pkg.version) return String(pkg.version);
+  } catch (_) {}
+  return app.getVersion();
+}
+
+async function handleClientControlCommand(command = {}) {
+  const base = { window: currentClientWindowState(), route: clientCurrentRoute, version: clientAppVersion(), locale: currentAppLocale() };
+  switch (command.type) {
+    case 'state':
+      return base;
+    case 'window':
+      applyClientWindowAction(String(command.action || ''));
+      return { ...base, window: currentClientWindowState() };
+    case 'navigate': {
+      const routePath = String(command.path || '');
+      if (!routePath) {
+        const error = new Error('缺少跳转路径');
+        error.code = 'INVALID_REQUEST';
+        throw error;
+      }
+      if (command.show !== false) showMainWindow();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        // 复用 GameHost 既有通道：App.vue 收到后 router.push(path)
+        mainWindow.webContents.send('game-host:navigate', { path: routePath });
+      }
+      return { ...base, window: currentClientWindowState() };
+    }
+    case 'screenshot':
+      return captureClientScreenshot({ format: command.format, maxWidth: command.maxWidth });
+    default: {
+      const error = new Error(`未知的客户端控制命令: ${command.type || '(空)'}`);
+      error.code = 'INVALID_REQUEST';
+      throw error;
+    }
+  }
+}
+
+function registerClientControlHost() {
+  if (clientControlRegistered) return;
+  const service = getClientControlService();
+  if (!service) {
+    console.warn('[electron] clientControlService not found; /api/client/* will return 503');
+    return;
+  }
+  service.registerHost(handleClientControlCommand);
+  ipcMain.on('client:route-changed', (_event, routePath) => {
+    if (typeof routePath !== 'string' || !routePath) return;
+    clientCurrentRoute = routePath;
+    service.reportRoute(routePath);
+  });
+  clientControlRegistered = true;
+}
+
 function parseAuthorizedGameHostRequest(event, req) {
   const origin = getWebviewOrigin(event.sender);
   const { enabled: developerModeEnabled } = externalGameAccessService.getStatus();
@@ -649,6 +832,21 @@ function registerWindowIpcHandlers() {
   ipcMain.handle('window:set-settings', (_event, settings = {}) => {
     return applyWindowSettings(writeWindowSettings(settings));
   });
+  // Windows 自绘标题栏：前端主题切换时同步原生按钮区的背景/符号颜色。
+  ipcMain.handle('window:set-titlebar-theme', (_event, payload = {}) => {
+    if (process.platform !== 'win32') return false;
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    const color = typeof payload.color === 'string' && payload.color ? payload.color : '#141417';
+    const symbolColor =
+      typeof payload.symbolColor === 'string' && payload.symbolColor ? payload.symbolColor : '#a1a1aa';
+    try {
+      mainWindow.setTitleBarOverlay({ color, symbolColor, height: 39 });
+      writeTitleBarTheme({ color, symbolColor });
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 async function askCloseBehavior() {
@@ -690,6 +888,17 @@ function createWindow() {
     // 默认收起原生菜单栏（File/Edit/View/...），按 Alt 可临时唤出；
     // 菜单本身保留，故 Ctrl+Shift+I 等默认快捷键仍可用
     autoHideMenuBar: true,
+    // 窗口/任务栏图标：开发态默认是 Electron 图标，显式指定为应用图标
+    icon: getTrayIconPath(),
+    // Windows 使用自绘标题栏：隐藏原生标题栏，保留右上角系统按钮（WCO）。
+    // 高度 39 = 标题栏 40px 减底部 1px 分隔线，避免按钮区盖住分隔线。
+    // 其余平台保持系统默认外观。
+    ...(process.platform === 'win32'
+      ? {
+          titleBarStyle: 'hidden',
+          titleBarOverlay: { ...readTitleBarTheme(), height: 39 },
+        }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: false,
@@ -698,6 +907,13 @@ function createWindow() {
     },
   });
   mainWindow = win;
+  // 窗口状态变化上报给 /api/client/state 与事件流（client.window）
+  for (const eventName of ['show', 'hide', 'focus', 'blur', 'minimize', 'maximize', 'restore', 'enter-full-screen', 'leave-full-screen']) {
+    win.on(eventName, reportClientWindow);
+  }
+  win.webContents.on('did-finish-load', reportClientWindow);
+  // 游戏页 iframe 与面板的麦克风：只放行本机来源，其余权限保持默认。
+  attachGameMediaPermissions(win.webContents.session);
   bleMainIntegration.attachWindow(win);
   brandBleMainIntegration?.attachWindow(win);
   win.on('close', (event) => quitCoordinator.handleWindowClose(event));
@@ -933,7 +1149,8 @@ function startFrontendServer(callback) {
     res.sendFile(path.join(distPath, 'index.html'));
   });
   
-  const FRONTEND_PORT = 5277;
+  // 端口可用环境变量覆盖：便于在用户已运行安装版时启动一套完全隔离的实例。
+  const FRONTEND_PORT = Number(process.env.CONTROL_PANEL_FRONTEND_PORT) || 5277;
   // 只绑回环：本机面板/后端不对外提供任何服务（审查报告 §2.4）。
   frontendServer = frontendApp.listen(FRONTEND_PORT, '127.0.0.1', () => {
     process.env.FRONTEND_URL = `http://127.0.0.1:${FRONTEND_PORT}`;
@@ -971,7 +1188,9 @@ function startBackendThenWindow() {
     const logService = require(path.join(appPath, 'backend', 'services', 'logService.js'));
     logService.cleanOldLogs();
     backendApp = require(backendPath);
-    const BACKEND_PORT = 5278;
+    // 后端与主进程同进程：注册 /api/client/* 的宿主（窗口/路由/截图/navigate）。
+    registerClientControlHost();
+    const BACKEND_PORT = Number(process.env.CONTROL_PANEL_BACKEND_PORT) || 5278;
     // 必须 listen 后端导出的 server（已挂 /bridge WS），不能对 app 重新 listen——
     // 否则会新建一个不带 WS 的 server，插件 bridge 握手 404。回退到 app 仅为兼容旧导出。
     const backendServer = backendApp.server || backendApp;
@@ -999,6 +1218,11 @@ function startBackendThenWindow() {
     console.error('[electron] Error starting backend:', error);
     createWindow(); // 出现异常时仍然创建窗口
   }
+}
+
+// 允许完全隔离的测试实例：用户数据（单实例锁、后端数据、日志）也一起隔离。
+if (process.env.CONTROL_PANEL_USER_DATA_DIR) {
+  app.setPath('userData', path.resolve(process.env.CONTROL_PANEL_USER_DATA_DIR));
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();

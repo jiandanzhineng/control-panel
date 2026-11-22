@@ -72,7 +72,36 @@
         <el-button :disabled="voiceBusy || !voice.has_key" @click="clearVoiceKey">{{ t('settings.clearKey') }}</el-button>
       </div>
       <p class="settings-note">{{ voiceStatusText }}</p>
+      <el-divider />
+      <div class="settings-copy">
+        <div class="settings-name">{{ t('settings.takoTts') }}</div>
+        <p class="settings-hint">{{ t('settings.takoTtsHint') }}</p>
+      </div>
+      <div class="voice-key-row">
+        <el-input v-model="takoKey" type="password" show-password
+          :placeholder="t('settings.takoKeyPlaceholder')" autocomplete="off" />
+        <el-button type="primary" :loading="voiceBusy" @click="saveTako">{{ t('common.save') }}</el-button>
+        <el-button :disabled="voiceBusy || !voice.has_tako_key" @click="clearTakoKey">{{ t('settings.clearKey') }}</el-button>
+      </div>
+      <div class="voice-key-row tako-proxy-row">
+        <el-input v-model="takoProxy" :placeholder="t('settings.takoProxyPlaceholder')" autocomplete="off" />
+      </div>
+      <p class="settings-note">{{ takoStatusText }}</p>
+      <el-divider />
+      <div class="settings-copy">
+        <div class="settings-name">{{ t('settings.sfStt') }}</div>
+        <p class="settings-hint">{{ t('settings.sfSttHint') }}</p>
+      </div>
+      <div class="voice-key-row">
+        <el-input v-model="sfKey" type="password" show-password
+          :placeholder="t('settings.sfKeyPlaceholder')" autocomplete="off" />
+        <el-button type="primary" :loading="voiceBusy" @click="saveSfKey">{{ t('common.save') }}</el-button>
+        <el-button :disabled="voiceBusy || !voice.has_sf_key" @click="clearSfKey">{{ t('settings.clearKey') }}</el-button>
+      </div>
+      <p class="settings-note">{{ sfStatusText }}</p>
     </el-card>
+
+    <LocalModelsCard />
   </div>
 </template>
 
@@ -81,6 +110,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { getVoiceStatus, saveVoiceSettings, type VoiceStatus } from '../api/voice'
+import LocalModelsCard from '../components/LocalModelsCard.vue'
 import { useLocale } from '../i18n/useLocale'
 import type { LocalePreference } from '../i18n/locale'
 
@@ -93,7 +123,25 @@ const hasWindowApi = computed(() => !!window.windowApi)
 const voice = ref<Partial<VoiceStatus>>({})
 const voiceRoute = ref<'own_key' | 'panel'>('panel')
 const voiceKey = ref('')
+const takoKey = ref('')
+const takoProxy = ref('')
+const sfKey = ref('')
 const voiceBusy = ref(false)
+const sfStatusText = computed(() => {
+  const v = voice.value
+  if (!v.route) return t('settings.reading')
+  if (v.stt_mode === 'own_key') {
+    return [t('settings.sfModeOwnKey'), v.sf_key_masked ? t('settings.savedKey', { key: v.sf_key_masked }) : ''].filter(Boolean).join(' · ')
+  }
+  if (v.stt_mode === 'relay') return [t('settings.sfModeRelay'), v.panel_email ? t('settings.panelUser', { email: v.panel_email }) : ''].filter(Boolean).join(' · ')
+  return t('settings.sfModeNone')
+})
+const takoStatusText = computed(() => {
+  if (!voice.value.route) return t('settings.reading')
+  const bits = [voice.value.has_tako_key ? t('settings.takoSaved', { key: voice.value.tako_key_masked }) : t('settings.takoInactive')]
+  if (voice.value.tako_proxy) bits.push(t('settings.takoProxySaved', { proxy: voice.value.tako_proxy }))
+  return bits.join(' · ')
+})
 
 const voiceStatusText = computed(() => {
   const v = voice.value
@@ -148,6 +196,7 @@ async function onLocaleChange(value: string) {
 function applyVoice(next: VoiceStatus) {
   voice.value = next
   voiceRoute.value = next.route === 'own_key' ? 'own_key' : 'panel'
+  takoProxy.value = next.tako_proxy || ''
 }
 
 async function loadVoice() {
@@ -179,6 +228,61 @@ async function clearVoiceKey() {
     applyVoice(await saveVoiceSettings({ api_key: '' }))
     voiceKey.value = ''
     ElMessage.success(t('settings.keyCleared'))
+  } catch (error: any) {
+    ElMessage.error(error?.message || t('settings.clearFailed'))
+  } finally {
+    voiceBusy.value = false
+  }
+}
+
+async function saveTako() {
+  voiceBusy.value = true
+  try {
+    const body: { tako_api_key?: string; tako_proxy: string } = { tako_proxy: takoProxy.value.trim() }
+    if (takoKey.value.trim()) body.tako_api_key = takoKey.value.trim()
+    applyVoice(await saveVoiceSettings(body))
+    takoKey.value = ''
+    ElMessage.success(t('settings.takoSavedSuccess'))
+  } catch (error: any) {
+    ElMessage.error(error?.message || t('settings.voiceSaveFailed'))
+  } finally {
+    voiceBusy.value = false
+  }
+}
+
+async function clearTakoKey() {
+  voiceBusy.value = true
+  try {
+    applyVoice(await saveVoiceSettings({ tako_api_key: '' }))
+    takoKey.value = ''
+    ElMessage.success(t('settings.takoCleared'))
+  } catch (error: any) {
+    ElMessage.error(error?.message || t('settings.clearFailed'))
+  } finally {
+    voiceBusy.value = false
+  }
+}
+
+async function saveSfKey() {
+  if (!sfKey.value.trim()) return
+  voiceBusy.value = true
+  try {
+    applyVoice(await saveVoiceSettings({ siliconflow_api_key: sfKey.value.trim() }))
+    sfKey.value = ''
+    ElMessage.success(t('settings.sfSaved'))
+  } catch (error: any) {
+    ElMessage.error(error?.message || t('settings.voiceSaveFailed'))
+  } finally {
+    voiceBusy.value = false
+  }
+}
+
+async function clearSfKey() {
+  voiceBusy.value = true
+  try {
+    applyVoice(await saveVoiceSettings({ siliconflow_api_key: '' }))
+    sfKey.value = ''
+    ElMessage.success(t('settings.sfCleared'))
   } catch (error: any) {
     ElMessage.error(error?.message || t('settings.clearFailed'))
   } finally {
@@ -263,5 +367,15 @@ onMounted(() => {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.tako-proxy-row {
+  margin-top: 8px;
+}
+
+@media (max-width: 640px) {
+  .voice-key-row {
+    flex-wrap: wrap;
+  }
 }
 </style>

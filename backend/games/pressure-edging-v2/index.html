@@ -9,8 +9,8 @@
   "id": "pressure-edging-v2",
   "title": "气压寸止3阶段升级版",
   "description": "平静→中期→边缘三阶段状态机：按压力与时间窗调节 TD01，超阈值电击。比基础版多「中间兴奋压」与结束前起飞期。",
-  "howTo": "1. 映射气压传感器与 TD01（必需）\n2. 可选：电击、自动锁\n3. 设置中间压与临界压（中间压应低于临界压）\n4. 可用界面按钮微调阈值",
-  "version": "2.2.2",
+  "howTo": "1. 佩戴寸止一体机（或气压传感器 + 刺激器），设定「中间兴奋压」与更高的「临界压」。\n2. 平静期逐步加力 → 进入中间压智能控速维持边缘刺激 → 突破临界压停振并电击，冷却回落后进入下一轮。\n3. 倒计时临近结束进入「起飞期」冲刺，时间到自动停机解锁。",
+  "version": "2.2.4",
   "devices": [
     {
       "id": "sensor",
@@ -102,7 +102,7 @@
       "type": "number",
       "default": 255,
       "label": "TD01最大强度",
-      "description": "刺激强度上限（0–255）",
+      "description": "刺激强度上限（1–255）。男用 TD 超过 50 可能断联，请谨慎",
       "group": "core",
       "min": 1,
       "max": 255,
@@ -119,7 +119,8 @@
       "group": "difficulty",
       "min": 0,
       "max": 60,
-      "step": 1
+      "step": 1,
+      "required": false
     },
     {
       "key": "rampRate",
@@ -139,12 +140,13 @@
       "type": "number",
       "default": 15,
       "label": "压力敏感度",
-      "description": "压力对强度调节的灵敏度（本版默认 15，与基础版系数不同）",
+      "description": "压力变化对强度调节的影响系数，越大反应越灵敏",
       "group": "difficulty",
       "min": 0.1,
       "max": 100,
       "step": 0.1,
-      "recommended": "10–20"
+      "recommended": "10–20",
+      "required": false
     },
     {
       "key": "randomPercent",
@@ -196,7 +198,8 @@
       "min": 0.5,
       "max": 10,
       "step": 0.5,
-      "device": "punish"
+      "device": "punish",
+      "required": false
     },
     {
       "key": "voiceEnabled",
@@ -211,7 +214,7 @@
     "en": {
       "title": "Pressure edging 3-stage",
       "description": "Calm → mid → edge state machine. TD01 follows pressure and time windows, with over-threshold shock. Adds mid excitement pressure and a takeoff period before the end.",
-      "howTo": "1. Map air-pressure sensor and TD01 (required)\n2. Optional: shock, lock\n3. Set mid and critical pressure (mid must be lower)\n4. Fine-tune thresholds with on-screen buttons",
+      "howTo": "1. Put on the CunZhi-01 all-in-one unit (or an air-pressure sensor and stimulator). Set a mid-arousal pressure and a higher critical pressure.\n2. Intensity rises gradually in the calm phase. At mid pressure, the game adjusts speed to stay near the edge. Crossing critical pressure stops vibration and triggers a shock; the next round begins after pressure falls.\n3. A final takeoff phase starts near the end of the timer. When time runs out, the motor stops and the lock opens automatically.",
       "devices": {
         "sensor": "Air-pressure sensor",
         "motor": "TD01 stimulator",
@@ -238,10 +241,10 @@
         "endCalmLock": "Length of the high-intensity takeoff stage before the end.",
         "criticalPressure": "Edge cap. Going over it punishes and drops intensity.",
         "midPressure": "Pressure that enters the mid/excited stage. Must be below critical.",
-        "maxMotorIntensity": "Stimulation cap (0\u2013255).",
+        "maxMotorIntensity": "Stimulation cap (1\u2013255). Male TD may disconnect over 50.",
         "lowPressureDelay": "How long low pressure lasts before intensity ramps.",
         "rampRate": "Max intensity increase per second.",
-        "sensitivity": "How strongly pressure affects intensity (this version defaults to 15).",
+        "sensitivity": "How strongly pressure changes affect intensity. Higher is more responsive.",
         "randomPercent": "Random percent jitter on target intensity.",
         "gradualIncrease": "Intensity rise per second after the low-pressure delay.",
         "shockVoltage": "Shock voltage when over the critical pressure.",

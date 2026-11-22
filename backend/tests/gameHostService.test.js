@@ -135,6 +135,20 @@ describe('game host runtime', () => {
     expect(host.getStatus().errors.length).toBeGreaterThan(0);
   });
 
+  test('advanced params folded in the UI stay adjustable on the host', () => {
+    const devices = baseDevices();
+    const { host } = createHost(devices);
+    host.start({
+      gameId: 'surge-edging',
+      deviceMap: { sensor: ['s1'], motor: ['m1'] },
+      params: { duration: 10, minSurgeMs: 900 },
+    });
+    expect(host.getStatus().snapshot.params.minSurgeMs).toBe(900);
+    host.setParams({ minSurgeMs: 800, surgeRiseKpa: 1.2 });
+    expect(host.getStatus().snapshot.params.minSurgeMs).toBe(800);
+    expect(host.getStatus().snapshot.params.surgeRiseKpa).toBe(1.2);
+  });
+
   test('effects follow role mapping and skip unsupported capabilities', () => {
     const devices = baseDevices();
     const virtual = fakeVirtual();

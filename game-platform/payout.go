@@ -12,12 +12,13 @@ import (
 // 数据来源是管理员在 OpenPanel 看板手工统计 + 商城后台手工发奖励金的结果，
 // 投稿平台不拉 OpenPanel，也不参与算钱。
 type PayoutRecord struct {
-	ID          int64  `json:"id"`
-	Month       string `json:"month"`
-	GameID      string `json:"gameId"`
-	AuthorID    string `json:"authorId"`
-	AuthorName  string `json:"authorName"`
-	AuthorEmail string `json:"authorEmail"`
+	ID                int64  `json:"id"`
+	Month             string `json:"month"`
+	GameID            string `json:"gameId"`
+	AuthorID          string `json:"authorId"`
+	AuthorName        string `json:"authorName"`
+	AuthorEmail       string `json:"authorEmail"`
+	AuthorPhoneMasked string `json:"authorPhoneMasked,omitempty"`
 	// ValidPlays 是管理员手填的参考数据，可以不填。
 	ValidPlays *int   `json:"validPlays"`
 	AmountCNY  int64  `json:"amountCny"`
@@ -109,24 +110,27 @@ func (a *App) attachAuthorEmails(ctx context.Context, records []PayoutRecord) ([
 	if len(records) == 0 {
 		return records, nil
 	}
-	rows, err := a.db.QueryContext(ctx, `SELECT id, email FROM identities`)
+	rows, err := a.db.QueryContext(ctx, `SELECT id, COALESCE(email, ''), phone_masked FROM identities`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	emails := map[string]string{}
+	phones := map[string]string{}
 	for rows.Next() {
-		var id, email string
-		if err := rows.Scan(&id, &email); err != nil {
+		var id, email, phone string
+		if err := rows.Scan(&id, &email, &phone); err != nil {
 			return nil, err
 		}
 		emails[id] = email
+		phones[id] = phone
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	for index := range records {
 		records[index].AuthorEmail = emails[records[index].AuthorID]
+		records[index].AuthorPhoneMasked = phones[records[index].AuthorID]
 	}
 	return records, nil
 }
@@ -210,12 +214,9 @@ func (a *App) setGameOwner(ctx context.Context, gameID, email, authorName, opera
 	if authorName == "" || len(authorName) > 40 {
 		return assignedOwner{}, errors.New("author name must be 1-40 characters")
 	}
-	email = normalizeEmail(email)
-	if !strings.Contains(email, "@") {
-		return assignedOwner{}, errGameOwnerEmailMissing
-	}
-	var authorID string
-	err := a.db.QueryRowContext(ctx, `SELECT id FROM identities WHERE email = ?`, email).Scan(&authorID)
+	email = strings.TrimSpace(email)
+	var authorID, authorEmail, phoneMasked string
+	err := a.db.QueryRowContext(ctx, `SELECT id,COALESCE(email,''),phone_masked FROM identities WHERE id = ? OR email = ? ORDER BY CASE WHEN id = ? THEN 0 ELSE 1 END LIMIT 1`, email, normalizeEmail(email), email).Scan(&authorID, &authorEmail, &phoneMasked)
 	if errors.Is(err, sql.ErrNoRows) {
 		return assignedOwner{}, errGameOwnerEmailMissing
 	}
@@ -230,11 +231,11 @@ func (a *App) setGameOwner(ctx context.Context, gameID, email, authorName, opera
 		gameID, authorID, authorName, operator, now); err != nil {
 		return assignedOwner{}, err
 	}
-	return assignedOwner{GameID: gameID, AuthorID: authorID, AuthorName: authorName, Email: email, SetBy: operator, SetAt: now}, nil
+	return assignedOwner{GameID: gameID, AuthorID: authorID, AuthorName: authorName, Email: authorEmail, PhoneMasked: phoneMasked, SetBy: operator, SetAt: now}, nil
 }
 
 // errGameOwnerEmailMissing 表示指定归属时给的邮箱还没有在投稿平台登录过。
-var errGameOwnerEmailMissing = errors.New("该邮箱尚未登录过投稿平台")
+var errGameOwnerEmailMissing = errors.New("该账号尚未登录过投稿平台")
 
 // errGameOwnerGone 表示要撤销的归属指定不存在。
 var errGameOwnerGone = errors.New("该游戏没有手工指定的归属")

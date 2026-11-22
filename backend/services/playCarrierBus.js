@@ -22,8 +22,11 @@ function emitPlayCarrierStart({ kind, gameId = null, gameName = null, source = n
 }
 
 /** 本机的一次玩法结束（正常退出 / 顶替 / 宽限超时复位）。 */
-function emitPlayCarrierExit({ kind, reason = null, source = null } = {}) {
-  emit({ action: 'exit', kind, reason, source });
+function emitPlayCarrierExit({ kind, reason = null, source = null, gameId = null } = {}) {
+  const event = { action: 'exit', kind, reason, source };
+  // 兼容旧订阅方：没有 gameId 时不新增字段（只给能反查到的 iframe/host 玩法带上）
+  if (gameId) event.gameId = gameId;
+  emit(event);
 }
 
 /** 清空订阅（测试用）。 */

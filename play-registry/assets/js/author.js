@@ -97,7 +97,7 @@
 
   auth.verify().then(function (user) {
     if (!user) { auth.requireLogin(); return; }
-    if (emailSlot) emailSlot.textContent = user.email;
+    if (emailSlot) emailSlot.textContent = user.email || user.phoneMasked || user.id;
     return auth.api('/api/submissions').then(function (data) { render(data.submissions || []); });
   }).catch(function (err) {
     setMessage(err && err.message ? err.message : t('authErrServer'), 'error');

@@ -8,6 +8,7 @@ const deviceWatchdogService = require('./services/deviceWatchdogService');
 const mqttService = require('./services/mqttService');
 const mdnsService = require('./services/mdnsService');
 const logService = require('./services/logService');
+const eventBus = require('./services/eventBus');
 const bridgeService = require('./services/bridgeService');
 const voiceTriggerWs = require('./services/voiceTriggerWs');
 const gameService = require('./services/gameService');
@@ -22,6 +23,7 @@ const remoteProjectionService = require('./services/remoteProjectionService');
 const remoteGameService = require('./services/remoteGameService');
 const remoteSessionService = require('./services/remoteSessionService');
 const { remoteSessionFilter } = require('./middleware/remoteSessionFilter');
+const { agentRequestFilter } = require('./middleware/agentRequestFilter');
 const gameHostService = require('./game-runtime/gameHostService');
 
 const app = express();
@@ -57,6 +59,9 @@ try {
 }
 
 deviceService.initDeviceList();
+// 全局事件流：设备侧由 deviceService 直接发布；游戏启停/状态在这里挂到载体总线与 HostRuntime。
+eventBus.attachGameCarrier();
+eventBus.attachGameHost(gameHostService);
 
 let runtimeServicesStartPromise = null;
 let runtimeServicesStopPromise = null;
@@ -151,6 +156,7 @@ function shutdownBackend(reason = 'backend-shutdown', {
     await gameHostService.shutdown();
     await remoteProjectionService.shutdown();
     voiceTriggerWs.closeAll();
+    try { require('./model-runtime').workerHost.stopAll(); } catch (_) {}
     if (typeof beforeTransportShutdown === 'function') {
       await beforeTransportShutdown();
     }
@@ -194,6 +200,8 @@ app.use('/games', express.static(gameService.getGameRoot()));
 // Routes
 // 主控端远程模式过滤：设备接口只返回本会话投影来的设备、本机专属接口 423（不在远程模式时直接放行）
 app.use('/api', remoteSessionFilter);
+// agent 请求标记：X-Agent-Client 校验租约，并把来源放进异步上下文供输出层限幅。
+app.use('/api', agentRequestFilter);
 app.use('/api/mqtt', require('./routes/mqtt'));
 app.use('/api/network', require('./routes/network'));
 app.use('/api/mdns', require('./routes/mdns'));
@@ -202,6 +210,8 @@ app.use('/api/devices', require('./routes/devices'));
 app.use('/api/serial', require('./routes/serialConnections'));
 app.use('/api/wired-flash', require('./routes/wiredFlash'));
 app.use('/api/device-watchdog', require('./routes/deviceWatchdog'));
+app.use('/api/events', require('./routes/events'));
+app.use('/api/client', require('./routes/client'));
 app.use('/api/device-types', require('./routes/deviceTypes'));
 app.use('/api/device-capabilities', require('./routes/deviceCapabilities'));
 app.use('/api/games', require('./routes/games'));
@@ -214,11 +224,16 @@ app.use('/api/test', require('./routes/test'));
 app.use('/api/virtual-devices', require('./routes/virtualDevices'));
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/voice', require('./routes/voice'));
+app.use('/api/models', require('./routes/models'));
 // 远控接口只服务本机（审查报告 §2.4 的纵深防御；后端本身也已只绑回环）。
 app.use('/api/remote-projection', loopbackOnly, require('./routes/remoteProjection'));
 app.use('/api/game-runtime', require('./routes/gameRuntime'));
 app.use('/api/remote-game', loopbackOnly, require('./routes/remoteGame'));
 app.use('/api/remote-session', loopbackOnly, require('./routes/remoteSession'));
+// agent 租约：写入接口只服务本机（插件也在本机），读状态同样只允许回环。
+app.use('/api/agent-control', loopbackOnly, require('./routes/agentControl'));
+// agent 租约：写入接口只服务本机（插件也在本机）。
+app.use('/api/agent-control', loopbackOnly, require('./routes/agentControl'));
 app.use('/api/dev-access', require('./routes/devAccess'));
 app.use('/api/brands', require('./routes/brands'));
 

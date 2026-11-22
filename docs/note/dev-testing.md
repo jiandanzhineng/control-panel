@@ -7,6 +7,11 @@
 - 后端单测：`npm --prefix backend test -- --runInBand`；前端：`npm --prefix frontend test`；构建：`npm run build:frontend`。
 - 只跑某套件可追加文件名，如 `npm --prefix backend test -- --runInBand pushup-detection-output.test.js`。
 
+## 本机依赖缓存
+
+- 本机根 `node_modules` 的部分包目录联接到 `tmp/digital-human-debug-deps/node_modules`；该目录是当前调试依赖缓存，清理前须先重新安装根依赖。前后端依赖仍分别在各自目录。
+- Windows 的 Electron `dist/resources/default_app.asar` 被占用时，`npm ci` 可能报 `EBUSY`；不要为此终止无关 Electron。下载可用 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`，正常启动必须同时具备 Electron 包元数据、`path.txt` 和完整 `dist`。
+
 ## 前端构建
 
 - 组件按需导入用 `unplugin-vue-components@29.2.0`，配置在 `frontend/vite.config.ts`。保留 Element Plus 全局样式以维持主题覆盖顺序，图标由各组件显式导入。
@@ -23,5 +28,5 @@
 
 ## git worktree
 
-- worktree 不带 node_modules：把主仓的 `node_modules`、`play-registry/node_modules` 用目录联接（`New-Item -ItemType Junction`）链进来，`backend`/`frontend` 的 node_modules 要单独 `npm install`。
-- **移动 worktree 要先断 junction**：`git worktree move` 遇 junction 会 Permission denied；用 `Move-Item` 更危险——会顺着 junction 把主仓 `node_modules` 内容掏空到新位置，还可能因 `default_app.asar` 等文件被锁而搬一半。正确做法：先 `cmd /c rmdir <wt>\node_modules` 断开 junction，再 `git worktree move`（或 `Move-Item` 后手动修 `.git`/`gitdir` 指向），最后重建 junction。删 worktree 同理，用 `tools/worktree/safe_remove.py`（先断联接再交给 git）。
+- worktree 不带 node_modules：日常调试可把主仓的 `node_modules`、`play-registry/node_modules` 用目录联接（`New-Item -ItemType Junction`）链进来，`backend`/`frontend` 的 node_modules 单独安装；**发布验证时，根目录、`backend`、`frontend` 必须分别执行独立 `npm ci`**，不要用主仓目录联接作为发布构建依据（部分依赖本身可能是指向临时缓存的联接）。
+- **移动或删 worktree 前先拆 node_modules 联接**：worktree 里的 `node_modules`（根、backend、frontend、play-registry）若是联接到主仓，`git worktree move` 会 Permission denied，`Move-Item` 或 `git worktree remove --force` 会顺着联接把主仓依赖掏空或清空。正确做法：先 `cmd /c rmdir <wt>\node_modules`（各处都拆）再移动，删除统一用 `tools/worktree/safe_remove.py`（先断联接再交给 git）；若误清空则在主仓四处分别 `npm ci` 恢复。

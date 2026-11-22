@@ -200,6 +200,7 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 .game-id { font-size: 12px; color: var(--text-dim); font-family: var(--mono); }
 .game-desc { color: var(--text-soft); font-size: 14px; flex: 1; }
 .game-meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.game-hardware { font-size: 13px; color: var(--text-soft); overflow-wrap: anywhere; }
 .badge {
   display: inline-flex; align-items: center; gap: 4px;
   padding: 3px 9px; border-radius: 6px; font-size: 12px; font-weight: 500;
@@ -465,7 +466,9 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 .req { font-size: 11px; padding: 2px 7px; border-radius: 4px; background: rgba(240, 80, 110, 0.12); color: var(--danger); border: 1px solid rgba(240, 80, 110, 0.3); }
 .opt { font-size: 11px; padding: 2px 7px; border-radius: 4px; background: var(--bg-card); color: var(--text-dim); border: 1px solid var(--border); }
 .map-caps { font-size: 12px; color: var(--text-dim); }
-.map-none { font-size: 12px; color: var(--warn); justify-self: end; }
+.map-none { font-size: 12px; color: var(--warn); }
+.map-missing { text-align: right; overflow-wrap: anywhere; }
+.map-hardware { margin-top: 4px; font-size: 13px; color: var(--text-soft); }
 .map-options { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .map-option {
   display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 8px;
@@ -505,7 +508,7 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
   .play-link { flex: 1; min-width: 0; }
   .contribute { padding: 28px 20px; }
   .map-row { grid-template-columns: 1fr; }
-  .map-none { justify-self: start; }
+  .map-missing { text-align: left; }
   .platform-page { padding-top: 32px; }
   .platform-panel { padding: 18px; }
   .submission-row { grid-template-columns: 1fr; }
@@ -721,7 +724,7 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 .auth-wave .w-ghost { stroke: var(--text-dim); stroke-width: 1; opacity: 0.35; }
 
 .auth-main { display: flex; align-items: center; padding: 64px; }
-.auth-box { width: 100%; max-width: 380px; }
+.auth-box { width: 100%; max-width: 432px; padding: 32px; border: 1px solid var(--line); border-radius: 20px; background: var(--bg-soft); box-shadow: 0 20px 60px #0002; }
 .auth-box h2 { font-size: 28px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; }
 .auth-sub { color: var(--text-soft); font-size: 14px; margin: 8px 0 28px; }
 .auth-form { display: grid; gap: 18px; }
@@ -865,6 +868,27 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
 .detail-card-wide { grid-column: 1 / -1; }
 .detail-list { margin: 0; padding-left: 20px; color: var(--text-soft); line-height: 1.85; }
 .detail-list li { margin-bottom: 6px; }
+.detail-list strong { display: block; color: var(--text); }
+.detail-list + .hardware-link { display: inline-block; margin-top: 10px; }
+.detail-device-fold summary { cursor: pointer; }
+.detail-device-fold summary h2 { display: inline; margin: 0; }
+.detail-device-fold .detail-device-list, .detail-device-fold .detail-empty { margin-top: 14px; }
+.hardware-link { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.hardware-link:hover { color: var(--text); }
+.hardware-summary { margin: 0 0 14px; }
+.hardware-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  list-style: none; gap: 12px; padding: 0; margin: 0;
+}
+.hardware-product {
+  display: flex; align-items: flex-start; gap: 12px; padding: 12px;
+  background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.hardware-product img { flex: none; object-fit: contain; border-radius: var(--radius-sm); }
+.hardware-product-info { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.hardware-product-info strong { display: block; margin-top: 4px; }
+.hardware-product-info p { margin: 4px 0; }
+.hardware-role.kit { color: var(--accent); }
 .detail-empty { color: var(--text-dim); margin: 0; }
 .detail-device-list, .detail-param-list { list-style: none; display: grid; gap: 10px; }
 .detail-param-list { max-height: 420px; overflow: auto; padding-right: 4px; }
@@ -921,3 +945,15 @@ code, pre { font-family: var(--mono); font-size: 0.9em; }
   border: 1px solid var(--border-glow); background: var(--bg-raised); color: var(--text); font: 600 13px/1.2 var(--sans);
 }
 .platform-form input[type="radio"] { accent-color: var(--primary); }
+
+/* Sign-in methods share one form area. */
+.auth-methods { display: flex; gap: 4px; margin: 0 0 28px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.auth-methods[hidden] { display: none; }
+.auth-methods button { flex: 1; min-width: 0; min-height: 44px; border: 0; border-radius: 8px; color: var(--text-dim); background: transparent; cursor: pointer; font: 600 14px/1.4 var(--sans); }
+.auth-methods button[aria-selected="true"] { background: var(--bg-raised); color: var(--text); box-shadow: 0 2px 6px #0002; }
+.auth-methods button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.auth-code-row { display: flex; gap: 8px; }
+.auth-code-row input { flex: 1; width: 0; }
+.auth-code-row .btn { flex-shrink: 0; padding: 10px 12px; background: var(--bg-raised); color: var(--text); border: 1px solid var(--border); }
+.auth-account-hint { margin: 20px 0 0; color: var(--text-dim); font-size: 12px; line-height: 1.7; }
+@media (max-width: 500px) { .auth-main { padding: 28px 16px; } .auth-box { padding: 26px 20px; } }

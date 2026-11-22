@@ -57,6 +57,9 @@ const LOCK_RULES = [
   // 账号/设置类写操作
   { method: 'POST', pattern: /^\/auth(\/|$)/ },
   { method: 'PUT', pattern: /^\/auth(\/|$)/ },
+  // 本地模型：下载/删除/改设置只在本机做；GET 状态照常放行（页面渲染需要）
+  { method: 'POST', pattern: /^\/models(\/|$)/ },
+  { method: 'DELETE', pattern: /^\/models(\/|$)/ },
 ];
 
 // 即使命中 LOCK_RULES 也放行的读接口（页面渲染需要，且无本机副作用）。
@@ -85,6 +88,13 @@ const NEVER_LOCKED = [
   /^\/logs\/current$/,
   /^\/games(\/|$)/,
   /^\/game-runtime(\/|$)/,
+  // 全局事件流：只读推送（设备事件已按远程模式的需求单独决定，不在这里过滤）。
+  /^\/events(\/|$)/,
+  // 客户端控制：控制的是「本机」窗口、路由、截图与本机玩法载体，
+  // 远程主控模式下这些仍是本机操作（主控端页面本来就可跳转/启停本机游戏），必须放行。
+  /^\/client(\/|$)/,
+  // agent 租约：控制的是本机 agent 的限幅阈值，不触碰被控端设备，远程模式下仍按本机处理。
+  /^\/agent-control(\/|$)/,
 ];
 
 function isLockedRoute(method, path) {

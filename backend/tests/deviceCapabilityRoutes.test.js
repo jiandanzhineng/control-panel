@@ -72,6 +72,24 @@ describe('device capability routes', () => {
     );
   });
 
+  it('prefers an explicit input over params, including falsy values', async () => {
+    deviceService.invokeDeviceCapabilityAndWait.mockResolvedValue({ ok: true });
+
+    await request(createApp())
+      .post('/api/devices/dev01/capabilities/strength/actions/set')
+      .send({ input: {}, params: { value: 255 } });
+    expect(deviceService.invokeDeviceCapabilityAndWait).toHaveBeenLastCalledWith(
+      'dev01', 'strength', 'set', {},
+    );
+
+    await request(createApp())
+      .post('/api/devices/dev01/capabilities/strength/actions/set')
+      .send({ input: 0, params: { value: 255 } });
+    expect(deviceService.invokeDeviceCapabilityAndWait).toHaveBeenLastCalledWith(
+      'dev01', 'strength', 'set', 0,
+    );
+  });
+
   it('maps missing device to 404', async () => {
     const error = new Error('设备不存在');
     error.code = 'DEVICE_NOT_FOUND';

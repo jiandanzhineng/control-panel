@@ -1,236 +1,484 @@
 <template>
-  <div class="page">
-    <div class="header-row">
-      <div>
+  <div class="library-page">
+    <header class="lib-header">
+      <div class="lib-header__title">
+        <p class="section-label">{{ t('plays.eyebrow') }}</p>
         <h1>{{ t('plays.title') }}</h1>
-        <p class="muted">{{ t('plays.desc') }}</p>
+        <p class="lib-subtitle">{{ t('plays.desc') }}</p>
       </div>
-      <div class="header-actions">
-        <el-button :icon="Reading" @click="openDevGuide">{{ t('plays.guide') }}</el-button>
-        <el-button :icon="Refresh" :loading="busy.refresh" @click="refresh">{{ t('common.refresh') }}</el-button>
-      </div>
-    </div>
-
-    <!-- 当前运行提示条（替代原「当前游戏」侧边栏项） -->
-    <el-alert
-      v-if="activePlay"
-      class="running-banner"
-      type="success"
-      :closable="false"
-      show-icon
-    >
-      <template #title>
-        <div class="banner-inner">
-          <span>{{ t('plays.running', { title: activePlay.title }) }}</span>
-          <span class="banner-actions">
-            <el-button size="small" type="primary" @click="resumeRun">{{ t('plays.resume') }}</el-button>
-            <el-button size="small" type="danger" :loading="busy.stop" @click="stopCurrent">{{ t('common.stop') }}</el-button>
-          </span>
+      <div class="lib-header__actions">
+        <div class="lib-contribute">
+          <!-- 远程主控模式下 /browser 被锁，投稿页打不开，直接隐藏 -->
+          <el-tooltip
+            v-if="!remoteSession.isOperatorRemote.value"
+            :content="t('plays.submitTip')"
+            placement="bottom"
+            :show-after="250"
+            popper-class="lib-reward-tooltip"
+          >
+            <el-button class="lib-contribute__btn" :icon="Upload" @click="submitGame">
+              {{ t('plays.submitGame') }}
+              <span class="lib-reward">{{ t('plays.rewarded') }}</span>
+            </el-button>
+          </el-tooltip>
+          <el-tooltip
+            :content="t('plays.suggestTip')"
+            placement="bottom"
+            :show-after="250"
+            popper-class="lib-reward-tooltip"
+          >
+            <el-button class="lib-contribute__btn" :icon="ChatLineSquare" @click="suggestGame">
+              {{ t('plays.suggestGame') }}
+              <span class="lib-reward">{{ t('plays.rewarded') }}</span>
+            </el-button>
+          </el-tooltip>
         </div>
-      </template>
-    </el-alert>
-
-    <section class="toolbar-card">
-      <div class="row">
-        <el-input
-          v-model="search"
-          class="search"
-          :placeholder="t('plays.search')"
-          clearable
-          :prefix-icon="Search"
-        />
-        <el-button :icon="Upload" :loading="busy.upload" @click="triggerUpload">{{ t('plays.loadExternal') }}</el-button>
-        <el-button :icon="Close" :loading="busy.stop" type="danger" plain @click="stopCurrent">{{ t('plays.stopCurrent') }}</el-button>
-        <input ref="fileInput" type="file" accept=".js" style="display:none" @change="onFileSelected" />
+        <el-button :icon="TopRight" @click="openSite">{{ t('plays.openSite') }}</el-button>
+        <el-dropdown trigger="click" :disabled="busy.refresh || busy.upload" @command="onHeaderCommand">
+          <button class="icon-btn" :title="t('plays.more')" :aria-label="t('plays.more')">
+            <el-icon v-if="busy.refresh || busy.upload" class="is-loading"><Loading /></el-icon>
+            <el-icon v-else><MoreFilled /></el-icon>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="refresh" :icon="Refresh">{{ t('common.refresh') }}</el-dropdown-item>
+              <el-dropdown-item command="upload" :icon="Upload">{{ t('plays.loadExternal') }}</el-dropdown-item>
+              <el-dropdown-item command="guide" :icon="Reading">{{ t('plays.guide') }}</el-dropdown-item>
+              <el-dropdown-item command="stop" :icon="Close" divided>{{ t('plays.stopCurrent') }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <input ref="fileInput" type="file" accept=".js" style="display: none" @change="onFileSelected" />
       </div>
-      <el-alert
-        v-if="error"
-        class="inline-alert"
-        :title="error"
-        type="error"
-        :closable="false"
-        show-icon
-      />
+    </header>
+
+    <section v-if="activePlay" class="lib-focus lib-focus--running">
+      <div class="lib-focus__main">
+        <span class="lib-pulse" />
+        <div class="lib-focus__text">
+          <p class="lib-focus__label">{{ t('plays.runningLabel') }}</p>
+          <h2 class="lib-focus__title">{{ activePlay.title }}</h2>
+        </div>
+      </div>
+      <div class="lib-focus__actions">
+        <el-button type="primary" plain @click="resumeRun">{{ t('plays.resume') }}</el-button>
+        <el-button :loading="busy.stop" @click="stopCurrent">{{ t('common.stop') }}</el-button>
+      </div>
     </section>
 
-    <el-empty v-if="!busy.refresh && filteredItems.length === 0 && localApps.length === 0" :description="t('plays.empty')" />
+    <section v-else-if="recentGame" class="lib-focus lib-focus--recent" @click="startGame(recentGame)">
+      <div class="lib-cover lib-cover--mini" :style="coverStyle(recentGame.id)">
+        <span class="lib-cover__glyph">{{ firstGlyph(recentGame.title) }}</span>
+      </div>
+      <div class="lib-focus__text">
+        <p class="lib-focus__label">{{ t('plays.continueTitle') }}</p>
+        <h2 class="lib-focus__title">{{ recentGame.title }}</h2>
+        <p v-if="recentGame.description" class="lib-focus__desc">{{ recentGame.description }}</p>
+        <span class="lib-meta">{{ playedText(recentGame.lastPlayed) }}</span>
+      </div>
+      <el-button class="lib-focus__cta" type="primary" @click.stop="startGame(recentGame)">
+        {{ t('plays.start') }}
+      </el-button>
+    </section>
 
-    <div class="play-grid">
-      <LocalAppCard
-        v-for="app in localApps"
-        :key="`local-app:${app.id}`"
-        :app="app"
-        @refresh="loadAll"
-      />
+    <div class="lib-toolbar">
+      <div class="lib-filters" role="tablist">
+        <template v-for="tab in filterTabs" :key="tab.key">
+          <span v-if="tab.key === 'test'" class="lib-filters__divider" aria-hidden="true" />
+          <button
+            class="lib-filter"
+            :class="{ 'is-active': filter === tab.key, 'lib-filter--test': tab.key === 'test' }"
+            role="tab"
+            :aria-selected="filter === tab.key"
+            @click="filter = tab.key"
+          >
+            {{ t(tab.label) }}<span class="lib-filter__count mono">{{ tab.count }}</span>
+          </button>
+        </template>
+      </div>
+      <div class="lib-toolbar__right">
+        <span v-if="registryLoading" class="lib-hint">{{ t('plays.onlineSyncing') }}</span>
+        <span v-else-if="registryFailed" class="lib-hint">
+          {{ t('plays.onlineUnavailable') }}
+          <button class="lib-hint__retry" @click="loadRegistry(true)">{{ t('common.retry') }}</button>
+        </span>
+        <span v-else-if="registryStale" class="lib-hint">{{ t('plays.onlineStale') }}</span>
+        <el-input
+          v-model="search"
+          class="lib-search"
+          :placeholder="t('plays.search')"
+          :prefix-icon="Search"
+          clearable
+        />
+      </div>
+    </div>
+
+    <div v-if="loading" class="lib-loading">
+      <el-skeleton :rows="3" animated />
+    </div>
+
+    <div v-else-if="hasVisible" class="lib-grid">
       <article
-        v-for="item in filteredItems"
-        :key="`${item.carrierType}:${item.id}`"
-        class="play-card"
-        :class="`carrier-${item.carrierType}`"
+        v-for="card in gameCards"
+        :key="`game:${card.id}`"
+        class="lib-card"
+        tabindex="0"
+        @click="startGame(card)"
+        @keydown.enter.self.prevent="startGame(card)"
       >
-        <div class="play-main">
-          <div class="play-icon">
-            <el-icon><component :is="iconOf(item)" /></el-icon>
-          </div>
-          <div class="play-content">
-            <div class="title-row">
-              <h2>{{ titleOf(item) }}</h2>
-              <el-tag size="small" :type="item.carrierType === 'game' ? 'primary' : 'success'">
-                {{ item.carrierType === 'game' ? t('plays.game') : t('plays.plugin') }}
-              </el-tag>
-            </div>
-            <p v-if="descOf(item)" class="desc">{{ descOf(item) }}</p>
-            <div class="meta">
-              <!-- 插件：目标域名 / 版本 / 来源 -->
-              <template v-if="item.carrierType === 'plugin'">
-                <el-tag size="small" type="info">{{ hostOf(item.homeUrl) || t('plays.noSite') }}</el-tag>
-                <el-tag size="small">v{{ item.version || '1.0.0' }}</el-tag>
-                <el-tag v-if="item.source" size="small" type="success">{{ item.source === 'builtin' ? t('plays.builtin') : t('plays.user') }}</el-tag>
+        <div class="lib-cover" :style="coverStyle(card.id)">
+          <span class="lib-cover__glyph">{{ firstGlyph(card.title) }}</span>
+          <span class="lib-badge" :class="`lib-badge--${card.badgeTone}`">
+            <span v-if="card.running" class="lib-pulse" />
+            {{ card.badgeText }}
+          </span>
+          <div v-if="card.remote || card.local" class="lib-menu" @click.stop>
+            <el-dropdown trigger="click" @command="(cmd: string) => onGameCommand(cmd, card)">
+              <button class="lib-menu-btn" :aria-label="t('plays.more')">
+                <el-icon><MoreFilled /></el-icon>
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item v-if="card.remote" command="site">{{ t('plays.viewOnSite') }}</el-dropdown-item>
+                  <el-dropdown-item v-if="card.local" command="delete" divided>{{ t('common.delete') }}</el-dropdown-item>
+                </el-dropdown-menu>
               </template>
-              <!-- 游戏：版本 / 来源 / 最后游玩 / 参数 -->
-              <template v-else>
-                <el-tag size="small" type="info">{{ t('plays.version', { version: item.version || '-' }) }}</el-tag>
-                <el-tag v-if="item.source === 'saved'" size="small" type="warning" effect="plain">{{ t('plays.saved') }}</el-tag>
-                <el-tag v-else size="small" type="success" effect="plain">{{ t('plays.local') }}</el-tag>
-                <el-tag v-if="isCachedGame(item)" size="small" type="success">{{ t('plays.cached') }}</el-tag>
-                <el-tag size="small" type="success">{{ t('plays.lastPlayed', { time: formatLastPlayed(item.lastPlayed) }) }}</el-tag>
-                <el-tag v-if="item.arguments" size="small">{{ t('plays.params', { value: item.arguments }) }}</el-tag>
-                <el-tooltip v-if="runtimeTagOf(item)" :content="t(runtimeTagOf(item)!.tipKey)" placement="top">
-                  <el-tag
-                    size="small"
-                    effect="plain"
-                    :class="runtimeTagOf(item)!.accent ? 'runtime-tag-accent' : 'runtime-tag-muted'"
-                  >
-                    {{ t(runtimeTagOf(item)!.key) }}
-                  </el-tag>
-                </el-tooltip>
-              </template>
-            </div>
-            <div v-if="devicesOf(item).length" class="devices">
-              <span v-for="d in devicesOf(item)" :key="d.id || d.name" class="device-tag">
-                {{ d.required ? '●' : '○' }} {{ d.name || d.id || t('plays.deviceFallback') }}
-              </span>
-            </div>
+            </el-dropdown>
           </div>
         </div>
-        <div class="play-actions">
-          <el-button type="primary" :icon="VideoPlay" @click="goConfig(item)">{{ item.carrierType === 'game' ? t('plays.start') : t('plays.configStart') }}</el-button>
-          <el-button v-if="item.carrierType === 'game'" type="danger" plain :icon="Delete" @click="deleteGame(item)">{{ t('common.delete') }}</el-button>
+        <div class="lib-body">
+          <h2 class="lib-title">{{ card.title }}</h2>
+          <p class="lib-desc">{{ card.description || ' ' }}</p>
+          <div v-if="card.chips.length" class="lib-chips">
+            <el-tooltip v-for="chip in card.chips" :key="chip.key" :content="chipTip(chip)" placement="top">
+              <span class="lib-chip" :class="{ 'lib-chip--required': chip.required }">{{ chipLabel(chip) }}</span>
+            </el-tooltip>
+            <span v-if="card.overflow" class="lib-chip lib-chip--more">+{{ card.overflow }}</span>
+          </div>
+        </div>
+        <div class="lib-foot">
+          <div class="lib-foot__info">
+            <span class="lib-meta">{{ card.meta }}</span>
+            <el-tooltip v-if="card.runtime" :content="t(card.runtime.tipKey)" placement="top">
+              <span class="lib-runtime" :class="{ 'lib-runtime--accent': card.runtime.accent }">
+                {{ t(card.runtime.key) }}
+              </span>
+            </el-tooltip>
+          </div>
+          <div class="lib-action" @click.stop>
+            <el-tooltip
+              :disabled="card.launch !== 'remote' || card.cached"
+              :content="t('plays.firstDownload')"
+              placement="top"
+            >
+              <el-button type="primary" size="small" @click="startGame(card)">{{ t('plays.start') }}</el-button>
+            </el-tooltip>
+          </div>
         </div>
       </article>
+
+      <article
+        v-for="plugin in pluginCards"
+        :key="`plugin:${plugin.id}`"
+        class="lib-card"
+        tabindex="0"
+        @click="startPlugin(plugin.id)"
+        @keydown.enter.self.prevent="startPlugin(plugin.id)"
+      >
+        <div class="lib-cover lib-cover--plugin" :style="coverStyle(plugin.id)">
+          <el-icon class="lib-cover__icon"><Operation /></el-icon>
+          <span class="lib-badge">{{ t('plays.plugin') }}</span>
+        </div>
+        <div class="lib-body">
+          <h2 class="lib-title">{{ plugin.title }}</h2>
+          <p class="lib-desc">{{ plugin.description || ' ' }}</p>
+          <div class="lib-chips">
+            <span class="lib-chip">{{ plugin.host || t('plays.noSite') }}</span>
+          </div>
+        </div>
+        <div class="lib-foot">
+          <div class="lib-foot__info">
+            <span class="lib-meta">{{ plugin.meta }}</span>
+          </div>
+          <div class="lib-action" @click.stop>
+            <el-button type="primary" size="small" @click="startPlugin(plugin.id)">
+              {{ t('plays.configStart') }}
+            </el-button>
+          </div>
+        </div>
+      </article>
+
+      <LocalAppCard v-for="app in visibleApps" :key="`local-app:${app.id}`" :app="app" @refresh="loadAll" />
     </div>
+
+    <el-empty v-else :description="emptyText" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, markRaw } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { ChatLineSquare, Close, Loading, MoreFilled, Operation, Reading, Refresh, Search, TopRight, Upload } from '@element-plus/icons-vue';
 import { track } from '../analytics';
 import { trackPlayEnd } from '../playAnalytics';
-import { useActivePlay, clearActivePlay, setActivePlay } from '../composables/useActivePlay';
+import { clearActivePlay, setActivePlay, useActivePlay } from '../composables/useActivePlay';
+import { useRemoteSession } from '../composables/useRemoteSession';
 import LocalAppCard from '../components/LocalAppCard.vue';
 import { currentLocale } from '../i18n';
 import { localizePlay } from '../i18n/play';
-import { useRemoteSession } from '../composables/useRemoteSession';
 import { runtimeTagFor, type RuntimeTag } from '../play/runtimeTag';
 import {
-  Close, Delete, Operation, Reading, Refresh, Search, Upload, VideoPlay,
-} from '@element-plus/icons-vue';
+  deviceChips,
+  filterGames,
+  firstGlyph,
+  formatSize,
+  hueForId,
+  isTestGame,
+  matchesQuery,
+  mergeGames,
+  mostRecentGame,
+  relativeTime,
+  sortGames,
+  titleOf,
+  type DeviceChip,
+  type LibraryFilter,
+  type LibraryGame,
+  type LocalGame,
+  type RemoteGame,
+} from '../play/library';
 
-type CarrierType = 'game' | 'plugin';
+interface GameCard extends LibraryGame {
+  chips: DeviceChip[];
+  overflow: number;
+  running: boolean;
+  badgeTone: 'local' | 'online' | 'update' | 'running' | 'test';
+  badgeText: string;
+  meta: string;
+  runtime: RuntimeTag | null;
+}
 
-interface PlayDevice { id?: string; name?: string; logicalId?: string; required?: boolean; capabilities?: string[] }
-interface PlayItem {
-  carrierType: CarrierType;
+interface PluginCard {
   id: string;
-  // 公共
-  title?: string;
-  name?: string;
-  description?: string;
-  version?: string;
-  devices?: PlayDevice[];
-  // 插件
-  homeUrl?: string;
-  source?: string;
-  origin?: string;
-  // 游戏
-  arguments?: string;
-  lastPlayed?: number | null;
-  gamePath?: string;
-  externalUrl?: string;
-  cached?: boolean;
-  localGamePath?: string;
-  packageSha256?: string;
+  title: string;
+  description: string;
+  host: string;
+  meta: string;
 }
 
 const router = useRouter();
-const { t, locale } = useI18n();
+const { t, te, locale } = useI18n();
 const { activePlay } = useActivePlay();
 const remoteSession = useRemoteSession();
 
-const games = ref<PlayItem[]>([]);
-const plugins = ref<PlayItem[]>([]);
+const SITE_HOME = import.meta.env.VITE_BROWSER_HOME_URL || 'https://game.undersilicon.cn/';
+
+const games = ref<LocalGame[]>([]);
+const remoteGames = ref<RemoteGame[]>([]);
+const plugins = ref<Record<string, any>[]>([]);
 const localApps = ref<Record<string, any>[]>([]);
-/** 分离式（runtime: host）游戏 id：逻辑在被控端跑，卡片标「远程无延迟」 */
+/** 分离式（runtime: host）游戏 id：逻辑在被控端跑 */
 const hostGameIds = ref<Set<string>>(new Set());
 const search = ref('');
-const error = ref('');
-const busy = ref({ refresh: false, upload: false, stop: false });
+const filter = ref<LibraryFilter>('all');
+const loading = ref(true);
+const loaded = ref(false);
+const registryFailed = ref(false);
+const registryStale = ref(false);
+const registryLoading = ref(false);
+const nowMs = ref(Date.now());
+const busy = ref({ upload: false, refresh: false, stop: false });
 const fileInput = ref<HTMLInputElement | null>(null);
 
-const allItems = computed(() => [
-  ...games.value,
-  ...plugins.value,
-]);
+const mergedGames = computed(() => mergeGames(games.value, remoteGames.value));
+const runningId = computed(() => (activePlay.value?.carrierType === 'game' ? activePlay.value.id : null));
+const sortedGames = computed(() =>
+  sortGames(mergedGames.value, { runningId: runningId.value, locale: t('plays.sortLocale') }),
+);
+const recentGame = computed(() => mostRecentGame(mergedGames.value));
 
-const filteredItems = computed(() => {
-  const q = search.value.trim().toLowerCase();
-  const list = q
-    ? allItems.value.filter((it) => (titleOf(it) || '').toLowerCase().includes(q))
-    : allItems.value.slice();
-  // 游戏按最后游玩倒序在前，插件按标题字母序在后
-  const gamePart = list.filter((it) => it.carrierType === 'game').sort((a, b) => Number(b.lastPlayed || 0) - Number(a.lastPlayed || 0));
-  const pluginPart = list.filter((it) => it.carrierType === 'plugin').sort((a, b) => (titleOf(a) || '').localeCompare(titleOf(b) || '', t('plays.sortLocale')));
-  return [...gamePart, ...pluginPart];
+function runtimeTagOf(game: LibraryGame): RuntimeTag | null {
+  return runtimeTagFor({
+    isGame: true,
+    isHostRuntime: hostGameIds.value.has(String(game.id)),
+    isOperatorRemote: remoteSession.isOperatorRemote.value === true,
+  });
+}
+
+function capLabel(cap: string): string {
+  const key = `playConfig.caps.${cap}`;
+  return te(key) ? t(key) : cap;
+}
+
+function chipLabel(chip: DeviceChip): string {
+  if (chip.label) return chip.label;
+  if (chip.capabilities.length) return capLabel(chip.capabilities[0]);
+  return t('plays.deviceFallback');
+}
+
+function chipTip(chip: DeviceChip): string {
+  if (!chip.capabilities.length) return chipLabel(chip);
+  const caps = chip.capabilities.map(capLabel).join(t('common.sep'));
+  return t(chip.required ? 'plays.needsCaps' : 'plays.optionalCaps', { caps });
+}
+
+function playedText(ts?: number | null): string {
+  const rel = relativeTime(ts, nowMs.value);
+  if (rel.kind === 'never') return t('plays.neverPlayed');
+  const time = rel.kind === 'justNow' ? t('plays.time.justNow') : t(`plays.time.${rel.kind}`, { n: rel.value });
+  return t('plays.playedAgo', { time });
+}
+
+function toGameCard(game: LibraryGame): GameCard {
+  const running = !!runningId.value && game.id === runningId.value;
+  let badgeTone: GameCard['badgeTone'] = 'local';
+  let badgeText = t('plays.badgeLocal');
+  if (running) {
+    badgeTone = 'running';
+    badgeText = t('plays.badgeRunning');
+  } else if (game.updateAvailable) {
+    badgeTone = 'update';
+    badgeText = t('plays.badgeUpdate', { version: game.remoteVersion || '' });
+  } else if (isTestGame(game)) {
+    badgeTone = 'test';
+    badgeText = t('plays.badgeTest');
+  } else if (!game.local) {
+    badgeTone = 'online';
+    badgeText = t('plays.badgeOnline');
+  }
+  const parts: string[] = [];
+  if (game.local) {
+    parts.push(`v${game.version}`);
+    parts.push(playedText(game.lastPlayed));
+  } else {
+    parts.push(isTestGame(game) ? t('plays.badgeTest') : t('plays.badgeOnline'));
+    const size = formatSize(game.packageSize);
+    if (size) parts.push(size);
+  }
+  const { chips, overflow } = deviceChips(game.devices);
+  return {
+    ...game,
+    chips,
+    overflow,
+    running,
+    badgeTone,
+    badgeText,
+    meta: parts.join(' · '),
+    runtime: running ? null : runtimeTagOf(game),
+  };
+}
+
+const gameCards = computed(() =>
+  filterGames(sortedGames.value, filter.value, search.value).map(toGameCard),
+);
+
+const filterTabs = computed(() => {
+  const all = mergedGames.value;
+  const tabs = [
+    { key: 'all' as LibraryFilter, label: 'plays.filter.all', count: filterGames(all, 'all').length + plugins.value.length + localApps.value.length },
+    { key: 'local' as LibraryFilter, label: 'plays.filter.local', count: filterGames(all, 'local').length },
+    { key: 'online' as LibraryFilter, label: 'plays.filter.online', count: filterGames(all, 'online').length },
+    { key: 'apps' as LibraryFilter, label: 'plays.filter.apps', count: plugins.value.length + localApps.value.length },
+  ];
+  const testCount = filterGames(all, 'test').length;
+  if (testCount > 0) tabs.push({ key: 'test' as LibraryFilter, label: 'plays.filter.test', count: testCount });
+  return tabs;
 });
 
-onMounted(loadAll);
-watch(locale, () => { void loadAll(); });
+// 「测试」tab 只在有测试游戏时出现；删光后若仍停在该 tab，回到「全部」
+watch(filterTabs, (tabs) => {
+  if (!tabs.some((tab) => tab.key === filter.value)) filter.value = 'all';
+});
 
-async function loadAll() {
-  error.value = '';
-  const [gRes, pRes, aRes, rRes] = await Promise.all([
-    fetch('/api/games').then((r) => r.json()).catch(() => null),
-    fetch('/api/plugins').then((r) => r.json()).catch(() => null),
-    fetch('/api/local-apps').then((r) => r.json()).catch(() => null),
-    // 分离式游戏清单：只用来给卡片加「远程无延迟」标签，失败就当没有（不报错、不影响列表）
-    fetch('/api/game-runtime/games').then((r) => r.json()).catch(() => null),
-  ]);
-  localApps.value = Array.isArray(aRes) ? aRes : [];
-  hostGameIds.value = new Set(
-    (Array.isArray(rRes) ? rRes : [])
-      .filter((row: any) => row?.runtimeMode === 'host' && row?.id)
-      .map((row: any) => String(row.id)),
+function hostOf(url?: string): string {
+  try {
+    return url ? new URL(url).hostname : '';
+  } catch {
+    return '';
+  }
+}
+
+const pluginCards = computed<PluginCard[]>(() => {
+  if (filter.value !== 'all' && filter.value !== 'apps') return [];
+  return plugins.value
+    .filter((p) => matchesQuery({ title: titleOf(p), description: String(p.description || '') }, search.value))
+    .map((p) => {
+      const meta = [`v${p.version || '1.0.0'}`, p.source === 'builtin' ? t('plays.builtin') : t('plays.user')];
+      return {
+        id: String(p.id),
+        title: titleOf(p),
+        description: String(p.description || ''),
+        host: hostOf(p.homeUrl),
+        meta: meta.join(' · '),
+      };
+    });
+});
+
+const visibleApps = computed(() => {
+  if (filter.value !== 'all' && filter.value !== 'apps') return [];
+  return localApps.value.filter((app) =>
+    matchesQuery({ title: titleOf(app), description: String(app.description || '') }, search.value),
   );
+});
 
+const hasVisible = computed(
+  () => gameCards.value.length > 0 || pluginCards.value.length > 0 || visibleApps.value.length > 0,
+);
+
+const emptyText = computed(() =>
+  search.value.trim()
+    ? t('plays.emptySearch')
+    : filter.value === 'test'
+      ? t('plays.emptyTest')
+      : t('plays.empty'),
+);
+
+function coverStyle(id: string): Record<string, string> {
+  return { '--hue': String(hueForId(id)) };
+}
+
+function openSite() {
+  router.push({ name: 'browser' });
+}
+
+/** 投稿游戏：打开游戏站投稿页（站内 webview）。 */
+function submitGame() {
+  track('library_submit_click');
+  router.push({ name: 'browser', query: { url: siteUrl('submit.html') } });
+}
+
+/** 玩法建议：商城工单系统（与客户端同一账号中心），交给系统浏览器打开。 */
+function suggestGame() {
+  track('library_suggest_click');
+  const prefix = locale.value === 'en' ? 'en' : 'zh';
+  window.open(`https://shop.undersilicon.cn/${prefix}/profile/feedback/new`, '_blank');
+}
+
+async function loadRegistry(force = false) {
+  registryLoading.value = true;
   try {
-    const localGames: PlayItem[] = (gRes && Array.isArray(gRes))
-      ? gRes.map((g: any) => ({ ...localizePlay(g, currentLocale()), carrierType: 'game' as const, source: g.source || 'builtin' }))
-      : [];
-    games.value = localGames;
-  } catch (e: any) {
-    error.value = e?.message || t('plays.loadGamesFailed');
-  }
-  try {
-    if (pRes && Array.isArray(pRes)) {
-      plugins.value = pRes.map((p: any) => ({ ...localizePlay(p, currentLocale()), carrierType: 'plugin' as const }));
-    } else if (pRes && pRes.error) {
-      throw new Error(pRes.error?.message || t('plays.loadPluginsFailed'));
+    const res = await fetch(`/api/game-registry${force ? '?refresh=1' : ''}`);
+    const data = await res.json().catch(() => null);
+    const games = Array.isArray(data?.games) ? data.games : [];
+    // error / 空离线缓存都算不可用；stale 但有缓存游戏时照常显示并提示离线
+    if (!res.ok || data?.error || (data?.stale && games.length === 0)) {
+      throw new Error(data?.error?.message || data?.error || t('plays.loadRegistryFailed'));
     }
-  } catch (e: any) {
-    error.value = e?.message || t('plays.loadPluginsFailed');
+    remoteGames.value = games.map((g: any) => localizePlay(g, currentLocale()) as RemoteGame);
+    registryFailed.value = false;
+    registryStale.value = !!data?.stale;
+  } catch {
+    // 在线库不可用时只显示弱提示，本机游戏照常显示
+    remoteGames.value = [];
+    registryFailed.value = true;
+    registryStale.value = false;
+  } finally {
+    registryLoading.value = false;
   }
+}
+
+async function loadStatus() {
   try {
     const status = await fetch('/api/games/status').then((r) => r.json());
     if (status?.running && status.runtimeMode === 'host') {
@@ -241,27 +489,68 @@ async function loadAll() {
         resume: { name: 'game_runtime', query: { id: status.gameId } },
       });
     }
-  } catch (_) {}
+  } catch {}
 }
 
-function openDevGuide() {
-  window.open('https://game.undersilicon.cn/docs/agent-guide.html', '_blank');
+async function loadAll(options: { registry?: boolean } = {}) {
+  if (!loaded.value) loading.value = true;
+  const [gRes, pRes, aRes, rRes] = await Promise.all([
+    fetch('/api/games').then((r) => r.json()).catch(() => null),
+    fetch('/api/plugins').then((r) => r.json()).catch(() => null),
+    fetch('/api/local-apps').then((r) => r.json()).catch(() => null),
+    fetch('/api/game-runtime/games').then((r) => r.json()).catch(() => null),
+  ]);
+  localApps.value = Array.isArray(aRes) ? aRes : [];
+  hostGameIds.value = new Set(
+    (Array.isArray(rRes) ? rRes : [])
+      .filter((row: any) => row?.runtimeMode === 'host' && row?.id)
+      .map((row: any) => String(row.id)),
+  );
+  try {
+    games.value = gRes && Array.isArray(gRes)
+      ? gRes.map((g: any) => localizePlay(g, currentLocale()) as LocalGame)
+      : [];
+    if (gRes && !Array.isArray(gRes) && gRes.error) throw new Error(gRes.error?.message || t('plays.loadGamesFailed'));
+  } catch (e: any) {
+    games.value = [];
+    ElMessage.error(e?.message || t('plays.loadGamesFailed'));
+  }
+  try {
+    if (pRes && Array.isArray(pRes)) {
+      plugins.value = pRes.map((p: any) => localizePlay(p, currentLocale()));
+    } else {
+      plugins.value = [];
+      if (pRes?.error) throw new Error(pRes.error?.message || t('plays.loadPluginsFailed'));
+    }
+  } catch (e: any) {
+    plugins.value = [];
+    ElMessage.error(e?.message || t('plays.loadPluginsFailed'));
+  }
+  // 首屏不等在线库：本机列表一到就结束 loading，在线库稍后增量合并
+  nowMs.value = Date.now();
+  loaded.value = true;
+  loading.value = false;
+  if (options.registry !== false) void loadRegistry(false);
+  void loadStatus();
 }
-
 async function refresh() {
   busy.value.refresh = true;
-  error.value = '';
   try {
-    // 游戏侧：触发后端重扫；插件侧：仅重新拉取列表
     const res = await fetch('/api/games/reload', { method: 'POST' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.error) throw new Error(data?.message || t('plays.refreshFailed'));
-    await loadAll();
+    await loadAll({ registry: false });
+    await loadRegistry(true);
+    nowMs.value = Date.now();
   } catch (e: any) {
-    error.value = e?.message || t('plays.refreshFailed');
+    ElMessage.error(e?.message || t('plays.refreshFailed'));
   } finally {
     busy.value.refresh = false;
   }
+}
+
+function openDevGuide() {
+  window.open(`${new URL('docs/agent-guide.html', SITE_HOME)}`, '_blank');
 }
 
 function triggerUpload() {
@@ -274,7 +563,6 @@ async function onFileSelected(ev: Event) {
   input.value = '';
   if (!file) return;
   busy.value.upload = true;
-  error.value = '';
   try {
     const fd = new FormData();
     fd.append('file', file);
@@ -282,71 +570,58 @@ async function onFileSelected(ev: Event) {
     const data = await res.json();
     if (!res.ok || data.error) throw new Error(data?.message || t('plays.uploadFailed'));
     track('game_upload');
+    ElMessage.success(t('plays.uploadSuccess'));
     await loadAll();
+    nowMs.value = Date.now();
   } catch (e: any) {
-    error.value = e?.message || t('plays.uploadFailed');
+    ElMessage.error(e?.message || t('plays.uploadFailed'));
   } finally {
     busy.value.upload = false;
   }
 }
 
-async function stopCurrent() {
-  busy.value.stop = true;
-  error.value = '';
+function onHeaderCommand(command: string) {
+  if (command === 'upload') triggerUpload();
+  else if (command === 'guide') openDevGuide();
+  else if (command === 'stop') void stopCurrent();
+  else if (command === 'refresh') void refresh();
+}
+
+function siteUrl(path: string): string {
   try {
-    const current = activePlay.value;
-    if (current?.carrierType === 'plugin') {
-      if (!window.pluginApi) {
-        throw new Error(t('plays.pluginStopUnsupported'));
-      }
-      const result = await window.pluginApi.stopCurrent();
-      if (result?.ok === false) throw new Error(result.error || t('plays.stopPluginFailed'));
-      trackPlayEnd('user_stop');
-    } else {
-      const res = await fetch('/api/games/stop-current', { method: 'POST' });
-      const data = await res.json().catch(() => ({}));
-      if (res.status === 501) {
-        alert(data?.error?.message || t('plays.stopPending'));
-        return;
-      }
-      if (!res.ok || data.error) throw new Error(data?.message || t('plays.stopFailed'));
-      trackPlayEnd('user_stop');
-    }
-    if (current?.carrierType === 'local-app') {
-      await window.localAppWindowApi?.close();
-    }
-    clearActivePlay();
-    await loadAll();
-  } catch (e: any) {
-    error.value = e?.message || t('plays.stopFailed');
-  } finally {
-    busy.value.stop = false;
+    return new URL(path, SITE_HOME).toString();
+  } catch {
+    return path;
   }
 }
 
-async function deleteGame(item: PlayItem) {
-  const sure = confirm(t('plays.deleteConfirm'));
-  if (!sure) return;
-  try {
-    const res = await fetch(`/api/games/${encodeURIComponent(item.id)}?removeFile=1`, { method: 'DELETE' });
-    const data = await res.json();
-    if (!res.ok || data.error) throw new Error(data?.message || t('plays.deleteFailed'));
-    track('game_delete', { game_id: item.id });
-    games.value = games.value.filter((x) => x.id !== item.id);
-  } catch (e: any) {
-    alert(e?.message || t('plays.deleteFailed'));
-  }
+function viewOnSite(game: LibraryGame) {
+  router.push({ name: 'browser', query: { url: siteUrl(`game-intro.html?id=${encodeURIComponent(game.id)}`) } });
 }
 
-function goConfig(item: PlayItem) {
+function onGameCommand(command: string, game: GameCard) {
+  if (command === 'site') viewOnSite(game);
+  else if (command === 'delete') void deleteGame(game);
+}
+
+function startGame(game: LibraryGame) {
+  if (game.launch === 'remote') {
+    router.push({ name: 'play_config', params: { type: 'game', id: game.id }, query: { source: 'remote' } });
+    return;
+  }
+  const local = game.local;
   const query: Record<string, string> = {};
-  if (item.source === 'saved') {
+  if (local?.source === 'saved') {
     query.source = 'saved';
-    if (item.origin) query.origin = item.origin;
-    if (item.externalUrl) query.externalUrl = item.externalUrl;
-    if (item.gamePath) query.gamePath = item.gamePath;
+    if (local.origin) query.origin = String(local.origin);
+    if (local.externalUrl) query.externalUrl = String(local.externalUrl);
+    if (local.gamePath) query.gamePath = String(local.gamePath);
   }
-  router.push({ name: 'play_config', params: { type: item.carrierType, id: item.id }, query });
+  router.push({ name: 'play_config', params: { type: 'game', id: game.id }, query });
+}
+
+function startPlugin(id: string) {
+  router.push({ name: 'play_config', params: { type: 'plugin', id } });
 }
 
 function resumeRun() {
@@ -357,238 +632,417 @@ function resumeRun() {
   if (activePlay.value) router.push(activePlay.value.resume);
 }
 
-function titleOf(item: PlayItem) {
-  return item.title || item.name || item.id;
-}
-function descOf(item: PlayItem) {
-  return item.description || '';
-}
-function isCachedGame(item: PlayItem) {
-  return item.cached === true || String(item.gamePath || item.localGamePath || '').startsWith('/games/cache/');
-}
-function devicesOf(item: PlayItem): PlayDevice[] {
-  return Array.isArray(item.devices) ? item.devices : [];
-}
-/** 卡片上的远程延迟标签（§4.5）：判定逻辑在 play/runtimeTag.ts 里，便于单测 */
-function runtimeTagOf(item: PlayItem): RuntimeTag | null {
-  return runtimeTagFor({
-    isGame: item.carrierType === 'game',
-    isHostRuntime: hostGameIds.value.has(String(item.id)),
-    isOperatorRemote: remoteSession.isOperatorRemote.value === true,
-  });
-}
-function iconOf(item: PlayItem) {
-  // markRaw 避免 Vue 把图标对象做成响应式代理
-  return item.carrierType === 'plugin' ? markRaw(Operation) : markRaw(VideoPlay);
-}
-
-function hostOf(url?: string) {
+async function stopCurrent() {
+  const current = activePlay.value;
+  busy.value.stop = true;
   try {
-    return url ? new URL(url).hostname : '';
-  } catch {
-    return '';
+    if (current?.carrierType === 'plugin') {
+      if (!window.pluginApi) throw new Error(t('plays.pluginStopUnsupported'));
+      const result = await window.pluginApi.stopCurrent();
+      if (result?.ok === false) throw new Error(result.error || t('plays.stopPluginFailed'));
+      trackPlayEnd('user_stop');
+    } else if (current?.carrierType === 'local-app') {
+      await fetch(`/api/local-apps/${encodeURIComponent(current.id)}/stop`, { method: 'POST' }).catch(() => null);
+      await window.localAppWindowApi?.close();
+      trackPlayEnd('user_stop');
+    } else {
+      const res = await fetch('/api/games/stop-current', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 501) {
+        ElMessage.info(data?.error?.message || t('plays.stopPending'));
+        return;
+      }
+      if (!res.ok || data.error) throw new Error(data?.message || t('plays.stopFailed'));
+      trackPlayEnd('user_stop');
+    }
+    clearActivePlay();
+    await loadAll();
+  } catch (e: any) {
+    ElMessage.error(e?.message || t('plays.stopFailed'));
+  } finally {
+    busy.value.stop = false;
   }
 }
 
-function formatLastPlayed(ts?: number | null) {
-  if (!ts) return t('plays.neverPlayed');
+async function deleteGame(game: LibraryGame) {
   try {
-    return new Date(ts).toLocaleString(locale.value === 'en' ? 'en-US' : 'zh-CN');
+    await ElMessageBox.confirm(t('plays.deleteConfirm'), t('plays.deleteTitle'), {
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
+      type: 'warning',
+    });
   } catch {
-    return String(ts);
+    return;
+  }
+  try {
+    const res = await fetch(`/api/games/${encodeURIComponent(game.id)}?removeFile=1`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data?.message || t('plays.deleteFailed'));
+    track('game_delete', { game_id: game.id });
+    await loadAll();
+  } catch (e: any) {
+    ElMessage.error(e?.message || t('plays.deleteFailed'));
   }
 }
+
+watch(locale, () => {
+  void loadAll();
+});
+onMounted(loadAll);
 </script>
 
 <style scoped>
-.page {
+.library-page {
+  width: 100%;
   max-width: 1120px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 32px 24px 48px;
+  box-sizing: border-box;
 }
 
-.header-row {
+.lib-header {
   display: flex;
-  justify-content: space-between;
   align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 16px;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
 }
 
-.header-actions {
+.lib-header h1 {
+  margin: 8px 0 0;
+  color: var(--text-primary);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.lib-subtitle {
+  max-width: 560px;
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.lib-header__actions {
   display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
   gap: 8px;
+}
+
+/* 「投稿游戏 / 玩法建议」：一组低调的次要按钮，右上角挂「采纳有奖」小签 */
+.lib-contribute {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lib-contribute__btn {
+  position: relative;
+  overflow: visible;
+}
+
+/* EP 默认相邻按钮 margin-left:12px，统一用容器 gap 控制间距 */
+.lib-header__actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+.lib-reward {
+  position: absolute;
+  top: -9px;
+  right: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--warning-border);
+  border-radius: 999px;
+  /* 不透明底：避免按钮边框从半透明角标中透出来 */
+  background: linear-gradient(var(--warning-bg), var(--warning-bg)), var(--bg-app);
+  box-shadow: 0 0 0 2px var(--bg-app);
+  color: var(--el-color-warning);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+}
+
+.icon-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.lib-focus {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding: 16px 18px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.lib-focus--running {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  background:
+    linear-gradient(90deg, var(--accent-glow), transparent 62%),
+    var(--bg-surface);
+}
+
+.lib-focus--recent {
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.lib-focus--recent:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.lib-focus__main {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.lib-focus__text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lib-focus__label {
+  margin: 0;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.lib-focus__title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lib-focus__desc {
+  margin: 0 0 2px;
+  overflow: hidden;
+  max-width: 720px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.lib-focus__actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.lib-focus__cta {
   flex-shrink: 0;
 }
 
-h1 {
-  margin: 0 0 6px;
-  font-size: 24px;
-}
-
-.muted,
-.desc {
-  color: var(--el-text-color-secondary);
-}
-
-.running-banner {
-  margin-bottom: 16px;
-}
-
-.banner-inner {
+.lib-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-}
-
-.banner-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.toolbar-card {
+  gap: 16px;
+  flex-wrap: wrap;
   margin-bottom: 16px;
-  padding: 12px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 8px;
-  background: var(--el-bg-color);
 }
 
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.search {
-  flex: 1 1 240px;
-  min-width: 200px;
-}
-
-.inline-alert {
-  margin-top: 10px;
-}
-
-.play-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
-}
-
-.play-card {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 8px;
-  background: var(--el-bg-color);
-}
-
-.play-main {
-  display: flex;
-  min-width: 0;
-  gap: 12px;
-}
-
-.play-icon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 40px;
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  background: var(--accent-glow);
-  color: var(--accent);
-  font-size: 20px;
-}
-
-.carrier-plugin .play-icon {
-  background: rgba(74, 222, 128, 0.1);
-  color: var(--el-color-success);
-}
-
-.play-content {
-  min-width: 0;
-}
-
-.title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.title-row h2 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.desc {
-  margin: 0 0 12px;
-  line-height: 1.5;
-}
-
-.meta,
-.devices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-/* 远程延迟标签（§4.5）：强调色 = 逻辑跟着设备走、无延迟；弱化色 = 页面式游戏远程时有延迟 */
-.runtime-tag-accent {
-  --el-tag-text-color: var(--accent);
-  --el-tag-border-color: var(--accent);
-  --el-tag-bg-color: var(--accent-glow);
-}
-
-.runtime-tag-muted {
-  color: var(--el-text-color-secondary);
-  border-color: var(--el-border-color);
-}
-
-.devices {
-  margin-top: 10px;
-}
-
-.device-tag {
-  padding: 2px 8px;
-  border: 1px solid var(--el-border-color);
+.lib-filters {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border-subtle);
   border-radius: 999px;
-  color: var(--el-text-color-regular);
+  background: var(--bg-surface);
+}
+
+.lib-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: color 0.2s ease, background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.lib-filter:hover {
+  background: var(--hover-overlay);
+  color: var(--text-primary);
+}
+
+.lib-filter.is-active {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-light);
+}
+
+.lib-filter__count {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.lib-filter.is-active .lib-filter__count {
+  color: var(--accent);
+}
+
+/* 「测试」：分组末位，用细分隔线隔开，整体更安静 */
+.lib-filters__divider {
+  align-self: center;
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--border-subtle);
+}
+
+.lib-filter--test {
+  color: var(--text-faint);
   font-size: 12px;
-  background: var(--el-fill-color-light);
 }
 
-.play-actions {
+.lib-filter--test:hover {
+  color: var(--text-secondary);
+}
+
+.lib-filter--test.is-active {
+  color: var(--text-secondary);
+}
+
+.lib-filter--test.is-active .lib-filter__count {
+  color: var(--text-faint);
+}
+
+.lib-toolbar__right {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-end;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-@media (max-width: 768px) {
-  .header-row,
-  .play-card,
-  .play-main {
-    flex-direction: column;
+.lib-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.lib-hint__retry {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.lib-hint__retry:hover {
+  color: var(--accent-strong);
+}
+
+.lib-search {
+  width: 220px;
+}
+
+.lib-search :deep(.el-input__wrapper) {
+  border-radius: 999px;
+}
+
+.lib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.lib-loading {
+  padding: 8px 0;
+}
+
+@media (max-width: 860px) {
+  .library-page {
+    padding: 24px 16px 40px;
   }
 
-  .play-grid {
+  .lib-header {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .lib-header__actions {
+    width: 100%;
+  }
+
+  .lib-toolbar {
+    align-items: stretch;
+  }
+
+  .lib-toolbar__right {
+    width: 100%;
+  }
+
+  .lib-search {
+    flex: 1;
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .lib-grid {
     grid-template-columns: 1fr;
   }
 
-  .play-actions {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
+  .lib-focus {
+    flex-wrap: wrap;
   }
 
-  .play-actions .el-button {
+  .lib-focus__actions {
+    width: 100%;
+  }
+
+  .lib-focus__actions .el-button {
     flex: 1;
   }
 }

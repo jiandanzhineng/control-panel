@@ -154,6 +154,7 @@ import {
   type RemoteGameStatus,
 } from '../api/remoteGame'
 import { controlsEnabled } from '../play/gameRuntimeSession'
+import { withHiddenDefaults } from '../utils/paramVisibility'
 
 const { t } = useI18n()
 const props = withDefaults(defineProps<{ standalone?: boolean }>(), { standalone: false })
@@ -259,7 +260,8 @@ function configureGame(id: string) {
       : (options[0] ? [options[0].id] : [])
   }
   for (const spec of game.params || []) {
-    if (saved?.params?.[spec.key] !== undefined) params[spec.key] = saved.params[spec.key]
+    // hidden 参数不读取保存值，保持 resetParams 写入的 manifest 默认值。
+    if (spec?.hidden !== true && saved?.params?.[spec.key] !== undefined) params[spec.key] = saved.params[spec.key]
   }
 }
 
@@ -352,7 +354,7 @@ async function startGame() {
   if (blocking.value.length || busy.value) return
   busy.value = true
   try {
-    await sendRemoteGameCommand('game.start', { gameId: gameId.value, gameName: selectedGame.value?.title || undefined, deviceMap: { ...deviceMap }, params: { ...params } })
+    await sendRemoteGameCommand('game.start', { gameId: gameId.value, gameName: selectedGame.value?.title || undefined, deviceMap: { ...deviceMap }, params: withHiddenDefaults(selectedGame.value?.params, params) })
     localStorage.setItem(configKey(gameId.value), JSON.stringify({ deviceMap, params }))
     error.value = ''
     await refresh()

@@ -3,6 +3,8 @@ const {
   withTitleHint,
   handleLocalAppHotkey,
   createLocalAppWindowController,
+  isTrustedMediaUrl,
+  attachGameMediaPermissions,
 } = require('../../electron/localAppWindow');
 
 function createFakeWindow() {
@@ -84,5 +86,44 @@ describe('electron/localAppWindow', () => {
     win.isFullScreen.mockReturnValue(true);
     expect(handleLocalAppHotkey(win, { type: 'keyDown', key: 'Escape' })).toBe(true);
     expect(win.setFullScreen).toHaveBeenCalledWith(false);
+  });
+
+  it('trusts only loopback and packaged file urls for microphone', () => {
+    expect(isTrustedMediaUrl('http://127.0.0.1:5278/games/reading-game/index.html')).toBe(true);
+    expect(isTrustedMediaUrl('http://localhost:5174/')).toBe(true);
+    expect(isTrustedMediaUrl('file:///C:/app/frontend/dist/index.html')).toBe(true);
+    expect(isTrustedMediaUrl('https://example.com/')).toBe(false);
+    expect(isTrustedMediaUrl('http://192.168.1.20:8080/')).toBe(false);
+    expect(isTrustedMediaUrl('')).toBe(false);
+  });
+
+  it('installs media permission handlers limited to local origins', () => {
+    const session = {
+      setPermissionRequestHandler: jest.fn(),
+      setPermissionCheckHandler: jest.fn(),
+    };
+    attachGameMediaPermissions(session);
+    const request = session.setPermissionRequestHandler.mock.calls[0][0];
+    const check = session.setPermissionCheckHandler.mock.calls[0][0];
+
+    const local = jest.fn();
+    request({ getURL: () => 'file:///C:/app/frontend/dist/index.html' }, 'media', local, {
+      requestingUrl: 'http://127.0.0.1:5278/games/reading-game/index.html',
+    });
+    expect(local).toHaveBeenCalledWith(true);
+
+    const external = jest.fn();
+    request({ getURL: () => 'https://example.com/' }, 'media', external, {
+      requestingUrl: 'https://example.com/',
+    });
+    expect(external).toHaveBeenCalledWith(false);
+
+    // 非媒体权限维持 Electron 默认（放行），不改变既有行为。
+    const other = jest.fn();
+    request({ getURL: () => 'https://example.com/' }, 'notifications', other, {});
+    expect(other).toHaveBeenCalledWith(true);
+
+    expect(check({}, 'media', 'http://127.0.0.1:5278', {})).toBe(true);
+    expect(check({}, 'media', 'https://example.com', {})).toBe(false);
   });
 });

@@ -11,6 +11,7 @@
       navDocs: '开发文档',
       navDeviceApi: 'DeviceAPI',
       navContribute: '投稿',
+      navShop: '官网商城',
       footerNote: '硅基之下游戏库 · UnderSilicon 控制面板 · 已发布内容由平台审核后同步',
       footerNoteGames: 'UnderSilicon 控制面板 · 远程玩法仓库 · 已发布内容由平台审核后同步',
       footerNoteControl: 'UnderSilicon 控制面板 · 设备控制中心 · 已发布内容由平台审核后同步',
@@ -218,7 +219,8 @@
       submitSideH: '准备好了？',
       submitSideP: '用控制面板 App 的邮箱账号登录，上传 ZIP 或填写公开 Git 地址。',
       submitTitle: '登录投稿 · 硅基之下游戏库',
-      authH1: '投稿工作台',
+      phoneMethod:'手机验证码',emailMethod:'邮箱密码',authMethodLabel:'选择登录方式',phoneSubtitle:'验证码登录，无需记住密码。',phoneLogin:'手机验证码登录',phoneHint:'中国大陆 +86。已有邮箱账号请先在 App 或商城绑定手机号，避免创建两个账号。',phoneNumber:'手机号',phoneSend:'发送验证码',phoneCode:'短信验证码',phoneEmail:'邮箱密码登录',phoneRequestFirst:'请先获取验证码',phoneInvalid:'验证码错误或已过期，请重新获取',
+    authH1: '投稿工作台',
       authLead: '把你做的游戏交给审核，上架后玩家在控制面板里直接玩。',
       authPoint1: '一个账号，处处通用',
       authPoint2: 'ZIP 或 Git 地址',
@@ -230,13 +232,13 @@
       authLoginBtn: '登录',
       authRegisterBtn: '创建账号',
       loginTitle: '登录 · 硅基之下游戏库',
-      authPoint1Desc: '与控制面板 App、商城使用同一邮箱账号',
+      authPoint1Desc: '与控制面板 App、商城使用同一账号',
       authPoint2Desc: '浏览器直传 ZIP，或提交公开 GitHub / GitLab 仓库',
       authPoint3Desc: '审核意见与进度在工作台实时可见',
       authPoint4Desc: '按游玩表现发放到你的商城账号',
       authChecking: '已登录，正在跳转…',
       authLoginH2: '登录',
-      authLoginSub: '使用控制面板 App 的邮箱账号',
+      authLoginSub: '使用控制面板 App 账号，也可用手机验证码登录',
       authForgot: '忘记密码？',
       authShow: '显示',
       authHide: '隐藏',
@@ -327,6 +329,16 @@
       introBack: '返回游戏列表',
       introNeed: '需要准备什么',
       introHow: '怎么玩',
+      introStepSetup: '穿戴准备',
+      introStepPlay: '动作与奖惩规则',
+      introStepFinish: '通关解锁条件',
+      introTutorial: '查看完整图文教程 ↗',
+      introHardware: '需要哪件硬件',
+      introDeviceSlots: '逻辑设备槽位与能力明细',
+      hardwareKit: '推荐',
+      hardwareNoKit: '无需特定套件',
+      hardwareBuy: '去商城购买 ↗',
+      hardwareBuyModal: '去购买硬件 ↗',
       introParams: '可调参数',
       introSafety: '使用提醒',
       introSafetyBody: '请先确认设备连接正常，并在可随时停止的情况下开始。涉及刺激或锁定设备时，请预先确认安全边界，保持紧急停止方式可用。',
@@ -352,6 +364,7 @@
       navDocs: 'Docs',
       navDeviceApi: 'DeviceAPI',
       navContribute: 'Submit',
+      navShop: 'Official store',
       footerNote: 'UnderSilicon Games · control panel · reviewed and published by the platform',
       footerNoteGames: 'UnderSilicon control panel · remote play registry · reviewed and published by the platform',
       footerNoteControl: 'UnderSilicon control panel · device console · reviewed and published by the platform',
@@ -559,7 +572,8 @@
       submitSideH: 'Ready?',
       submitSideP: 'Sign in with your control panel app email account, then upload a ZIP or paste a public Git URL.',
       submitTitle: 'Sign in to submit · UnderSilicon Games',
-      authH1: 'Creator console',
+      phoneMethod:'Phone',emailMethod:'Email',authMethodLabel:'Sign-in method',phoneSubtitle:'Sign in with a code. No password to remember.',phoneLogin:'Sign in by phone',phoneHint:'Mainland China (+86). Existing email account? Link your phone in the App or shop first to keep one account.',phoneNumber:'Phone number',phoneSend:'Send code',phoneCode:'SMS code',phoneEmail:'Email and password',phoneRequestFirst:'Request a code first',phoneInvalid:'Code invalid or expired. Request a new code.',
+    authH1: 'Creator console',
       authLead: 'Send your game for review. Once listed, players can launch it straight from the control panel.',
       authPoint1: 'One account everywhere',
       authPoint2: 'ZIP or Git URL',
@@ -577,7 +591,7 @@
       authPoint4Desc: 'Paid to your shop account based on play performance',
       authChecking: 'Signed in, redirecting…',
       authLoginH2: 'Sign in',
-      authLoginSub: 'Use your control panel app email account',
+      authLoginSub: 'Sign in with your control panel account using phone or email',
       authForgot: 'Forgot password?',
       authShow: 'Show',
       authHide: 'Hide',
@@ -668,6 +682,16 @@
       introBack: 'Back to games',
       introNeed: 'What you need',
       introHow: 'How to play',
+      introStepSetup: 'Get set up',
+      introStepPlay: 'Actions, rewards and penalties',
+      introStepFinish: 'How to finish and unlock',
+      introTutorial: 'View the full illustrated tutorial ↗',
+      introHardware: 'Hardware you need',
+      introDeviceSlots: 'Device slots and capabilities',
+      hardwareKit: 'Recommended',
+      hardwareNoKit: 'No specific kit required',
+      hardwareBuy: 'Buy from the store ↗',
+      hardwareBuyModal: 'Buy hardware ↗',
       introParams: 'Parameters',
       introSafety: 'Safety notes',
       introSafetyBody: 'Confirm devices are connected and that you can stop at any time. For shock or lock devices, set safety limits first and keep an emergency stop available.',
@@ -726,6 +750,9 @@
       if (!key) return;
       el.textContent = t(key);
     });
+    Array.prototype.forEach.call(scope.querySelectorAll('[data-shop-nav]'), function (el) {
+      el.setAttribute('href', 'https://shop.undersilicon.cn/' + current + '?ref=play-nav');
+    });
     Array.prototype.forEach.call(scope.querySelectorAll('[data-i18n-html]'), function (el) {
       var key = el.getAttribute('data-i18n-html');
       if (!key) return;
@@ -776,7 +803,18 @@
     });
   }
 
-  root.SiteI18n = { messages: M, locale: locale, isEn: isEn, t: t, apply: apply, setLocale: setLocale };
+  // 设备能力名：manifest 里是英文 key，展示时按当前语言翻译；未知能力原样显示。
+  var CAPS = {
+    zh: { weight: '称重', reporting: '数据上报', sphincterPressure: '提肛气压', tiptoePressure: '踮脚压力', distance: '距离', buttonInput: '按键', shock: '电击', estim: '电刺激', strength: '强度控制', vibration: '震动', suction: '吸吮', motors: '电机', pump: '气泵', lock: '锁定', heartRate: '心率', attitude: '姿态' },
+    en: { weight: 'Weight', reporting: 'Reporting', sphincterPressure: 'Sphincter pressure', tiptoePressure: 'Tiptoe pressure', distance: 'Distance', buttonInput: 'Button', shock: 'Shock', estim: 'E-stim', strength: 'Intensity', vibration: 'Vibration', suction: 'Suction', motors: 'Motors', pump: 'Pump', lock: 'Lock', heartRate: 'Heart rate', attitude: 'Attitude' }
+  };
+  function capLabel(cap, lang) {
+    var key = String(cap == null ? '' : cap);
+    var table = (lang === 'zh' || lang === 'en' ? CAPS[lang] : CAPS[current]) || CAPS.zh;
+    return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : key;
+  }
+
+  root.SiteI18n = { messages: M, locale: locale, isEn: isEn, t: t, apply: apply, setLocale: setLocale, capLabel: capLabel };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', function () { bind(); apply(); });

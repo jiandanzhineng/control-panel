@@ -55,7 +55,7 @@ func (a *App) handleAdminPayoutCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "PAYOUT_GAME_REQUIRED", "请选择要发放的游戏")
 		return
 	}
-	record, err := a.createPayoutRecord(r.Context(), input.Month, input.GameID, input.AmountCNY, input.ValidPlays, input.Note, user.Email)
+	record, err := a.createPayoutRecord(r.Context(), input.Month, input.GameID, input.AmountCNY, input.ValidPlays, input.Note, user.ID)
 	if err != nil {
 		writePayoutError(w, err)
 		return
@@ -79,7 +79,7 @@ func writePayoutError(w http.ResponseWriter, err error) {
 	case errors.Is(err, errPayoutRecordGone):
 		writeError(w, http.StatusNotFound, "PAYOUT_RECORD_NOT_FOUND", "找不到这条发放记录")
 	case errors.Is(err, errGameOwnerEmailMissing):
-		writeError(w, http.StatusBadRequest, "GAME_OWNER_EMAIL_UNKNOWN", "该邮箱尚未登录过投稿平台，请让作者先用这个邮箱登录一次")
+		writeError(w, http.StatusBadRequest, "GAME_OWNER_EMAIL_UNKNOWN", "该账号尚未登录过投稿平台，请让作者先登录一次并提供账号中心 ID")
 	case errors.Is(err, errGameOwnerGone):
 		writeError(w, http.StatusNotFound, "GAME_OWNER_NOT_FOUND", "该游戏没有手工指定的归属")
 	default:
@@ -132,6 +132,7 @@ type communityGame struct {
 	AuthorID    string `json:"authorId"`
 	AuthorName  string `json:"authorName"`
 	AuthorEmail string `json:"email"`
+	PhoneMasked string `json:"phoneMasked,omitempty"`
 	Status      string `json:"status"`
 }
 
@@ -210,6 +211,7 @@ func (a *App) listCommunityGames(ctx context.Context) ([]communityGame, error) {
 			AuthorID:    owner.AuthorID,
 			AuthorName:  owner.AuthorName,
 			AuthorEmail: owner.Email,
+			PhoneMasked: owner.PhoneMasked,
 			Status:      "revoked",
 		}
 		if state.hasActive {
@@ -279,12 +281,17 @@ func (a *App) handleAdminSetGameOwner(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		GameID     string `json:"gameId"`
 		Email      string `json:"email"`
+		AuthorID   string `json:"authorId"`
 		AuthorName string `json:"authorName"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	owner, err := a.setGameOwner(r.Context(), strings.TrimSpace(input.GameID), input.Email, input.AuthorName, user.Email)
+	identity := input.AuthorID
+	if identity == "" {
+		identity = input.Email
+	}
+	owner, err := a.setGameOwner(r.Context(), strings.TrimSpace(input.GameID), identity, input.AuthorName, user.ID)
 	if err != nil {
 		writePayoutError(w, err)
 		return

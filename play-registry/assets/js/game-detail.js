@@ -4,6 +4,7 @@
 
   var root = document.getElementById("detail-content");
   var currentGame = null;
+  var catalog = window.ShopCatalog;
   var ICONS = ["⚡", "🎯", "🔥", "💧", "🚪", "⚖️", "📏", "🦶", "💫", "🎮", "🧩", "⏳"];
 
   function t(key, vars) {
@@ -25,6 +26,13 @@
     } catch (_) {
       return false;
     }
+  }
+
+  function capLabel(c) {
+    try {
+      if (window.SiteI18n && window.SiteI18n.capLabel) return window.SiteI18n.capLabel(c);
+    } catch (_) {}
+    return String(c == null ? '' : c);
   }
 
   function esc(s) {
@@ -97,7 +105,7 @@
     return '<ul class="detail-device-list">' + devices.map(function (d) {
       var req = d.required ? '<span class="badge required">' + esc(t("required")) + "</span>" : '<span class="badge">' + esc(t("optional")) + "</span>";
       var caps = (d.capabilities || []).map(function (c) {
-        return '<span class="badge">' + esc(c) + "</span>";
+        return '<span class="badge">' + esc(capLabel(c)) + "</span>";
       }).join("");
       return '<li class="detail-device">'
         + '<div class="detail-device-head">'
@@ -109,14 +117,39 @@
     }).join("") + "</ul>";
   }
 
-  function stepsHtml(howTo) {
+  function stepsHtml(howTo, guide, locale) {
     var raw = String(howTo || t("introHowToFallback")).split(/\n+/).map(function (line) {
       return line.replace(/^\d+\.\s*/, "").trim();
     }).filter(Boolean);
     if (!raw.length) raw = [t("introHowToFallback")];
-    return "<ol class=\"detail-list\">" + raw.map(function (line) {
-      return "<li>" + esc(line) + "</li>";
-    }).join("") + "</ol>";
+    var labels = guide && raw.length === 3 ? ["introStepSetup", "introStepPlay", "introStepFinish"] : [];
+    var tutorial = guide && catalog.docsUrl(guide.docPath, locale);
+    return '<ol class="detail-list">' + raw.map(function (line, index) {
+      var label = labels[index] ? "<strong>" + esc(t(labels[index])) + "</strong>" : "";
+      return "<li>" + label + esc(line) + "</li>";
+    }).join("") + "</ol>" + (tutorial ? guideLink(tutorial, "introTutorial") : "");
+  }
+
+  function guideLink(url, textKey) {
+    return '<a class="hardware-link" href="' + esc(url) + '" target="_blank" rel="noopener">'
+      + esc(t(textKey)) + '</a>';
+  }
+
+  function hardwareHtml(gameId, guide, locale) {
+    if (!guide) return "";
+    var products = catalog.itemsFor(gameId, locale).map(function (item) {
+      var role = item.role === "kit" ? "hardwareKit" : item.role;
+      return '<li class="hardware-product">'
+        + (item.image ? '<img src="' + esc(item.image) + '" alt="" loading="lazy" width="72" height="72">' : '')
+        + '<div class="hardware-product-info"><span class="badge hardware-role ' + esc(item.role) + '">' + esc(t(role)) + '</span>'
+        + '<strong>' + esc(item.name) + '</strong><p>' + esc(item.note) + '</p>'
+        + guideLink(catalog.productUrl(item.slug, locale, "detail", gameId), "hardwareBuy") + '</div></li>';
+    });
+    return '<section class="detail-card detail-card-wide">'
+      + '<h2>' + esc(t("introHardware")) + '</h2>'
+      + '<p class="hardware-summary">' + esc(locale === "en" ? guide.summaryEn : guide.summary) + '</p>'
+      + (products.length ? '<ul class="hardware-grid">' + products.join("") + '</ul>'
+        : guideLink(catalog.shopUrl(locale, "play-detail-" + gameId), "navShop")) + '</section>';
   }
 
   function paramsHtml(params, L) {
@@ -156,6 +189,8 @@
       return;
     }
     var L = loc(g);
+    var locale = isEn() ? "en" : "zh";
+    var guide = catalog && catalog.guideFor(g.id);
     var devices = g.devices || (g.manifest && g.manifest.devices) || [];
     var params = g.params || (g.manifest && g.manifest.params) || [];
     document.title = L.title + " · " + t("brand");
@@ -180,14 +215,15 @@
         + "</div>"
       + "</section>"
       + '<div class="detail-grid">'
-        + '<section class="detail-card">'
-          + "<h2>" + esc(t("introNeed")) + "</h2>"
-          + deviceHtml(devices, L.devices)
-        + "</section>"
-        + '<section class="detail-card">'
+        + '<section class="detail-card detail-card-wide">'
           + "<h2>" + esc(t("introHow")) + "</h2>"
-          + stepsHtml(L.howTo)
+          + stepsHtml(L.howTo, guide, locale)
         + "</section>"
+        + hardwareHtml(g.id, guide, locale)
+        + '<details class="detail-card detail-card-wide detail-device-fold">'
+          + '<summary><h2>' + esc(t(guide ? "introDeviceSlots" : "introNeed")) + '</h2></summary>'
+          + deviceHtml(devices, L.devices)
+        + '</details>'
         + '<section class="detail-card">'
           + "<h2>" + esc(t("introParams")) + "</h2>"
           + paramsHtml(params, L)
@@ -229,13 +265,14 @@
       render(null);
       return;
     }
-    fetch(registryUrl())
+    var registry = fetch(registryUrl())
       .then(function (r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
-      })
+      });
+    Promise.all([registry, catalog && catalog.load()])
       .then(function (data) {
-        var g = (data.games || []).find(function (x) { return x.id === id; });
+        var g = (data[0].games || []).find(function (x) { return x.id === id; });
         if (!g) throw new Error(t("introNotFound"));
         currentGame = prepareGame(g);
         render(currentGame);

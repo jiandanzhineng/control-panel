@@ -2,6 +2,20 @@
 
 > 自动生成，勿手改。更新：`python E:\smart\tools\memory-index\memory_index.py --path <本层级目录>`
 
+- 2026-11-09 [游戏参数只折叠不隐藏](2026-11-09-game-params-fold-not-hide.md) — 游戏配置参数精简时只折叠进高级设置，不隐藏、不删除，想调仍能调
+- 2026-11-09 [命令行工具 undersilicon-cli](2026-11-09-undersilicon-cli.md) — CLI 补齐常用控制，发 npm 包 undersilicon-cli，限幅可选开启
+- 2026-11-08 [DeepSeek Harness（dsh）插件：让 AI agent 控制设备与客户端](2026-11-08-dsh-agent-plugin.md) — 做 dsh 插件给用户用，agent 可看/控本机及已授权远程设备与客户端，可写脚本订阅事件
+- 2026-11-08 [游戏库合并本地与在线游戏](2026-11-08-game-library-merge.md) — 本地游戏与在线游戏合并为「游戏库」，在线游戏原生列出，网页嵌入降为「游戏站」
+- 2026-11-08 [游戏库测试分类、投稿/建议入口与自绘标题栏](2026-11-08-library-contribute-and-titlebar.md) — 测试游戏单独分类；游戏库顶部加投稿与玩法建议（采纳有奖）；游戏站只留游戏库入口；自绘标题栏
+- 2026-11-04 [PC 背单词离线口令](2026-11-04-vocab-kws-commands.md) — PC 背单词语音答题采用手机同款离线固定口令 KWS
+- 2026-11-03 [优化PC和游戏站登录布局，PC加入微信扫码](2026-11-03-login-layout-and-wechat.md) — 优化PC和游戏站登录布局，PC加入微信扫码
+- 2026-11-03 [背单词朗读与电击提示](2026-11-03-vocab-speech-shock-feedback.md) — 修复手机端单词播放，电击触发时显示小闪电
+- 2026-11-01 [背单词游戏界面结构：类似扇贝单词](2026-11-01-vocab-game-layout.md) — 背单词游戏改成扇贝式首页，学习设置进游戏内，配置页只管设备电击和自动进入
+- 2026-11-01 [原生背单词游戏](2026-11-01-vocab-game.md) — 新做原生背单词游戏：英选中四选一，答错电击并重排，间隔翻倍，进度云同步
+- 2026-10-31 [客户端本地模型运行时](2026-10-31-model-runtime.md) — 客户端新增本地模型运行时，游戏按任务调用，先接本地 SenseVoice
+- 2026-10-31 [朗读游戏新增反复朗读与背诵玩法](2026-10-31-reading-game-recite.md) — 朗读游戏新增反复朗读和逐级遮字背诵，支持自动锁、休息期和时限
+- 2026-10-30 [朗读游戏迁入 control-panel](2026-10-30-reading-game.md) — 朗读游戏从 electron-client 迁入 control-panel，PC 与手机端都要能玩
+- 2026-10-30 [游戏语音识别：mimo 中转 SiliconFlow + 可自备 key](2026-10-30-siliconflow-stt.md) — 语音识别走 mimo 中转的 SiliconFlow，用户可在面板填自己的 SiliconFlow key
 - 2026-10-26 [遥控车游戏规则](2026-10-26-rc-car-game-rules.md) — 新游戏遥控车：A 按键指挥，B 戴 DAN01 照做，不照做 CUNZHI01 电击
 - 2026-10-13 [语音开始：口令触发玩法启动](2026-10-13-voice-start-trigger.md) — 新增「语音开始」，中英固定口令直接开始，PC 与手机都做
 - 2026-10-08 [控制面板支持心率带并新增心率能力](2026-10-08-heart-rate-capability.md) — control-panel 支持标准蓝牙心率带并新增心率能力

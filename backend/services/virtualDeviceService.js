@@ -1,4 +1,5 @@
 const deviceService = require('./deviceService');
+const agentControl = require('./agentControlService');
 const logService = require('./logService');
 
 const virtualDevices = new Map();
@@ -218,18 +219,28 @@ function getTimelineStatus(id) {
 function interceptCommand(deviceId, cmd) {
   const vdev = virtualDevices.get(deviceId);
   if (!vdev) return false;
-  vdev.recordCommand(cmd);
+  // 虚拟设备绕过了 deviceConnectionService.send，这里做同样的 agent 限幅。
+  const agentClientId = agentControl.currentClientId();
+  const guarded = agentClientId
+    ? agentControl.guardVirtualCommand({
+      clientId: agentClientId,
+      device: deviceService.getDeviceById(deviceId),
+      cmd,
+    })
+    : cmd;
+  vdev.recordCommand(guarded);
 
   // 直接能力指令（shock/start -> writeProps {shock:1, voltage}）：
   // 反映到 properties，让模拟器像真设备一样可被 monitor-data 读到。
-  if (cmd.action === 'writeProps' && cmd.props && typeof cmd.props === 'object') {
-    vdev.setProperties(cmd.props);
+  const next = guarded;
+  if (next.action === 'writeProps' && next.props && typeof next.props === 'object') {
+    vdev.setProperties(next.props);
     return true;
   }
 
-  if (vdev.type === 'DIANJI' && cmd.action === 'sendMessage' && cmd.msg?.method === 'dian') {
-    const time = cmd.msg.time || 3000;
-    vdev.setProperties({ shock: 1, voltage: cmd.msg.voltage || 0 });
+  if (vdev.type === 'DIANJI' && next.action === 'sendMessage' && next.msg?.method === 'dian') {
+    const time = next.msg.time || 3000;
+    vdev.setProperties({ shock: 1, voltage: next.msg.voltage || 0 });
     setTimeout(() => { vdev.setProperties({ shock: 0 }); }, time);
   }
   return true;

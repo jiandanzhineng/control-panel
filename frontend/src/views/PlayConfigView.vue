@@ -34,6 +34,20 @@
             <template #title>{{ t('playConfig.howTo') }}</template>
             <div class="howto-body">{{ playHowTo }}</div>
           </el-alert>
+          <el-alert
+            v-if="localModelNotices.length"
+            class="local-model-alert"
+            type="success"
+            :closable="false"
+            show-icon
+          >
+            <template #title>{{ t('playConfig.localModels') }}</template>
+            <div v-for="notice in localModelNotices" :key="notice.id" class="local-model-line">
+              <span>{{ t('playConfig.localModelLine', { name: notice.title, state: modelStateText(notice.state) }) }}</span>
+              <el-button link type="primary" @click="goLocalModels">
+                {{ notice.state === 'absent' ? t('playConfig.localModelDownload') : t('playConfig.localModelOpen') }}
+              </el-button>            </div>
+          </el-alert>
         </div>
         <div class="loading-status">
           <div v-if="loadingAll" class="loading-info">
@@ -174,10 +188,13 @@
               </div>
             </template>
 
-            <div class="param-control">
+            <div class="param-control" :class="{ 'param-control--wide': p.multiline }">
               <el-input
                 v-if="p.type === 'string'"
                 v-model="parameters[p.key]"
+                :type="p.multiline ? 'textarea' : 'text'"
+                :autosize="p.multiline ? { minRows: p.rows || 4, maxRows: 12 } : undefined"
+                :class="{ 'param-textarea': p.multiline }"
                 :placeholder="p.placeholder || ''"
               />
               <el-input-number
@@ -217,7 +234,7 @@
               <div v-if="p.description" class="param-desc">{{ p.description }}</div>
               <div class="param-meta-line">
                 <span v-if="p.recommended">{{ t('playConfig.recommended', { value: p.recommended }) }}</span>
-                <span v-if="p.default !== undefined">{{ t('playConfig.default', { value: formatDefault(p.default) }) }}</span>
+                <span v-if="p.default !== undefined && !p.multiline">{{ t('playConfig.default', { value: formatDefault(p.default, p) }) }}</span>
                 <span v-if="p.min !== undefined || p.max !== undefined">{{ t('playConfig.range', { value: formatRange(p) }) }}</span>
               </div>
             </div>
@@ -258,10 +275,13 @@
                   </div>
                 </template>
 
-                <div class="param-control">
+                <div class="param-control" :class="{ 'param-control--wide': p.multiline }">
                   <el-input
                     v-if="p.type === 'string'"
                     v-model="parameters[p.key]"
+                    :type="p.multiline ? 'textarea' : 'text'"
+                    :autosize="p.multiline ? { minRows: p.rows || 4, maxRows: 12 } : undefined"
+                    :class="{ 'param-textarea': p.multiline }"
                     :placeholder="p.placeholder || ''"
                   />
                   <el-input-number
@@ -301,7 +321,7 @@
                   <div v-if="p.description" class="param-desc">{{ p.description }}</div>
                   <div class="param-meta-line">
                     <span v-if="p.recommended">{{ t('playConfig.recommended', { value: p.recommended }) }}</span>
-                    <span v-if="p.default !== undefined">{{ t('playConfig.default', { value: formatDefault(p.default) }) }}</span>
+                    <span v-if="p.default !== undefined && !p.multiline">{{ t('playConfig.default', { value: formatDefault(p.default, p) }) }}</span>
                     <span v-if="p.min !== undefined || p.max !== undefined">{{ t('playConfig.range', { value: formatRange(p) }) }}</span>
                   </div>
                 </div>
@@ -576,10 +596,12 @@ import {
 import { joinPhraseLabels, resolveMicId, voiceErrorKey } from '../play/voiceStart';
 import { useRemoteSession } from '../composables/useRemoteSession';
 import { friendlyMessage } from '../api/errorMessage';
+import { getModels, type ModelEntry } from '../api/models';
 import { needsFrontendOccupy } from '../remote/remotePlay';
 import { currentLocale } from '../i18n';
 import { localeTag } from '../i18n/locale';
 import { localizePlay } from '../i18n/play';
+import { isParamVisible, withHiddenDefaults } from '../utils/paramVisibility';
 
 import {
   Setting,
@@ -618,6 +640,8 @@ interface PlayParam {
   device?: string;
   name?: string;
   placeholder?: string;
+  multiline?: boolean;
+  rows?: number;
 }
 
 interface PlayDetail {
@@ -629,6 +653,7 @@ interface PlayDetail {
   version?: string;
   devices?: PlayDevice[];
   params?: PlayParam[];
+  models?: Array<{ task: string; id: string; optional?: boolean }>;
   // 游戏专属
   gamePath?: string;
   external?: boolean;
@@ -661,6 +686,31 @@ const carrierType = computed<'game' | 'plugin'>(() => {
 const playId = computed(() => String(route.params.id || ''));
 
 const play = ref<PlayDetail | null>(null);
+const modelCatalog = ref<ModelEntry[]>([]);
+const localModelNotices = computed(() => (play.value?.models || []).map((entry) => {
+  const model = modelCatalog.value.find((m) => m.id === entry.id);
+  // 目录请求失败或还没回来时不能误报「未下载」。
+  const state = model?.state || 'unknown';
+  return {
+    id: entry.id,
+    title: model ? (locale.value === 'en' ? model.title.en : model.title.zh) : entry.id,
+    state,
+  };
+}));
+function modelStateText(state: string) {
+  const key = `models.state${state.charAt(0).toUpperCase()}${state.slice(1)}`;
+  return t(key);
+}
+async function loadModelCatalog() {
+  if (!(play.value?.models || []).length) return;
+  try {
+    const snapshot = await getModels();
+    modelCatalog.value = snapshot.models;
+  } catch (_) {
+    // 失败时保持 unknown，不显示成「未下载」。
+  }
+}
+function goLocalModels() { router.push({ name: 'settings' }); }
 const devices = ref<DeviceItem[]>([]);
 const typeCapabilityMap = ref<Record<string, string[]>>({});
 const loadingAll = ref(false);
@@ -722,6 +772,8 @@ const schemaEntries = computed(() => {
   }
   const mapped = list
     .filter((p: any) => {
+      // hidden 参数不显示；visibleWhen 只看当前参数值，不修改被隐藏参数的值。
+      if (!isParamVisible(p, parameters)) return false;
       const dep = p.device;
       if (!dep) return true;
       const role = requiredDevices.value.find(rd => String(rd.id) === String(dep));
@@ -830,8 +882,12 @@ function paramHelpText(p: any): string {
   return parts.join('\n');
 }
 
-function formatDefault(v: any): string {
+function formatDefault(v: any, p?: any): string {
   if (typeof v === 'boolean') return v ? t('playConfig.on') : t('playConfig.off');
+  if (p?.type === 'enum') {
+    const hit = enumOptions(p).find(o => String(o.value) === String(v));
+    if (hit) return hit.label;
+  }
   return String(v);
 }
 
@@ -1258,6 +1314,8 @@ async function loadAll() {
       ? saved.params
       : ((m as any).lastParams && typeof (m as any).lastParams === 'object' ? (m as any).lastParams : null);
     Object.assign(parameters, savedParams || defaults);
+    // hidden 参数忽略保存值：配置页不显示，启动时一律回落到 manifest 默认值。
+    Object.assign(parameters, withHiddenDefaults((m as any)?.params, parameters));
 
     // 设备映射：优先 localStorage 回填（校验在线），否则按能力默认选第一台在线设备
     for (const rd of requiredDevices.value) {
@@ -1521,6 +1579,8 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
   startBusy.value = true;
   try {
     saveConfig();
+    // 启动参数：hidden 参数一律用 manifest 默认值，忽略本地保存的旧值。
+    const launchParameters = withHiddenDefaults((play.value as any)?.params, parameters);
     const installedGamePath = await installRemoteGameIfNeeded();
     await savePlayedGame(installedGamePath);
     if (!(await occupyRemotePlayIfNeeded())) return;
@@ -1540,7 +1600,7 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
       const started = await requestGameStart(
         playId.value,
         { ...deviceMapping },
-        { ...parameters },
+        launchParameters,
         mode !== 'immediate',
         {
           gamePath: installedGamePath || (play.value as any)?.gamePath || String(route.query.gamePath || ''),
@@ -1556,7 +1616,7 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
         if (started.deferred) {
           hostQuery.startMode = mode;
           hostQuery.deviceMap = JSON.stringify({ ...deviceMapping });
-          hostQuery.params = JSON.stringify({ ...parameters });
+          hostQuery.params = JSON.stringify(launchParameters);
           if (startTriggerDeviceId.value) hostQuery.startTriggerDeviceId = startTriggerDeviceId.value;
           if (mode === 'voice') {
             hostQuery.voicePhraseLabel = voicePhraseText.value;
@@ -1570,13 +1630,16 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
       const resumeQuery: Record<string, string> = {
         id: playId.value,
         deviceMap: JSON.stringify({ ...deviceMapping }),
-        params: JSON.stringify({ ...parameters }),
+        params: JSON.stringify(launchParameters),
         locale: currentLocale(),
         localeTag: localeTag(currentLocale()),
       };
       const gamePath = installedGamePath || (play.value as any)?.gamePath || String(route.query.gamePath || '');
       if (externalUrl) resumeQuery.externalUrl = externalUrl;
       if (gamePath) resumeQuery.gamePath = gamePath;
+      // 宿主签发的一次性游戏令牌：云存档按它解析 gameId，页面自己不传游戏 id。
+      const gameToken = String((started as any)?.runtime?.gameToken || '');
+      if (gameToken) resumeQuery.gameToken = gameToken;
       if (mode === 'button' && startTriggerDeviceId.value) {
         resumeQuery.startMode = 'button';
         resumeQuery.startTriggerDeviceId = startTriggerDeviceId.value;
@@ -1593,7 +1656,7 @@ async function start(force: boolean, mode: 'immediate' | 'button' | 'voice' = 'i
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           deviceMap: { ...deviceMapping },
-          params: { ...parameters },
+          params: launchParameters,
           locale: currentLocale(),
           localeTag: localeTag(currentLocale()),
         }),
@@ -1669,7 +1732,7 @@ function cancel() { router.push({ name: 'play_library' }); }
 onMounted(() => {
   onResize();
   window.addEventListener('resize', onResize);
-  loadAll().then(() => recomputeBlocking());
+  loadAll().then(() => { recomputeBlocking(); void loadModelCatalog(); });
 });
 watch(locale, () => { void loadAll().then(() => recomputeBlocking()); });
 onUnmounted(() => {
@@ -1692,20 +1755,20 @@ onUnmounted(() => {
 .game-config-surface {
   max-width: 900px;
   padding: 20px 16px 40px;
-  background: #f8fafc;
-  color: #1e293b;
+  background: var(--bg-app);
+  color: var(--text-primary);
 }
 
 .game-config-surface .el-card {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, .05);
-  background: #fff;
+  box-shadow: var(--shadow-light);
+  background: var(--bg-surface);
 }
 
 .game-config-surface .el-card__header {
   padding: 16px 20px;
-  border-bottom-color: #f1f5f9;
+  border-bottom-color: var(--border-subtle);
 }
 
 .game-config-surface .el-card__body {
@@ -1714,14 +1777,14 @@ onUnmounted(() => {
 
 .game-config-surface .param-section-title {
   border-radius: 8px;
-  background: #f1f5f9;
+  background: var(--bg-elevated);
 }
 
 .game-config-surface .action-section {
   padding: 14px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-subtle);
   border-radius: 16px;
-  background: #fff;
+  background: var(--bg-surface);
 }
 
 .config-header-card,
@@ -1831,6 +1894,18 @@ onUnmounted(() => {
   margin-top: 12px;
 }
 
+.local-model-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.local-model-line + .local-model-line {
+  margin-top: 4px;
+}
+
 .howto-body {
   white-space: pre-line;
   line-height: 1.6;
@@ -1862,6 +1937,11 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.param-control--wide,
+.param-textarea {
+  width: 100%;
 }
 
 .param-unit {

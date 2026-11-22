@@ -2,8 +2,12 @@ const shock = {
   key: 'shock',
   name: '电击控制',
   actions: {
-    start: (ctx, params) => ctx.writeProps({ voltage: params.voltage || 24, shock: 1 }),
+    start: (ctx, params) => ctx.writeProps({ voltage: params.voltage ?? 24, shock: 1 }),
     stop: (ctx) => ctx.writeProps({ shock: 0 }),
+  },
+  actionParams: {
+    start: { voltage: { type: 'number', min: 0, max: 100, default: 24 } },
+    stop: {},
   },
   events: {},
   test: {
@@ -22,6 +26,10 @@ const strength = {
   actions: {
     set: (ctx, params) => ctx.writeProps({ power: Math.round(Math.max(0, Math.min(255, Number(params.value) || 0))) }),
     stop: (ctx) => ctx.writeProps({ power: 0 }),
+  },
+  actionParams: {
+    set: { value: { type: 'number', min: 0, max: 255, default: 0 } },
+    stop: {},
   },
   events: {},
   test: {
@@ -42,6 +50,10 @@ const vibration = {
     set: (ctx, params) => ctx.writeProps({ vibration: Math.round(Math.max(0, Math.min(100, Number(params.value) || 0))) }),
     stop: (ctx) => ctx.writeProps({ vibration: 0 }),
   },
+  actionParams: {
+    set: { value: { type: 'number', min: 0, max: 100, default: 0 } },
+    stop: {},
+  },
   events: {},
 };
 
@@ -52,6 +64,10 @@ const suction = {
     set: (ctx, params) => ctx.writeProps({ suction: Math.round(Math.max(0, Math.min(100, Number(params.value) || 0))) }),
     stop: (ctx) => ctx.writeProps({ suction: 0 }),
   },
+  actionParams: {
+    set: { value: { type: 'number', min: 0, max: 100, default: 0 } },
+    stop: {},
+  },
   events: {},
 };
 
@@ -60,6 +76,9 @@ const lock = {
   name: '锁控制',
   actions: {
     setOpen: (ctx, params) => ctx.writeProps({ open: params.open ? 1 : 0 }),
+  },
+  actionParams: {
+    setOpen: { open: { type: 'boolean', default: false } },
   },
   events: {},
   test: {
@@ -118,6 +137,13 @@ const distance = {
       if (params.highBand !== undefined) payload.high_band = Math.round(Math.max(0, Math.min(999999, Number(params.highBand) || 0)));
       if (params.reportDelayMs !== undefined) payload.report_delay_ms = Math.round(Math.max(0, Math.min(99999, Number(params.reportDelayMs) || 0)));
       ctx.writeProps(payload);
+    },
+  },
+  actionParams: {
+    configure: {
+      lowBand: { type: 'number', min: 0, max: 999999 },
+      highBand: { type: 'number', min: 0, max: 999999 },
+      reportDelayMs: { type: 'number', min: 0, max: 99999 },
     },
   },
   events: {
@@ -195,6 +221,9 @@ const reporting = {
   actions: {
     setReportDelay: (ctx, params) => ctx.writeProps({ report_delay_ms: Math.round(Math.max(0, Math.min(99999, Number(params.ms) || 0))) }),
   },
+  actionParams: {
+    setReportDelay: { ms: { type: 'number', min: 0, max: 99999 } },
+  },
   events: {},
   test: {
     start: (ctx) => ctx.writeProps({ report_delay_ms: 100 }),
@@ -213,6 +242,10 @@ const attitude = {
     startMagCalibration: (ctx) => ctx.sendMessage({ method: 'action', action: 'mag_cal_start' }),
     endMagCalibration: (ctx) => ctx.sendMessage({ method: 'action', action: 'mag_cal_end' }),
   },
+  actionParams: {
+    startMagCalibration: {},
+    endMagCalibration: {},
+  },
   events: {
     attitudeChange: {
       watch: [{ type: 'prop', key: 'quat' }],
@@ -228,6 +261,16 @@ const motors = {
     set: (ctx, params) => ctx.sendMessage({ method: 'motors', channels: params.channels || {} }),
     stop: (ctx) => ctx.sendMessage({ method: 'motorsStop' }),
   },
+  actionParams: {
+    // channels 是动态通道表：{ a: { value, direction }, stroke: { value } … }
+    set: {
+      channels: {
+        type: 'object',
+        additionalProperties: { type: 'number', min: 0, max: 255 },
+      },
+    },
+    stop: {},
+  },
   events: {},
 };
 
@@ -238,6 +281,14 @@ const estim = {
     set: (ctx, params) => ctx.sendMessage({ method: 'estim', ...params }),
     stop: (ctx) => ctx.sendMessage({ method: 'estimStop' }),
   },
+  actionParams: {
+    set: {
+      channel: { type: 'string', enum: ['A', 'B', 'AB', 'a', 'b', 'ab'] },
+      intensity: { type: 'number', min: 0, max: 255, default: 0 },
+      wave: { type: 'string' },
+    },
+    stop: {},
+  },
   events: {},
 };
 
@@ -247,6 +298,15 @@ const pump = {
   actions: {
     start: (ctx, params) => ctx.sendMessage({ method: 'pump', ...params }),
     stop: (ctx) => ctx.sendMessage({ method: 'pumpStop' }),
+  },
+  actionParams: {
+    start: {
+      protocol: { type: 'string', default: 'v1' },
+      scene: { type: 'string', default: 'guan' },
+      rate: { type: 'number', min: 0, max: 255 },
+      ss: { type: 'number', min: 0, max: 255, default: 60 },
+    },
+    stop: {},
   },
   events: {},
 };

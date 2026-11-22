@@ -214,10 +214,11 @@ function collectInlineStyleRefs(html) {
 
 function collectJsAbsoluteRefs(js, source) {
   const refs = [];
-  const re = /(["'`])((?:\\[\s\S]|(?!\1)[\s\S])*?)\1/g;
+  // A quote inside a regexp must not swallow later lines as an invalid string.
+  const re = /"((?:\\[\s\S]|[^"\\\r\n])*)"|'((?:\\[\s\S]|[^'\\\r\n])*)'|`((?:\\[\s\S]|[^`\\])*)`/g;
   let m;
   while ((m = re.exec(js)) !== null) {
-    const value = m[2].trim();
+    const value = (m[1] ?? m[2] ?? m[3]).trim();
     if (/^https?:\/\//i.test(value) || value.startsWith('//') || value.startsWith('/')) {
       refs.push({ ref: value, source, allowExternalOrigin: true });
     }

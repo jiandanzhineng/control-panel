@@ -1,0 +1,45 @@
+{
+  "id": "sense-voice-small-int8",
+  "task": "asr",
+  "title": {
+    "zh": "SenseVoiceSmall 语音识别（int8）",
+    "en": "SenseVoiceSmall speech recognition (int8)"
+  },
+  "languages": ["zh", "en", "ja", "ko", "yue"],
+  "engine": "sherpa-onnx",
+  "engineConfig": {
+    "type": "sense_voice",
+    "model": "model.int8.onnx",
+    "tokens": "tokens.txt",
+    "language": "zh",
+    "useInverseTextNormalization": 1
+  },
+  "files": [
+    {
+      "name": "model.int8.onnx",
+      "bytes": 239233841,
+      "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51",
+      "urls": [
+        "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx",
+        "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx"
+      ]
+    },
+    {
+      "name": "tokens.txt",
+      "bytes": 315894,
+      "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
+      "urls": [
+        "https://hf-mirror.com/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt",
+        "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt"
+      ]
+    }
+  ],
+  "providers": ["cuda", "directml", "cpu"],
+  "license": {
+    "name": "FunASR Model Open Source License 1.1",
+    "author": "Alibaba Group",
+    "url": "https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE",
+    "attribution": "SenseVoiceSmall / FunAudioLLM"
+  },
+  "recommended": true
+}

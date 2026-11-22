@@ -140,7 +140,7 @@
       document.getElementById('release-list').textContent = '';
       return;
     }
-    document.getElementById('admin-user').textContent = user.email;
+    document.getElementById('admin-user').textContent = user.email || user.phoneMasked || user.id;
     return load();
   }).catch(function (err) {
     document.getElementById('review-list').textContent = err && err.message ? err.message : t('authErrServer');
@@ -226,14 +226,14 @@
       gamesBox.textContent = '还没有社区游戏。先有作者投稿上架，或在下面「归属指定」里认领导入的游戏。';
       return;
     }
-    var built = table(['游戏 ID', '标题', '当前版本', '作者', '作者邮箱', '账号中心 ID', '状态']);
+    var built = table(['游戏 ID', '标题', '当前版本', '作者', '作者账号', '账号中心 ID', '状态']);
     games.forEach(function (game) {
       var row = document.createElement('tr');
       cell(row, game.gameId);
       cell(row, game.title || game.gameId);
       cell(row, 'v' + (game.version || '?'));
       cell(row, game.authorName || '—');
-      cell(row, game.email || '（该邮箱还没在投稿平台登录过）');
+      cell(row, game.email || game.phoneMasked || game.authorId || '—');
       cell(row, game.authorId || '—');
       cell(row, game.status === 'active' ? '已上线' : '已下架');
       built.body.appendChild(row);
@@ -284,12 +284,12 @@
       ownerList.textContent = '还没有手工指定的归属。';
       return;
     }
-    var built = table(['游戏 ID', '作者', '作者邮箱', '操作人', '指定时间', '操作']);
+    var built = table(['游戏 ID', '作者', '作者账号', '操作人', '指定时间', '操作']);
     owners.forEach(function (owner) {
       var row = document.createElement('tr');
       cell(row, owner.gameId);
       cell(row, owner.authorName || '—');
-      cell(row, owner.email || '—');
+      cell(row, owner.email || owner.phoneMasked || owner.authorId || '—');
       cell(row, owner.setBy || '—');
       cell(row, formatTime(owner.setAt));
       var actions = document.createElement('td');
@@ -306,13 +306,13 @@
       list.textContent = '还没有发放记录。统计完在商城后台发钱，再回到上面的表单录入。';
       return;
     }
-    var built = table(['月份', '游戏 ID', '作者', '作者邮箱', '有效游玩', '金额(元)', '发放时间', '操作人', '备注', '操作']);
+    var built = table(['月份', '游戏 ID', '作者', '作者账号', '有效游玩', '金额(元)', '发放时间', '操作人', '备注', '操作']);
     records.forEach(function (record) {
       var row = document.createElement('tr');
       cell(row, record.month);
       cell(row, record.gameId);
       cell(row, record.authorName || '—');
-      cell(row, record.authorEmail || record.authorId || '—');
+      cell(row, record.authorEmail || record.authorPhoneMasked || record.authorId || '—');
       cell(row, record.validPlays == null ? '—' : String(record.validPlays));
       cell(row, String(record.amountCny));
       cell(row, formatTime(record.paidAt));
@@ -383,10 +383,11 @@
     event.preventDefault();
     var payload = {
       gameId: String(ownerGameInput.value || '').trim(),
-      email: String(ownerEmailInput.value || '').trim(),
       authorName: String(ownerNameInput.value || '').trim()
     };
-    if (!payload.gameId || !payload.email || !payload.authorName) { setMessage('请把游戏 ID、作者邮箱和署名都填上。', 'error'); return; }
+    var account = String(ownerEmailInput.value || '').trim();
+    if (!payload.gameId || !account || !payload.authorName) { setMessage('请把游戏 ID、作者账号和署名都填上。', 'error'); return; }
+    payload[account.indexOf('@') >= 0 ? 'email' : 'authorId'] = account;
     request('/api/admin/game-owners', { method: 'POST', body: JSON.stringify(payload) })
       .then(function () {
         ownerGameInput.value = '';

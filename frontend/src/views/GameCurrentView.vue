@@ -52,7 +52,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRoute, useRouter } from 'vue-router';
 import { trackPlayEnd } from '../playAnalytics';
-import { clearActivePlay } from '../composables/useActivePlay';
+import { clearActivePlay, setActivePlay } from '../composables/useActivePlay';
 import { listenDeviceButtonPress } from '../composables/useButtonStart';
 import { listenVoicePhrase } from '../composables/useVoiceStart';
 import { DEFAULT_MIC_ID } from '../play/voiceStart';
@@ -91,6 +91,7 @@ function buildSrc(): string {
   const id = String(q.id || '');
   const locale = String(q.locale || 'zh');
   const localeTag = String(q.localeTag || (locale === 'en' ? 'en-US' : 'zh-CN'));
+  const gameToken = String(q.gameToken || '');
 
   // 基础游戏 URL：
   // - 外部游戏：后端已返回前缀代理路径 gamePath（/games/proxy/...）
@@ -101,7 +102,10 @@ function buildSrc(): string {
   if (!base) return '';
 
   const sep = base.includes('?') ? '&' : '?';
-  return `${base}${sep}deviceMap=${encodeURIComponent(deviceMap)}&params=${encodeURIComponent(params)}&locale=${encodeURIComponent(locale)}&localeTag=${encodeURIComponent(localeTag)}`;
+  // 启动令牌放在 # 片段里：请求游戏页面时片段不会发给服务器，避免令牌进访问日志。
+  // 页面脚本仍能从 location.hash 读到它（见 device-api-bridge.js）。
+  const tokenHash = gameToken ? `#gameToken=${encodeURIComponent(gameToken)}` : '';
+  return `${base}${sep}deviceMap=${encodeURIComponent(deviceMap)}&params=${encodeURIComponent(params)}&locale=${encodeURIComponent(locale)}&localeTag=${encodeURIComponent(localeTag)}${tokenHash}`;
 }
 
 function beginGame() {
@@ -176,6 +180,17 @@ function startVoiceWaiting() {
 }
 
 onMounted(() => {
+  // agent 通过 /api/client/games/:id/launch 直接跳到这里时，没有经过配置页的
+  // setActivePlay；补一次，让游戏库页的「当前运行」提示条与用户手动启动一致。
+  const gameId = String(route.query.id || '');
+  if (gameId) {
+    setActivePlay({
+      carrierType: 'game',
+      id: gameId,
+      title: String(route.query.title || gameId),
+      resume: { name: 'game_current', query: { ...route.query } },
+    });
+  }
   if (waitingForVoice.value) {
     startVoiceWaiting();
     return;

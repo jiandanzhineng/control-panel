@@ -25,7 +25,101 @@
   let systemLogCallbacks = [];
   let deviceMapData = {};
   let paramsData = {};
+  let gameToken = '';
   let idCounter = 0;
+  let commandState = null;
+  let commandAudioLoading = null;
+
+  function loadCommandAudio() {
+    if (window.VocabCommandAudio) return Promise.resolve(window.VocabCommandAudio);
+    if (!commandAudioLoading) commandAudioLoading = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = WS_URL.replace(/^ws/, 'http').replace(/\/bridge$/, '/bridge-api/vocab-command-audio.js');
+      script.onload = () => resolve(window.VocabCommandAudio);
+      script.onerror = () => { commandAudioLoading = null; reject(new Error('KWS audio capture unavailable')); };
+      document.head.appendChild(script);
+    });
+    return commandAudioLoading;
+  }
+
+  function closeCommandCapture() {
+    const state = commandState;
+    commandState = null;
+    if (state) {
+      state.closed = true;
+      state.capture?.stop();
+    }
+    return state;
+  }
+
+  function createVocabCommands() {
+    document.addEventListener('visibilitychange', async () => {
+      const state = commandState;
+      if (!state) return;
+      state.suspended = document.hidden;
+      if (state.suspended) {
+        state.capture?.stop();
+        sendFire({ action: 'speechCommandsUpdate', ...state.options, blockedUntil: Number.MAX_SAFE_INTEGER });
+      } else {
+        state.options.blockedUntil = Math.max(state.options.blockedUntil || 0, Date.now() + 300);
+        sendFire({ action: 'speechCommandsUpdate', ...state.options });
+        try {
+          const Capture = await loadCommandAudio();
+          if (commandState !== state || state.suspended) return;
+          state.capture = new Capture(window);
+          await state.capture.start(state.onFrame, state.onError);
+        } catch (error) { state.onError(error); }
+      }
+    });
+    return {
+      status: () => sendRequest({ action: 'speechCommandsStatus' }),
+      async start(options, callback) {
+        const previous = closeCommandCapture();
+        if (previous) sendFire({ action: 'speechCommandsStop', generation: previous.options.generation });
+        const state = { options: { ...options }, callback, capture: null, closed: false, suspended: document.hidden };
+        state.onFrame = audio => {
+          if (commandState !== state || state.closed || state.suspended || Date.now() < state.options.blockedUntil) return;
+          if (!ws || ws.readyState !== 1 || ws.bufferedAmount > 65536) return;
+          sendFire({ action: 'speechCommandsAudio', generation: state.options.generation, seq: state.options.seq, audio });
+        };
+        state.onError = error => {
+          if (commandState !== state) return;
+          closeCommandCapture();
+          sendFire({ action: 'speechCommandsStop', generation: state.options.generation });
+          callback({ generation: state.options.generation, code: error?.name || 'MIC_UNAVAILABLE' });
+        };
+        commandState = state;
+        try {
+          const result = await sendRequest({ action: 'speechCommandsStart', ...state.options });
+          if (commandState !== state || state.closed || !result?.ready) return { ready: false };
+          const Capture = await loadCommandAudio();
+          if (commandState !== state || state.closed) return { ready: false };
+          if (state.suspended) return { ...result, ready: true };
+          state.capture = new Capture(window);
+          const ready = await state.capture.start(state.onFrame, state.onError);
+          return { ...result, ready: (ready || state.suspended) && commandState === state && !state.closed };
+        } catch (error) {
+          state.capture?.stop();
+          if (commandState === state) {
+            closeCommandCapture();
+            sendFire({ action: 'speechCommandsStop', generation: state.options.generation });
+          }
+          throw error;
+        }
+      },
+      update(options) {
+        if (!commandState || options.generation !== commandState.options.generation) return;
+        Object.assign(commandState.options, options);
+        sendFire({ action: 'speechCommandsUpdate', ...options,
+          ...(commandState.suspended ? { blockedUntil: Number.MAX_SAFE_INTEGER } : {}) });
+      },
+      stop(generation) {
+        if (!commandState || (generation != null && generation !== commandState.options.generation)) return Promise.resolve({ ok: true });
+        const state = closeCommandCapture();
+        return sendRequest({ action: 'speechCommandsStop', generation: state.options.generation });
+      },
+    };
+  }
 
   function genId() { return 'req_' + (++idCounter) + '_' + Date.now(); }
 
@@ -93,6 +187,7 @@
         action: 'init',
         deviceMap: deviceMapData,
         params: paramsData,
+        gameToken: gameToken,
       }));
     };
     ws.onmessage = function (evt) {
@@ -101,14 +196,22 @@
       if (msg.id && pending.has(msg.id)) {
         var p = pending.get(msg.id);
         pending.delete(msg.id);
-        if (msg.error) p.reject(new Error(msg.error));
-        else p.resolve(msg.result);
+        if (msg.error) {
+          var err = new Error(msg.error);
+          // 语音识别、云存档等动作需要保留错误码（NOT_SIGNED_IN / TIMEOUT / TOO_LARGE…）。
+          if (msg.code) err.code = msg.code;
+          // 云存档版本冲突时带回云端当前内容，页面合并后重试。
+          if (msg.remote) err.remote = msg.remote;
+          p.reject(err);
+        } else p.resolve(msg.result);
         return;
       }
       if (msg.event) handleEvent(msg);
     };
     ws.onclose = function (evt) {
       rejectPendingOnClose();
+      const stopped = closeCommandCapture();
+      if (stopped) stopped.callback({ generation: stopped.options.generation, code: 'BRIDGE_DISCONNECTED' });
       if (evt && (evt.code === 1000 || evt.code === 4000)) return;
       setTimeout(connect, 2000);
     };
@@ -116,6 +219,13 @@
 
   function handleEvent(msg) {
     switch (msg.event) {
+      case 'speechCommand': {
+        const state = commandState;
+        const data = msg.data;
+        if (state && !state.suspended && !state.closed && data && data.generation === state.options.generation && data.seq === state.options.seq
+          && Date.now() >= state.options.blockedUntil) state.callback(data);
+        break;
+      }
       case 'capabilityEvent': {
         var key = msg.deviceId + ':' + msg.capability + ':' + msg.eventName;
         var cbs = subCallbacks.get(key);
@@ -249,6 +359,38 @@
 
   window.DeviceAPI = {
     device: device,
+    // 游戏用语音识别（朗读游戏等）。PC 宿主总有这块；手机旧版 App 没有，游戏要判存在性。
+    // audio: 16kHz 单声道 WAV 的 base64（不带 data: 前缀）；
+    // reject 的 Error 带 code：NOT_SIGNED_IN | NO_STT | TIMEOUT | RATE_LIMITED |
+    // UPSTREAM_* | BAD_AUDIO。
+    speech: {
+      status: function () {
+        return sendRequest({ action: 'speechStatus' });
+      },
+      transcribe: function (options) {
+        var opts = options || {};
+        return sendRequest({
+          action: 'speechToText',
+          audio: opts.audio,
+          format: opts.format || 'wav',
+          timeoutMs: opts.timeoutMs,
+        });
+      },
+    },
+    // 页面游戏云存档（背单词等）。gameId 由宿主按当前游戏决定，页面传不进来。
+    // reject 的 Error 带 code：NOT_SIGNED_IN | VERSION_CONFLICT（err.remote = { data, version }）
+    // | NETWORK | TOO_LARGE | BAD_GAME | BAD_DATA | UPSTREAM_<status>。
+    cloud: {
+      status: function () {
+        return sendRequest({ action: 'cloudStatus' });
+      },
+      get: function () {
+        return sendRequest({ action: 'cloudGet' });
+      },
+      put: function (data, baseVersion) {
+        return sendRequest({ action: 'cloudPut', data: data, baseVersion: baseVersion });
+      },
+    },
     getDevices: function () { return sendRequest({ action: 'getDevices' }); },
     getDeviceMap: function () { return sendRequest({ action: 'getDeviceMap' }); },
     log: function (level, message, meta) { sendFire({ action: 'log', level: level, message: message, meta: meta }); },
@@ -282,6 +424,7 @@
   if (metaEl) {
     try {
       var meta = JSON.parse(metaEl.textContent);
+      if (meta.id === 'vocab-game') window.DeviceAPI.speech.commands = createVocabCommands();
       if (meta.params) {
         var defaults = {};
         meta.params.forEach(function (p) { if (p.key && p.default !== undefined) defaults[p.key] = p.default; });
@@ -298,6 +441,10 @@
     var pStr = urlParams.get('params');
     var localeStr = urlParams.get('locale');
     var localeTagStr = urlParams.get('localeTag');
+    // 令牌优先从 # 片段读（片段不会进服务器访问日志）；兼容旧的 query 传法。
+    var hashParams = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+    var gameTokenStr = hashParams.get('gameToken') || urlParams.get('gameToken');
+    if (gameTokenStr) gameToken = gameTokenStr;
     if (dmStr) { deviceMapData = JSON.parse(decodeURIComponent(dmStr)); window.DeviceAPI.deviceMap = deviceMapData; }
     if (pStr) { var urlP = JSON.parse(decodeURIComponent(pStr)); Object.assign(paramsData, urlP); window.DeviceAPI.params = paramsData; }
     if (localeStr) {
@@ -305,6 +452,11 @@
       window.DeviceAPI.localeTag = localeTagStr || (window.DeviceAPI.locale === 'en' ? 'en-US' : 'zh-CN');
     }
   } catch (_) {}
+
+  window.addEventListener?.('pagehide', () => {
+    const stopped = closeCommandCapture();
+    if (stopped) sendFire({ action: 'speechCommandsStop', generation: stopped.options.generation });
+  });
 
   connect();
 })();

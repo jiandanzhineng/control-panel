@@ -373,8 +373,11 @@ window.provisionApi = {
 };
 
 window.windowApi = {
+  // Windows 下窗口使用自绘标题栏（原生系统按钮保留），前端据此预留右上角空间
+  customTitleBar: process.platform === 'win32',
   getSettings: () => ipcRenderer.invoke('window:get-settings'),
   setSettings: (settings) => ipcRenderer.invoke('window:set-settings', settings),
+  setTitleBarTheme: (payload) => ipcRenderer.invoke('window:set-titlebar-theme', payload),
 };
 
 window.updateApi = {
@@ -420,6 +423,11 @@ window.gameHostNav = {
     ipcRenderer.on('game-host:navigate', listener);
     return () => ipcRenderer.removeListener('game-host:navigate', listener);
   },
+};
+
+// 客户端控制：前端把当前路由上报给主进程（/api/client/state 与 client.route 事件用）。
+window.clientApi = {
+  reportRoute: (path) => ipcRenderer.send('client:route-changed', path),
 };
 
 // 重写 fetch，将相对路径 /api/* 指向本机后端

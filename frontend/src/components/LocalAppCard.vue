@@ -1,31 +1,38 @@
 <template>
-  <article class="play-card carrier-local-app">
-    <div class="play-main">
-      <div class="play-content">
-        <div class="title-row">
-          <h2>{{ appTitle }}</h2>
-          <el-tag size="small" type="warning">{{ t('plays.localApp') }}</el-tag>
-        </div>
-        <p class="desc">{{ appDescription }}</p>
-        <div class="meta">
-          <el-tag size="small" type="info">{{ versionLabel }}</el-tag>
-          <el-tag v-if="app.installed && !app.needsUpdate" size="small" type="success">{{ t('plays.installed') }}</el-tag>
-          <el-tag v-else-if="app.needsUpdate && app.installed" size="small" type="warning">{{ t('plays.hasUpdate') }}</el-tag>
-          <el-tag v-else size="small">{{ t('plays.notInstalled') }}</el-tag>
-        </div>
-        <el-progress
-          v-if="busy"
-          :percentage="percent"
-          :stroke-width="10"
-          :status="error ? 'exception' : undefined"
-        />
-        <p v-if="statusText" class="desc">{{ statusText }}</p>
-      </div>
+  <article class="lib-card" tabindex="0" @click="onCardClick" @keydown.enter.self.prevent="onCardClick">
+    <div class="lib-cover lib-cover--app" :style="coverStyle">
+      <span class="lib-cover__glyph">{{ glyph }}</span>
+      <span class="lib-badge" :class="badgeClass">{{ t('plays.localApp') }} · {{ statusChip }}</span>
     </div>
-    <div class="play-actions">
-      <el-button v-if="!app.installed" type="primary" :loading="busy" @click="syncOnly">{{ t('common.install') }}</el-button>
-      <el-button v-if="app.needsUpdate && app.installed" :loading="busy" @click="syncOnly">{{ t('common.update') }}</el-button>
-      <el-button v-if="app.installed" type="primary" :loading="busy" @click="startOnly">{{ t('common.start') }}</el-button>
+    <div class="lib-body">
+      <h2 class="lib-title">{{ appTitle }}</h2>
+      <p class="lib-desc">{{ appDescription || ' ' }}</p>
+      <el-progress
+        v-if="busy"
+        class="lib-progress"
+        :percentage="percent"
+        :stroke-width="6"
+        :status="error ? 'exception' : undefined"
+      />
+      <p v-if="statusText" class="lib-status">{{ statusText }}</p>
+    </div>
+    <div class="lib-foot">
+      <div class="lib-foot__info">
+        <span class="lib-meta">{{ versionLabel }}</span>
+      </div>
+      <div class="lib-action" @click.stop>
+        <el-button v-if="!app.installed" type="primary" size="small" :loading="busy" @click="syncOnly">
+          {{ t('common.install') }}
+        </el-button>
+        <template v-else>
+          <el-button v-if="app.needsUpdate" size="small" :loading="busy" @click="syncOnly">
+            {{ t('common.update') }}
+          </el-button>
+          <el-button type="primary" size="small" :loading="busy" @click="startOnly">
+            {{ t('common.start') }}
+          </el-button>
+        </template>
+      </div>
     </div>
   </article>
 </template>
@@ -37,6 +44,7 @@ import { ElMessageBox } from 'element-plus';
 import { setActivePlay } from '../composables/useActivePlay';
 import { currentLocale } from '../i18n';
 import { useAuth } from '../composables/useAuth';
+import { firstGlyph, hueForId } from '../play/library';
 
 const { t } = useI18n();
 const props = defineProps<{ app: Record<string, any> }>();
@@ -61,11 +69,27 @@ const appDescription = computed(() => {
   return props.app.description || '';
 });
 
+const coverStyle = computed<Record<string, string>>(() => ({
+  '--hue': String(hueForId(String(props.app.id || 'local-app'))),
+}));
+const glyph = computed(() => firstGlyph(appTitle.value));
+const statusChip = computed(() => {
+  if (props.app.installed && !props.app.needsUpdate) return t('plays.installed');
+  if (props.app.installed && props.app.needsUpdate) return t('plays.hasUpdate');
+  return t('plays.notInstalled');
+});
+const badgeClass = computed(() => (props.app.installed && props.app.needsUpdate ? 'lib-badge--update' : ''));
+
+function onCardClick() {
+  if (busy.value || !props.app.installed || props.app.needsUpdate) return;
+  void startOnly();
+}
+
 const versionLabel = computed(() => {
   const latest = props.app.version || '-';
   const local = props.app.installedVersion;
-  if (props.app.installed && local && local !== latest) return t('plays.localLatest', { local, latest });
-  return t('plays.version', { version: latest });
+  if (props.app.installed && local && local !== latest) return `v${local} → v${latest}`;
+  return `v${local || latest}`;
 });
 
 const percent = computed(() => {
@@ -194,21 +218,3 @@ async function startOnly() {
 
 onBeforeUnmount(stopPoll);
 </script>
-
-<style scoped>
-.play-card {
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 8px;
-  background: var(--el-bg-color);
-}
-.play-content { min-width: 0; flex: 1; }
-.title-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-.title-row h2 { margin: 0; font-size: 18px; }
-.desc { margin: 0 0 12px; line-height: 1.5; color: var(--el-text-color-secondary); }
-.meta { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-.play-actions { display: flex; align-items: flex-start; gap: 8px; }
-</style>

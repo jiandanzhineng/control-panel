@@ -56,8 +56,10 @@ describe('buffered log persistence', () => {
     expect(service.flush()).toBe(flushing);
     release();
     await flushing;
-    expect(append).toHaveBeenCalledTimes(2);
-    expect(append.mock.calls[1][1]).toContain('second');
+    // 只统计本服务目录的写入：fs 是跨测试文件共享的内置模块，别的文件残留的定时刷盘也会调到 appendFile
+    const writes = append.mock.calls.filter(([file]) => path.dirname(file) === directory);
+    expect(writes).toHaveLength(2);
+    expect(writes[1][1]).toContain('second');
   });
 
   it('keeps midnight batches in their original daily files', async () => {

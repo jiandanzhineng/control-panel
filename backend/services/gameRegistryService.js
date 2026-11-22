@@ -123,6 +123,12 @@ async function loadRegistry({ force = false } = {}) {
   }
 }
 
+// registry.json 的 i18n 在 entry.manifest.i18n；旧条目可能直接放在顶层。
+function i18nSourceOf(entry) {
+  if (entry && entry.manifest && typeof entry.manifest === 'object' && entry.manifest.i18n) return entry.manifest;
+  return entry;
+}
+
 // 给前端用：列表，每条 gamePath 已预解析
 async function listForClient({ force = false } = {}) {
   const reg = await loadRegistry({ force });
@@ -145,13 +151,14 @@ async function listForClient({ force = false } = {}) {
       cacheable: !!(g.cacheable && g.packageUrl && g.packageSha256),
       ...normalizeV2Fields(g),
       source: 'remote',
-    }, g);
+    }, i18nSourceOf(g));
   });
   return {
     source: reg.source,
     stale: !!reg.stale,
     fetchedAt: reg.fetchedAt,
     schemaWarning: reg.schemaWarning || null,
+    error: reg.error || null,
     games,
   };
 }
@@ -179,7 +186,7 @@ async function getGameById(id) {
     ...normalizeV2Fields(entry),
     source: 'remote',
     external: true, // 让 PlayConfigView 走"外部载体"确认框分支
-  }, entry);
+  }, i18nSourceOf(entry));
 }
 
 // 本地兜底 vs registry 的版本差

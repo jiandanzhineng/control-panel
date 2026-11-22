@@ -6,6 +6,11 @@
 <meta name="theme-color" content="#0e0d0c" />
 <title>设备与能力 · 玩法开发文档</title>
 <link rel="stylesheet" href="../assets/css/site.css" />
+<style>
+  .device-table { overflow-x: auto; }
+  .capability-summary th:nth-child(2), .capability-summary td:nth-child(2) { white-space: nowrap; }
+  .device-table a, .cap-label { white-space: nowrap; }
+</style>
 <script src="../assets/js/baidu-tongji.js"></script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff5b3a'/%3E%3Ctext x='16' y='22' font-size='18' text-anchor='middle' fill='%231a0a04'%3E%E2%9A%A1%3C/text%3E%3C/svg%3E" />
 </head>
@@ -54,35 +59,54 @@
 <blockquote><p><code>required: false</code> 的设备是可选的——玩法代码里用 <code>device(id).isMapped()</code> 判断后再调，匹配不到就走降级分支。</p></blockquote>
 
 <h2>设备类型清单</h2>
+<div class="device-table">
 <table>
   <tr><th>类型</th><th>名称</th><th>能力集</th></tr>
-  <tr><td><code>PJ01</code></td><td>往复电机控制器</td><td><code>strength</code></td></tr>
-  <tr><td><code>TD01</code></td><td>偏轴电机控制器</td><td><code>strength</code></td></tr>
-  <tr><td><code>OSR6</code></td><td>OSR6 控制器</td><td><code>strength</code></td></tr>
-  <tr><td><code>QIYA</code></td><td>气压传感器</td><td><code>sphincterPressure</code>、<code>reporting</code></td></tr>
-  <tr><td><code>DIANJI</code></td><td>电脉冲设备</td><td><code>shock</code></td></tr>
-  <tr><td><code>ZIDONGSUO</code></td><td>自动锁</td><td><code>lock</code></td></tr>
-  <tr><td><code>QTZ</code></td><td>测距及脚踏传感器</td><td><code>distance</code>、<code>buttonInput</code>、<code>tiptoePressure</code>、<code>reporting</code></td></tr>
-  <tr><td><code>DZC01</code></td><td>电子秤</td><td><code>weight</code>、<code>reporting</code></td></tr>
-  <tr><td><code>CUNZHI01</code></td><td>寸止玩法设备</td><td><code>sphincterPressure</code>、<code>tiptoePressure</code>、<code>strength</code>、<code>shock</code>、<code>reporting</code></td></tr>
-  <tr><td><code>HRM</code></td><td>心率带</td><td><code>heartRate</code></td></tr>
+  <tr><td><code>PJ01</code></td><td>往复电机控制器（<a href="https://shop.undersilicon.cn/zh/products/reciprocating-motor">商城</a> · <a href="https://docs.undersilicon.cn/docs/device/reciprocating-motor">文档</a>）</td><td data-cap-list><code>strength</code></td></tr>
+  <tr><td><code>TD01</code></td><td>偏轴电机控制器（<a href="https://docs.undersilicon.cn/docs/device/motor-controller">文档</a>）</td><td data-cap-list><code>strength</code></td></tr>
+  <tr><td><code>OSR6</code></td><td>OSR6控制器（<a href="https://docs.undersilicon.cn/docs/device/osr6-control-plugin">文档</a>）</td><td data-cap-list><code>strength</code></td></tr>
+  <tr><td><code>QIYA</code></td><td>气压传感器（<a href="https://shop.undersilicon.cn/zh/products/kuoyue-sensor">商城</a>）</td><td data-cap-list><code>sphincterPressure</code>、<code>reporting</code></td></tr>
+  <tr><td><code>DIANJI</code></td><td>电脉冲设备（<a href="https://docs.undersilicon.cn/docs/device/pulse-controller">文档</a>）</td><td data-cap-list><code>shock</code></td></tr>
+  <tr><td><code>ZIDONGSUO</code></td><td>自动锁（<a href="https://docs.undersilicon.cn/docs/device/lock-controller">文档</a>）</td><td data-cap-list><code>lock</code>、<code>buttonInput</code></td></tr>
+  <tr><td><code>QTZ</code></td><td>测距及脚踏传感器（<a href="https://shop.undersilicon.cn/zh/products/distance-sensor">商城</a> · <a href="https://docs.undersilicon.cn/docs/device/distance-sensor">文档</a>）</td><td data-cap-list><code>distance</code>、<code>buttonInput</code>、<code>reporting</code>、<code>tiptoePressure</code></td></tr>
+  <tr><td><code>DZC01</code></td><td>电子秤（<a href="https://docs.undersilicon.cn/docs/device/electronic-scale">文档</a>）</td><td data-cap-list><code>weight</code>、<code>reporting</code></td></tr>
+  <tr><td><code>CUNZHI01</code></td><td>寸止玩法设备（<a href="https://docs.undersilicon.cn/docs/device/cunzhi01">文档</a>）</td><td data-cap-list><code>sphincterPressure</code>、<code>tiptoePressure</code>、<code>strength</code>、<code>shock</code>、<code>reporting</code></td></tr>
+  <tr><td><code>DAN01</code></td><td>十轴姿态传感器</td><td data-cap-list><code>attitude</code>、<code>reporting</code>、<code>buttonInput</code></td></tr>
+  <tr><td><code>HRM</code></td><td>心率带</td><td data-cap-list><code>heartRate</code></td></tr>
+  <tr><td><code>DGLAB</code></td><td>蓝牙体感设备（郊狼）</td><td data-cap-list><code>shock</code>、<code>estim</code></td></tr>
+  <tr><td><code>YCY_EMS</code></td><td>电击型设备（役次元）</td><td data-cap-list><code>shock</code>、<code>estim</code></td></tr>
+  <tr><td><code>YCY_TOY</code></td><td>电机型设备（役次元）</td><td data-cap-list><code>strength</code>、<code>motors</code></td></tr>
+  <tr><td><code>YCY_CUP</code></td><td>杯型设备（役次元）</td><td data-cap-list><code>strength</code>、<code>motors</code></td></tr>
+  <tr><td><code>YCY_ENEMA</code></td><td>灌肠型设备（役次元）</td><td data-cap-list><code>pump</code></td></tr>
+  <tr><td><code>SOSEXY_PID0004</code></td><td>啵啵贝（繁野）</td><td data-cap-list><code>strength</code>、<code>vibration</code>、<code>suction</code>、<code>shock</code></td></tr>
+  <tr><td><code>GXP_XA9935</code></td><td>gxp艾萝机娘二代</td><td data-cap-list><code>strength</code></td></tr>
 </table>
+</div>
 <p>未知设备类型会返回基础设备类型（显示名为类型本身，无能力、无操作、无监控字段）。</p>
+<p>表中为注册能力；役次元设备通过第三方 API 桥接时，不对玩法暴露这些能力。</p>
 
 <h2>能力总表</h2>
-<table>
-  <tr><th>能力 key</th><th>名称</th><th>Actions</th><th>Events</th><th>拥有设备</th></tr>
-  <tr><td><code>strength</code></td><td>强度控制</td><td><code>set(value:0-255)</code></td><td>—</td><td>PJ01, TD01, OSR6, CUNZHI01</td></tr>
-  <tr><td><code>shock</code></td><td>电击控制</td><td><code>start(voltage)</code>、<code>stop()</code></td><td>—</td><td>DIANJI, CUNZHI01</td></tr>
-  <tr><td><code>lock</code></td><td>锁控制</td><td><code>setOpen(open:bool)</code></td><td>—</td><td>ZIDONGSUO</td></tr>
-  <tr><td><code>sphincterPressure</code></td><td>括约压力</td><td>—</td><td><code>pressureChange</code></td><td>QIYA, CUNZHI01</td></tr>
-  <tr><td><code>tiptoePressure</code></td><td>踮脚压力</td><td>—</td><td><code>pressureChange</code></td><td>QTZ, CUNZHI01</td></tr>
-  <tr><td><code>distance</code></td><td>距离</td><td><code>configure(lowBand, highBand, reportDelayMs)</code></td><td><code>enterLow</code>、<code>enterHigh</code></td><td>QTZ</td></tr>
-  <tr><td><code>buttonInput</code></td><td>按钮输入</td><td>—</td><td><code>pressed</code>、<code>pushDown</code>、<code>pushUp</code></td><td>QTZ</td></tr>
-  <tr><td><code>weight</code></td><td>重量</td><td>—</td><td><code>weightChange</code></td><td>DZC01</td></tr>
-  <tr><td><code>reporting</code></td><td>上报频率</td><td><code>setReportDelay(ms)</code></td><td>—</td><td>QIYA, QTZ, DZC01, CUNZHI01</td></tr>
-  <tr><td><code>heartRate</code></td><td>心率</td><td>—</td><td><code>heartRateChange</code>、<code>statusChange</code></td><td>HRM</td></tr>
+<div class="device-table">
+<table class="capability-summary">
+  <tr><th>能力 key</th><th>名称</th><th>动作</th><th>事件</th><th>拥有设备</th></tr>
+  <tr><td><code>strength</code></td><td>强度控制</td><td><code>set(value:0-255)</code>（设置强度）、<code>stop()</code>（停止）</td><td>—</td><td>PJ01, TD01, OSR6, CUNZHI01, YCY_TOY, YCY_CUP, SOSEXY_PID0004, GXP_XA9935</td></tr>
+  <tr><td><code>shock</code></td><td>电击控制</td><td><code>start(voltage)</code>（开始）、<code>stop()</code>（停止）</td><td>—</td><td>DIANJI, CUNZHI01, DGLAB, YCY_EMS, SOSEXY_PID0004</td></tr>
+  <tr><td><code>lock</code></td><td>锁控制</td><td><code>setOpen(open:bool)</code>（设置锁状态）</td><td>—</td><td>ZIDONGSUO</td></tr>
+  <tr><td><code>sphincterPressure</code></td><td>括约压力</td><td>—</td><td><code>pressureChange</code>（压力变化）</td><td>QIYA, CUNZHI01</td></tr>
+  <tr><td><code>tiptoePressure</code></td><td>踮脚压力</td><td>—</td><td><code>pressureChange</code>（压力变化）</td><td>QTZ, CUNZHI01</td></tr>
+  <tr><td><code>distance</code></td><td>距离</td><td><code>configure(lowBand, highBand, reportDelayMs)</code>（设置阈值和上报间隔）</td><td><code>enterLow</code>（进入近阈值带）、<code>enterHigh</code>（进入远阈值带）</td><td>QTZ</td></tr>
+  <tr><td><code>buttonInput</code></td><td>按钮输入</td><td>—</td><td><code>pressed</code>（短按）、<code>pushDown</code>（按下）、<code>pushUp</code>（松开）</td><td>ZIDONGSUO, QTZ, DAN01</td></tr>
+  <tr><td><code>weight</code></td><td>重量</td><td>—</td><td><code>weightChange</code>（重量变化）</td><td>DZC01</td></tr>
+  <tr><td><code>reporting</code></td><td>上报频率</td><td><code>setReportDelay(ms)</code>（设置上报间隔）</td><td>—</td><td>QIYA, QTZ, DZC01, CUNZHI01, DAN01</td></tr>
+  <tr><td><code>heartRate</code></td><td>心率</td><td>—</td><td><code>heartRateChange</code>（心率变化）、<code>statusChange</code>（读数状态变化）</td><td>HRM</td></tr>
+  <tr><td><code>attitude</code></td><td>姿态感知</td><td><code>startMagCalibration()</code>（开始磁场校准）、<code>endMagCalibration()</code>（结束磁场校准）</td><td><code>attitudeChange</code>（四元数变化）</td><td>DAN01</td></tr>
+  <tr><td><code>vibration</code></td><td>震动控制</td><td><code>set</code>（设置震动）、<code>stop</code>（停止）</td><td>—</td><td>SOSEXY_PID0004</td></tr>
+  <tr><td><code>suction</code></td><td>吸吮控制</td><td><code>set</code>（设置吸吮）、<code>stop</code>（停止）</td><td>—</td><td>SOSEXY_PID0004</td></tr>
+  <tr><td><code>estim</code></td><td>多路电击</td><td><code>set</code>（设置通道输出）、<code>stop</code>（停止）</td><td>—</td><td>DGLAB, YCY_EMS</td></tr>
+  <tr><td><code>motors</code></td><td>多路电机</td><td><code>set</code>（设置各路电机）、<code>stop</code>（停止）</td><td>—</td><td>YCY_TOY, YCY_CUP</td></tr>
+  <tr><td><code>pump</code></td><td>泵控制</td><td><code>start</code>（启动）、<code>stop</code>（停止）</td><td>—</td><td>YCY_ENEMA</td></tr>
 </table>
+</div>
 
 <h2>能力详解</h2>
 
@@ -129,6 +153,9 @@ DeviceAPI.device('lock').invoke('lock', 'setOpen', { open: false }); // 关锁</
 <h3>weight — 重量上报</h3>
 <p>纯上行，通过 <code>readValue('weight')</code> / <code>onValue('weight')</code> 读取当前值与变化。</p>
 
+<h3>attitude — 姿态感知</h3>
+<p>DAN01 的姿态值为四元数，可用 <code>readValue('attitude')</code> / <code>onValue('attitude')</code> 读取；监控还提供加速度、角速度、磁场、温度、高度和磁力计精度。</p>
+
 <h3>reporting — 上报频率</h3>
 <p>调节传感器上报间隔（毫秒）。压力大或需要精细响应时调小，省电时调大。</p>
 <pre><code>DeviceAPI.device('sensor').invoke('reporting', 'setReportDelay', { ms: 200 });</code></pre>
@@ -138,14 +165,27 @@ DeviceAPI.device('lock').invoke('lock', 'setOpen', { open: false }); // 关锁</
 
 <div class="callout callout-warn">
   <span class="callout-icon">🔒</span>
-  <p>所有设备类型都声明 <code>close</code> 操作定义安全停机指令（电机归零、停止电击、传感器恢复空闲频率）。会话结束时宿主<strong>强制</strong>调用，独立于玩法逻辑——这是设备安全的最后一道防线。</p>
+  <p>对声明了 <code>close</code> 的设备类型，会话结束时宿主执行设备定义的收尾操作，独立于玩法逻辑。心率带等纯上行设备没有停机动作。</p>
 </div>
 
-<p>→ 怎么用这些设备写玩法见 <a href="getting-started.html" data-i18n="docsStart">快速开始</a>，API 细节见 <a href="device-api.html" data-i18n="docsApi">DeviceAPI 参考</a>。</p>
+<p>→ 怎么用这些设备写玩法见 <a href="getting-started.html">快速开始</a>，API 细节见 <a href="device-api.html">DeviceAPI 参考</a>。</p>
 </main>
 </div>
 </div>
 <script src="../assets/js/i18n.js"></script>
+<script>
+  // 开发文档正文始终用中文；保留原样可复制的能力 key。
+  document.querySelectorAll('[data-cap-list] code').forEach(function (code) {
+    var key = code.textContent;
+    var label = SiteI18n.capLabel(key, 'zh');
+    if (label !== key) {
+      var pair = document.createElement('span');
+      pair.className = 'cap-label';
+      code.before(pair);
+      pair.append(label + ' ', code);
+    }
+  });
+</script>
 <script src="../assets/js/platform-config.js"></script>
 <script src="../assets/js/auth.js"></script>
 </body>

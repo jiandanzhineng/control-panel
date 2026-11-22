@@ -314,6 +314,28 @@ test('build 将声明的 allowedOrigins 写入 registry 并放行对应 JS URL',
   }
 });
 
+test('JS 正则中的引号不会吞掉后续行，外部 URL 仍需声明来源', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'registry-regexp-quotes-'));
+  try {
+    const gamesRoot = path.join(tmp, 'games');
+    const manifest = { id: 'regexp-quotes', title: 'Regexp Quotes', version: '1.0.0', devices: [], params: [] };
+    const gameJs = `const pattern = /["']/g;\nconst path = './image.png';\n`;
+    writeFixtureGame(gamesRoot, manifest.id, manifest, { gameJs });
+    const options = {
+      sourceRoots: [{ source: 'online', dir: gamesRoot }],
+      outFile: path.join(tmp, 'registry.json'),
+      packagesDir: path.join(tmp, 'packages'), checkVersionDrift: false,
+    };
+    await build(options);
+    writeFixtureGame(gamesRoot, manifest.id, manifest, {
+      gameJs: gameJs + "fetch('https://blocked.example.test/state');\n",
+    });
+    await assert.rejects(() => build(options), /资源引用 lint 失败[\s\S]*blocked\.example\.test/);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('allowedOrigins 不放行 HTML 或 CSS 的外部资源引用', async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'registry-allowed-origin-scope-'));
   try {

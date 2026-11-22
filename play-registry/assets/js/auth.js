@@ -83,7 +83,7 @@
     if (!raw) return null;
     try {
       var parsed = JSON.parse(raw);
-      if (parsed && parsed.email) return parsed;
+      if (parsed && (parsed.id || parsed.email)) return parsed;
     } catch (_) {}
     return null;
   }
@@ -100,7 +100,7 @@
 
   function setSession(nextToken, nextUser, remember) {
     writeStore(TOKEN_KEY, nextToken, remember);
-    writeStore(USER_KEY, JSON.stringify({ email: nextUser.email, role: nextUser.role || 'user' }), remember);
+    writeStore(USER_KEY, JSON.stringify({id:nextUser.id,email:nextUser.email||null,phoneMasked:nextUser.phoneMasked||null,role:nextUser.role||'user'}), remember);
   }
 
   function clearSession() {
@@ -197,9 +197,10 @@
   function finishLogin(tokenValue, identityUser, remember) {
     var email = (identityUser && identityUser.email) || '';
     if (!tokenValue) return Promise.reject(makeError(t('authErrServer'), 500, 'no_token'));
-    setSession(tokenValue, { email: email, role: (identityUser && identityUser.role) || 'user' }, remember);
+    setSession(tokenValue, identityUser || {}, remember);
     return fetchPlatformUser().then(function (platformUser) {
       var merged = {
+        id:platformUser.id || identityUser.id,phoneMasked:platformUser.phoneMasked || identityUser.phoneMasked,
         email: platformUser.email || email,
         role: platformUser.role || (identityUser && identityUser.role) || 'user'
       };
@@ -208,7 +209,7 @@
       return merged;
     }).catch(function (err) {
       if (err && err.status === 401) throw err;
-      var fallback = { email: email, role: (identityUser && identityUser.role) || 'user' };
+      var fallback = { id:identityUser.id,phoneMasked:identityUser.phoneMasked,email: email, role: (identityUser && identityUser.role) || 'user' };
       setSession(tokenValue, fallback, remember);
       emit();
       return fallback;
@@ -257,7 +258,7 @@
     if (!token()) return Promise.resolve(null);
     return fetchPlatformUser().then(function (platformUser) {
       var cached = readUser() || {};
-      var merged = { email: platformUser.email || cached.email || '', role: platformUser.role || 'user' };
+      var merged = { id:platformUser.id,phoneMasked:platformUser.phoneMasked,email: platformUser.email || cached.email || '', role: platformUser.role || 'user' };
       setSession(token(), merged, storedInLocal());
       emit();
       return merged;
@@ -348,7 +349,7 @@
     menu.setAttribute('role', 'menu');
     menu.hidden = true;
     var head = el('div', 'account-menu-head');
-    head.appendChild(el('strong', null, account.email));
+    head.appendChild(el('strong', null, account.email || account.phoneMasked || account.id));
     head.appendChild(el('span', null, roleLabel(account.role)));
     menu.appendChild(head);
     [['submit.html', t('menuSubmit')], ['author.html', t('menuAuthor')]].forEach(function (item) {
@@ -383,7 +384,7 @@
       slot.appendChild(link);
       return;
     }
-    var local = String(account.email || '').split('@')[0];
+    var local = String(account.email || account.phoneMasked || account.id || '').split('@')[0];
     var button = el('button', 'account-btn');
     button.type = 'button';
     button.setAttribute('aria-haspopup', 'menu');
@@ -449,6 +450,8 @@
     identityBase: identityBase,
     api: api,
     identity: identity,
+    phoneCode: function(phone) { return identity('/auth/phone/code',{method:'POST',body:JSON.stringify({phone:phone,purpose:'login'})}); },
+    phoneLogin: function(challengeId,code,remember) { return identity('/auth/phone/login',{method:'POST',body:JSON.stringify({challengeId:challengeId,code:code})}).then(function(data){return finishLogin(data.token,data.user,remember);}); },
     login: login,
     register: register,
     recover: recover,

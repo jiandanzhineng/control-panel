@@ -43,7 +43,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/remote-projection', redirect: '/devices' },
   { path: '/test', name: 'test', component: AutoTest, meta: { titleKey: 'autoTest.platform' } },
 
-  // 本地游戏（游戏 + 插件统一入口）
+  // 游戏库（游戏 + 插件 + 本机应用统一入口）
   { path: '/plays', name: 'play_library', component: PlayLibraryView, meta: { titleKey: 'nav.plays' } },
   { path: '/plays/:type/:id/config', name: 'play_config', component: PlayConfigView, meta: { titleKey: 'playConfig.title' } },
   // 运行态（全屏覆盖层，靠「启动」进入、「停止」退出，不进侧边栏）
@@ -74,6 +74,14 @@ const routes: RouteRecordRaw[] = [
 export const router = createRouter({
   history: createWebHashHistory(),
   routes,
+});
+
+// 客户端控制：把当前页面（含 query）上报给 Electron 主进程，供 /api/client/state 与事件流使用。
+router.afterEach((to) => {
+  const clientApi = (window as any).clientApi;
+  if (clientApi && typeof clientApi.reportRoute === 'function') {
+    clientApi.reportRoute(to.fullPath);
+  }
 });
 
 // 主控端远程模式下：被锁页面直接拦下并提示（与侧栏置灰同一份规则）。
