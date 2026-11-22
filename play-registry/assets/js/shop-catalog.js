@@ -18,6 +18,7 @@
     'pushup-detection': { qtz: 'distance-sensor' },
     'reading-game': { shock: 'beidanci' },
     'vocab-game': { shock: 'beidanci' },
+    'rc-car': { punish: 'beidanci', sensor: 'kuoyue-sensor' },
   };
 
   function localePath(locale) { return locale === 'en' ? '/en' : '/zh'; }

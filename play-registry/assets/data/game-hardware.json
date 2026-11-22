@@ -104,6 +104,18 @@
       { "slug": "zidongsuo-auto-lock", "role": "optional", "note": "用于结束时自动解锁。", "noteEn": "Unlocks automatically at the end." }
     ]
   },
+  "rc-car": {
+    "summary": "需搭配 DAN01 姿态传感器与电击设备（背单词电击强化器、寸止一体机或寸止01主机+电极贴）；开启提肛或寸止附加规则时可选配气压传感器。",
+    "summaryEn": "Requires a DAN01 attitude sensor and a shock device (Vocabulary Shock Trainer, CunZhi-01 all-in-one, or CunZhi-01 main unit with electrode pads). Add a pressure sensor if enabling pelvic or edging rules.",
+    "docPath": "",
+    "items": [
+      { "slug": "beidanci", "role": "required", "note": "基础电击惩罚设备（含电极贴）。", "noteEn": "Shock penalty device with electrode pads." },
+      { "slug": "cunzhi01-host", "role": "required", "note": "分体方案电击主机，需搭配电极贴。", "noteEn": "Standalone shock main unit; pair with electrode pads." },
+      { "slug": "electrode-pad-wire", "role": "required", "note": "选用分体电击主机时需配电极贴和线。", "noteEn": "Pair these pads and wire with the standalone main unit." },
+      { "slug": "cunzhi01", "role": "optional", "note": "电击与气压传感一体，开启提肛/寸止附加规则时更省事。", "noteEn": "All-in-one shock and pressure sensing for optional pelvic or edging rules." },
+      { "slug": "kuoyue-sensor", "role": "optional", "note": "开启提肛或寸止附加规则时的独立气压传感器。", "noteEn": "Standalone pressure sensor for optional pelvic or edging rules." }
+    ]
+  },
   "device-control": {
     "summary": "无需特定套件，连接任意硅基之下自研或已兼容的第三方蓝牙设备即可调试。",
     "summaryEn": "No specific kit is required. Connect any UnderSilicon device or a compatible third-party Bluetooth device to test it.",

@@ -1,5 +1,6 @@
 const express = require('express');
 const remoteSession = require('../services/remoteSessionService');
+const remoteOutputSettings = require('../services/remoteOutputSettingsService');
 const roomApi = require('../services/roomApiService');
 const { sendError } = require('../utils/http');
 
@@ -46,6 +47,20 @@ function handleError(res, error) {
 
 router.get('/status', (req, res) => {
   res.json(remoteSession.getStatus());
+});
+
+// 远程输出上限（持有方/B 端自己的设置，A 改不了）：电压上限 0–100，默认 20。
+// 生效于远控游戏（source=remote）与远程手动设备控制；改完下一条输出立即生效。
+router.get('/output-limits', (req, res) => {
+  res.json(remoteOutputSettings.status());
+});
+
+router.put('/output-limits', (req, res) => {
+  try {
+    res.json(remoteOutputSettings.setVoltage(req.body?.voltage));
+  } catch (error) {
+    sendError(res, error?.code || 'OUTPUT_LIMIT_INVALID', error?.message || '远程输出上限设置失败', 400);
+  }
 });
 
 router.post('/create', async (req, res) => {

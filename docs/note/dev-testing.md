@@ -28,5 +28,5 @@
 
 ## git worktree
 
-- worktree 不带 node_modules。发布验证时，根目录、`backend`、`frontend` 必须分别执行独立 `npm ci`；不要用主仓目录联接作为发布构建依据，部分依赖本身可能是指向临时缓存的联接。
-- **删 worktree 前先拆 node_modules 联接**：worktree 里的 `node_modules`（根、backend、frontend、play-registry）若是联接到主仓，`git worktree remove --force` 会顺着联接把主仓依赖清空。先 `cmd /c rmdir <worktree>\node_modules`（各处都拆）再删 worktree；已清空的话在主仓四处分别 `npm ci` 恢复。
+- worktree 不带 node_modules：日常调试可把主仓的 `node_modules`、`play-registry/node_modules` 用目录联接（`New-Item -ItemType Junction`）链进来，`backend`/`frontend` 的 node_modules 单独安装；**发布验证时，根目录、`backend`、`frontend` 必须分别执行独立 `npm ci`**，不要用主仓目录联接作为发布构建依据（部分依赖本身可能是指向临时缓存的联接）。
+- **移动或删 worktree 前先拆 node_modules 联接**：worktree 里的 `node_modules`（根、backend、frontend、play-registry）若是联接到主仓，`git worktree move` 会 Permission denied，`Move-Item` 或 `git worktree remove --force` 会顺着联接把主仓依赖掏空或清空。正确做法：先 `cmd /c rmdir <wt>\node_modules`（各处都拆）再移动，删除统一用 `tools/worktree/safe_remove.py`（先断联接再交给 git）；若误清空则在主仓四处分别 `npm ci` 恢复。

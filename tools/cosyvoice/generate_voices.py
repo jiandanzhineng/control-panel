@@ -112,14 +112,30 @@ EDGING_LINES = [
     ("edging_end",      "训练结束。今天辛苦了，好好休息。"),
 ]
 
+# ============================================================
+# 遥控车 — 中英两套口令（16 条，key 与页面 prompt.key 一致）
+#   voices/zh/<key>.mp3、voices/en/<key>.mp3
+#   口令与「没有照做」语速 1.3，其余 0.95
+# ============================================================
+# 遥控车语音改由 IndexTTS 本地生成（文本与生成见 tools/indextts/rccar.py），这里只做 check
+RCCAR_KEYS = [
+    "calib_start", "calib_done", "cmd_forward", "cmd_backward", "cmd_left", "cmd_right",
+    "cmd_stop", "cmd_stand", "cmd_prone", "violation", "level_up", "level_down",
+    "pelvic_remind", "edging_peak", "sensor_lost", "game_end",
+]
 
-def generate_voice(name, text):
+RCCAR_VOICE_DIR = os.path.join(
+    os.path.dirname(__file__), "..", "..", "backend", "games", "rc-car", "voices"
+)
+
+
+def generate_voice(name, text, voice_setting=None):
     """调用 speech-2.8-hd API 生成单条语音"""
     import requests
 
     if not API_KEY:
         raise RuntimeError("未找到 MINIMAX_API_KEY，请在 tools/cosyvoice/.env 或环境变量中配置")
-    voice_setting = dict(VOICE_CONFIG)
+    voice_setting = dict(voice_setting or VOICE_CONFIG)
     if name in SHORT_PUNISHMENT_KEYS:
         voice_setting["speed"] = 1.3
 
@@ -161,7 +177,28 @@ GAME_ASSET_SPECS = [
      {name for name, _ in EDGING_LINES if name != "edging_takeoff"}),
     ("pressure-edging-v2", os.path.join(os.path.dirname(__file__), "..", "..", "backend", "games", "pressure-edging-v2", "voices"),
      {name for name, _ in EDGING_LINES}),
+    # 分语言目录：voices/zh、voices/en
+    ("rc-car", RCCAR_VOICE_DIR,
+     {"zh": set(RCCAR_KEYS), "en": set(RCCAR_KEYS)}),
 ]
+
+
+def _check_voice_dir(label, directory, expected):
+    actual = set()
+    if os.path.isdir(directory):
+        actual = {
+            os.path.splitext(filename)[0]
+            for filename in os.listdir(directory)
+            if filename.lower().endswith(".mp3")
+        }
+    missing = sorted(expected - actual)
+    unused = sorted(actual - expected)
+    print(f"{label}: 引用 {len(expected)}，缺失 {len(missing)}，未使用 {len(unused)}")
+    for name in missing:
+        print(f"  缺失: {name}.mp3")
+    for name in unused:
+        print(f"  未使用: {name}.mp3")
+    return not missing and not unused
 
 
 def validate_game_assets():
@@ -169,21 +206,12 @@ def validate_game_assets():
     valid = True
     print("\n===== 游戏语音资源校验 =====")
     for label, directory, expected in GAME_ASSET_SPECS:
-        actual = set()
-        if os.path.isdir(directory):
-            actual = {
-                os.path.splitext(filename)[0]
-                for filename in os.listdir(directory)
-                if filename.lower().endswith(".mp3")
-            }
-        missing = sorted(expected - actual)
-        unused = sorted(actual - expected)
-        print(f"{label}: 引用 {len(expected)}，缺失 {len(missing)}，未使用 {len(unused)}")
-        for name in missing:
-            print(f"  缺失: {name}.mp3")
-        for name in unused:
-            print(f"  未使用: {name}.mp3")
-        valid = valid and not missing and not unused
+        if isinstance(expected, dict):
+            for locale in sorted(expected):
+                ok = _check_voice_dir(f"{label}/{locale}", os.path.join(directory, locale), expected[locale])
+                valid = valid and ok
+        else:
+            valid = _check_voice_dir(label, directory, expected) and valid
     return valid
 
 
@@ -234,6 +262,7 @@ def run(lines, label):
             fpath = os.path.join(OUTPUT_DIR, f)
             print(f"  {f}  ({os.path.getsize(fpath) / 1024:.1f} KB)")
     return not failed
+
 
 
 def main():

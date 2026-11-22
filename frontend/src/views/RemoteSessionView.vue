@@ -18,6 +18,27 @@
 
         <p v-if="!ui.isOwner" class="card-desc">{{ t('remoteSession.host.idleDesc') }}</p>
 
+        <!-- 本人自设的远程输出上限：A 改不了，远控游戏档位与远程手动输出都越不过它 -->
+        <div class="remote-limit">
+          <div class="remote-limit__row">
+            <span class="remote-limit__label">{{ t('remoteSession.limit.label') }}</span>
+            <el-input-number
+              v-model="limitVoltage"
+              :min="limitRange.min"
+              :max="limitRange.max"
+              size="small"
+              :disabled="limitBusy"
+              controls-position="right"
+              class="remote-limit__input"
+            />
+            <span class="remote-limit__unit">V</span>
+            <el-button size="small" :loading="limitBusy" :disabled="!limitDirty" @click="saveLimit">
+              {{ t('remoteSession.limit.save') }}
+            </el-button>
+          </div>
+          <div class="remote-limit__hint">{{ t('remoteSession.limit.hint') }}</div>
+        </div>
+
         <!-- idle -->
         <template v-if="!ui.isOwner">
           <el-button type="primary" :loading="busy" :disabled="!authed" @click="onCreate">
@@ -140,13 +161,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { CopyDocument } from '@element-plus/icons-vue'
 import { useRouter } from 'vue-router'
 import { useRemoteSession } from '../composables/useRemoteSession'
 import { useAuth } from '../composables/useAuth'
+import { getRemoteOutputLimits, setRemoteOutputLimit } from '../api/remoteSession'
 import { peerLabel, formatClock, detailText as detailTextOf, normalizeJoinCode } from '../remote/remoteSessionFormat'
 
 const { t } = useI18n()
@@ -165,6 +187,38 @@ const logRows = computed(() => [...session.log.value].reverse())
 const formatTime = formatClock
 const detailText = detailTextOf
 const joinCodeInput = ref('')
+
+// 远程输出上限（电压）：只有被控端自己在这里设，保存后下一条输出立即生效
+const limitVoltage = ref(20)
+const limitSaved = ref(20)
+const limitRange = ref({ min: 0, max: 100 })
+const limitBusy = ref(false)
+const limitDirty = computed(() => Number(limitVoltage.value) !== limitSaved.value)
+
+async function loadOutputLimit() {
+  try {
+    const status = await getRemoteOutputLimits()
+    limitVoltage.value = status.voltage
+    limitSaved.value = status.voltage
+    if (status.range) limitRange.value = status.range
+  } catch (_) { /* 读不到就保留默认 20，保存时再报错 */ }
+}
+
+async function saveLimit() {
+  limitBusy.value = true
+  try {
+    const status = await setRemoteOutputLimit(Number(limitVoltage.value) || 0)
+    limitVoltage.value = status.voltage
+    limitSaved.value = status.voltage
+    ElMessage.success(t('remoteSession.limit.saved'))
+  } catch (e: any) {
+    fail(e)
+  } finally {
+    limitBusy.value = false
+  }
+}
+
+onMounted(loadOutputLimit)
 
 // 同一时刻只有一种身份：一侧非 idle 时另一侧整卡置灰
 const hostSideActive = computed(() => ui.value.isHostControlled || (ui.value.isOwner && ui.value.phase === 'pending-authorization'))
@@ -248,6 +302,12 @@ async function copyCode() {
 .join-code { font-family: var(--font-mono); font-size: 36px; letter-spacing: 0.2em; color: var(--text-primary); }
 .peer-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .peer-name { color: var(--text-primary); }
+.remote-limit { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md); background: var(--bg-elevated); }
+.remote-limit__row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.remote-limit__label { color: var(--text-primary); font-size: 13px; }
+.remote-limit__input { width: 120px; }
+.remote-limit__unit { color: var(--text-muted); font-size: 13px; }
+.remote-limit__hint { color: var(--text-muted); font-size: 12px; }
 .peer-id { color: var(--text-faint); font-size: 12px; }
 .log-list { max-height: 320px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 .log-empty { color: var(--text-faint); font-size: 13px; }

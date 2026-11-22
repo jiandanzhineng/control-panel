@@ -1,5 +1,5 @@
 const mqtt = require('mqtt');
-const { randomUUID, randomBytes } = require('crypto');
+const { randomUUID, randomBytes, createHash } = require('crypto');
 // 已接入 HostRuntime 的游戏清单来自统一解析器（内置 core + 游戏包里的分离式 core）
 const coreResolver = require('../game-runtime/gameCoreResolver');
 const { GameStateStream } = require('../game-runtime/gameStateStream');
@@ -68,6 +68,38 @@ function parseJson(payload) {
   }
 }
 
+// 快照指纹：按游戏状态内容比较，忽略自己会随时间变的字段（计时/截止/时间戳），
+// 新游戏的新字段照样参与比较——低频全量不会因为只认旧字段而漏刷新。
+// 时间类字段按驼峰后缀认（startedAtMs/edgeTriggerTs/endTime），外加几个常见的纯变量名。
+const VOLATILE_LOWER_SUFFIXES = [
+  'atms', 'tsms', 'timems', 'deadlinems', 'sincems', 'elapsedms', 'remainingms', 'readyms', 'tickms',
+];
+const VOLATILE_KEYS = new Set(['now', 'nowms', 'servertimems', 'sentatms']);
+
+function isVolatileSnapshotKey(key) {
+  const name = String(key || '');
+  const lower = name.toLowerCase();
+  if (VOLATILE_KEYS.has(lower)) return true;
+  if (name.endsWith('At') || name.endsWith('Ts') || name.endsWith('Time')) return true;
+  return VOLATILE_LOWER_SUFFIXES.some((suffix) => lower.endsWith(suffix));
+}
+
+// 键排序后的稳定 JSON：同样的状态必然得到同样的字符串
+function stableSnapshotJson(value) {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSnapshotJson(item)).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value).filter((key) => !isVolatileSnapshotKey(key)).sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${stableSnapshotJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value === undefined ? null : value);
+}
+
+function snapshotFingerprint(snapshot) {
+  return createHash('sha1').update(stableSnapshotJson(snapshot)).digest('hex');
+}
+
 // 输出安全层：优先用注入的实现（测试/替换），否则直接 require 真实模块。
 // 刻意没有「模块缺失就放行」的降级分支：这是电击类硬件的最后一道限幅，
 // 安全层加载失败必须让服务整体起不来（fail-closed），不能降级成透传。
@@ -93,6 +125,7 @@ class RemoteGameService {
     listGames = defaultListGames,
     listDevices = null,
     outputGuard = null,
+    outputLimitsProvider = null,
     streamWindowMs = STREAM_WINDOW_MS,
     legacySnapshotMs = LEGACY_SNAPSHOT_MS,
     publishTimeoutMs = PUBLISH_TIMEOUT_MS,
@@ -118,6 +151,8 @@ class RemoteGameService {
     this.streamWindowMs = streamWindowMs;
     this.legacySnapshotMs = legacySnapshotMs;
     this.outputGuard = loadOutputGuard(outputGuard);
+    // 持有方在远程设置里设的电压上限（实时读）：远程手动设备控制与远控游戏的限幅共用
+    this.outputLimitsProvider = typeof outputLimitsProvider === 'function' ? outputLimitsProvider : null;
     this.publishTimeoutMs = publishTimeoutMs;
     this.connectTimeoutMs = connectTimeoutMs;
     this.endTimeoutMs = endTimeoutMs;
@@ -691,8 +726,11 @@ class RemoteGameService {
     if (!COMMANDS.has(type)) throw this._error('COMMAND_NOT_ALLOWED', '命令不在白名单');
     if (session.role === 'owner') {
       const result = await this._dispatch(type, payload || {});
-      await this._publishClientSnapshot(session);
-      await this._publishGameSnapshot(session);
+      // 与远程命令同一规则：game.action 不刷全量，只走增量
+      if (type !== 'game.action') {
+        await this._publishClientSnapshot(session);
+        await this._publishGameSnapshot(session);
+      }
       return { ok: true, result };
     }
     const messageId = randomUUID();
@@ -1203,8 +1241,12 @@ class RemoteGameService {
         outcome: context.outcome || 'ok',
         detail: context.detail || null,
       });
-      await this._publishClientSnapshot(session);
-      await this._publishGameSnapshot(session);
+      // game.action 是高频命令（按住每 400ms 重发）：不再整份广播 client.snapshot / 全量 game.snapshot，
+      // 状态变化只走 game.patch；旧客户端的兼容全量仍由 5s 低频推送负责。
+      if (type !== 'game.action') {
+        await this._publishClientSnapshot(session);
+        await this._publishGameSnapshot(session);
+      }
     } catch (error) {
       this._emitEvent({
         type: 'command',
@@ -1407,7 +1449,7 @@ class RemoteGameService {
       throw this._error('DEVICE_BUSY', '设备正被运行中的游戏占用');
     }
     // 远程手动输出统一走安全层：按能力限幅、未知字段拒绝
-    const limits = this.outputGuard.DEFAULT_REMOTE_LIMITS || {};
+    const limits = this.getRemoteOutputLimits();
     const sanitized = this.outputGuard.sanitizeCapabilityInvoke({
       device, capability, action, input: rawInput, limits,
     });
@@ -1433,6 +1475,17 @@ class RemoteGameService {
       this._rememberOperatorOutput(context.senderUserId, deviceId);
     }
     return result;
+  }
+
+  /** 远程手动输出当前生效的上限：持有方改完设置，下一条指令就用新值（读不到按默认收紧）。 */
+  getRemoteOutputLimits() {
+    if (this.outputLimitsProvider) {
+      try {
+        const limits = this.outputLimitsProvider();
+        if (limits) return limits;
+      } catch (_) { /* 设置文件读失败：退回默认上限，fail-closed */ }
+    }
+    return this.outputGuard.DEFAULT_REMOTE_LIMITS || {};
   }
 
   _rememberOperatorOutput(userId, deviceId) {
@@ -1688,8 +1741,9 @@ class RemoteGameService {
     const snapshot = hostStatus?.snapshot;
     if (!snapshot) return;
     // 结束快照绝不能被低频兼容推送吞掉
-    if (!force && session.lastSnapshotKey === this._snapshotKey(snapshot)) return;
-    session.lastSnapshotKey = this._snapshotKey(snapshot);
+    const key = this._snapshotKey(snapshot);
+    if (!force && session.lastSnapshotKey === key) return;
+    session.lastSnapshotKey = key;
     // 全量帧同时是 rev 基准：之后发出的 game.patch 都相对它计算
     this._resetGameStream(session);
     await this._publishEnvelope(session, 'events', 'game.snapshot', {
@@ -1794,18 +1848,7 @@ class RemoteGameService {
 
   _snapshotKey(snapshot) {
     if (!snapshot) return null;
-    return [
-      snapshot.running ? 1 : 0,
-      snapshot.ended ? 1 : 0,
-      snapshot.paused ? 1 : 0,
-      snapshot.phase || '',
-      snapshot.currentIntensity ?? '',
-      snapshot.targetIntensity ?? '',
-      snapshot.edgingCount ?? '',
-      snapshot.shockCount ?? '',
-      snapshot.isShocking ? 1 : 0,
-      Math.round(Number(snapshot.currentPressure || 0) * 10),
-    ].join(':');
+    return snapshotFingerprint(snapshot);
   }
 
   _hostStatus() {
@@ -1886,6 +1929,8 @@ const remoteGameService = new RemoteGameService({
     await require('./localAppProcessService').stopAll();
     try { require('./bridgeService').exitCurrent(); } catch (_) {}
   },
+  // 持有方在「远程连接」里设的电压上限（只走本机设置文件，A 改不了）
+  outputLimitsProvider: () => require('./remoteOutputSettingsService').getLimits(),
 });
 
 module.exports = remoteGameService;

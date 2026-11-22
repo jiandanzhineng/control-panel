@@ -79,6 +79,7 @@ function createHost(devices, extra = {}) {
     setRepeating: time.setRepeating.bind(time),
     clearRepeating: time.clearRepeating.bind(time),
     ...(extra.outputLogHook ? { outputLogHook: extra.outputLogHook } : {}),
+    ...(extra.outputLimitsProvider ? { outputLimitsProvider: extra.outputLimitsProvider } : {}),
   });
   return {
     host,
@@ -440,7 +441,7 @@ describe('host runtime device events (events:v2)', () => {
 
 describe('host runtime remote output guard', () => {
   // 远程会话（source:'remote'）下核心发出的设备意图必须与远程手动输出同一套限幅。
-  // DIANJI 的 shock 上限是 min(voltage, intensity)=20（默认电压 20 / 强度 50）。
+  // 默认持有方上限：电压 20、强度 50（电压类字段只看电压上限 20）。
   const remoteDevices = () => fakeDevices([
     { id: 'p1', type: 'DIANJI' },
     { id: 'm1', type: 'TD01' },
@@ -527,6 +528,34 @@ describe('host runtime remote output guard', () => {
     expect(localRun.host.getStatus().source).toBe('local');
     expect(local.calls).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'p1', capability: 'shock', action: 'start', input: { voltage: 30 } }),
+    ]));
+  });
+
+  test('the owner-set voltage cap applies live: 60 passes, 120 clamps to 100, mid-game change takes effect', () => {
+    const devices = remoteDevices();
+    let limits = { voltage: 60, power: 128, intensity: 50 };
+    const { host, core } = runEffects({
+      devices, effects: [], extra: { outputLimitsProvider: () => limits },
+    });
+    // 持有方把上限调到 60：游戏档位 60V 原样通过（不再被默认 20 压住）
+    core.pending = [{ type: 'device.shock', role: 'punish', voltage: 60, durationMs: 1000 }];
+    host.tick(200);
+    expect(devices.calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'p1', capability: 'shock', action: 'start', input: { voltage: 60 } }),
+    ]));
+    // 上限改成 100：120V 仍被硬上限夹到 100，且下一条意图立即用新值
+    limits = { voltage: 100, power: 128, intensity: 50 };
+    core.pending = [{ type: 'device.shock', role: 'punish', voltage: 120, durationMs: 1000 }];
+    host.tick(300);
+    expect(devices.calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'p1', capability: 'shock', action: 'start', input: { voltage: 100 } }),
+    ]));
+    // 游戏运行中把上限降回 20：下一条意图立刻被收紧
+    limits = { voltage: 20, power: 128, intensity: 50 };
+    core.pending = [{ type: 'device.shock', role: 'punish', voltage: 35, durationMs: 1000 }];
+    host.tick(400);
+    expect(devices.calls).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'p1', capability: 'shock', action: 'start', input: { voltage: 20 } }),
     ]));
   });
 

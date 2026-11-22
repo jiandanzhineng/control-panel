@@ -14,8 +14,8 @@ test('all guide entries reference products in the price-free snapshot', () => {
   assert.equal(slugs.size, products.length);
   assert.deepEqual(Object.keys(hardware).sort(), [
     'device-control', 'drink-pee-unlock', 'maid-punishment', 'pelvic-training',
-    'pressure-edging', 'pressure-edging-v2', 'pushup-detection', 'reading-game',
-    'surge-edging', 'vocab-game',
+    'pressure-edging', 'pressure-edging-v2', 'pushup-detection', 'rc-car',
+    'reading-game', 'surge-edging', 'vocab-game',
   ]);
   for (const product of products) {
     assert.deepEqual(Object.keys(product).sort(), ['image', 'nameEn', 'nameZh', 'slug']);

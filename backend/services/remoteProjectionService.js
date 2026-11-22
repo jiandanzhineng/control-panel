@@ -57,6 +57,7 @@ class RemoteProjectionService {
     clearTimer = clearTimeout,
     setRepeating = setInterval,
     clearRepeating = clearInterval,
+    defaultLimitsProvider = null,
   } = {}) {
     this.devices = devices;
     this.api = api;
@@ -66,6 +67,8 @@ class RemoteProjectionService {
     this.clearTimer = clearTimer;
     this.setRepeating = setRepeating;
     this.clearRepeating = clearRepeating;
+    // 建房时没显式给 limits 就用持有方的远程设置（与远控游戏同一份上限）
+    this.defaultLimitsProvider = typeof defaultLimitsProvider === 'function' ? defaultLimitsProvider : null;
     this.session = null;
     // 编排层（remoteSessionService）订阅的事件出口，避免它去读私有字段。
     this.eventHandlers = new Set();
@@ -111,7 +114,7 @@ class RemoteProjectionService {
       expired: session.expired,
       controlTtlSec: session.controlTtlSec,
       controlExpiresAt: new Date(session.controlExpiresAt).toISOString(),
-      limits: { ...session.limits },
+      limits: { ...this._effectiveLimits(session) },
       devices: listedDevices,
       operatorCount: session.role === 'owner'
         ? [...session.operatorsOnline.values()].filter(Boolean).length
@@ -148,7 +151,10 @@ class RemoteProjectionService {
     if (!token) throw this._error('MISSING_TOKEN', '请先登录账号');
     await this.stop({ skipApi: false });
     const ttl = normalizePositiveInt(controlTtlSec, DEFAULT_TTL_SEC, 60, 24 * 60 * 60);
-    const normalizedLimits = normalizeLimits(limits);
+    // 没显式给 limits：用持有方的远程设置（同一份电压上限），读不到就退回内置默认值。
+    // 显式 limits 也保留 marks：之后每次写入都会再按「当时的」持有方上限夹一次。
+    const limitsExplicit = !!limits && typeof limits === 'object';
+    const normalizedLimits = normalizeLimits(limitsExplicit ? limits : this._defaultLimits());
     const room = await this.api.createRoom(token, normalizePositiveInt(capacity, 8, 2, 32));
     let session = null;
     try {
@@ -158,6 +164,7 @@ class RemoteProjectionService {
         role: 'owner', token, room, credential,
         controlTtlSec: ttl,
         limits: normalizedLimits,
+        limitsExplicit,
       });
       this.session = session;
       await this._connect(session);
@@ -266,7 +273,32 @@ class RemoteProjectionService {
     return { active: !!session, removed };
   }
 
-  _newSession({ role, token, room, credential, controlTtlSec, limits }) {
+  /** 持有方远程设置里的默认上限（投影房间没自带 limits 时用）；读不到返回 undefined。 */
+  _defaultLimits() {
+    if (!this.defaultLimitsProvider) return undefined;
+    try { return this.defaultLimitsProvider() || undefined; } catch (_) { return undefined; }
+  }
+
+  /**
+   * 当前生效的持有方上限（房主侧每次写入实时取）：
+   * - 房间没自带 limits：直接读持有方设置；
+   * - 自带 limits：按当前持有方上限再夹一次（显式值仍保留，只会被收紧，不会放宽）。
+   * 操作方以房主下发的 limits 为准，不用本机设置。
+   */
+  _effectiveLimits(session) {
+    if (!session || session.role !== 'owner') return session?.limits || normalizeLimits();
+    const current = this._defaultLimits();
+    if (!current) return session.limits;
+    const owner = normalizeLimits(current);
+    if (!session.limitsExplicit) return owner;
+    return {
+      voltage: Math.min(session.limits.voltage, owner.voltage),
+      power: Math.min(session.limits.power, owner.power),
+      intensity: Math.min(session.limits.intensity, owner.intensity),
+    };
+  }
+
+  _newSession({ role, token, room, credential, controlTtlSec, limits, limitsExplicit = false }) {
     const startedAt = this.now();
     return {
       role,
@@ -282,6 +314,9 @@ class RemoteProjectionService {
       controlTtlSec,
       controlExpiresAt: startedAt + controlTtlSec * 1000,
       limits: { ...limits },
+      // 房间自带 limits（面板/接口显式传的）：只按当前持有方上限再夹一次；
+      // 没自带的房间每次写入都实时读持有方设置（改完下一条写入即生效）。
+      limitsExplicit,
       sequences: new Map(),
       seenMessageIds: new Set(),
       remoteDeviceIds: new Set(),
@@ -584,7 +619,7 @@ class RemoteProjectionService {
     const sanitized = outputGuard.sanitizeProjectionMessage({
       device,
       message: input.message,
-      limits: session.limits,
+      limits: this._effectiveLimits(session),
     });
     // 本地玩法运行中：只放行「确实是停止/归零」的写入；脏字段的停止帧丢弃多余字段后照发，
     // 其余（含无法解析的报文）一律拒绝，避免把未知写入透传到真实设备。
@@ -701,7 +736,7 @@ class RemoteProjectionService {
   _publishRevokedDeviceList(session) {
     return this._publishEnvelope(session, 'events', 'projection.device-list', {
       devices: [],
-      limits: session.limits,
+      limits: this._effectiveLimits(session),
       controlTtlSec: session.controlTtlSec,
       controlExpiresAt: new Date(session.controlExpiresAt).toISOString(),
       authorizedFor: null,
@@ -831,7 +866,7 @@ class RemoteProjectionService {
     if (!session.authorizedUserId) return Promise.resolve();
     return this._publishEnvelope(session, 'events', 'projection.device-list', {
       devices: this._ownerDevices().map((device) => this._deviceDescriptor(device, session)),
-      limits: session.limits,
+      limits: this._effectiveLimits(session),
       controlTtlSec: session.controlTtlSec,
       controlExpiresAt: new Date(session.controlExpiresAt).toISOString(),
       // 显式授权标记：操作方据此判断自己是否被授权（空设备清单不等于未授权）。
@@ -1321,7 +1356,10 @@ class RemoteProjectionService {
   }
 }
 
-const remoteProjectionService = new RemoteProjectionService();
+const remoteProjectionService = new RemoteProjectionService({
+  // 投影房间不单独给上限时，沿用持有方在远程设置里的电压上限
+  defaultLimitsProvider: () => require('./remoteOutputSettingsService').getLimits(),
+});
 
 module.exports = remoteProjectionService;
 module.exports.RemoteProjectionService = RemoteProjectionService;

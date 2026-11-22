@@ -47,6 +47,20 @@ async function request(path: string, body?: unknown, method = 'POST'): Promise<a
 }
 
 export const getRemoteSessionStatus = () => request('/status', undefined, 'GET') as Promise<RemoteSessionStatus>
+
+// 远程输出上限（被控端自己设的电压上限，A 改不了）：默认 20，范围 0–100
+export interface RemoteOutputLimits {
+  limits: { voltage: number; power: number; intensity: number }
+  voltage: number
+  range: { min: number; max: number }
+  defaults: { voltage: number; power: number; intensity: number }
+}
+
+export const getRemoteOutputLimits = () =>
+  request('/output-limits', undefined, 'GET') as Promise<RemoteOutputLimits>
+
+export const setRemoteOutputLimit = (voltage: number) =>
+  request('/output-limits', { voltage }, 'PUT') as Promise<RemoteOutputLimits>
 export const createRemoteSession = () => request('/create', {}) as Promise<RemoteSessionStatus>
 export const joinRemoteSession = (joinCode: string) => request('/join', { joinCode }) as Promise<RemoteSessionStatus>
 export const authorizeRemoteSession = (userId?: string) => request('/authorize', { userId }) as Promise<RemoteSessionStatus>
