@@ -8,9 +8,9 @@
 {
   "id": "rc-car",
   "title": "遥控车",
-  "description": "A 端发出前进、后退、左右转口令，B 端戴 DAN01 照做；不服从时 CUNZHI01 电击，档位逐级加强。",
-  "howTo": "1. 映射 DAN01 姿态传感器（必需）\n2. 映射电击设备（必需）\n3. 附加规则开启时再映射提肛压力传感器\n4. 开始后静止完成校准，A 端按住方向键指挥",
-  "version": "1.0.1",
+  "description": "A 端发出前进、后退、左右转、立起来、爬下口令，B 端戴 DAN01 照做；不服从时 CUNZHI01 电击，档位逐级加强。",
+  "howTo": "1. 映射 DAN01 姿态传感器（必需）\n2. 映射电击设备（必需）\n3. 附加规则开启时再映射提肛压力传感器\n4. 开始后趴姿静止完成校准，A 端按方向键与起趴键指挥，两端均可随时急停",
+  "version": "1.0.2",
   "runtime": "host",
   "core": "game-core.js",
   "events": "v2",
@@ -94,14 +94,15 @@
     {
       "key": "motionAccelStd",
       "type": "number",
-      "default": 0.8,
+      "default": 0.15,
       "label": "动作加速度阈值",
       "unit": "m/s²",
       "description": "加速度模长标准差超过基线多少算在动",
       "group": "difficulty",
-      "min": 0.1,
+      "min": 0.05,
       "max": 5,
-      "step": 0.1
+      "step": 0.05,
+      "required": false
     },
     {
       "key": "motionGyroDps",
@@ -113,7 +114,8 @@
       "group": "difficulty",
       "min": 2,
       "max": 200,
-      "step": 1
+      "step": 1,
+      "required": false
     },
     {
       "key": "headingTolerance",
@@ -125,7 +127,8 @@
       "group": "difficulty",
       "min": 10,
       "max": 90,
-      "step": 1
+      "step": 1,
+      "required": false
     },
     {
       "key": "stopGraceSec",
@@ -137,7 +140,47 @@
       "group": "difficulty",
       "min": 0.5,
       "max": 5,
-      "step": 0.5
+      "step": 0.5,
+      "required": false
+    },
+    {
+      "key": "postureSec",
+      "type": "number",
+      "default": 4,
+      "label": "起趴时限",
+      "unit": "秒",
+      "description": "立起来或爬下口令的完成时限",
+      "group": "difficulty",
+      "min": 1,
+      "max": 15,
+      "step": 0.5,
+      "required": false
+    },
+    {
+      "key": "standAngleDeg",
+      "type": "number",
+      "default": 55,
+      "label": "直立判定角",
+      "unit": "°",
+      "description": "相对趴姿重力方向夹角达到多少度算站直",
+      "group": "difficulty",
+      "min": 35,
+      "max": 85,
+      "step": 1,
+      "required": false
+    },
+    {
+      "key": "proneAngleDeg",
+      "type": "number",
+      "default": 25,
+      "label": "趴下判定角",
+      "unit": "°",
+      "description": "相对趴姿重力方向夹角回到多少度以内算趴好",
+      "group": "difficulty",
+      "min": 10,
+      "max": 45,
+      "step": 1,
+      "required": false
     },
     {
       "key": "shockVoltage",
@@ -225,7 +268,8 @@
       },
       "label": "附加规则",
       "description": "二选一或不开：提肛要求压力高于基线，寸止到临界即电击",
-      "group": "addon"
+      "group": "device",
+      "device": "sensor"
     },
     {
       "key": "pelvicDelta",
@@ -234,7 +278,7 @@
       "label": "提肛压力增量",
       "unit": "kPa",
       "description": "压力须高于基线多少",
-      "group": "addon",
+      "group": "device",
       "min": 0.5,
       "max": 30,
       "step": 0.5,
@@ -247,7 +291,7 @@
       "label": "提肛宽限",
       "unit": "秒",
       "description": "压力不达标多久判违规",
-      "group": "addon",
+      "group": "device",
       "min": 0.5,
       "max": 10,
       "step": 0.5,
@@ -259,7 +303,7 @@
       "default": false,
       "label": "仅移动时要求",
       "description": "只在移动/转向时检查提肛压力",
-      "group": "addon",
+      "group": "device",
       "device": "sensor"
     },
     {
@@ -269,7 +313,7 @@
       "label": "寸止中间压力",
       "unit": "kPa",
       "description": "达到即进入中段",
-      "group": "addon",
+      "group": "device",
       "min": 0,
       "max": 100,
       "step": 0.5,
@@ -282,7 +326,7 @@
       "label": "寸止临界压力",
       "unit": "kPa",
       "description": "达到即电击",
-      "group": "addon",
+      "group": "device",
       "min": 0,
       "max": 150,
       "step": 0.5,
@@ -294,14 +338,15 @@
       "default": false,
       "label": "转向反向",
       "description": "左右转向反了时打开",
-      "group": "advanced"
+      "group": "advanced",
+      "required": false
     }
   ],
   "i18n": {
     "en": {
       "title": "RC Car",
-      "description": "The controller sends forward, backward, left and right orders. The wearer follows with a DAN01; disobeying triggers a CUNZHI01 shock that escalates level by level.",
-      "howTo": "1. Map a DAN01 attitude sensor (required)\n2. Map a shock device (required)\n3. If an addon rule is on, also map a pelvic pressure sensor\n4. Stay still for calibration, then hold the direction keys to command",
+      "description": "The controller sends forward, backward, turn, stand up and get down orders. The wearer follows with a DAN01; disobeying triggers a CUNZHI01 shock that escalates level by level.",
+      "howTo": "1. Map a DAN01 attitude sensor (required)\n2. Map a shock device (required)\n3. If an addon rule is on, also map a pelvic pressure sensor\n4. Stay still in prone posture for calibration; either side can hit E-Stop anytime",
       "devices": {
         "imu": "DAN01 attitude sensor",
         "punish": "Shock device",
@@ -317,6 +362,9 @@
         "motionGyroDps": "Motion gyro threshold",
         "headingTolerance": "Heading tolerance",
         "stopGraceSec": "Stop grace",
+        "postureSec": "Posture time",
+        "standAngleDeg": "Stand angle",
+        "proneAngleDeg": "Prone angle",
         "shockVoltage": "Start voltage",
         "voltageStep": "Voltage per level",
         "maxVoltage": "Max voltage",
@@ -348,6 +396,9 @@
         "motionGyroDps": "Mean gyro above baseline counts as moving.",
         "headingTolerance": "Allowed heading drift while moving forward or backward.",
         "stopGraceSec": "How long movement is still allowed after stop.",
+        "postureSec": "Time allowed to stand up or get back down.",
+        "standAngleDeg": "Tilt angle from prone baseline required to count as standing.",
+        "proneAngleDeg": "Tilt angle from prone baseline required to count as prone.",
         "shockVoltage": "Voltage at level 1; capped at the max voltage.",
         "voltageStep": "Voltage added per level; 0 means a single level.",
         "maxVoltage": "Voltage cap; also decides the number of levels.",
@@ -371,6 +422,9 @@
         "motionGyroDps": "°/s",
         "headingTolerance": "°",
         "stopGraceSec": "s",
+        "postureSec": "s",
+        "standAngleDeg": "°",
+        "proneAngleDeg": "°",
         "shockVoltage": "V",
         "voltageStep": "V",
         "maxVoltage": "V",
@@ -434,7 +488,7 @@ body::after{
 @media(max-width:560px){.stage{grid-template-columns:minmax(0,1fr) 54px}}
 .compass-panel{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 8px 10px}
 #compass{width:100%;max-width:430px;height:auto;display:block}
-.compass-meta{display:flex;gap:20px;justify-content:center;font:11px var(--mono);color:var(--dim);letter-spacing:.08em}
+.compass-meta{display:flex;gap:14px 20px;flex-wrap:wrap;justify-content:center;font:11px var(--mono);color:var(--dim);letter-spacing:.08em}
 .compass-meta b{color:var(--text);font-weight:500}
 .ring-base{fill:none;stroke:rgba(45,226,230,.16);stroke-width:1}
 .tick{stroke:rgba(45,226,230,.3);stroke-width:1.2}
@@ -516,11 +570,25 @@ details.dir[open] summary::after{content:"−"}
 .dpad button .lbl{font:9px var(--mono);letter-spacing:.14em;color:var(--dim)}
 .dpad button:active,.dpad button.pressed{background:rgba(45,226,230,.2);border-color:var(--cyan);box-shadow:0 0 18px rgba(45,226,230,.28),inset 0 0 12px rgba(45,226,230,.15)}
 .dpad button:active .lbl,.dpad button.pressed .lbl{color:#eaffff}
+.dpad button:disabled,.posture-pad button:disabled{opacity:.35;cursor:not-allowed;box-shadow:none;background:rgba(45,226,230,.02);border-color:rgba(45,226,230,.12)}
+.dpad button:disabled .glyph,.posture-pad button:disabled .glyph{color:var(--dim)}
 .dpad button[data-cmd="forward"]{grid-area:1/2/2/3}
 .dpad button[data-cmd="left"]{grid-area:2/1/3/2}
 .dpad button[data-cmd="right"]{grid-area:2/3/3/4}
 .dpad button[data-cmd="backward"]{grid-area:3/2/4/3}
 .dpad .hub{grid-area:2/2/3/3;display:grid;place-items:center;border:1px dashed rgba(45,226,230,.2);font:9px var(--mono);letter-spacing:.16em;color:var(--dim)}
+.posture-pad{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;max-width:308px;margin:10px auto 0}
+.posture-pad button{
+  position:relative;display:flex;align-items:center;justify-content:space-between;gap:6px;
+  min-height:42px;padding:6px 10px;border:1px solid var(--line-strong);border-radius:2px;
+  background:rgba(45,226,230,.05);color:var(--text);cursor:pointer;user-select:none;touch-action:manipulation;
+  -webkit-tap-highlight-color:transparent;
+}
+.posture-pad button .glyph{font:16px var(--mono);color:var(--cyan)}
+.posture-pad button .txt{font:600 12px var(--sans);letter-spacing:.06em;flex:1;text-align:center}
+.posture-pad button .lbl{font:9px var(--mono);letter-spacing:.14em;color:var(--dim)}
+.posture-pad button:active,.posture-pad button.pressed{background:rgba(45,226,230,.2);border-color:var(--cyan);box-shadow:0 0 18px rgba(45,226,230,.28),inset 0 0 12px rgba(45,226,230,.15)}
+.posture-pad button:active .lbl,.posture-pad button.pressed .lbl{color:#eaffff}
 button:focus-visible,summary:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
 .shock-wrap{position:relative;width:118px;height:118px;margin:8px auto 0;display:grid;place-items:center}
 .shock-wrap svg{position:absolute;inset:0;width:100%;height:100%;transform:rotate(-90deg);pointer-events:none}
@@ -542,6 +610,14 @@ button:focus-visible,summary:focus-visible{outline:2px solid var(--cyan);outline
 }
 .utils button:active{background:rgba(45,226,230,.18);border-color:var(--cyan)}
 .utils button:disabled{opacity:.4;cursor:not-allowed}
+.utils button.estop{
+  border-color:rgba(255,59,92,.78);
+  background:linear-gradient(180deg,rgba(255,59,92,.36),rgba(255,59,92,.16));
+  color:#ffe9ee;font-weight:700;
+  box-shadow:0 0 14px rgba(255,59,92,.24);
+}
+.utils button.estop:active{background:rgba(255,59,92,.52);border-color:var(--danger);box-shadow:0 0 20px rgba(255,59,92,.45)}
+.utils button.estop:disabled{opacity:.38;box-shadow:none}
 .hint{margin:0;font:10px var(--mono);line-height:1.7;color:var(--dim);text-align:center;letter-spacing:.04em}
 kbd{font:10px var(--mono);color:var(--text);border:1px solid rgba(45,226,230,.25);border-bottom-width:2px;padding:0 3px;border-radius:2px}
 #flash{position:fixed;inset:0;z-index:9;pointer-events:none;opacity:0;box-shadow:inset 0 0 90px 24px rgba(255,59,92,.55);transition:opacity .18s}
@@ -570,7 +646,7 @@ kbd{font:10px var(--mono);color:var(--text);border:1px solid rgba(45,226,230,.25
   .controls .panel{padding:6px}
   .controls h3{margin-bottom:4px}
   .controls .hint{display:none}
-  .dpad{max-width:300px}
+  .dpad,.posture-pad{max-width:300px}
   .shock-wrap{width:92px;height:92px;margin-top:2px}
   #shockBtn{width:76px;height:76px;font-size:11px}
 }
@@ -588,7 +664,7 @@ kbd{font:10px var(--mono);color:var(--text);border:1px solid rgba(45,226,230,.25
 }
 @media(max-width:360px){
   .controls{grid-template-columns:1fr;grid-template-areas:"pad" "shock" "utils"}
-  .dpad{max-width:232px}
+  .dpad,.posture-pad{max-width:232px}
 }
 </style>
 </head>
@@ -630,6 +706,8 @@ kbd{font:10px var(--mono);color:var(--text);border:1px solid rgba(45,226,230,.25
           <div class="compass-meta">
             <span><span data-en="HDG">航向</span> <b id="headingValue">0.0°</b></span>
             <span><span data-en="DELTA">偏差</span> <b id="headingDelta">0.0°</b></span>
+            <span><span data-en="POSTURE">姿态</span> <b id="postureValue" data-en="Prone">趴姿</b></span>
+            <span><span data-en="TILT">倾角</span> <b id="tiltValue">0.0°</b></span>
           </div>
         </section>
         <section class="panel energy" id="energy" aria-label="动作能量">
@@ -656,6 +734,8 @@ kbd{font:10px var(--mono);color:var(--text);border:1px solid rgba(45,226,230,.25
 
       <div class="telemetry">
         <div class="tile"><span class="k" data-en="PHASE">阶段</span><span class="v" id="tilePhase">-</span></div>
+        <div class="tile"><span class="k" data-en="POSTURE">姿态</span><span class="v" id="tilePosture" data-en="Prone">趴姿</span></div>
+        <div class="tile"><span class="k" data-en="TILT">倾角</span><span class="v" id="tileTilt">0.0<small>°</small></span></div>
         <div class="tile"><span class="k" data-en="ELAPSED">已用</span><span class="v" id="tileElapsed">00:00</span></div>
         <div class="tile"><span class="k" data-en="REMAIN">剩余</span><span class="v" id="tileRemain">--:--</span></div>
         <div class="tile"><span class="k" data-en="COMPLIANCE">服从率</span><span class="v" id="tileCompliance">100<small>%</small></span></div>
@@ -683,6 +763,8 @@ kbd{font:10px var(--mono);color:var(--text);border:1px solid rgba(45,226,230,.25
         <div class="dir-grid">
           <span><span data-en="HEADING">累计转角</span><b id="dtHeading">--</b></span>
           <span><span data-en="DELTA">相对偏差</span><b id="dtDelta">--</b></span>
+          <span><span data-en="POSTURE">当前姿态</span><b id="dtPosture">--</b></span>
+          <span><span data-en="TILT">相对倾角</span><b id="dtTilt">--</b></span>
           <span><span data-en="ENERGY">动作能量</span><b id="dtEnergy">--</b></span>
           <span><span data-en="ACCEL STD">加速度标准差</span><b id="dtAccel">--</b></span>
           <span><span data-en="GYRO MEAN">角速度均值</span><b id="dtGyro">--</b></span>
@@ -701,6 +783,10 @@ kbd{font:10px var(--mono);color:var(--text);border:1px solid rgba(45,226,230,.25
           <button type="button" data-cmd="right" aria-label="右转 Right"><span class="glyph">▶</span><span class="lbl">D</span></button>
           <button type="button" data-cmd="backward" aria-label="后退 Backward"><span class="glyph">▼</span><span class="lbl">S</span></button>
         </div>
+        <div class="posture-pad" id="posturePad">
+          <button type="button" id="standBtn" data-cmd="stand" aria-label="立起来 Stand up"><span class="glyph">⤒</span><span class="txt" data-en="Stand up">立起来</span><span class="lbl">E</span></button>
+          <button type="button" id="proneBtn" data-cmd="prone" aria-label="爬下 Get down"><span class="glyph">⤓</span><span class="txt" data-en="Get down">爬下</span><span class="lbl">C</span></button>
+        </div>
       </section>
       <section class="panel">
         <h3 data-en="MANUAL SHOCK">手动电击</h3>
@@ -716,10 +802,11 @@ kbd{font:10px var(--mono);color:var(--text);border:1px solid rgba(45,226,230,.25
         <div class="utils">
           <button type="button" id="pauseBtn" disabled data-en="Pause">暂停</button>
           <button type="button" id="recalBtn" disabled data-en="Recalibrate">重新校准</button>
+          <button type="button" id="stopBtn" class="estop" disabled aria-label="急停 E-Stop" data-en="E-Stop">急停</button>
         </div>
         <p class="hint">
-          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> <span data-en="Hold to drive">按住行驶</span> · <kbd>SPACE</kbd> <span data-en="Shock">电击</span><br>
-          <span data-en="Tap to turn · Hold to keep turning">点按转向 · 按住持续转向</span>
+          <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> <span data-en="Hold to drive">按住行驶</span> · <kbd>E</kbd>/<kbd>C</kbd> <span data-en="Stand / Prone">起趴</span><br>
+          <kbd>SPACE</kbd> <span data-en="Shock">电击</span> · <kbd>ESC</kbd> <span data-en="E-Stop">急停</span> · <span data-en="Tap to turn · Hold to keep turning">点按转向 · 按住持续转向</span>
         </p>
       </section>
     </aside>

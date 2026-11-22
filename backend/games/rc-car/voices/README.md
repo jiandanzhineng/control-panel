@@ -14,8 +14,8 @@ python tools/cosyvoice/generate_voices.py check
 
 - 中文：`voices/zh/<key>.mp3`；英文：`voices/en/<key>.mp3`（同一音色）
 
-## 需要的 14 个 key
+## 需要的 16 个 key
 
 `calib_start` `calib_done` `cmd_forward` `cmd_backward` `cmd_left` `cmd_right`
-`cmd_stop` `violation` `level_up` `level_down` `pelvic_remind` `edging_peak`
-`sensor_lost` `game_end`
+`cmd_stand` `cmd_prone` `cmd_stop` `violation` `level_up` `level_down`
+`pelvic_remind` `edging_peak` `sensor_lost` `game_end`

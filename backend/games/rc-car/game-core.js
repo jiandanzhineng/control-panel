@@ -12,7 +12,7 @@
 // accel int16×0.00478515625 m/s²，gyro int16×0.0625 °/s，小端十六进制。
 
 const GAME_ID = 'rc-car';
-const VERSION = '1.0.1';
+const VERSION = '1.0.2';
 const TITLE = '遥控车';
 
 const LOG_LIMIT = 20;
@@ -36,6 +36,12 @@ const PHASE = {
   STOPPED: 'STOPPED',
   MOVING: 'MOVING',
   TURNING: 'TURNING',
+  POSTURE: 'POSTURE',
+};
+
+const POSTURE = {
+  PRONE: 'prone',
+  STANDING: 'standing',
 };
 
 const CMD_TEXT = {
@@ -43,35 +49,42 @@ const CMD_TEXT = {
   backward: '后退',
   left: '左转',
   right: '右转',
+  stand: '立起来',
+  prone: '爬下',
 };
 
+const DRIVE_CMDS = new Set(['forward', 'backward']);
 const TURN_CMDS = new Set(['left', 'right']);
-const CMD_SET = new Set(['forward', 'backward', 'left', 'right']);
+const POSTURE_CMDS = new Set(['stand', 'prone']);
+const CMD_SET = new Set(['forward', 'backward', 'left', 'right', 'stand', 'prone']);
 
 // 与 index.html 内联 manifest 的 params 一致（键 / 默认值 / 边界）
 const PARAMS = [
-  { key: 'durationMin', type: 'number', default: 15, min: 0, max: 180, label: '游戏时长', unit: '分钟', group: 'core', description: '0 表示不限时' },
-  { key: 'reactionSec', type: 'number', default: 3, min: 1, max: 10, label: '反应时间', unit: '秒', group: 'core', description: '按下后给多久起步；转向窗口长度' },
-  { key: 'turnDeg', type: 'number', default: 20, min: 5, max: 90, label: '转向角度', unit: '°', group: 'core', description: '一个窗口内须累计转过的角度' },
-  { key: 'calibSec', type: 'number', default: 3, min: 2, max: 10, label: '校准时长', unit: '秒', group: 'core', description: '开局保持静止采集基线的时长' },
+  { key: 'durationMin', type: 'number', default: 15, min: 0, max: 180, step: 1, label: '游戏时长', unit: '分钟', group: 'core', description: '0 表示不限时' },
+  { key: 'reactionSec', type: 'number', default: 3, min: 1, max: 10, step: 0.5, label: '反应时间', unit: '秒', group: 'core', description: '按下后给多久起步；转向窗口长度' },
+  { key: 'turnDeg', type: 'number', default: 20, min: 5, max: 90, step: 1, label: '转向角度', unit: '°', group: 'core', description: '一个窗口内须累计转过的角度' },
+  { key: 'calibSec', type: 'number', default: 3, min: 2, max: 10, step: 1, label: '校准时长', unit: '秒', group: 'core', description: '开局保持静止采集基线的时长' },
   { key: 'voiceEnabled', type: 'boolean', default: true, label: '语音播报', group: 'core', description: '执行端是否播放口令语音' },
-  { key: 'motionAccelStd', type: 'number', default: 0.8, min: 0.1, max: 5, label: '动作加速度阈值', unit: 'm/s²', group: 'difficulty', description: '加速度模长标准差超过基线多少算在动' },
-  { key: 'motionGyroDps', type: 'number', default: 20, min: 2, max: 200, label: '动作角速度阈值', unit: '°/s', group: 'difficulty', description: '角速度均值超过基线多少算在动' },
-  { key: 'headingTolerance', type: 'number', default: 35, min: 10, max: 90, label: '朝向容差', unit: '°', group: 'difficulty', description: '前进/后退时允许偏离起始朝向的角度' },
-  { key: 'stopGraceSec', type: 'number', default: 1.5, min: 0.5, max: 5, label: '停止缓冲', unit: '秒', group: 'difficulty', description: '喊停后仍允许动的缓冲时间' },
-  { key: 'shockVoltage', type: 'number', default: 10, min: 0, max: 100, label: '起始电压', unit: 'V', group: 'punish', description: '1 档电击电压；高于最高电压时按最高电压算' },
-  { key: 'voltageStep', type: 'number', default: 5, min: 0, max: 50, label: '每档增量', unit: 'V', group: 'punish', description: '每升一档增加的电压；0 表示不升压，只有 1 档' },
-  { key: 'maxVoltage', type: 'number', default: 40, min: 0, max: 100, label: '最高电压', unit: 'V', group: 'punish', description: '电压上限，同时决定档位数量' },
-  { key: 'shockDurationMs', type: 'number', default: 1000, min: 100, max: 5000, label: '电击时长', unit: 'ms', group: 'punish', description: '每次电击持续时间' },
+  { key: 'motionAccelStd', type: 'number', default: 0.15, min: 0.05, max: 5, step: 0.05, label: '动作加速度阈值', unit: 'm/s²', group: 'difficulty', description: '加速度模长标准差超过基线多少算在动', required: false },
+  { key: 'motionGyroDps', type: 'number', default: 20, min: 2, max: 200, step: 1, label: '动作角速度阈值', unit: '°/s', group: 'difficulty', description: '角速度均值超过基线多少算在动', required: false },
+  { key: 'headingTolerance', type: 'number', default: 35, min: 10, max: 90, step: 1, label: '朝向容差', unit: '°', group: 'difficulty', description: '前进/后退时允许偏离起始朝向的角度', required: false },
+  { key: 'stopGraceSec', type: 'number', default: 1.5, min: 0.5, max: 5, step: 0.5, label: '停止缓冲', unit: '秒', group: 'difficulty', description: '喊停后仍允许动的缓冲时间', required: false },
+  { key: 'postureSec', type: 'number', default: 4, min: 1, max: 15, step: 0.5, label: '起趴时限', unit: '秒', group: 'difficulty', description: '立起来或爬下口令的完成时限', required: false },
+  { key: 'standAngleDeg', type: 'number', default: 55, min: 35, max: 85, step: 1, label: '直立判定角', unit: '°', group: 'difficulty', description: '相对趴姿重力方向夹角达到多少度算站直', required: false },
+  { key: 'proneAngleDeg', type: 'number', default: 25, min: 10, max: 45, step: 1, label: '趴下判定角', unit: '°', group: 'difficulty', description: '相对趴姿重力方向夹角回到多少度以内算趴好', required: false },
+  { key: 'shockVoltage', type: 'number', default: 10, min: 0, max: 100, step: 1, label: '起始电压', unit: 'V', group: 'punish', description: '1 档电击电压；高于最高电压时按最高电压算' },
+  { key: 'voltageStep', type: 'number', default: 5, min: 0, max: 50, step: 1, label: '每档增量', unit: 'V', group: 'punish', description: '每升一档增加的电压；0 表示不升压，只有 1 档' },
+  { key: 'maxVoltage', type: 'number', default: 40, min: 0, max: 100, step: 1, label: '最高电压', unit: 'V', group: 'punish', description: '电压上限，同时决定档位数量' },
+  { key: 'shockDurationMs', type: 'number', default: 1000, min: 100, max: 5000, step: 100, label: '电击时长', unit: 'ms', group: 'punish', description: '每次电击持续时间' },
   { key: 'escalation', type: 'boolean', default: true, label: '逐级加强', group: 'punish', description: '违规升档、连续完成降档' },
-  { key: 'deescalateAfter', type: 'number', default: 5, min: 1, max: 50, label: '降档完成数', unit: '条', group: 'punish', description: '连续完成多少条指令降一档' },
-  { key: 'addonMode', type: 'number', default: 0, min: 0, max: 2, label: '附加规则', group: 'addon', description: '0 无 / 1 提肛 / 2 寸止' },
-  { key: 'pelvicDelta', type: 'number', default: 3, min: 0.5, max: 30, label: '提肛压力增量', unit: 'kPa', group: 'addon', description: '压力须高于基线多少' },
-  { key: 'pelvicGraceSec', type: 'number', default: 2, min: 0.5, max: 10, label: '提肛宽限', unit: '秒', group: 'addon', description: '压力不达标多久判违规' },
-  { key: 'pelvicOnlyMoving', type: 'boolean', default: false, label: '仅移动时要求', group: 'addon', description: '只在移动/转向时检查提肛压力' },
-  { key: 'edgingMid', type: 'number', default: 8, min: 0, max: 100, label: '寸止中间压力', unit: 'kPa', group: 'addon', description: '达到即进入中段' },
-  { key: 'edgingCritical', type: 'number', default: 15, min: 0, max: 150, label: '寸止临界压力', unit: 'kPa', group: 'addon', description: '达到即电击' },
-  { key: 'turnInvert', type: 'boolean', default: false, label: '转向反向', group: 'advanced', description: '左右转向反了时打开' },
+  { key: 'deescalateAfter', type: 'number', default: 5, min: 1, max: 50, step: 1, label: '降档完成数', unit: '条', group: 'punish', description: '连续完成多少条指令降一档' },
+  { key: 'addonMode', type: 'number', default: 0, min: 0, max: 2, label: '附加规则', group: 'device', device: 'sensor', description: '0 无 / 1 提肛 / 2 寸止' },
+  { key: 'pelvicDelta', type: 'number', default: 3, min: 0.5, max: 30, step: 0.5, label: '提肛压力增量', unit: 'kPa', group: 'device', device: 'sensor', description: '压力须高于基线多少' },
+  { key: 'pelvicGraceSec', type: 'number', default: 2, min: 0.5, max: 10, step: 0.5, label: '提肛宽限', unit: '秒', group: 'device', device: 'sensor', description: '压力不达标多久判违规' },
+  { key: 'pelvicOnlyMoving', type: 'boolean', default: false, label: '仅移动时要求', group: 'device', device: 'sensor', description: '只在移动/转向时检查提肛压力' },
+  { key: 'edgingMid', type: 'number', default: 8, min: 0, max: 100, step: 0.5, label: '寸止中间压力', unit: 'kPa', group: 'device', device: 'sensor', description: '达到即进入中段' },
+  { key: 'edgingCritical', type: 'number', default: 15, min: 0, max: 150, step: 0.5, label: '寸止临界压力', unit: 'kPa', group: 'device', device: 'sensor', description: '达到即电击' },
+  { key: 'turnInvert', type: 'boolean', default: false, label: '转向反向', group: 'advanced', description: '左右转向反了时打开', required: false },
 ];
 
 function isPlainObject(value) {
@@ -266,12 +279,14 @@ class RcCarCore {
     if (rt.phase === PHASE.CALIBRATING) {
       rt.calibEndMs = nowMs + Math.max(1, this.cfg.calibSec) * 1000;
       rt.calibAccel = [];
+      rt.calibAccelVecs = [];
       rt.calibGyro = [];
       rt.calibPressure = [];
     } else if (rt.command) {
       rt.command.windowRef = this._heading();
-      rt.command.deadlineMs = nowMs + Math.max(0, this.cfg.reactionSec) * 1000;
-      rt.command.status = 'pending';
+      const windowSec = POSTURE_CMDS.has(rt.command.cmd) ? this.cfg.postureSec : this.cfg.reactionSec;
+      rt.command.deadlineMs = nowMs + Math.max(0, windowSec) * 1000;
+      if (!rt.command.violated) rt.command.status = 'pending';
       if (rt.command.held) rt.command.lastPressMs = nowMs;
     } else if (rt.phase === PHASE.STOPPED) {
       rt.stopCheckAtMs = nowMs + Math.max(0, this.cfg.stopGraceSec) * 1000;
@@ -364,6 +379,7 @@ class RcCarCore {
     const rt = this.rt;
     const nowMs = rt.lastUpdateTs || 0;
     const heading = this._heading();
+    const tiltDeg = round1(this._tiltDeg());
     const motion = this._motionStats(nowMs);
     const command = rt.command
       ? {
@@ -372,7 +388,7 @@ class RcCarCore {
         sinceMs: rt.command.sinceMs,
         deadlineMs: rt.command.deadlineMs,
         progressDeg: round1(this._commandProgress()),
-        targetDeg: TURN_CMDS.has(rt.command.cmd) ? this.cfg.turnDeg : 0,
+        targetDeg: round1(this._commandTarget()),
         status: rt.command.status,
       }
       : null;
@@ -388,6 +404,8 @@ class RcCarCore {
       ended: !!rt.ended,
       endReason: rt.endReason || '',
       phase: rt.phase,
+      posture: rt.posture,
+      tiltDeg,
       startedAtMs: rt.startedAtMs || 0,
       elapsedMs: rt.running || rt.ended ? Math.max(0, nowMs - (rt.startedAtMs || 0)) : 0,
       remainingMs: rt.endTimeMs ? (rt.ended ? 0 : Math.max(0, rt.endTimeMs - nowMs)) : null,
@@ -508,14 +526,16 @@ class RcCarCore {
       endTimeMs: 0,
       lastUpdateTs: nowMs || 0,
       phase: PHASE.STOPPED,
+      posture: POSTURE.PRONE,
       calibEndMs: 0,
       calibDoneAtMs: 0,
       hasImuDropout: false,
       calibRetries: 0,
       calibAccel: [],
+      calibAccelVecs: [],
       calibGyro: [],
       calibPressure: [],
-      baseline: { accelStd: 0, gyroMean: 0, pressure: null },
+      baseline: { accelStd: 0, gyroMean: 0, pressure: null, gravity: null },
       pressurePending: false,
       sensorWaitUntilMs: 0,
       sensorWarned: false,
@@ -527,7 +547,7 @@ class RcCarCore {
       quat: null,
       accel: null,
       gyro: null,
-      gravitySensor: null,
+      gravity: null,
       vertical: [0, 0, 1],
       headingRaw: 0,
       hasImu: false,
@@ -537,6 +557,7 @@ class RcCarCore {
       command: null,
       pendingCheck: null,
       stopCheckAtMs: 0,
+      postureBrokenCooldownUntilMs: 0,
       level: 1,
       compliantStreak: 0,
       stats: { commands: 0, completed: 0, violations: 0, violatedCommands: 0, shocks: 0, manualShocks: 0 },
@@ -617,9 +638,29 @@ class RcCarCore {
   _commandProgress() {
     const c = this.rt.command;
     if (!c) return 0;
+    if (POSTURE_CMDS.has(c.cmd)) return this._tiltDeg();
     if (!TURN_CMDS.has(c.cmd)) return 0;
     const dir = c.cmd === 'left' ? 1 : -1;
     return dir * (this._heading() - c.windowRef);
+  }
+
+  _commandTarget() {
+    const c = this.rt.command;
+    if (!c) return 0;
+    if (TURN_CMDS.has(c.cmd)) return this.cfg.turnDeg;
+    if (c.cmd === 'stand') return this.cfg.standAngleDeg;
+    if (c.cmd === 'prone') return this.cfg.proneAngleDeg;
+    return 0;
+  }
+
+  _tiltDeg() {
+    const rt = this.rt;
+    if (!rt.gravity || !rt.baseline.gravity) return 0;
+    const unit = normalize3(rt.gravity);
+    if (!unit) return 0;
+    const base = rt.baseline.gravity;
+    const dot = clamp(unit[0] * base[0] + unit[1] * base[1] + unit[2] * base[2], -1, 1);
+    return (Math.acos(dot) * 180) / Math.PI;
   }
 
   _log(level, message, atMs) {
@@ -654,6 +695,9 @@ class RcCarCore {
       if (rt.command.held) candidates.push(rt.command.lastPressMs + HOLD_KEEPALIVE_MS);
     }
     if (rt.stopCheckAtMs) candidates.push(rt.stopCheckAtMs);
+    if (rt.postureBrokenCooldownUntilMs && this._isPostureBroken()) {
+      candidates.push(rt.postureBrokenCooldownUntilMs);
+    }
     if (this.cfg.addonMode === 1 && rt.addonBelowSinceMs) {
       candidates.push(rt.addonBelowSinceMs + Math.max(0, this.cfg.pelvicGraceSec) * 1000);
     }
@@ -696,8 +740,8 @@ class RcCarCore {
   // 没有加速度时回落到世界 Z。
   _verticalAxis() {
     const rt = this.rt;
-    if (rt.gravitySensor && rt.quat) {
-      const world = rotateVec(rt.quat, rt.gravitySensor);
+    if (rt.gravity && rt.quat) {
+      const world = rotateVec(rt.quat, rt.gravity);
       const unit = normalize3(world);
       if (unit) return unit[2] < 0 ? [-unit[0], -unit[1], -unit[2]] : unit;
     }
@@ -726,9 +770,9 @@ class RcCarCore {
     this._touchImu(nowMs);
     const rt = this.rt;
     rt.accel = accel;
-    if (!rt.gravitySensor) rt.gravitySensor = accel.slice();
+    if (!rt.gravity) rt.gravity = accel.slice();
     else {
-      rt.gravitySensor = rt.gravitySensor.map((old, index) => old + GRAVITY_LP_ALPHA * (accel[index] - old));
+      rt.gravity = rt.gravity.map((old, index) => old + GRAVITY_LP_ALPHA * (accel[index] - old));
     }
     rt.vertical = this._verticalAxis();
     const magnitude = Math.hypot(accel[0], accel[1], accel[2]);
@@ -736,6 +780,11 @@ class RcCarCore {
     if (rt.phase === PHASE.CALIBRATING) {
       rt.calibAccel.push(magnitude);
       if (rt.calibAccel.length > MAX_CALIB_SAMPLES) rt.calibAccel.shift();
+      rt.calibAccelVecs.push(accel.slice());
+      if (rt.calibAccelVecs.length > MAX_CALIB_SAMPLES) rt.calibAccelVecs.shift();
+    } else if (!rt.baseline.gravity) {
+      // 校准结束瞬间尚无 accel 时，在首个非空 accel 补记趴姿重力基线
+      rt.baseline.gravity = normalize3(accel);
     }
   }
 
@@ -874,12 +923,15 @@ class RcCarCore {
       } else if (rt.phase === PHASE.TURNING && rt.command) {
         rt.command.windowRef = this._heading();
         rt.command.deadlineMs = nowMs + Math.max(0, this.cfg.reactionSec) * 1000;
+      } else if (rt.phase === PHASE.POSTURE && rt.command) {
+        rt.command.deadlineMs = nowMs + Math.max(0, this.cfg.postureSec) * 1000;
       } else if (rt.phase === PHASE.STOPPED) {
         rt.stopCheckAtMs = nowMs + Math.max(0, this.cfg.stopGraceSec) * 1000;
       } else if (rt.phase === PHASE.CALIBRATING && rt.hasImuDropout) {
         // 校准期间断线：恢复后重新采满 calibSec，避免拿断档前的旧样本当基线（开局首包不算断线）
         rt.calibEndMs = nowMs + Math.max(1, this.cfg.calibSec) * 1000;
         rt.calibAccel = [];
+        rt.calibAccelVecs = [];
         rt.calibGyro = [];
       }
       rt.addonBelowSinceMs = 0;
@@ -898,6 +950,7 @@ class RcCarCore {
       rt.calibRetries += 1;
       rt.calibEndMs = nowMs + Math.max(1, this.cfg.calibSec) * 1000;
       rt.calibAccel = [];
+      rt.calibAccelVecs = [];
       rt.calibGyro = [];
       this._emitPrompt('calib_start', nowMs);
       this._log('warn', `检测到移动，重新校准（第 ${rt.calibRetries} 次）`, nowMs);
@@ -911,10 +964,23 @@ class RcCarCore {
     rt.calibDoneAtMs = nowMs;
     rt.baseline.accelStd = stdDev(rt.calibAccel);
     rt.baseline.gyroMean = rt.calibGyro.length ? mean(rt.calibGyro) : 0;
+    if (rt.calibAccelVecs.length) {
+      const meanVec = [
+        mean(rt.calibAccelVecs.map((v) => v[0])),
+        mean(rt.calibAccelVecs.map((v) => v[1])),
+        mean(rt.calibAccelVecs.map((v) => v[2])),
+      ];
+      rt.baseline.gravity = normalize3(meanVec);
+    } else if (rt.gravity) {
+      rt.baseline.gravity = normalize3(rt.gravity);
+    }
     if (rt.calibPressure.length) rt.baseline.pressure = mean(rt.calibPressure);
     rt.calibAccel = [];
+    rt.calibAccelVecs = [];
     rt.calibGyro = [];
     rt.calibPressure = [];
+    rt.posture = POSTURE.PRONE;
+    rt.postureBrokenCooldownUntilMs = 0;
     rt.phase = PHASE.STOPPED;
     this._enterStopped(nowMs);
     this._emitPrompt('calib_done', nowMs);
@@ -1057,9 +1123,22 @@ class RcCarCore {
     const rt = this.rt;
     const current = rt.command;
     if (current && current.cmd === cmd) {
+      if (POSTURE_CMDS.has(cmd)) return;
       // 按住期间每 400ms 重发：只续命，不重置窗口
       current.lastPressMs = nowMs;
       current.held = true;
+      return;
+    }
+    if (cmd === 'stand' && rt.posture === POSTURE.STANDING && !(current && current.cmd === 'prone')) {
+      this._log('info', '已处于直立姿态，忽略立起来指令', nowMs);
+      return;
+    }
+    if (cmd === 'prone' && rt.posture === POSTURE.PRONE && !(current && current.cmd === 'stand')) {
+      this._log('info', '已处于趴姿，忽略爬下指令', nowMs);
+      return;
+    }
+    if (DRIVE_CMDS.has(cmd) && rt.posture === POSTURE.STANDING) {
+      this._log('info', '直立姿态下不能爬行，忽略指令', nowMs);
       return;
     }
     this._startCommand(nowMs, cmd);
@@ -1070,16 +1149,17 @@ class RcCarCore {
     // 上一条指令松开后还没到停止检查就被新指令取代：按当前动作当场结算
     if (rt.pendingCheck) this._resolveStopCheck(nowMs);
     if (rt.command) this._endCommand(nowMs, 'replaced');
-    const reactionMs = Math.max(0, this.cfg.reactionSec) * 1000;
+    const isPosture = POSTURE_CMDS.has(cmd);
+    const windowMs = Math.max(0, isPosture ? this.cfg.postureSec : this.cfg.reactionSec) * 1000;
     const heading = this._heading();
     rt.command = {
       cmd,
-      held: true,
+      held: !isPosture,
       sinceMs: nowMs,
-      deadlineMs: nowMs + reactionMs,
+      deadlineMs: nowMs + windowMs,
       headingRef: heading,
       windowRef: heading,
-      lastPressMs: nowMs,
+      lastPressMs: isPosture ? 0 : nowMs,
       status: 'pending',
       violated: false,
       violationCounted: false,
@@ -1087,9 +1167,10 @@ class RcCarCore {
       everMoved: false,
     };
     rt.stats.commands += 1;
-    rt.phase = TURN_CMDS.has(cmd) ? PHASE.TURNING : PHASE.MOVING;
+    rt.phase = isPosture ? PHASE.POSTURE : (TURN_CMDS.has(cmd) ? PHASE.TURNING : PHASE.MOVING);
     rt.stopCheckAtMs = 0;
     rt.addonBelowSinceMs = 0;
+    if (isPosture) rt.postureBrokenCooldownUntilMs = 0;
     this._emitPrompt(`cmd_${cmd}`, nowMs);
     this._log('info', `指令：${CMD_TEXT[cmd]}`, nowMs);
   }
@@ -1168,7 +1249,7 @@ class RcCarCore {
     const command = rt.command;
     command.held = false;
     command.lastPressMs = 0;
-    if (TURN_CMDS.has(cmd)) return; // 转向：等本窗口到点再判，完成/超时才结束指令
+    if (TURN_CMDS.has(cmd) || POSTURE_CMDS.has(cmd)) return; // 转向/起趴：等本窗口判定，不取消窗口也不播停
     this._releaseDrive(nowMs, command, 'release');
     this._enterStopped(nowMs);
     this._emitPrompt('cmd_stop', nowMs);
@@ -1183,7 +1264,7 @@ class RcCarCore {
     if (nowMs - command.lastPressMs <= HOLD_KEEPALIVE_MS) return;
     command.held = false;
     command.lastPressMs = 0;
-    if (TURN_CMDS.has(command.cmd)) return;
+    if (TURN_CMDS.has(command.cmd) || POSTURE_CMDS.has(command.cmd)) return;
     this._releaseDrive(nowMs, command, 'keepalive');
     this._enterStopped(nowMs);
     this._emitPrompt('cmd_stop', nowMs);
@@ -1192,9 +1273,72 @@ class RcCarCore {
 
   _judge(nowMs) {
     const phase = this.rt.phase;
+    if (phase === PHASE.POSTURE) return this._judgePosture(nowMs);
+    this._checkPostureHold(nowMs);
     if (phase === PHASE.MOVING) return this._judgeMoving(nowMs);
     if (phase === PHASE.TURNING) return this._judgeTurning(nowMs);
     if (phase === PHASE.STOPPED) return this._judgeStopped(nowMs);
+  }
+
+  _judgePosture(nowMs) {
+    const rt = this.rt;
+    const command = rt.command;
+    if (!command || !POSTURE_CMDS.has(command.cmd)) {
+      this._enterStopped(nowMs);
+      return;
+    }
+    const tilt = this._tiltDeg();
+    const reached = command.cmd === 'stand'
+      ? tilt >= this.cfg.standAngleDeg
+      : tilt <= this.cfg.proneAngleDeg;
+    if (reached) {
+      rt.posture = command.cmd === 'stand' ? POSTURE.STANDING : POSTURE.PRONE;
+      rt.postureBrokenCooldownUntilMs = 0;
+      if (command.violated) {
+        this._endCommand(nowMs, 'posture-after-violation');
+      } else {
+        rt.command = null;
+        this._completeCommand(nowMs);
+      }
+      this._enterStopped(nowMs);
+      return;
+    }
+    if (nowMs < command.deadlineMs) return;
+    this._violate(nowMs, 'posture-timeout');
+    command.status = 'violating';
+    command.deadlineMs = nowMs + Math.max(0, this.cfg.postureSec) * 1000;
+  }
+
+  _isPostureBroken() {
+    const rt = this.rt;
+    if (!rt.gravity || !rt.baseline.gravity) return false;
+    const tilt = this._tiltDeg();
+    if (rt.posture === POSTURE.STANDING) {
+      if (rt.phase !== PHASE.STOPPED && rt.phase !== PHASE.TURNING) return false;
+      const minStandDeg = Math.max(this.cfg.proneAngleDeg + 10, this.cfg.standAngleDeg - 15);
+      return tilt < minStandDeg;
+    }
+    if (rt.posture === POSTURE.PRONE) {
+      if (rt.phase !== PHASE.STOPPED && rt.phase !== PHASE.MOVING && rt.phase !== PHASE.TURNING) return false;
+      const maxProneDeg = Math.min(this.cfg.standAngleDeg - 10, this.cfg.proneAngleDeg + 20);
+      return tilt > maxProneDeg;
+    }
+    return false;
+  }
+
+  _checkPostureHold(nowMs) {
+    const rt = this.rt;
+    if (!this._isPostureBroken()) return;
+    if (nowMs < rt.postureBrokenCooldownUntilMs) return;
+    if (rt.phase === PHASE.STOPPED) {
+      if (rt.pendingCheck) {
+        rt.pendingCheck = null;
+        rt.stats.violatedCommands += 1;
+      }
+      rt.stopCheckAtMs = Math.max(rt.stopCheckAtMs, nowMs + Math.max(0, this.cfg.reactionSec) * 1000);
+    }
+    this._violate(nowMs, 'posture-broken');
+    rt.postureBrokenCooldownUntilMs = nowMs + Math.max(0, this.cfg.reactionSec) * 1000;
   }
 
   _judgeMoving(nowMs) {
@@ -1299,12 +1443,17 @@ class RcCarCore {
     const rt = this.rt;
     rt.command = null;
     rt.pendingCheck = null;
+    rt.posture = POSTURE.PRONE;
+    rt.gravity = null;
+    rt.baseline.gravity = null;
     rt.phase = PHASE.CALIBRATING;
     rt.calibEndMs = nowMs + Math.max(1, this.cfg.calibSec) * 1000;
     rt.calibAccel = [];
+    rt.calibAccelVecs = [];
     rt.calibGyro = [];
     rt.calibPressure = [];
     rt.stopCheckAtMs = 0;
+    rt.postureBrokenCooldownUntilMs = 0;
     rt.addonBelowSinceMs = 0;
     rt.addonPromptArmed = true;
     rt.edgingLatched = false;
@@ -1323,6 +1472,7 @@ class RcCarCore {
     rt.command = null;
     rt.pendingCheck = null;
     rt.stopCheckAtMs = 0;
+    rt.postureBrokenCooldownUntilMs = 0;
     rt.addonBelowSinceMs = 0;
     rt.pressurePending = false;
     rt.sensorWaitUntilMs = 0;
@@ -1338,6 +1488,7 @@ module.exports = {
   TITLE,
   PARAMS,
   PHASE,
+  POSTURE,
   // 纯函数导出：方向标定与单测用
   decodeInt16Hex,
   decodeQuat,

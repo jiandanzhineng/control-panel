@@ -25,9 +25,11 @@
     return Number.isFinite(n) ? n.toFixed(digits == null ? 1 : digits) : '--';
   }
 
-  var CMD_LABEL = { forward: '前进', backward: '后退', left: '左转', right: '右转' };
-  var CMD_GLYPH = { forward: '▲', backward: '▼', left: '◀', right: '▶' };
-  var PHASE_LABEL = { CALIBRATING: '校准中', STOPPED: '待命', MOVING: '移动中', TURNING: '转向中' };
+  var CMD_LABEL = { forward: '前进', backward: '后退', left: '左转', right: '右转', stand: '立起来', prone: '爬下' };
+  var CMD_GLYPH = { forward: '▲', backward: '▼', left: '◀', right: '▶', stand: '⤒', prone: '⤓' };
+  var POSTURE_CMDS = { stand: true, prone: true };
+  var POSTURE_LABEL = { prone: '趴姿', standing: '直立' };
+  var PHASE_LABEL = { CALIBRATING: '校准中', STOPPED: '待命', MOVING: '移动中', TURNING: '转向中', POSTURE: '起趴中' };
   var PROMPT_TEXT = {
     calib_start: '校准开始：保持不动',
     calib_done: '校准完成',
@@ -35,6 +37,8 @@
     cmd_backward: '后退',
     cmd_left: '左转',
     cmd_right: '右转',
+    cmd_stand: '立起来',
+    cmd_prone: '爬下',
     cmd_stop: '停',
     violation: '没有照做',
     level_up: '加强一档',
@@ -47,7 +51,7 @@
   var VOICE_KEYS = {};
   Object.keys(PROMPT_TEXT).forEach(function (key) { VOICE_KEYS[key] = true; });
   var EDGING_LABEL = { CALM: '平静', MIDDLE: '中段', EDGING: '临界' };
-  var END_LABEL = { time: '时间到', stop: '已停止', action: '已停止' };
+  var END_LABEL = { time: '时间到', stop: '已停止', action: '已停止', 'remote-stop': '已停止' };
 
   function voiceLocale() {
     try {
@@ -361,6 +365,10 @@
     if (hv) hv.textContent = fmtDeg(s.heading);
     var hd = $('#headingDelta');
     if (hd) hd.textContent = fmtSigned(delta);
+    var pv = $('#postureValue');
+    if (pv) pv.textContent = t(POSTURE_LABEL[s.posture] || '趴姿');
+    var tv = $('#tiltValue');
+    if (tv) tv.textContent = fmtDeg(s.tiltDeg);
 
     var cmd = s.command;
     var targetD = '';
@@ -463,6 +471,14 @@
     }
     var tilePhase = $('#tilePhase');
     if (tilePhase) tilePhase.textContent = phase;
+    var postureText = t(POSTURE_LABEL[s.posture] || '趴姿');
+    var tilePosture = $('#tilePosture');
+    if (tilePosture) {
+      tilePosture.textContent = postureText;
+      tilePosture.className = 'v' + (s.posture === 'standing' ? ' warn' : '');
+    }
+    var tileTilt = $('#tileTilt');
+    if (tileTilt) tileTilt.innerHTML = fmtNum(s.tiltDeg, 1) + '<small>°</small>';
     var elapsed = Number(s.elapsedMs) || 0;
     var mission = $('#missionTime');
     if (mission) mission.textContent = fmtDuration(elapsed);
@@ -550,6 +566,8 @@
     var set = function (id, value) { var el = $('#' + id); if (el) el.textContent = value; };
     set('dtHeading', fmtDeg(s.heading));
     set('dtDelta', fmtSigned(s.headingDelta));
+    set('dtPosture', t(POSTURE_LABEL[s.posture] || '趴姿'));
+    set('dtTilt', fmtDeg(s.tiltDeg));
     var motion = s.motion || {};
     set('dtEnergy', fmtNum(motion.energy, 2));
     set('dtAccel', fmtNum(motion.accelStd, 2) + ' m/s²');
@@ -613,6 +631,7 @@
   // ---- 操作 ----
   var HOLD_RESEND_MS = 400;
   var active = { cmd: '', source: '', key: '', pointerId: null, timer: null, seq: 0 };
+  var tapFlashTimer = null;
 
   function send(action, payload) {
     if (!bridge || !authorized) return;
@@ -628,10 +647,57 @@
     });
   }
 
-  function press(cmd, source, key, pointerId) {
+  function isCmdAllowed(cmd, s) {
+    if (!s || !s.running || s.ended) return false;
+    if (s.phase === 'CALIBRATING' || s.paused) return false;
+    var posture = s.posture === 'standing' ? 'standing' : 'prone';
+    var curCmd = s.command && s.command.cmd ? String(s.command.cmd) : '';
+    if ((cmd === 'forward' || cmd === 'backward') && posture === 'standing') return false;
+    if (cmd === 'stand' && (curCmd === 'stand' || (posture === 'standing' && curCmd !== 'prone'))) return false;
+    if (cmd === 'prone' && (curCmd === 'prone' || (posture === 'prone' && curCmd !== 'stand'))) return false;
+    return true;
+  }
+
+  function clearActiveLocal() {
+    if (!active.cmd) return;
+    var cmd = active.cmd;
+    if (active.timer) { clearInterval(active.timer); active.timer = null; }
+    active.cmd = '';
+    active.source = '';
+    active.key = '';
+    active.pointerId = null;
+    setPressed(cmd, false);
+  }
+
+  function tapPosture(cmd) {
+    if (!bridge || !authorized) return;
+    if (!isCmdAllowed(cmd, lastSnapshot)) return;
+    if (active.cmd) release();
+    active.seq += 1;
+    send('press', { cmd: cmd, seq: active.seq });
+    setPressed('stand', cmd === 'stand');
+    setPressed('prone', cmd === 'prone');
+    if (tapFlashTimer) clearTimeout(tapFlashTimer);
+    tapFlashTimer = setTimeout(function () {
+      setPressed('stand', false);
+      setPressed('prone', false);
+    }, 180);
+  }
+
+  function triggerStop() {
     if (!bridge || !authorized) return;
     if (!lastSnapshot || !lastSnapshot.running || lastSnapshot.ended) return;
-    if (lastSnapshot.phase === 'CALIBRATING' || lastSnapshot.paused) return;
+    clearActiveLocal();
+    send('stop');
+  }
+
+  function press(cmd, source, key, pointerId) {
+    if (!bridge || !authorized) return;
+    if (!isCmdAllowed(cmd, lastSnapshot)) return;
+    if (POSTURE_CMDS[cmd]) {
+      tapPosture(cmd);
+      return;
+    }
     if (active.cmd) {
       if (active.cmd === cmd && active.source === source && active.pointerId === pointerId) return;
       release();
@@ -652,22 +718,18 @@
   function release() {
     if (!active.cmd) return;
     var cmd = active.cmd;
-    if (active.timer) { clearInterval(active.timer); active.timer = null; }
-    active.cmd = '';
-    active.source = '';
-    active.key = '';
-    active.pointerId = null;
-    setPressed(cmd, false);
+    clearActiveLocal();
     send('release', { cmd: cmd });
   }
 
   function updateControls(s) {
     var can = !!bridge && authorized;
     var running = !!s && !!s.running && !s.ended;
-    // 校准中方向键不可用（core 也会忽略）
-    var steer = running && s.phase !== 'CALIBRATING' && !s.paused;
-    if (!can || !steer) { if (active.cmd) release(); }
-    $$('[data-cmd]').forEach(function (btn) { btn.disabled = !can || !steer; });
+    if (active.cmd && (!can || !isCmdAllowed(active.cmd, s))) release();
+    $$('[data-cmd]').forEach(function (btn) {
+      var cmd = btn.getAttribute('data-cmd');
+      btn.disabled = !can || !isCmdAllowed(cmd, s);
+    });
     var shock = $('#shockBtn');
     if (shock) {
       var readyAt = Number(s && s.manualShockReadyAtMs) || 0;
@@ -680,6 +742,11 @@
     }
     var recal = $('#recalBtn');
     if (recal) recal.disabled = !can || !running;
+    var stopBtn = $('#stopBtn');
+    if (stopBtn) {
+      stopBtn.disabled = !can || !running;
+      stopBtn.textContent = t('急停');
+    }
   }
 
   function tickClocks() {
@@ -707,9 +774,17 @@
       var cmd = btn.getAttribute('data-cmd');
       btn.addEventListener('pointerdown', function (e) {
         if (e.pointerType === 'mouse' && e.button !== 0) return;
+        if (btn.disabled) return;
         e.preventDefault();
+        if (POSTURE_CMDS[cmd]) {
+          tapPosture(cmd);
+          return;
+        }
         try { btn.setPointerCapture(e.pointerId); } catch (_) {}
         press(cmd, 'pointer', '', e.pointerId);
+      });
+      btn.addEventListener('click', function (e) {
+        if (e.detail === 0 && !btn.disabled && POSTURE_CMDS[cmd]) tapPosture(cmd);
       });
       var up = function (e) {
         if (active.source === 'pointer' && active.pointerId === e.pointerId) release();
@@ -737,12 +812,20 @@
     if (recal) {
       recal.addEventListener('click', function () { send('recalibrate'); });
     }
+    var stopBtn = $('#stopBtn');
+    if (stopBtn) {
+      stopBtn.addEventListener('click', function () {
+        if (!stopBtn.disabled) triggerStop();
+      });
+    }
 
     var KEY_CMD = {
       KeyW: 'forward', ArrowUp: 'forward',
       KeyS: 'backward', ArrowDown: 'backward',
       KeyA: 'left', ArrowLeft: 'left',
-      KeyD: 'right', ArrowRight: 'right'
+      KeyD: 'right', ArrowRight: 'right',
+      KeyE: 'stand',
+      KeyC: 'prone'
     };
     function isTyping(target) {
       if (!target) return false;
@@ -751,7 +834,16 @@
       return !!target.isContentEditable;
     }
     document.addEventListener('keydown', function (e) {
-      if (e.repeat || isTyping(e.target)) return;
+      if (e.repeat) return;
+      if (e.code === 'Escape' || e.key === 'Escape') {
+        var es = $('#stopBtn');
+        if (es && !es.disabled) {
+          e.preventDefault();
+          triggerStop();
+        }
+        return;
+      }
+      if (isTyping(e.target)) return;
       if (e.code === 'Space') {
         // 焦点在按钮上时保留原生激活（Tab 键盘操作）
         if (e.target && String(e.target.tagName || '').toUpperCase() === 'BUTTON') return;
@@ -763,12 +855,16 @@
       var cmd = KEY_CMD[e.code];
       if (!cmd) return;
       e.preventDefault();
+      if (POSTURE_CMDS[cmd]) {
+        tapPosture(cmd);
+        return;
+      }
       if (active.source === 'key' && active.key === e.code) return;
       press(cmd, 'key', e.code, null);
     });
     document.addEventListener('keyup', function (e) {
       var cmd = KEY_CMD[e.code];
-      if (!cmd) return;
+      if (!cmd || POSTURE_CMDS[cmd]) return;
       if (active.source === 'key' && active.key === e.code) release();
     });
     window.addEventListener('blur', release);

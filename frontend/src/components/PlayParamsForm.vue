@@ -68,12 +68,21 @@ const props = withDefaults(defineProps<{
 }>(), { submitText: '', showSubmit: true, showReset: false })
 
 const order = ['core', 'difficulty', 'punish', 'reward', 'device', 'advanced', 'other']
+function groupTitle(key: string) {
+  const i18nKey = `playConfig.groups.${key}`
+  const translated = t(i18nKey)
+  return translated === i18nKey ? key : translated
+}
 function group(items: Array<Record<string, any>>) {
   const keys = [...new Set(items.map((item) => String(item.group || 'other')))]
-  keys.sort((a, b) => order.indexOf(a) - order.indexOf(b))
+  keys.sort((a, b) => {
+    const ia = order.indexOf(a)
+    const ib = order.indexOf(b)
+    return (ia < 0 ? order.length : ia) - (ib < 0 ? order.length : ib)
+  })
   return keys.map((key) => ({
     key,
-    title: t(`playConfig.groups.${key}`),
+    title: groupTitle(key),
     items: items.filter((item) => String(item.group || 'other') === key),
   }))
 }

@@ -628,10 +628,13 @@ describe('参数', () => {
       turnDeg: 20,
       calibSec: 3,
       voiceEnabled: true,
-      motionAccelStd: 0.8,
+      motionAccelStd: 0.15,
       motionGyroDps: 20,
       headingTolerance: 35,
       stopGraceSec: 1.5,
+      postureSec: 4,
+      standAngleDeg: 55,
+      proneAngleDeg: 25,
       shockVoltage: 10,
       voltageStep: 5,
       maxVoltage: 40,
@@ -924,5 +927,436 @@ describe('评审修复', () => {
     const b = new RcCarCore({ params: { voltageStep: 0 } });
     b.start(0);
     expect(b.snapshot().maxLevel).toBe(1);
+  });
+});
+
+// ---- v1.0.2：起趴姿态、动作阈值与急停 ----
+
+function tiltedSample(tiltDeg, yawDeg = 0, extra = {}) {
+  const { quatMul } = require('../games/rc-car/game-core');
+  const halfYaw = (yawDeg * Math.PI) / 360;
+  const halfPitch = (tiltDeg * Math.PI) / 360;
+  const qYaw = { w: Math.cos(halfYaw), x: 0, y: 0, z: Math.sin(halfYaw) };
+  const qPitch = { w: Math.cos(halfPitch), x: Math.sin(halfPitch), y: 0, z: 0 };
+  const q = quatMul(qYaw, qPitch);
+  const rad = (tiltDeg * Math.PI) / 180;
+  return {
+    quatRaw: int16Hex([q.w * 32767, q.x * 32767, q.y * 32767, q.z * 32767]),
+    accel: [0, 9.8 * Math.sin(rad), 9.8 * Math.cos(rad)],
+    gyro: [0, 0, 0.2],
+    ...extra,
+  };
+}
+
+function tiltedEvents(sample) {
+  const rows = [
+    prop('quat', sample.quatRaw || quatHex(sample.deg || 0)),
+    prop('accel', vecHex(sample.accel || [0, 0, 9.8], ACCEL_SCALE)),
+    prop('gyro', vecHex(sample.gyro || [0, 0, 0.2], GYRO_SCALE)),
+  ];
+  if (sample.pressure != null) rows.push(prop('pressure', sample.pressure));
+  return rows;
+}
+
+function stepTilted(core, fromMs, toMs, sampleAt) {
+  const runs = [];
+  for (let t = fromMs; t <= toMs; t += STEP_MS) {
+    const sample = sampleAt ? sampleAt(t) : null;
+    const result = core.step({ nowMs: t, events: sample ? tiltedEvents(sample) : [] });
+    runs.push({ ts: t, result });
+  }
+  return runs;
+}
+
+describe('v1.0.2 起趴姿态、动作限制与急停', () => {
+  test('版本号 1.0.2，manifest 与 PARAMS 完全对齐且遵循只折叠不隐藏', () => {
+    const { VERSION } = require('../games/rc-car/game-core');
+    expect(VERSION).toBe('1.0.2');
+    const html = fs.readFileSync(path.join(CORE_DIR, 'index.html'), 'utf8');
+    const match = html.match(/<script[^>]*\bid\s*=\s*["']game-manifest["'][^>]*>([\s\S]*?)<\/script>/i);
+    expect(match).toBeTruthy();
+    const manifest = JSON.parse(match[1]);
+    expect(manifest.version).toBe('1.0.2');
+    const standardGroups = new Set(['core', 'difficulty', 'punish', 'reward', 'device', 'advanced', 'other']);
+    for (const spec of [...PARAMS, ...manifest.params]) {
+      expect(spec.hidden).toBeUndefined();
+      expect(standardGroups.has(spec.group)).toBe(true);
+    }
+    const coreByKey = Object.fromEntries(PARAMS.map((p) => [p.key, p]));
+    const byKey = Object.fromEntries(manifest.params.map((p) => [p.key, p]));
+    for (const key of ['addonMode', 'pelvicDelta', 'pelvicGraceSec', 'pelvicOnlyMoving', 'edgingMid', 'edgingCritical']) {
+      expect(coreByKey[key]).toMatchObject({ group: 'device', device: 'sensor' });
+      expect(byKey[key]).toMatchObject({ group: 'device', device: 'sensor' });
+    }
+    expect(byKey.motionAccelStd).toMatchObject({ default: 0.15, min: 0.05, max: 5, step: 0.05, group: 'difficulty' });
+    expect(byKey.postureSec).toMatchObject({ default: 4, min: 1, max: 15, step: 0.5, unit: '秒', group: 'difficulty', label: '起趴时限' });
+    expect(byKey.standAngleDeg).toMatchObject({ default: 55, min: 35, max: 85, step: 1, unit: '°', group: 'difficulty', label: '直立判定角' });
+    expect(byKey.proneAngleDeg).toMatchObject({ default: 25, min: 10, max: 45, step: 1, unit: '°', group: 'difficulty', label: '趴下判定角' });
+    expect(manifest.i18n.en.params).toMatchObject({
+      postureSec: 'Posture time',
+      standAngleDeg: 'Stand angle',
+      proneAngleDeg: 'Prone angle',
+    });
+  });
+
+  test('点按 stand 与 prone：release/keepalive 不取消窗口也不播 cmd_stop，达标即完成并给停止缓冲', () => {
+    const core = calibrated({ postureSec: 4, standAngleDeg: 55, proneAngleDeg: 25 });
+    expect(core.snapshot().posture).toBe('prone');
+    expect(core.snapshot().tiltDeg).toBe(0);
+
+    // 已在 prone 时点 prone 被忽略
+    const ignoredProne = core.action('press', { cmd: 'prone' }, 3100);
+    expect(ignoredProne.snapshot.stats.commands).toBe(0);
+
+    // 点按 stand：发 cmd_stand，进入 POSTURE，release 与超过 1200ms 不取消窗口也不播 cmd_stop
+    const standRes = core.action('press', { cmd: 'stand' }, 3500);
+    expect(standRes.snapshot.prompt.key).toBe('cmd_stand');
+    expect(standRes.snapshot.phase).toBe('POSTURE');
+    expect(standRes.snapshot.command).toMatchObject({ cmd: 'stand', held: false, targetDeg: 55 });
+    const relStand = core.action('release', { cmd: 'stand' }, 3600);
+    expect(relStand.snapshot.phase).toBe('POSTURE');
+    expect(relStand.snapshot.prompt.key).toBe('cmd_stand');
+
+    // 超过 1200ms 仍在站起（2 秒内从 0° 升到 70°）
+    const standRuns = stepTilted(core, 3650, 5600, (t) => {
+      const progress = Math.min(1, (t - 3500) / 1800);
+      return tiltedSample(70 * progress, 0, { gyro: progress < 1 ? [25, 0, 0] : [0, 0, 0.2] });
+    });
+    expect(promptsOf(standRuns, standRes.snapshot.prompt.seq).map((p) => p.key)).not.toContain('cmd_stop');
+    let snap = core.snapshot();
+    expect(snap.posture).toBe('standing');
+    expect(snap.phase).toBe('STOPPED');
+    expect(snap.stats.completed).toBe(1);
+    expect(snap.stats.violations).toBe(0);
+    expect(snap.tiltDeg).toBeGreaterThanOrEqual(55);
+
+    // 缓冲期内平息动作不判 not-stopped；已在 standing 时重复 stand 被忽略
+    stepTilted(core, 5650, 7500, () => tiltedSample(70));
+    expect(core.snapshot().stats.violations).toBe(0);
+    core.action('press', { cmd: 'stand' }, 7600);
+    expect(core.snapshot().stats.commands).toBe(1);
+
+    // 点按 prone：发 cmd_prone，趴回到 <=25° 完成并回到 prone
+    const proneRes = core.action('press', { cmd: 'prone' }, 8000);
+    expect(proneRes.snapshot.prompt.key).toBe('cmd_prone');
+    expect(proneRes.snapshot.phase).toBe('POSTURE');
+    expect(proneRes.snapshot.command.targetDeg).toBe(25);
+    core.action('release', { cmd: 'prone' }, 8100);
+    stepTilted(core, 8150, 10200, (t) => {
+      const progress = Math.min(1, (t - 8000) / 1600);
+      return tiltedSample(70 * (1 - progress));
+    });
+    snap = core.snapshot();
+    expect(snap.posture).toBe('prone');
+    expect(snap.phase).toBe('STOPPED');
+    expect(snap.stats.commands).toBe(2);
+    expect(snap.stats.completed).toBe(2);
+    expect(snap.stats.violations).toBe(0);
+  });
+
+  test('起趴超时触发 posture-timeout 并续开窗口；违规后达标切换姿态但不计完成', () => {
+    const core = calibrated({ postureSec: 2 });
+    core.action('press', { cmd: 'stand' }, 3500);
+    // 连续两个 2s 窗口不动 → 两次 posture-timeout，但 violatedCommands 只记 1 条
+    const timeoutRuns = stepTilted(core, 3550, 7600, () => tiltedSample(5));
+    let snap = core.snapshot();
+    expect(snap.lastViolation.reason).toBe('posture-timeout');
+    expect(snap.phase).toBe('POSTURE');
+    expect(snap.command.status).toBe('violating');
+    expect(snap.stats.violations).toBe(2);
+    expect(snap.stats.violatedCommands).toBe(1);
+    expect(effectsOf(timeoutRuns, 'device.shock')).toHaveLength(2);
+
+    // 第 3 个窗口内终于站直：切换为 standing、回到 STOPPED，但不算 completed
+    stepTilted(core, 7650, 9000, () => tiltedSample(70));
+    snap = core.snapshot();
+    expect(snap.posture).toBe('standing');
+    expect(snap.phase).toBe('STOPPED');
+    expect(snap.command).toBeNull();
+    expect(snap.stats.completed).toBe(0);
+  });
+
+  test('直立姿态下禁止 forward/backward，但允许 left/right 原地转向并正常判定', () => {
+    const core = calibrated({ turnDeg: 20, reactionSec: 3 });
+    core.action('press', { cmd: 'stand' }, 3500);
+    stepTilted(core, 3550, 4800, () => tiltedSample(70));
+    expect(core.snapshot().posture).toBe('standing');
+    expect(core.snapshot().stats.commands).toBe(1);
+
+    // 直立下按 forward / backward 被忽略
+    core.action('press', { cmd: 'forward' }, 5000);
+    core.action('press', { cmd: 'backward' }, 5100);
+    expect(core.snapshot().stats.commands).toBe(1);
+    expect(core.snapshot().command).toBeNull();
+
+    // 直立下点按 left 原地左转 25° 正常完成
+    const turnRes = core.action('press', { cmd: 'left' }, 5500);
+    expect(turnRes.snapshot.phase).toBe('TURNING');
+    core.action('release', { cmd: 'left' }, 5600);
+    stepTilted(core, 5650, 8600, (t) => tiltedSample(70, Math.min(25, (t - 5500) * 0.02)));
+    const snap = core.snapshot();
+    expect(snap.posture).toBe('standing');
+    expect(snap.phase).toBe('STOPPED');
+    expect(snap.stats.commands).toBe(2);
+    expect(snap.stats.completed).toBe(2);
+    expect(snap.stats.violations).toBe(0);
+  });
+
+  test('姿态保持：直立偷蹲（<40°）与趴姿擅自站起（>45°）判 posture-broken 且带 reactionSec 冷却', () => {
+    const core = calibrated({ reactionSec: 3, standAngleDeg: 55, proneAngleDeg: 25 });
+    // 1) 趴姿下擅自站起 > 45°
+    const proneBreakRuns = stepTilted(core, 3500, 7000, () => tiltedSample(52));
+    expect(core.snapshot().lastViolation.reason).toBe('posture-broken');
+    // ~3.5s 跨度内：首帧触发 1 次 + 3s 冷却后触发第 2 次，不会每帧连发
+    expect(effectsOf(proneBreakRuns, 'device.shock')).toHaveLength(2);
+
+    // 回到趴姿后站起至 standing
+    stepTilted(core, 7050, 8000, () => tiltedSample(5));
+    core.action('press', { cmd: 'stand' }, 8100);
+    stepTilted(core, 8150, 9200, () => tiltedSample(70));
+    expect(core.snapshot().posture).toBe('standing');
+
+    // 2) 直立下偷蹲 < 40°（例如蹲到 30°）
+    const standBreakRuns = stepTilted(core, 9500, 13000, () => tiltedSample(30));
+    expect(core.snapshot().lastViolation.reason).toBe('posture-broken');
+    expect(effectsOf(standBreakRuns, 'device.shock')).toHaveLength(2);
+  });
+
+  test('校准结束尚无 accel 时在首个非空 accel 补记基线；重新校准重置为 prone', () => {
+    const core = new RcCarCore({ params: { calibSec: 2 } });
+    core.start(0);
+    // 校准期只送 quat + gyro（无 accel）
+    for (let t = 50; t <= 2000; t += 50) {
+      core.step({ nowMs: t, events: [prop('quat', quatHex(0)), prop('gyro', vecHex([0, 0, 0.1], GYRO_SCALE))] });
+    }
+    expect(core.snapshot().phase).toBe('STOPPED');
+    expect(core.rt.baseline.gravity).toBeNull();
+    // 首个 accel 到达即补记基线
+    core.step({ nowMs: 2050, events: imuEvents(still()) });
+    expect(core.rt.baseline.gravity).not.toBeNull();
+    expect(core.snapshot().tiltDeg).toBe(0);
+
+    // 切到 standing 后点 recalibrate → 回到 prone 与 CALIBRATING
+    core.action('press', { cmd: 'stand' }, 2100);
+    stepTilted(core, 2150, 3200, () => tiltedSample(70));
+    expect(core.snapshot().posture).toBe('standing');
+    core.action('recalibrate', {}, 3300);
+    expect(core.snapshot().phase).toBe('CALIBRATING');
+    expect(core.snapshot().posture).toBe('prone');
+  });
+
+  test('motionAccelStd=0.15：纯加速度轻微爬行（std≈0.25）判在动，细微挪动（std≈0.08）仍算静止', () => {
+    const core = calibrated();
+    expect(core.cfg.motionAccelStd).toBe(0.15);
+    // 仅加速度波动 ±0.36（std≈0.25 > 0.15），角速度为 0
+    stepLoop(core, 3100, 4200, (t) => still({ accel: [0, 0, 9.8 + 0.36 * Math.sin(t / 90)], gyro: [0, 0, 0] }));
+    expect(core.snapshot().motion.moving).toBe(true);
+    // 微小晃动 ±0.11（std≈0.08 < 0.15），角速度为 0
+    stepLoop(core, 4250, 5400, (t) => still({ accel: [0, 0, 9.8 + 0.11 * Math.sin(t / 90)], gyro: [0, 0, 0] }));
+    expect(core.snapshot().motion.moving).toBe(false);
+  });
+
+  test('急停 action("stop")：任意运行阶段（含校准/暂停/起趴）立即断电并结束本局', () => {
+    for (const setup of [
+      (c) => { c.start(0); },
+      (c) => { c.start(0); c.pause(500); },
+      (c) => {
+        c.start(0);
+        stepLoop(c, 50, CALIB_END_MS, () => still());
+        c.action('press', { cmd: 'stand' }, 3200);
+      },
+    ]) {
+      const core = new RcCarCore();
+      setup(core);
+      const res = core.action('stop', {}, 4000);
+      expect(res.ok).toBe(true);
+      expect(res.effects).toContainEqual({ type: 'device.shock-stop', role: 'punish' });
+      expect(res.snapshot.running).toBe(false);
+      expect(res.snapshot.ended).toBe(true);
+      expect(res.snapshot.endReason).toBe('action');
+      expect(res.snapshot.prompt.key).toBe('game_end');
+    }
+  });
+
+  test('页面与 i18n：包含起趴按钮、姿态倾角 HUD 与红急停按钮，且中英词条齐全', () => {
+    const html = fs.readFileSync(path.join(CORE_DIR, 'index.html'), 'utf8');
+    const gameJs = fs.readFileSync(path.join(CORE_DIR, 'game.js'), 'utf8');
+    const i18nJs = fs.readFileSync(path.join(CORE_DIR, 'i18n.js'), 'utf8');
+    for (const id of ['standBtn', 'proneBtn', 'stopBtn', 'postureValue', 'tiltValue', 'tilePosture', 'tileTilt', 'dtPosture', 'dtTilt']) {
+      expect(html).toContain(`id="${id}"`);
+    }
+    expect(gameJs).toContain('KeyE');
+    expect(gameJs).toContain('KeyC');
+    expect(gameJs).toContain('Escape');
+    expect(gameJs).toContain("cmd_stand: '立起来'");
+    expect(gameJs).toContain("cmd_prone: '爬下'");
+    const registered = [];
+    const vm = require('vm');
+    vm.runInNewContext(i18nJs, { GameI18n: { register: (dict) => registered.push(dict) } });
+    expect(registered).toHaveLength(1);
+    expect(registered[0].en).toMatchObject({
+      '起趴中': 'Changing posture',
+      '趴姿': 'Prone',
+      '直立': 'Standing',
+      '立起来': 'Stand up',
+      '爬下': 'Get down',
+      '急停': 'E-Stop',
+    });
+  });
+
+  test('game.js 运行时交互：A/B 两端急停与 Escape、起趴点按 E/C、直立锁前后键、姿态倾角渲染', () => {
+    const gameJs = fs.readFileSync(path.join(CORE_DIR, 'game.js'), 'utf8');
+    const vm = require('vm');
+
+    function mountGame(mode) {
+      const docListeners = {};
+      const winListeners = {};
+      const elements = new Map();
+      const cmdBtns = ['forward', 'backward', 'left', 'right', 'stand', 'prone'].map((cmd) => {
+        const listeners = {};
+        const classes = new Set();
+        const btn = {
+          tagName: 'BUTTON',
+          disabled: true,
+          textContent: '',
+          innerHTML: '',
+          style: {},
+          classList: {
+            add: (c) => classes.add(c),
+            remove: (c) => classes.delete(c),
+            toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)),
+            contains: (c) => classes.has(c),
+          },
+          getAttribute: (k) => (k === 'data-cmd' ? cmd : null),
+          setAttribute: () => {},
+          setPointerCapture: () => {},
+          addEventListener: (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); },
+          trigger: (ev, payload = {}) => (listeners[ev] || []).forEach((fn) => fn({ preventDefault: () => {}, ...payload })),
+        };
+        if (cmd === 'stand') elements.set('#standBtn', btn);
+        if (cmd === 'prone') elements.set('#proneBtn', btn);
+        return btn;
+      });
+
+      function makeEl(id) {
+        if (elements.has(id)) return elements.get(id);
+        const listeners = {};
+        const classes = new Set();
+        const el = {
+          tagName: id.endsWith('Btn') ? 'BUTTON' : 'DIV',
+          disabled: false,
+          textContent: '',
+          innerHTML: '',
+          className: '',
+          style: {},
+          appendChild: () => {},
+          setAttribute: () => {},
+          getAttribute: () => null,
+          closest: () => ({ setAttribute: () => {} }),
+          classList: {
+            add: (c) => classes.add(c),
+            remove: (c) => classes.delete(c),
+            toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)),
+            contains: (c) => classes.has(c),
+          },
+          addEventListener: (ev, fn) => { (listeners[ev] = listeners[ev] || []).push(fn); },
+          click: () => (listeners.click || []).forEach((fn) => fn({ preventDefault: () => {}, detail: 1 })),
+        };
+        elements.set(id, el);
+        return el;
+      }
+
+      ['#stopBtn', '#pauseBtn', '#recalBtn', '#shockBtn', '#postureValue', '#tiltValue', '#tilePosture', '#tileTilt', '#dtPosture', '#dtTilt', '#dirPanel', '#promptBanner', '#promptText', '#connText', '#phaseText', '#modeText'].forEach(makeEl);
+
+      const sent = [];
+      let snapshotCb = null;
+      const bridge = {
+        mode,
+        onSnapshot: (cb) => { snapshotCb = cb; },
+        sendAction: (action, payload) => { sent.push({ action, payload }); return Promise.resolve(); },
+        start: () => {},
+      };
+      const context = {
+        window: {
+          GameRuntimeBridge: bridge,
+          addEventListener: (ev, fn) => { (winListeners[ev] = winListeners[ev] || []).push(fn); },
+          matchMedia: () => ({ matches: true }),
+        },
+        GameI18n: { t: (zh) => zh, locale: () => 'zh', apply: () => {} },
+        document: {
+          readyState: 'complete',
+          hidden: false,
+          createElement: () => makeEl('dyn-' + Math.random()),
+          createElementNS: () => makeEl('svg-' + Math.random()),
+          querySelector: (sel) => makeEl(sel),
+          querySelectorAll: (sel) => (sel === '[data-cmd]' ? cmdBtns : []),
+          addEventListener: (ev, fn) => { (docListeners[ev] = docListeners[ev] || []).push(fn); },
+          removeEventListener: () => {},
+        },
+        Audio: function Audio() { return { addEventListener: () => {}, removeEventListener: () => {}, play: () => Promise.resolve(), pause: () => {} }; },
+        setInterval: () => 1,
+        clearInterval: () => {},
+        setTimeout: () => 1,
+        clearTimeout: () => {},
+        Date,
+        Math,
+        Number,
+        String,
+        Object,
+        Array,
+        console,
+      };
+      context.window.document = context.document;
+      vm.runInNewContext(gameJs, context);
+      return {
+        sent,
+        elements,
+        cmdByName: Object.fromEntries(cmdBtns.map((b) => [b.getAttribute('data-cmd'), b])),
+        push: (status, snap) => snapshotCb(status, snap),
+        keyDown: (code) => (docListeners.keydown || []).forEach((fn) => fn({ code, key: code, repeat: false, target: { tagName: 'BODY' }, preventDefault: () => {} })),
+      };
+    }
+
+    // 1) B 端（host）：校准中即可点击 #stopBtn 急停
+    const hostApp = mountGame('host');
+    hostApp.push({ active: true }, { running: true, ended: false, paused: false, phase: 'CALIBRATING', posture: 'prone', tiltDeg: 1.2, startedAtMs: 100 });
+    expect(hostApp.elements.get('#stopBtn').disabled).toBe(false);
+    hostApp.elements.get('#stopBtn').click();
+    expect(hostApp.sent).toContainEqual({ action: 'stop', payload: {} });
+
+    // 2) A 端（remote）：趴姿/直立切换时按钮状态、E/C 点按、直立禁前后键、Escape 急停
+    const remoteApp = mountGame('remote');
+    remoteApp.push({ authorized: true }, { running: true, ended: false, paused: false, phase: 'STOPPED', posture: 'prone', tiltDeg: 3.4, startedAtMs: 200 });
+    expect(remoteApp.cmdByName.stand.disabled).toBe(false);
+    expect(remoteApp.cmdByName.prone.disabled).toBe(true);
+    expect(remoteApp.cmdByName.forward.disabled).toBe(false);
+    expect(remoteApp.elements.get('#postureValue').textContent).toBe('趴姿');
+    expect(remoteApp.elements.get('#tiltValue').textContent).toBe('3.4°');
+
+    remoteApp.keyDown('KeyE');
+    expect(remoteApp.sent[remoteApp.sent.length - 1]).toEqual({ action: 'press', payload: { cmd: 'stand', seq: 1 } });
+
+    // 进入直立：forward/backward/stand 禁用，W/S 按键不发指令，left 与 prone 可用
+    remoteApp.push({ authorized: true }, { running: true, ended: false, paused: false, phase: 'STOPPED', posture: 'standing', tiltDeg: 70.5, startedAtMs: 200 });
+    expect(remoteApp.cmdByName.forward.disabled).toBe(true);
+    expect(remoteApp.cmdByName.backward.disabled).toBe(true);
+    expect(remoteApp.cmdByName.stand.disabled).toBe(true);
+    expect(remoteApp.cmdByName.left.disabled).toBe(false);
+    expect(remoteApp.cmdByName.prone.disabled).toBe(false);
+    expect(remoteApp.elements.get('#postureValue').textContent).toBe('直立');
+    expect(remoteApp.elements.get('#tiltValue').textContent).toBe('70.5°');
+    expect(remoteApp.elements.get('#dtPosture').textContent).toBe('直立');
+    expect(remoteApp.elements.get('#dtTilt').textContent).toBe('70.5°');
+
+    const countBefore = remoteApp.sent.length;
+    remoteApp.keyDown('KeyW');
+    remoteApp.keyDown('ArrowDown');
+    expect(remoteApp.sent).toHaveLength(countBefore);
+
+    remoteApp.keyDown('KeyC');
+    expect(remoteApp.sent[remoteApp.sent.length - 1]).toEqual({ action: 'press', payload: { cmd: 'prone', seq: 2 } });
+
+    remoteApp.keyDown('Escape');
+    expect(remoteApp.sent[remoteApp.sent.length - 1]).toEqual({ action: 'stop', payload: {} });
   });
 });

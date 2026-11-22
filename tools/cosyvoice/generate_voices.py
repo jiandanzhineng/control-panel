@@ -113,15 +113,15 @@ EDGING_LINES = [
 ]
 
 # ============================================================
-# 遥控车 — 中英两套口令（14 条，key 与页面 prompt.key 一致）
+# 遥控车 — 中英两套口令（16 条，key 与页面 prompt.key 一致）
 #   voices/zh/<key>.mp3、voices/en/<key>.mp3
 #   口令与「没有照做」语速 1.3，其余 0.95
 # ============================================================
 # 遥控车语音改由 IndexTTS 本地生成（文本与生成见 tools/indextts/rccar.py），这里只做 check
 RCCAR_KEYS = [
     "calib_start", "calib_done", "cmd_forward", "cmd_backward", "cmd_left", "cmd_right",
-    "cmd_stop", "violation", "level_up", "level_down", "pelvic_remind", "edging_peak",
-    "sensor_lost", "game_end",
+    "cmd_stop", "cmd_stand", "cmd_prone", "violation", "level_up", "level_down",
+    "pelvic_remind", "edging_peak", "sensor_lost", "game_end",
 ]
 
 RCCAR_VOICE_DIR = os.path.join(

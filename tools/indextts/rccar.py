@@ -19,10 +19,12 @@ LINES = [
     ("cmd_left",      "左转啦！", "Left!"),
     ("cmd_right",     "右转啦！", "Right!"),
     ("cmd_stop",      "停下！", "Stop!"),
+    ("cmd_stand",     "给我站直了！", "Stand up!"),
+    ("cmd_prone",     "趴下！", "Get down!"),
     ("violation",     "哈？连这都做不到？杂鱼。", "Huh? Can't even do that? Pathetic."),
     ("level_up",      "不听话？那就再加一档。", "Disobeying? Turning it up."),
-    ("level_down",    "哼，还算乖，降一档吧。", "Hmph, good enough. Turning it down."),
-    ("pelvic_remind", "给我夹紧，提肛！", "Squeeze. Tighter!"),
+    ("level_down",    "哼，还算乖，<降|JIANG4>一档吧。", "Hmph, good enough. Turning it down."),
+    ("pelvic_remind", "给我夹紧，提<肛|GANG1>！", "Squeeze. Tighter!"),
     ("edging_peak",   "到边缘了哦，不许去。", "You're at the edge. Don't you dare."),
     ("sensor_lost",   "传感器断开了，原地别动。", "Sensor lost. Stay right there."),
     ("game_end",      "结束了。哼，也就那样吧。", "It's over. Hmph, you were barely okay."),
@@ -35,12 +37,15 @@ EMO = [0.3, 0.25, 0, 0, 0.5, 0, 0.1, 0]
 
 def main():
     ref, out = sys.argv[1], sys.argv[2]
+    only = set(sys.argv[3:])
     from indextts.infer_v2_5 import IndexTTS2
     tts = IndexTTS2(cfg_path="checkpoints_25/config.yaml", model_dir="checkpoints_25",
                     use_bf16=False, use_cuda_kernel=False)
     for locale, idx, lang in (("zh", 1, "ZH"), ("en", 2, "EN")):
         os.makedirs(os.path.join(out, locale), exist_ok=True)
         for line in LINES:
+            if only and line[0] not in only:
+                continue
             t = time.time()
             path = os.path.join(out, locale, line[0] + ".wav")
             tts.infer(spk_audio_prompt=ref, text=line[idx], output_path=path, lang=lang,
