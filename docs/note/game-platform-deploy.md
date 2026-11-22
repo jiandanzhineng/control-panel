@@ -22,7 +22,8 @@
 - ESA 站点 `undersilicon.cn` 的既有 API/admin 缓存规则已补 `no_cache`，全局 CORS 规则排除 `game-api.undersilicon.cn`。
 - ESA 缓存规则 `506125495674880` 只匹配 `game.undersilicon.cn/registry.json`，浏览器与边缘均 `no_cache`、`bypass_all`；玩法页面和不可变资源用自动缓存。默认 registry 已验证为 `DYNAMIC`。
 - 公开 `registry.json` 的社区游戏带 `authorName`（投稿署名）；介绍页读该字段，缺署名且非 builtin 才显示未知作者。
-- 待审源包会过期：`sub_98042fefb077036af982bc100cef6284`（Gu，2026-09-21，三阶段寸止自动校准定时版）在库里仍是 `pending`，但 `ezs-game-submissions` 里的 `source.zip` 已被旧 7 天规则清掉（2026-10-25 查为 NoSuchKey），**这条投稿无法审核发布，只能让作者重传**。查源包是否存在：对 `ezs-game-submissions` 做 HEAD `submissions/<id>/source.zip`。
+- 待审源包会过期：`ezs-game-submissions` 里的 `submissions/<id>/source.zip` 会被生命周期清掉（2026-09-21 的 pending 稿即如此，2026-10-25 查为 NoSuchKey，无法再审核）。查源包是否存在：对 `ezs-game-submissions` 做 HEAD `submissions/<id>/source.zip`。
+- 2026-11-08 清理：作者 `01KX3D9EPHFZPKSJ4P1KBJY66S`（1604908432@qq.com，未绑手机）的 1 条 pending + 8 条 draft 已从 DB 删除；这批源包早已被生命周期清掉，OSS 只剩已发布的 `sub_1a1b94c341415fc3ece8000ffba712aa`。同账号 9-20 的投稿即 10-14 上线的 `pressure-edging-v2-calib` 2.3.9。删除前备份 `/var/lib/game-platform/game-platform.db.bak.20261108-submission-cleanup`。
 
 ## 工具链
 
