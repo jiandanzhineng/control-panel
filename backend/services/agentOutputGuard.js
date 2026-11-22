@@ -117,7 +117,7 @@ function messageFieldCapability(fieldName, kind) {
   if (fieldName === 'vibration') return 'vibration';
   if (fieldName === 'stroke') return 'motors';
   if (fieldName === 'pump') return 'pump';
-  if (kind === 'intensity') return null;
+  if (kind === 'intensity' || kind === 'electricIntensity') return null;
   return null;
 }
 
@@ -125,7 +125,7 @@ function messageFieldCapability(fieldName, kind) {
 function invokeFieldCapability(capability, fieldName, kind) {
   if (kind === 'voltage') return 'shock';
   if (kind === 'power') return 'strength';
-  if (kind === 'intensity') {
+  if (kind === 'intensity' || kind === 'electricIntensity') {
     return ['shock', 'vibration', 'suction', 'estim'].includes(capability) ? capability : null;
   }
   if (kind === 'motorLevel' || kind === 'stroke') return 'motors';
@@ -173,8 +173,11 @@ function normalizeNonOutput(kind, raw) {
  * 非输出字段按协议范围归一化。返回 { ok, value } 或拒绝对象。
  */
 function normalizeField(kind, raw, limits, capability = null, fieldName = '') {
-  // YCY_ENEMA 的属性报文把泵值直接写成 pump 字段（协议 0–255）。
-  const effectiveKind = fieldName === 'pump' && kind === 'uint8' ? 'pump' : kind;
+  // YCY_ENEMA 的属性报文把泵值直接写成 pump 字段（协议 0–255）；
+  // remoteOutputGuard 的 electricIntensity 在 agent 租约层仍按 intensity 百分比缩放。
+  const effectiveKind = fieldName === 'pump' && kind === 'uint8'
+    ? 'pump'
+    : (kind === 'electricIntensity' ? 'intensity' : kind);
   if (!OUTPUT_KINDS.has(effectiveKind)) {
     const value = normalizeNonOutput(kind, raw);
     if (value === null) return reject(`agent 输出字段取值非法: ${fieldName || kind}`);

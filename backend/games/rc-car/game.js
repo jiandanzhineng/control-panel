@@ -168,8 +168,8 @@
         key: key,
         kind: opts.kind || 'info',
         isValid: opts.isValid,
-        url: basePath + '/' + locale + '/' + key + '.mp3',
-        fallbackUrl: locale === 'en' ? basePath + '/zh/' + key + '.mp3' : ''
+        url: [basePath, locale, key + '.mp3'].join('/'),
+        fallbackUrl: locale === 'en' ? [basePath, 'zh', key + '.mp3'].join('/') : ''
       };
       if (pendingGesture && !isValid(pendingGesture)) {
         pendingGesture = null;
@@ -288,7 +288,6 @@
     lastViolationAt = violationAt;
   }
   // ---- 罗盘 ----
-  var SVG_NS = 'http://www.w3.org/2000/svg';
   var COUNTDOWN_C = 2 * Math.PI * 42;
   var SHOCK_C = 2 * Math.PI * 54;
 
@@ -308,6 +307,7 @@
   function buildCompassTicks() {
     var g = $('#compassTicks');
     if (!g) return;
+    var svgNs = g.namespaceURI;
     // 屏幕角度：0 在正上，顺时针增大。core 里正角 = 左转，所以左 90 = +90°，右 90 = -90°。
     var LABELS = { 0: '0', 90: 'R90', 180: '180', 270: 'L90' };
     for (var i = 0; i < 36; i += 1) {
@@ -315,7 +315,7 @@
       var major = deg % 90 === 0;
       var a = polar(160, 160, major ? 110 : 119, deg);
       var b = polar(160, 160, 128, deg);
-      var line = document.createElementNS(SVG_NS, 'line');
+      var line = document.createElementNS(svgNs, 'line');
       line.setAttribute('x1', a[0].toFixed(2));
       line.setAttribute('y1', a[1].toFixed(2));
       line.setAttribute('x2', b[0].toFixed(2));
@@ -324,7 +324,7 @@
       g.appendChild(line);
       if (major) {
         var pos = polar(160, 160, 96, deg);
-        var label = document.createElementNS(SVG_NS, 'text');
+        var label = document.createElementNS(svgNs, 'text');
         label.setAttribute('x', pos[0].toFixed(2));
         label.setAttribute('y', pos[1].toFixed(2));
         label.setAttribute('class', 'tick-label');
