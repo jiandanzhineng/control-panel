@@ -245,7 +245,7 @@ test('手机原生朗读结束后才释放语音屏蔽，旧朗读完成不影�
   game.doc = { getElementById: id => id === 'vg-speak' ? button : null }
   try {
     assert.strictEqual(game.speakWord('apple', true), true)
-    assert.deepStrictEqual(game.deviceApi.speech.speak.mock.calls[0][0], { text: 'apple' })
+    assert.deepStrictEqual(game.deviceApi.speech.speak.mock.calls[0][0], { text: 'apple', lang: 'en-US' })
     now = 4000
     jest.advanceTimersByTime(3000)
     assert.strictEqual(game.voice.ignoreUntil.mock.calls.at(-1)[0], 4500)
@@ -350,4 +350,68 @@ test('启动失败和 pagehide 都停电击并解锁', () => {
   assert.ok(hasShockStop(second.calls))
   assert.ok(hasLockOpen(second.calls))
 })
+
+test('日语词书朗读传 ja-JP，假名读音不加斜杠，同形词优先当前词书', async () => {
+  const { formatPhonetic } = require('../games/vocab-game/game.js')
+  assert.strictEqual(formatPhonetic('ˈæpl', 'en-US'), '/ˈæpl/')
+  assert.strictEqual(formatPhonetic('たべる', 'ja-JP'), 'たべる')
+  assert.strictEqual(formatPhonetic('', 'ja-JP'), '')
+
+  const spoken = []
+  const env = {
+    VG_BANKS: {
+      jlpt_n5: {
+        name: '日语 N5', nameEn: 'JLPT N5', lang: 'ja-JP',
+        words: [
+          ['開く', 'あく', 'v. 开；打开', 'v. 开；打开'],
+          ['青', 'あお', 'n. 蓝色', 'n. 蓝色'],
+          ['赤', 'あか', 'n. 红色', 'n. 红色'],
+          ['秋', 'あき', 'n. 秋季', 'n. 秋季']
+        ]
+      },
+      jlpt_n4: {
+        name: '日语 N4', nameEn: 'JLPT N4', lang: 'ja-JP',
+        words: [
+          ['開く', 'ひらく', 'v. 打开；举行', 'v. 打开；举行'],
+          ['痩せる', 'やせる', 'v. 瘦', 'v. 瘦'],
+          ['空港', 'くうこう', 'n. 机场', 'n. 机场'],
+          ['美術館', 'びじゅつかん', 'n. 美术馆', 'n. 美术馆']
+        ]
+      }
+    },
+    speechSynthesis: { cancel() {}, speak(u) { spoken.push({ text: u.text, lang: u.lang }) } },
+    SpeechSynthesisUtterance: function (text) { this.text = text; this.lang = '' }
+  }
+  const game = new VocabGame({
+    window: env,
+    document: null,
+    deviceApi: null,
+    cloud: null,
+    storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
+    now: () => 1000
+  })
+  game.config.bank = 'jlpt_n4'
+  game._loadBank()
+  assert.strictEqual(game.wordMap.get('開く').phonetic, 'ひらく')
+  assert.strictEqual(game.speakWord('開く', true), true)
+  assert.deepStrictEqual(spoken[0], { text: '開く', lang: 'ja-JP' })
+
+  const nativeCalls = []
+  game.deviceApi = { speech: { speak: async opts => { nativeCalls.push(opts); return { completed: true } }, stop: async () => {} } }
+  assert.strictEqual(game.speakWord('食べる', true, 'ja-JP'), true)
+  assert.deepStrictEqual(nativeCalls[0], { text: '食べる', lang: 'ja-JP' })
+  game.stopSpeaking()
+})
+
+test('日语原生朗读失败时提示检查系统日文语音', async () => {
+  const game = makeGame()
+  game.state.question = { id: '食べる', word: '食べる', phonetic: 'たべる', lang: 'ja-JP', choices: [] }
+  game.deviceApi = { speech: { speak: async () => { throw Error('NO_TTS') }, stop: async () => {} } }
+  game._toast = jest.fn()
+  game.speakWord('食べる', true, 'ja-JP')
+  await Promise.resolve()
+  await Promise.resolve()
+  assert.ok(game._toast.mock.calls[0][0].includes('日文语音'))
+})
+
 

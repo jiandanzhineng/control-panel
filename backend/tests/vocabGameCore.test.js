@@ -493,6 +493,63 @@ test('同词库改每日新词数：保留没答过的新词，超出上限裁�
   assert.deepStrictEqual(grown.ids, ['n1', 'n2', 'n3', 'n4'])
 })
 
+test('跨语种换词书（英语↔日语）：未答旧语种复习词移出，已答词保留，补入新语种到期复习和新词', () => {
+  const today = 20000
+  const old = {
+    bank: 'cet4',
+    ids: ['en_r1', 'en_r2', 'en_n1', 'en_n2'],
+    done: ['en_r1'],
+    extra: 0,
+    newIds: ['en_n1', 'en_n2'],
+    u: 1
+  }
+  const progress = {
+    en_r1: { k: 2, due: today + 2, last: today, wrong: 0, u: 2 },
+    en_r2: { k: 1, due: today - 1, last: today - 2, wrong: 0, u: 1 },
+    '会う': { k: 1, due: today, last: today - 1, wrong: 0, u: 1 }
+  }
+  const next = core.rebuildPlan(old, {
+    bank: 'jlpt_n5',
+    bankIds: ['会う', '青', '青い', '赤'],
+    progress: progress,
+    today: today,
+    now: 10,
+    newPerDay: 2,
+    reviewCap: 10
+  })
+  assert.strictEqual(next.bank, 'jlpt_n5')
+  assert.ok(next.ids.includes('en_r1'), '已答过的旧词保留')
+  assert.ok(!next.ids.includes('en_r2'), '未答过的旧语种复习词移除')
+  assert.ok(!next.ids.includes('en_n1') && !next.ids.includes('en_n2'), '未答过的旧新词移除')
+  assert.ok(next.ids.includes('会う'), '新语种到期复习词加入')
+  assert.deepStrictEqual(next.newIds, ['青', '青い'])
+})
+
+test('日语 JLPT N5-N1 词库脚本可加载、格式合法且可正常生成四选一选项', () => {
+  const vm = require('vm')
+  const fs = require('fs')
+  const path = require('path')
+  const sandbox = { window: {} }
+  const jaIds = ['jlpt_n5', 'jlpt_n4', 'jlpt_n3', 'jlpt_n2', 'jlpt_n1']
+  jaIds.forEach(id => {
+    assert.ok(core.BANK_IDS.includes(id))
+    assert.strictEqual(core.bankLang(id), 'ja-JP')
+    const file = path.join(__dirname, '..', 'games', 'vocab-game', 'banks', id + '.js')
+    vm.runInNewContext(fs.readFileSync(file, 'utf8'), sandbox)
+    const bank = sandbox.window.VG_BANKS[id]
+    assert.ok(bank && bank.lang === 'ja-JP')
+    const words = core.normalizeBank(bank)
+    assert.ok(words.length >= 500, id + ' 词数过少: ' + words.length)
+    assert.strictEqual(words.length, bank.count)
+    words.slice(0, 10).forEach(w => {
+      assert.ok(w.word && w.short && w.short.length <= 24)
+      const choices = core.buildChoices(words, w.id, seeded(42), 4)
+      assert.strictEqual(choices.length, 4)
+      assert.strictEqual(choices.filter(c => c.correct).length, 1)
+    })
+  })
+})
+
 console.log('\n[电击本机覆盖]')
 
 test('游戏内电击设置只在本机覆盖，宿主值变了以宿主为准', () => {

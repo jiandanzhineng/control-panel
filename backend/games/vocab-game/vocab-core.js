@@ -13,7 +13,24 @@
   const DAY_BOUNDARY_HOUR = 4
   const DAY_MS = 24 * 60 * 60 * 1000
   const PLAN_KEEP_DAYS = 7
-  const BANK_IDS = ['gaokao', 'cet4', 'cet6', 'ielts']
+  const BANK_IDS = [
+    'gaokao', 'cet4', 'cet6', 'ielts',
+    'jlpt_n5', 'jlpt_n4', 'jlpt_n3', 'jlpt_n2', 'jlpt_n1'
+  ]
+  const BANK_LANGS = {
+    gaokao: 'en-US',
+    cet4: 'en-US',
+    cet6: 'en-US',
+    ielts: 'en-US',
+    jlpt_n5: 'ja-JP',
+    jlpt_n4: 'ja-JP',
+    jlpt_n3: 'ja-JP',
+    jlpt_n2: 'ja-JP',
+    jlpt_n1: 'ja-JP'
+  }
+  function bankLang(id) {
+    return BANK_LANGS[String(id || '')] || 'en-US'
+  }
   const DEFAULT_SETTINGS = {
     bank: 'cet4',
     newPerDay: 20,
@@ -216,17 +233,24 @@
     const bankSet = new Set(bankIds)
     const progress = o.progress && typeof o.progress === 'object' ? o.progress : {}
     const newPerDay = clampInt(o.newPerDay, DEFAULT_SETTINGS.newPerDay, 0, 200)
+    const reviewCap = clampInt(o.reviewCap, DEFAULT_SETTINGS.reviewCap, 0, 500)
+    const langChanged = !!(base.bank && bankLang(base.bank) !== bankLang(bank))
     const oldNew = new Set((base.newIds || []).map(String))
     const done = new Set((base.done || []).map(String))
     const answered = id => !!progress[id] && Number(progress[id].last) === today
     const ids = []
     const newIds = []
+    let keptReviewCount = 0
     base.ids.forEach(id => {
+      const kept = done.has(id) || answered(id)
       if (!oldNew.has(id)) {
-        ids.push(id)
+        // 跨语种切词书（如英语↔日语）时，未作答的旧语种复习词移出今日计划，避免阻塞新语种学习。
+        if (!langChanged || kept || bankSet.has(id)) {
+          ids.push(id)
+          keptReviewCount += 1
+        }
         return
       }
-      const kept = done.has(id) || answered(id)
       // 没答过的新词：同词库且还有名额就保留，换词书或超出新上限就裁掉。
       if (kept || (bankSet.has(id) && newIds.length < newPerDay)) {
         ids.push(id)
@@ -234,6 +258,21 @@
       }
     })
     const used = new Set(ids)
+    if (langChanged) {
+      const due = []
+      bankIds.forEach((id, order) => {
+        if (used.has(id)) return
+        const entry = progress[id]
+        if (!entry) return
+        if (toNumber(entry.due, Infinity) <= today) due.push({ id: id, due: toNumber(entry.due, 0), order: order })
+      })
+      due.sort((a, b) => (a.due - b.due) || (a.order - b.order))
+      const reviewSlots = Math.max(0, reviewCap - keptReviewCount)
+      due.slice(0, reviewSlots).forEach(item => {
+        used.add(item.id)
+        ids.push(item.id)
+      })
+    }
     for (let i = 0; i < bankIds.length && newIds.length < newPerDay; i++) {
       const id = bankIds[i]
       if (progress[id] || used.has(id)) continue
@@ -607,6 +646,8 @@
     DAY_MS: DAY_MS,
     PLAN_KEEP_DAYS: PLAN_KEEP_DAYS,
     BANK_IDS: BANK_IDS,
+    BANK_LANGS: BANK_LANGS,
+    bankLang: bankLang,
     DEFAULT_SETTINGS: DEFAULT_SETTINGS,
     normalizeSettings: normalizeSettings,
     updateSettings: updateSettings,
