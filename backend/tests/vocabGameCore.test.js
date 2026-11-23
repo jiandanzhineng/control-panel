@@ -493,19 +493,20 @@ test('同词库改每日新词数：保留没答过的新词，超出上限裁�
   assert.deepStrictEqual(grown.ids, ['n1', 'n2', 'n3', 'n4'])
 })
 
-test('跨语种换词书（英语↔日语）：未答旧语种复习词移出，已答词保留，补入新语种到期复习和新词', () => {
+test('跨语种换词书（英语↔日语）：未完成旧语种词（含当天答错待复答）移出，已完成词保留，补入新语种到期复习和新词', () => {
   const today = 20000
   const old = {
     bank: 'cet4',
-    ids: ['en_r1', 'en_r2', 'en_n1', 'en_n2'],
+    ids: ['en_r1', 'en_r2', 'en_wrong', 'en_n1', 'en_n2'],
     done: ['en_r1'],
     extra: 0,
-    newIds: ['en_n1', 'en_n2'],
+    newIds: ['en_wrong', 'en_n1', 'en_n2'],
     u: 1
   }
   const progress = {
     en_r1: { k: 2, due: today + 2, last: today, wrong: 0, u: 2 },
     en_r2: { k: 1, due: today - 1, last: today - 2, wrong: 0, u: 1 },
+    en_wrong: { k: 0, due: today, last: today, wrong: 1, u: 3 },
     '会う': { k: 1, due: today, last: today - 1, wrong: 0, u: 1 }
   }
   const next = core.rebuildPlan(old, {
@@ -518,8 +519,9 @@ test('跨语种换词书（英语↔日语）：未答旧语种复习词移出�
     reviewCap: 10
   })
   assert.strictEqual(next.bank, 'jlpt_n5')
-  assert.ok(next.ids.includes('en_r1'), '已答过的旧词保留')
+  assert.ok(next.ids.includes('en_r1'), '已完成的旧词保留')
   assert.ok(!next.ids.includes('en_r2'), '未答过的旧语种复习词移除')
+  assert.ok(!next.ids.includes('en_wrong'), '当天答错但未完成的旧语种词移除，不混入新语种队首')
   assert.ok(!next.ids.includes('en_n1') && !next.ids.includes('en_n2'), '未答过的旧新词移除')
   assert.ok(next.ids.includes('会う'), '新语种到期复习词加入')
   assert.deepStrictEqual(next.newIds, ['青', '青い'])

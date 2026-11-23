@@ -242,9 +242,11 @@
     const newIds = []
     let keptReviewCount = 0
     base.ids.forEach(id => {
-      const kept = done.has(id) || answered(id)
+      // 跨语种切词书（英语↔日语）时只保留已完成的旧语种词，未完成（含当天答错待复答）的移出队列，
+      // 避免新语种答题队首混入旧语种词并误用新语种词库生成干扰项。
+      const kept = done.has(id) || (!langChanged && answered(id))
       if (!oldNew.has(id)) {
-        // 跨语种切词书（如英语↔日语）时，未作答的旧语种复习词移出今日计划，避免阻塞新语种学习。
+        // 跨语种切词书时，未完成的旧语种复习词移出今日计划，避免阻塞新语种学习。
         if (!langChanged || kept || bankSet.has(id)) {
           ids.push(id)
           keptReviewCount += 1
