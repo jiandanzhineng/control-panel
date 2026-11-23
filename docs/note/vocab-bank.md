@@ -83,3 +83,20 @@ window.VG_BANKS.cet4 = { id: 'cet4', name: '四级', nameEn: 'CET-4', count: 384
 - 客户端指向本地：`ACCOUNT_API_URL=http://127.0.0.1:5289 STT_RELAY_BASE_URL=http://127.0.0.1:5291 node tools/electron-dev.js --remote-debugging-port=9224`，在 `/account` 登录同一账号。
 - 背单词语音答题由宿主提供离线固定口令 KWS，无需安装 SenseVoice 或配置 ASR；采集、模型与测试入口见 [vocab-commands](vocab-commands.md)。
 - 已跑通真实链路：登录 → `/api/games/vocab-game/start` 签 token → iframe → bridge `cloudGet/cloudPut` → 本地 API `game_data`，存档版本随写入递增。
+
+## 日语 JLPT 词库（N5–N1）
+
+`backend/games/vocab-game/banks/` 下的 `jlpt_n5.js` / `jlpt_n4.js` / `jlpt_n3.js` / `jlpt_n2.js` / `jlpt_n1.js` 由 `tools/vocab-bank/build_ja_banks.py` 生成，勿手改。
+
+- 来源与许可证：`SeupLio/kotoba-jlpt` 的 `data/processed/n1.json..n5.json`（CC BY-SA 4.0，衍生自 OpenJLPT CC BY-SA 4.0 + Japanese-Chinese-thesaurus Unlicense + kotoba-jlpt 补录 CC0）。署名与许可说明见同目录 `LICENSE-JLPT.txt`。
+- 原始 JSON 放在 `tmp/vocab-bank/ja-src/kotoba/`（已 gitignore，不入库）；一律用 `python -I` 运行脚本：
+  ```sh
+  python -I tools/vocab-bank/build_ja_banks.py \
+    --src tmp/vocab-bank/ja-src/kotoba \
+    --out backend/games/vocab-game/banks
+  ```
+- 输出格式：`window.VG_BANKS.jlpt_n5 = { id: 'jlpt_n5', name: '日语 N5', nameEn: 'JLPT N5', lang: 'ja-JP', count: ..., words: [[word, phonetic, short, full], ...] }`。
+  - `phonetic` 为假名读音（纯假名词留空，游戏显示时不加斜杠）。
+  - `short`/`full` 带统一英文词性前缀（`n.`/`v.`/`adj.`/`adv.` 等），复用 `vocab-core.js` 的同词性干扰项逻辑。
+- 当前统计（2026-11-23）：N5 674 词（43 KB）、N4 630 词（44 KB）、N3 1659 词（115 KB）、N2 1778 词（129 KB）、N1 3070 词（228 KB），合计 7811 词、0.55 MB。
+- 朗读：`speakWord` 按词书 `lang` 切换 `en-US` / `ja-JP`；手机端 `DeviceAPI.speech.speak({ text, lang })` 透传给 `GameSpeechPlayer`（支持 `ja-JP` 回退 `ja`）。

@@ -2,6 +2,7 @@
 
 > 自动生成，勿手改。更新：`python E:\smart\tools\memory-index\memory_index.py --path <本层级目录>`
 
+- 2026-11-23 [背单词游戏新增日语 JLPT 词书](2026-11-23-vocab-game-japanese-banks.md) — 背单词游戏新增日语 JLPT N5-N1 词书与多语种朗读，PC 与手机同步更新
 - 2026-11-09 [游戏参数只折叠不隐藏](2026-11-09-game-params-fold-not-hide.md) — 游戏配置参数精简时只折叠进高级设置，不隐藏、不删除，想调仍能调
 - 2026-11-09 [命令行工具 undersilicon-cli](2026-11-09-undersilicon-cli.md) — CLI 补齐常用控制，发 npm 包 undersilicon-cli，限幅可选开启
 - 2026-11-08 [DeepSeek Harness（dsh）插件：让 AI agent 控制设备与客户端](2026-11-08-dsh-agent-plugin.md) — 做 dsh 插件给用户用，agent 可看/控本机及已授权远程设备与客户端，可写脚本订阅事件

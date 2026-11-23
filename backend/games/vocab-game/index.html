@@ -8,9 +8,9 @@
 {
   "id": "vocab-game",
   "title": "背单词",
-  "description": "英文单词四选一中文释义，带自动朗读和语音选择。选错、超时或点「不认识」会电击，正确选项标绿，错选项标红，单词当天排到队尾，答对一次才算过。旧词首答正确后复习间隔逐次翻倍，进度和设置走账号云同步。",
-  "howTo": "1. 连接电击设备并贴好电极贴（必需），可选配自动锁；登录账号可云同步词书学习进度。\n2. 在首页选定词书开始学习，屏幕朗读英文单词并给出四个中文释义，可点选或开启离线语音说「第一个」至「第四个」作答。\n3. 选错、超时或点「不认识」会立即电击并将该词排回今日队尾；今日计划词全部答对一遍即完成并自动开锁。",
-  "version": "1.1.14",
+  "description": "英/日语单词四选一中文释义，内置高考/四六级/雅思及日语 JLPT N5–N1 词书，带自动朗读和语音选择。选错、超时或点「不认识」会电击，正确选项标绿，错选项标红，单词当天排到队尾，答对一次才算过。旧词首答正确后复习间隔逐次翻倍，进度和设置走账号云同步。",
+  "howTo": "1. 连接电击设备并贴好电极贴（必需），可选配自动锁；登录账号可云同步词书学习进度。\n2. 在首页选定英语或日语词书开始学习，屏幕朗读单词并给出四个中文释义，可点选或开启离线语音说「第一个」至「第四个」作答。\n3. 选错、超时或点「不认识」会立即电击并将该词排回今日队尾；今日计划词全部答对一遍即完成并自动开锁。",
+  "version": "1.2.0",
   "permissions": ["microphone"],
   "devices": [
     {
@@ -78,8 +78,8 @@
   "i18n": {
     "en": {
       "title": "Vocabulary",
-      "description": "Pick the Chinese meaning of an English word from four options, with automatic pronunciation and optional voice selection. A wrong answer, timeout or “Don't know” shocks you. The correct option turns green and a wrong selection turns red; the word goes to the end of today's queue and must be answered correctly once. Correct first answers double the review interval; progress and settings sync to your account.",
-      "howTo": "1. Connect the required shock device and apply its electrode pads. An auto lock is optional. Sign in to sync your word-bank progress.\n2. Choose a word bank on the home screen. The game reads each English word aloud and offers four Chinese meanings. Tap an answer or turn on offline voice mode and say ‘first’ through ‘fourth.’\n3. A wrong answer, timeout, or ‘I don't know’ triggers a shock and sends the word to the end of today's queue. Answer each word in today's plan correctly once to finish and unlock automatically.",
+      "description": "Pick the Chinese meaning of an English or Japanese word (Gaokao/CET-4/CET-6/IELTS and JLPT N5–N1) from four options, with automatic pronunciation and optional voice selection. A wrong answer, timeout or “Don't know” shocks you. The correct option turns green and a wrong selection turns red; the word goes to the end of today's queue and must be answered correctly once. Correct first answers double the review interval; progress and settings sync to your account.",
+      "howTo": "1. Connect the required shock device and apply its electrode pads. An auto lock is optional. Sign in to sync your word-bank progress.\n2. Choose an English or Japanese word bank on the home screen. The game reads each word aloud and offers four Chinese meanings. Tap an answer or turn on offline voice mode and say ‘first’ through ‘fourth.’\n3. A wrong answer, timeout, or ‘I don't know’ triggers a shock and sends the word to the end of today's queue. Answer each word in today's plan correctly once to finish and unlock automatically.",
       "devices": {
         "shock": "Shock device",
         "lock": "Auto lock"
@@ -110,6 +110,11 @@
 <script src="banks/cet4.js"></script>
 <script src="banks/cet6.js"></script>
 <script src="banks/ielts.js"></script>
+<script src="banks/jlpt_n5.js"></script>
+<script src="banks/jlpt_n4.js"></script>
+<script src="banks/jlpt_n3.js"></script>
+<script src="banks/jlpt_n2.js"></script>
+<script src="banks/jlpt_n1.js"></script>
 <script src="vocab-core.js"></script>
 <script src="voice.js"></script>
 <style>
@@ -201,13 +206,21 @@
   .vg-back { min-height: 44px; padding: 4px 10px 4px 0; border: none; background: transparent; color: #93c5fd; font-size: 16px; font-weight: 600; cursor: pointer; }
   .vg-back:hover { color: #bfdbfe; }
   .vg-page-title { font-size: 20px; font-weight: 800; color: #f9fafb; }
-  .vg-bank-list { display: grid; gap: 12px; }
+  .vg-bank-list { display: grid; gap: 18px; }
+  .vg-bank-group { display: grid; gap: 10px; }
+  .vg-bank-group-title { font-size: 13px; font-weight: 700; letter-spacing: .5px; color: #93a5c4; padding-left: 2px; }
+  .vg-bank-group-items { display: grid; gap: 12px; }
   .vg-bank-item { --bank-color:#3b82f6; display: block; width: 100%; text-align: left; padding: 15px 16px 15px 18px; border: 1px solid var(--line); border-left: 5px solid var(--bank-color); border-radius: 14px; background: var(--deep); color: var(--text); cursor: pointer; }
   .vg-bank-item:hover { border-color: #6b7280; border-left-color: var(--bank-color); }
   .vg-bank-gaokao { --bank-color:#14b8a6; }
   .vg-bank-cet4 { --bank-color:#3b82f6; }
   .vg-bank-cet6 { --bank-color:#8b5cf6; }
   .vg-bank-ielts { --bank-color:#f59e0b; }
+  .vg-bank-jlpt_n5 { --bank-color:#10b981; }
+  .vg-bank-jlpt_n4 { --bank-color:#06b6d4; }
+  .vg-bank-jlpt_n3 { --bank-color:#ec4899; }
+  .vg-bank-jlpt_n2 { --bank-color:#f97316; }
+  .vg-bank-jlpt_n1 { --bank-color:#ef4444; }
   .vg-bank-item-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .vg-bank-item-name { font-size: 18px; font-weight: 800; color: #f9fafb; }
   .vg-bank-item-name small { margin-left: 7px; font-size: 12px; font-weight: 600; color: var(--muted); }

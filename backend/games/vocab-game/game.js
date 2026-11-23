@@ -28,9 +28,22 @@
     return zh
   }
 
-  const BANK_IDS = ['gaokao', 'cet4', 'cet6', 'ielts']
-  const BANK_LABELS = { gaokao: '高考', cet4: '四级', cet6: '六级', ielts: '雅思' }
-  const BANK_EN = { gaokao: 'Gaokao', cet4: 'CET-4', cet6: 'CET-6', ielts: 'IELTS' }
+  const BANK_IDS = [
+    'gaokao', 'cet4', 'cet6', 'ielts',
+    'jlpt_n5', 'jlpt_n4', 'jlpt_n3', 'jlpt_n2', 'jlpt_n1'
+  ]
+  const BANK_GROUPS = [
+    { key: 'en', label: '英语', ids: ['gaokao', 'cet4', 'cet6', 'ielts'] },
+    { key: 'ja', label: '日语', ids: ['jlpt_n5', 'jlpt_n4', 'jlpt_n3', 'jlpt_n2', 'jlpt_n1'] }
+  ]
+  const BANK_LABELS = {
+    gaokao: '高考', cet4: '四级', cet6: '六级', ielts: '雅思',
+    jlpt_n5: '日语 N5', jlpt_n4: '日语 N4', jlpt_n3: '日语 N3', jlpt_n2: '日语 N2', jlpt_n1: '日语 N1'
+  }
+  const BANK_EN = {
+    gaokao: 'Gaokao', cet4: 'CET-4', cet6: 'CET-6', ielts: 'IELTS',
+    jlpt_n5: 'JLPT N5', jlpt_n4: 'JLPT N4', jlpt_n3: 'JLPT N3', jlpt_n2: 'JLPT N2', jlpt_n1: 'JLPT N1'
+  }
   const SETTINGS_KEYS = ['bank', 'newPerDay', 'reviewCap', 'questionTime', 'inputMode', 'autoSpeak', 'punishUnknown']
   const SHOCK_KEYS = ['shockVoltage', 'shockDuration']
   const ANSWER_REVIEW_MS = 10000
@@ -73,9 +86,10 @@
     return m + ':' + (s < 10 ? '0' + s : String(s))
   }
 
-  function formatPhonetic(text) {
+  function formatPhonetic(text, lang) {
     const raw = String(text == null ? '' : text).trim()
     if (!raw) return ''
+    if (String(lang || '').toLowerCase().startsWith('ja')) return raw
     if (raw.charAt(0) === '/' && raw.charAt(raw.length - 1) === '/') return raw
     return '/' + raw + '/'
   }
@@ -104,12 +118,14 @@
     const banks = env && env.VG_BANKS
     if (!banks || !banks[id]) return null
     const bank = banks[id]
-    const words = VC.normalizeBank(bank)
+    const lang = String(bank.lang || (VC.bankLang ? VC.bankLang(id) : 'en-US') || 'en-US')
+    const words = VC.normalizeBank(bank).map(word => Object.assign({}, word, { lang: lang }))
     if (!words.length) return null
     return {
       id: id,
       name: String(bank.name || BANK_LABELS[id] || id),
       nameEn: String(bank.nameEn || BANK_EN[id] || ''),
+      lang: lang,
       words: words
     }
   }
@@ -329,7 +345,7 @@
       on('vg-voice-toggle', 'click', () => this.toggleVoice())
       on('vg-unknown', 'click', () => this.markUnknown())
       on('vg-speak', 'click', () => {
-        if (this.state.question) this.speakWord(this.state.question.word, true)
+        if (this.state.question) this.speakWord(this.state.question.word, true, this.state.question.lang)
       })
       on('vg-options', 'click', event => {
         const target = event && event.target
@@ -520,6 +536,10 @@
       this.bank = bank
       this.bankWords = bank ? bank.words : []
       const map = new Map()
+      // 当前词库优先入表，避免跨等级同形词（如日语 開く あく/ひらく）读音串到别的级别。
+      this.bankWords.forEach(word => {
+        if (!map.has(word.id)) map.set(word.id, word)
+      })
       Object.keys(this.allBanks).forEach(bankId => {
         this.allBanks[bankId].words.forEach(word => {
           if (!map.has(word.id)) map.set(word.id, word)
@@ -579,7 +599,8 @@
         progress: this.save.words,
         today: this.today,
         now: this.now(),
-        newPerDay: clampInt(this.config.newPerDay, 20, 0, 200)
+        newPerDay: clampInt(this.config.newPerDay, 20, 0, 200),
+        reviewCap: clampInt(this.config.reviewCap, 100, 0, 500)
       })
       this.plan = next
       this.save.plans[key || VC.dateKey(this.now())] = next
@@ -875,6 +896,7 @@
           phonetic: word.phonetic,
           short: word.short,
           full: word.full,
+          lang: word.lang || (this.bank && this.bank.lang) || (VC.bankLang ? VC.bankLang(this.config.bank) : 'en-US'),
           choices: choices
         }
         break
@@ -897,7 +919,7 @@
       this.voice.setSeq(seq)
       this._renderQuestion()
       this._renderStatus()
-      if (this.config.autoSpeak !== false) this.speakWord(question.word)
+      if (this.config.autoSpeak !== false) this.speakWord(question.word, false, question.lang)
     }
 
     answer(index) {
@@ -1274,15 +1296,26 @@
       }
     }
 
-    speakWord(word, manual) {
+    speakWord(word, manual, lang) {
       const text = String(word || '').trim()
       if (!text) return false
+      const targetLang = String(
+        lang ||
+        (this.state.question && this.state.question.lang) ||
+        (this.bank && this.bank.lang) ||
+        (VC.bankLang ? VC.bankLang(this.config.bank) : 'en-US') ||
+        'en-US'
+      )
+      const isJa = targetLang.toLowerCase().startsWith('ja')
+      const unavailableMsg = isJa
+        ? t('朗读不可用，请检查系统日文语音')
+        : t('朗读不可用，请检查系统英文语音')
       const speech = this.deviceApi && this.deviceApi.speech
       const synth = this.env && this.env.speechSynthesis
       const Utterance = this.env && this.env.SpeechSynthesisUtterance
       const native = speech && typeof speech.speak === 'function'
       if (!native && (!synth || !Utterance || typeof synth.speak !== 'function')) {
-        if (manual) this._toast(t('朗读不可用，请检查系统英文语音'), 3000)
+        if (manual) this._toast(unavailableMsg, 3000)
         return false
       }
       this.stopSpeaking()
@@ -1302,16 +1335,16 @@
         if (gen !== this.speechGen) return
         release()
         this._log('单词朗读失败: ' + ((error && error.message) || error), 'warning')
-        if (manual) this._toast(t('朗读不可用，请检查系统英文语音'), 3000)
+        if (manual) this._toast(unavailableMsg, 3000)
       }
       try {
         if (native) {
-          Promise.resolve(speech.speak({ text: text })).then(release).catch(failed)
+          Promise.resolve(speech.speak({ text: text, lang: targetLang })).then(release).catch(failed)
           if (manual) this._log('重播单词: ' + text, 'info')
           return true
         }
         const utterance = new Utterance(text)
-        utterance.lang = 'en-US'
+        utterance.lang = targetLang
         utterance.rate = 0.9
         utterance.onend = release
         utterance.onerror = failed
@@ -1753,12 +1786,17 @@
       if (voiceNote) voiceNote.hidden = !this.voiceFallback
     }
 
-    _renderBankCard() {
-      const bank = this.bank
+    _formatBankDisplayName(bank, fallbackId) {
       const en = typeof GameI18n !== 'undefined' && GameI18n.isEn && GameI18n.isEn()
-      const label = bank
-        ? (en && bank.nameEn ? bank.nameEn : bank.name + (bank.nameEn ? ' ' + bank.nameEn : ''))
-        : t(BANK_LABELS[this.config.bank] || this.config.bank)
+      if (!bank) return t(BANK_LABELS[fallbackId] || fallbackId)
+      if (en && bank.nameEn) return bank.nameEn
+      if (!bank.nameEn || bank.name === bank.nameEn) return bank.name
+      if (String(bank.lang || '').toLowerCase().startsWith('ja')) return bank.name
+      return bank.name + ' ' + bank.nameEn
+    }
+
+    _renderBankCard() {
+      const label = this._formatBankDisplayName(this.bank, this.config.bank)
       this._setText('vg-home-bank', label || '—')
       const total = this.bankWords.length
       let learned = 0
@@ -1779,7 +1817,7 @@
       const list = this._byId('vg-bank-list')
       if (!list) return
       const en = typeof GameI18n !== 'undefined' && GameI18n.isEn && GameI18n.isEn()
-      list.innerHTML = BANK_IDS.map(id => {
+      const renderItem = id => {
         const bank = this.allBanks[id]
         if (!bank) return ''
         let learned = 0
@@ -1790,22 +1828,28 @@
         const pct = total ? Math.min(100, learned / total * 100) : 0
         const current = id === this.config.bank
         const nameEn = bank.nameEn || BANK_EN[id] || ''
-        const name = en && bank.nameEn ? bank.nameEn : bank.name
+        const name = en && nameEn ? nameEn : bank.name
+        const sub = (!en && nameEn && nameEn !== name) ? '<small>' + escapeHtml(nameEn) + '</small>' : ''
         return '<button class="vg-bank-item vg-bank-' + id + '" type="button" data-bank="' + id + '">' +
-          '<div class="vg-bank-item-head"><span class="vg-bank-item-name">' + escapeHtml(name) +
-          '<small>' + escapeHtml(nameEn) + '</small></span>' +
+          '<div class="vg-bank-item-head"><span class="vg-bank-item-name">' + escapeHtml(name) + sub + '</span>' +
           (current ? '<span class="vg-badge-current">' + escapeHtml(t('当前')) + '</span>' : '') +
           '</div>' +
           '<div class="vg-bank-item-meta">' + escapeHtml(t('已学 {a} / 总 {b}', { a: learned, b: total })) + '</div>' +
           '<div class="vg-progress"><i style="width:' + pct.toFixed(1) + '%"></i></div>' +
           '</button>'
-      }).join('')
+      }
+      list.innerHTML = BANK_GROUPS.map(group => {
+        const items = group.ids.map(renderItem).filter(Boolean).join('')
+        if (!items) return ''
+        return '<div class="vg-bank-group">' +
+          '<div class="vg-bank-group-title">' + escapeHtml(t(group.label)) + '</div>' +
+          '<div class="vg-bank-group-items">' + items + '</div>' +
+          '</div>'
+      }).filter(Boolean).join('')
     }
 
     _renderSettings() {
-      const bankName = this.bank
-        ? this.bank.name + (this.bank.nameEn ? ' ' + this.bank.nameEn : '')
-        : t(BANK_LABELS[this.config.bank] || this.config.bank)
+      const bankName = this._formatBankDisplayName(this.bank, this.config.bank)
       this._setText('vg-set-bank', (bankName || '—') + ' ›')
       const steppers = this.doc && this.doc.querySelectorAll ? this.doc.querySelectorAll('.vg-stepper') : []
       Array.prototype.forEach.call(steppers, stepper => {
@@ -1844,7 +1888,7 @@
       if (!question) return
       this._switchView('playing')
       this._setText('vg-word', question.word)
-      this._setText('vg-phonetic', formatPhonetic(question.phonetic))
+      this._setText('vg-phonetic', formatPhonetic(question.phonetic, question.lang))
       const options = this._byId('vg-options')
       const buttons = options && options.querySelectorAll ? options.querySelectorAll('.vg-opt') : []
       Array.prototype.forEach.call(buttons, (button, i) => {
