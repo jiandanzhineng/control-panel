@@ -62,12 +62,26 @@ function eventsModeForCore(gameId, cache) {
   return mode;
 }
 
-function normalizeDeviceMap(input) {
+function normalizeDeviceMap(input, gameId = '') {
   const out = {};
   if (!input || typeof input !== 'object') return out;
+  const maxByRole = new Map();
+  if (gameId) {
+    try {
+      const pkg = coreResolver.resolveGamePackage?.(String(gameId));
+      for (const dev of Array.isArray(pkg?.manifest?.devices) ? pkg.manifest.devices : []) {
+        const max = Number(dev?.maxDevices);
+        if (dev?.id && Number.isFinite(max) && max > 0) {
+          maxByRole.set(String(dev.id), Math.floor(max));
+        }
+      }
+    } catch (_) { /* ignore */ }
+  }
   for (const [role, value] of Object.entries(input)) {
     const ids = Array.isArray(value) ? value : (value ? [value] : []);
-    out[role] = ids.map((id) => String(id || '').trim()).filter(Boolean);
+    const unique = Array.from(new Set(ids.map((id) => String(id || '').trim()).filter(Boolean)));
+    const max = maxByRole.get(role);
+    out[role] = max ? unique.slice(0, max) : unique;
   }
   return out;
 }
@@ -212,7 +226,7 @@ class GameHostService {
     const nowMs = this.now();
     const core = createCore(String(gameId), forceHiddenDefaults(gameId, params), this.random);
     const runtime = new GameCoreRuntime(core);
-    const normalized = normalizeDeviceMap(deviceMap);
+    const normalized = normalizeDeviceMap(deviceMap, gameId);
     const session = {
       sessionId: randomUUID(),
       gameId: String(gameId),
@@ -310,6 +324,24 @@ class GameHostService {
   tick(nowMs = this.now()) {
     const session = this.session;
     if (!session) return this.getStatus();
+    if (session.eventsMode === 'v2') {
+      session.offlineDevices ??= new Set();
+      for (const [deviceId, role] of session.roles) {
+        const dev = this.devices.getDeviceById?.(deviceId);
+        const offline = !dev || dev.connected === false;
+        if (offline) {
+          if (!session.offlineDevices.has(deviceId)) {
+            session.offlineDevices.add(deviceId);
+            for (const key of Array.from(session.propValues.keys())) {
+              if (key.startsWith(`${deviceId}\u0000`)) session.propValues.delete(key);
+            }
+            session.runtime.enqueue({ type: 'device-event', role, deviceId, name: 'disconnected', payload: {} });
+          }
+        } else {
+          session.offlineDevices.delete(deviceId);
+        }
+      }
+    }
     const result = session.runtime.tick(nowMs);
     const hasStopAll = this._applyResult(session, result, nowMs);
     if (result.snapshot?.ended) {
@@ -427,13 +459,13 @@ class GameHostService {
     if (effect.type === 'device.shock') {
       const voltage = Math.round(clamp(effect.voltage, 0, 100));
       const durationMs = Math.round(clamp(effect.durationMs, 50, 10000));
-      this._invokeMapped(session, ids, 'shock', 'start', { voltage });
       this._scheduleShockStop(session, ids, durationMs, nowMs);
+      this._invokeMapped(session, ids, 'shock', 'start', { voltage });
       return;
     }
     if (effect.type === 'device.shock-stop') {
-      this._clearShockTimers(session);
       this._invokeMapped(session, ids, 'shock', 'stop', {});
+      this._clearShockTimers(session, ids);
       return;
     }
     if (effect.type === 'device.lock') {
@@ -465,13 +497,13 @@ class GameHostService {
       return;
     }
     const ids = this._roleIds(session, effect.role);
-    this._invokeRemoteMapped(session, ids, effect);
-    // 电击的定时停止照旧由会话内的 shockTimer 负责（时长本身未变，只是电压被钳制）
+    // 电击的定时停止照旧由会话内的 shockTimer 负责，先装定时器再下发，避免单设备异常中断批次
     if (effect.type === 'device.shock') {
       const durationMs = Math.round(clamp(effect.durationMs, 50, 10000));
       this._scheduleShockStop(session, ids, durationMs, nowMs);
     }
-    if (effect.type === 'device.shock-stop') this._clearShockTimers(session);
+    this._invokeRemoteMapped(session, ids, effect);
+    if (effect.type === 'device.shock-stop') this._clearShockTimers(session, ids);
   }
 
   _scheduleShockStop(session, ids, durationMs) {
@@ -496,7 +528,11 @@ class GameHostService {
         this._recordError(session, `设备 ${id} 无法执行 ${capability}.${action}`);
         continue;
       }
-      this._invoke(id, capability, action, input);
+      try {
+        this._invoke(id, capability, action, input);
+      } catch (error) {
+        this._recordError(session, error?.message || String(error));
+      }
     }
   }
 
@@ -636,7 +672,17 @@ class GameHostService {
     }
   }
 
-  _clearShockTimers(session) {
+  _clearShockTimers(session, ids = null) {
+    if (Array.isArray(ids)) {
+      for (const id of ids) {
+        const timer = session.shockTimers.get(id);
+        if (timer) {
+          this.clearTimer(timer);
+          session.shockTimers.delete(id);
+        }
+      }
+      return;
+    }
     for (const timer of session.shockTimers.values()) this.clearTimer(timer);
     session.shockTimers.clear();
   }
@@ -672,7 +718,9 @@ class GameHostService {
       // 核心必须等真实变化（oldValue 非 null）才判违规，否则开局就电击（契约第 3 节）。
       const rows = [];
       for (const [deviceId, role] of session.roles) {
-        const data = this.devices.getDeviceById?.(deviceId)?.data || {};
+        const dev = this.devices.getDeviceById?.(deviceId);
+        if (!dev || dev.connected === false) continue;
+        const data = dev.data || {};
         for (const [name, value] of Object.entries(data)) rows.push({ role, deviceId, name, value });
       }
       this._pushDeviceProperties(session, rows, { seed: true });

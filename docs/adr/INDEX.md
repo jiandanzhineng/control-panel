@@ -2,6 +2,7 @@
 
 > 自动生成，勿手改。更新：`python E:\smart\tools\memory-index\memory_index.py --path <本层级目录>`
 
+- 2026-11-25 [运动心率电击提醒游戏](2026-11-25-heart-rate-trainer.md) — 新增运动心率电击提醒游戏：低心率触发电击，可设强度时长冷却期，支持后台托管核心
 - 2026-11-23 [背单词游戏新增日语 JLPT 词书](2026-11-23-vocab-game-japanese-banks.md) — 背单词游戏新增日语 JLPT N5-N1 词书与多语种朗读，PC 与手机同步更新
 - 2026-11-09 [游戏参数只折叠不隐藏](2026-11-09-game-params-fold-not-hide.md) — 游戏配置参数精简时只折叠进高级设置，不隐藏、不删除，想调仍能调
 - 2026-11-09 [命令行工具 undersilicon-cli](2026-11-09-undersilicon-cli.md) — CLI 补齐常用控制，发 npm 包 undersilicon-cli，限幅可选开启

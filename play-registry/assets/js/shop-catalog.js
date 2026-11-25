@@ -19,6 +19,7 @@
     'reading-game': { shock: 'beidanci' },
     'vocab-game': { shock: 'beidanci' },
     'rc-car': { punish: 'beidanci', sensor: 'kuoyue-sensor' },
+    'heart-rate-trainer': { shock: 'beidanci', motor: 'mini-vibe-2', lock: 'zidongsuo-auto-lock' },
   };
 
   function localePath(locale) { return locale === 'en' ? '/en' : '/zh'; }

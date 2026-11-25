@@ -2,6 +2,7 @@ const vm = require('vm');
 const { buildMobilePressureCore, buildMobileCore } = require('../../scripts/sync-mobile-games');
 const { SurgeEdgingCore } = require('../game-runtime/cores/surge-edging-core');
 const { MaidPunishmentCore } = require('../games/maid-punishment/game-core');
+const { HeartRateTrainerCore } = require('../games/heart-rate-trainer/game-core');
 const { PressureEdgingV2Core } = require('../game-runtime/cores/pressure-edging-v2-core');
 
 const plain = value => JSON.parse(JSON.stringify(value));
@@ -10,6 +11,7 @@ test.each([
   ['pressure-edging-v2', PressureEdgingV2Core],
   ['surge-edging', SurgeEdgingCore],
   ['maid-punishment', MaidPunishmentCore],
+  ['heart-rate-trainer', HeartRateTrainerCore],
 ])('%s generated bundle also loads in the CommonJS native host', (id, Ctor) => {
   const ctx = vm.createContext({});
   const module = { exports: {} };
@@ -73,7 +75,9 @@ function compareSequence(gameId, Ctor, params, sequence) {
 }
 
 test.each([
-  ['surge-edging', SurgeEdgingCore], ['maid-punishment', MaidPunishmentCore],
+  ['surge-edging', SurgeEdgingCore],
+  ['maid-punishment', MaidPunishmentCore],
+  ['heart-rate-trainer', HeartRateTrainerCore],
 ])('%s starts once at zero and never repeats effects, logs or restarts after ending', (id, Ctor) => {
   const phone = sharedMobile(id, { duration: 1, endCalmLock: 0 });
   const pc = new Ctor({ params: { duration: 1, endCalmLock: 0 } });
@@ -129,6 +133,30 @@ test('maid mobile bundle matches PC seeded buttons, shock timeout, TD01, pressur
     [3000, { type: 'action', action: 'forceStart' }], [4000, { type: 'stop' }],
   ]);
   expect(manual.dispatch({ nowMs: 5000, events: [] }).snapshot.ended).toBe(true);
+});
+
+test('heart-rate-trainer mobile bundle matches PC warmup, low-HR shock, cooldown, actions and ending', () => {
+  const hr = (value, seed = false) => ({
+    type: 'device-property',
+    role: 'hrm',
+    deviceId: 'hrm-1',
+    name: 'heart_rate',
+    value,
+    ...(seed ? { seed: true } : {}),
+  });
+  const phone = compareSequence('heart-rate-trainer', HeartRateTrainerCore,
+    { duration: 1, minHeartRate: 125, warmupSeconds: 5, belowThresholdGraceSeconds: 2, shockDurationSeconds: 1, cooldownSeconds: 5 }, [
+      [1000, hr(110, false)],
+      [3000, { type: 'action', action: 'skipWarmup' }],
+      [5000, { type: 'tick' }],
+      [6000, { type: 'tick' }],
+      [8000, hr(132)],
+      [9000, { type: 'action', action: 'adjustMinHr', payload: { delta: 5 } }],
+      [9500, { type: 'pause' }],
+      [10500, { type: 'resume' }],
+      [62000, { type: 'tick' }],
+    ]);
+  expect(phone.dispatch({ nowMs: 63000, events: [] }).snapshot.ended).toBe(true);
 });
 
 test('real mobile bundle matches PC snapshots and effects through original controls and phases', () => {

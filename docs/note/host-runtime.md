@@ -2,8 +2,9 @@
 
 ## 模块与契约
 
-- 后端 `backend/game-runtime/`：`gameCoreRuntime.js`（事件队列、tick、快照）、`gameHostService.js`（单活跃会话、生命周期、权限、设备 effects）、`cores/*-core.js`。
-- 远程 `backend/services/remoteGameService.js`；路由 `backend/routes/gameRuntime.js`、`remoteGame.js`；前端 `frontend/src/api/gameRuntime.ts`、`remoteGame.ts`、`components/GameRuntimeView.vue`。
+- 后端 `backend/game-runtime/`：`gameCoreRuntime.js`（事件队列、tick、快照）、`gameHostService.js`（单活跃会话、生命周期、权限、设备 effects）、`cores/*-core.js` 及各游戏包内 `game-core.js`。
+- 远程 `backend/services/remoteGameService.js`；路由 `backend/routes/gameRuntime.js`、`remoteGame.js`；前端 `frontend/src/api/gameRuntime.ts`、`remoteGame.ts`、`views/GameRuntimeView.vue`。
+- `manifest.events === 'v2'` 游戏（如 `maid-punishment`、`rc-car`、`heart-rate-trainer`）走通用 `device-property` / `device-event` 通道（含 `maxDevices` 角色截断与离线 `disconnected` 推送）；移动端由 `DeviceManagerHostDevicePort.propertiesOf` 合并 `reportedValues` 转发通用传感器（如 `HRM` 的 `heart_rate` / `hr_status` / `hr_contact`），双端通过 `node scripts/sync-mobile-games.js <mobile> --only=<id>` 保持资源与校验和一致。
 - Core 只接收输入返回数据：`start/pause/resume/stop(nowMs)`、`setParams`、`action`、`step({nowMs, events})`、`snapshot()`；时间只能由宿主传入，不能 `Date.now()`/`setTimeout()`/`setInterval()`。effects 只声明意图（`device.set-strength`、`device.shock`、`device.stop-all` 等）。
 - HostRuntime 以 50–100ms tick 驱动 Core；effects 经安全执行层校验设备/能力/role/边界后调 `deviceService.invokeDeviceCapability`；shock 自动停止计时器由 HostRuntime 管理。
 

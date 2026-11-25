@@ -13,9 +13,9 @@ test('all guide entries reference products in the price-free snapshot', () => {
   const slugs = new Set(products.map(({ slug }) => slug));
   assert.equal(slugs.size, products.length);
   assert.deepEqual(Object.keys(hardware).sort(), [
-    'device-control', 'drink-pee-unlock', 'maid-punishment', 'pelvic-training',
-    'pressure-edging', 'pressure-edging-v2', 'pushup-detection', 'rc-car',
-    'reading-game', 'surge-edging', 'vocab-game',
+    'device-control', 'drink-pee-unlock', 'heart-rate-trainer', 'maid-punishment',
+    'pelvic-training', 'pressure-edging', 'pressure-edging-v2', 'pushup-detection',
+    'rc-car', 'reading-game', 'surge-edging', 'vocab-game',
   ]);
   for (const product of products) {
     assert.deepEqual(Object.keys(product).sort(), ['image', 'nameEn', 'nameZh', 'slug']);
