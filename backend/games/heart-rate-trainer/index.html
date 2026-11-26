@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title data-en="Heart Rate Workout Shock Reminder">运动心率电击提醒</title>
+<script type="application/json" id="game-manifest">
+{
+  "id": "heart-rate-trainer",
+  "title": "运动心率电击提醒",
+  "description": "实时监控蓝牙心率带 BPM，运动中心率低于设定下限即触发电击提醒，支持电击强度、持续时间、冷却期与后台锁屏托管核心。",
+  "howTo": "1. 佩戴好标准蓝牙心率带并贴紧皮肤（必需），连接电击设备并贴好电极贴（必需），可选配震动预警器与自动锁。\n2. 开始后先进入热身缓冲期，随后需将运动心率维持在设定下限以上；核心逻辑由客户端后台托管，锁屏或切后台仍可持续监控。\n3. 一旦心率跌破下限超过容忍期即触发电击提醒，随后进入冷却恢复期供你加速拉升心率；坚持到设定运动时长归零即完成训练并自动解锁。",
+  "version": "1.0.0",
+  "runtime": "host",
+  "core": "game-core.js",
+  "events": "v2",
+  "devices": [
+    {
+      "id": "hrm",
+      "label": "心率传感器",
+      "capabilities": [
+        "heartRate"
+      ],
+      "required": true,
+      "maxDevices": 1
+    },
+    {
+      "id": "shock",
+      "label": "电击设备",
+      "capabilities": [
+        "shock"
+      ],
+      "required": true
+    },
+    {
+      "id": "motor",
+      "label": "辅助震动预警",
+      "capabilities": [
+        "strength"
+      ],
+      "required": false
+    },
+    {
+      "id": "lock",
+      "label": "自动锁",
+      "capabilities": [
+        "lock"
+      ],
+      "required": false
+    }
+  ],
+  "params": [
+    {
+      "key": "duration",
+      "type": "number",
+      "default": 20,
+      "label": "运动时长",
+      "unit": "分钟",
+      "description": "整场运动训练持续的总时间",
+      "group": "core",
+      "min": 1,
+      "max": 180,
+      "step": 1
+    },
+    {
+      "key": "minHeartRate",
+      "type": "number",
+      "default": 120,
+      "label": "心率下限",
+      "unit": "bpm",
+      "description": "运动中心率必须保持在此数值及以上，低于则触发电击提醒",
+      "group": "core",
+      "min": 50,
+      "max": 200,
+      "step": 1,
+      "recommended": "110–145"
+    },
+    {
+      "key": "warmupSeconds",
+      "type": "number",
+      "default": 30,
+      "label": "热身缓冲期",
+      "unit": "秒",
+      "description": "开局前留给身体拉升心率的热身时间，期间不触发电击（设 0 则立即开始监控）",
+      "group": "core",
+      "min": 0,
+      "max": 600,
+      "step": 5
+    },
+    {
+      "key": "shockVoltage",
+      "type": "number",
+      "default": 18,
+      "label": "电击强度",
+      "unit": "V",
+      "description": "心率低于下限时触发的基础电击电压",
+      "group": "punish",
+      "min": 1,
+      "max": 80,
+      "step": 1,
+      "device": "shock",
+      "recommended": "12–24"
+    },
+    {
+      "key": "shockDurationSeconds",
+      "type": "number",
+      "default": 2,
+      "label": "电击时长",
+      "unit": "秒",
+      "description": "每次电击提醒持续输出的秒数",
+      "group": "punish",
+      "min": 0.5,
+      "max": 10,
+      "step": 0.5,
+      "device": "shock"
+    },
+    {
+      "key": "cooldownSeconds",
+      "type": "number",
+      "default": 15,
+      "label": "电击冷却期",
+      "unit": "秒",
+      "description": "每次电击结束后暂停再次电击的恢复窗口，给你时间加速把心率拉回下限以上",
+      "group": "punish",
+      "min": 1,
+      "max": 300,
+      "step": 1,
+      "device": "shock"
+    },
+    {
+      "key": "belowThresholdGraceSeconds",
+      "type": "number",
+      "default": 5,
+      "label": "低心率容忍期",
+      "unit": "秒",
+      "description": "心率连续低于下限满多少秒后才真正触发电击，防止瞬时波动误电",
+      "group": "difficulty",
+      "min": 0,
+      "max": 60,
+      "step": 1,
+      "required": false
+    },
+    {
+      "key": "progressiveShock",
+      "type": "boolean",
+      "default": false,
+      "label": "连续偷懒递增强度",
+      "description": "开启后若连续触发低心率电击则逐次升高电压，心率恢复达标满 3 秒后自动重置",
+      "group": "punish",
+      "device": "shock",
+      "required": false
+    },
+    {
+      "key": "progressiveStepVoltage",
+      "type": "number",
+      "default": 3,
+      "label": "每次递增电压",
+      "unit": "V",
+      "description": "连续不达标时每次额外增加的电击电压",
+      "group": "punish",
+      "min": 1,
+      "max": 20,
+      "step": 1,
+      "device": "shock",
+      "required": false,
+      "visibleWhen": { "key": "progressiveShock", "equals": true }
+    },
+    {
+      "key": "maxShockVoltage",
+      "type": "number",
+      "default": 30,
+      "label": "递增最高电压",
+      "unit": "V",
+      "description": "渐进增强模式下的最高电压上限",
+      "group": "punish",
+      "min": 5,
+      "max": 80,
+      "step": 1,
+      "device": "shock",
+      "required": false,
+      "visibleWhen": { "key": "progressiveShock", "equals": true }
+    },
+    {
+      "key": "allowUnsafeVoltage",
+      "type": "boolean",
+      "default": false,
+      "label": "允许超过30V",
+      "description": "关闭时实际输出电击强度最高限制在 30V 以内，开启请谨慎评估耐受度",
+      "group": "advanced",
+      "device": "shock",
+      "required": false
+    },
+    {
+      "key": "sensorLossPolicy",
+      "type": "enum",
+      "default": "wait",
+      "enum": ["wait", "auto_pause"],
+      "enumLabels": {
+        "wait": "暂停判定等待信号恢复",
+        "auto_pause": "超时自动暂停训练计时"
+      },
+      "label": "信号丢失处理",
+      "description": "运动中心率带脱落或信号中断时一律立即停止电击输出；可选持续等待恢复或超时自动暂停计时",
+      "group": "advanced",
+      "required": false
+    },
+    {
+      "key": "sensorLossGraceSeconds",
+      "type": "number",
+      "default": 8,
+      "label": "信号丢失宽限期",
+      "unit": "秒",
+      "description": "无接触或心率归零后等待多少秒再执行信号丢失处理",
+      "group": "advanced",
+      "min": 2,
+      "max": 60,
+      "step": 1,
+      "required": false
+    },
+    {
+      "key": "warningMotorIntensity",
+      "type": "number",
+      "default": 80,
+      "label": "低心率震动预警强度",
+      "description": "在低心率容忍期内驱动辅助震动设备提前提醒加速（0 为关闭）",
+      "group": "reward",
+      "min": 0,
+      "max": 255,
+      "step": 5,
+      "device": "motor",
+      "required": false
+    },
+    {
+      "key": "backgroundKeepAlive",
+      "type": "boolean",
+      "default": false,
+      "label": "锁屏/切后台继续运行",
+      "description": "开启后手机锁屏或切到后台时继续由托管核心监控心率与电击提醒；默认关闭（切后台自动安全停机）",
+      "group": "core",
+      "required": false
+    }
+  ],
+  "permissions": [],
+  "i18n": {
+    "en": {
+      "title": "Heart Rate Workout Shock Reminder",
+      "description": "Monitors live Bluetooth heart rate (BPM) during workouts and triggers a shock reminder whenever your heart rate drops below the minimum target, with configurable intensity, duration, cooldown, and background host execution.",
+      "howTo": "1. Wear a Bluetooth heart rate monitor snugly against your skin (required) and attach the shock device electrodes (required); a vibration warning device and auto lock are optional.\n2. Warm up during the initial buffer window, then keep your heart rate at or above the target minimum; enable background keep-alive if you want the hosted core to continue while your phone screen is locked.\n3. Dropping below the minimum heart rate past the grace period triggers a shock reminder followed by a cooldown window to speed back up; finish the target workout duration to complete and unlock.",
+      "devices": {
+        "hrm": "Heart rate sensor",
+        "shock": "Shock device",
+        "motor": "Vibration warning device",
+        "lock": "Auto lock"
+      },
+      "params": {
+        "duration": "Workout duration",
+        "minHeartRate": "Minimum heart rate",
+        "warmupSeconds": "Warmup buffer",
+        "shockVoltage": "Shock intensity",
+        "shockDurationSeconds": "Shock duration",
+        "cooldownSeconds": "Shock cooldown",
+        "belowThresholdGraceSeconds": "Low HR grace window",
+        "progressiveShock": "Progressive shock on repeat slack",
+        "progressiveStepVoltage": "Voltage step per repeat",
+        "maxShockVoltage": "Max progressive voltage",
+        "allowUnsafeVoltage": "Allow over 30V",
+        "sensorLossPolicy": "Signal loss policy",
+        "sensorLossGraceSeconds": "Signal loss grace window",
+        "warningMotorIntensity": "Warning motor intensity",
+        "backgroundKeepAlive": "Keep running when locked/backgrounded"
+      },
+      "enumLabels": {
+        "sensorLossPolicy": {
+          "wait": "Hold shock check & wait for signal",
+          "auto_pause": "Auto-pause workout timer on timeout"
+        }
+      },
+      "paramDescriptions": {
+        "duration": "Total workout duration before automatic completion",
+        "minHeartRate": "Minimum BPM to maintain; dropping below triggers a shock reminder",
+        "warmupSeconds": "Initial warmup period before low-HR shock monitoring starts (0 to monitor immediately)",
+        "shockVoltage": "Base shock voltage triggered when heart rate falls below minimum",
+        "shockDurationSeconds": "How many seconds each shock reminder lasts",
+        "cooldownSeconds": "Recovery cooldown after each shock before another shock can trigger",
+        "belowThresholdGraceSeconds": "How long BPM must stay below minimum before shocking",
+        "progressiveShock": "Increase voltage on consecutive low-HR shocks; resets after 3s back in target zone",
+        "progressiveStepVoltage": "Additional voltage added per consecutive shock",
+        "maxShockVoltage": "Maximum voltage cap in progressive mode",
+        "allowUnsafeVoltage": "Caps output at 30V when off; enable with caution",
+        "sensorLossPolicy": "Shock output always stops immediately on signal loss; choose whether to wait or auto-pause timer",
+        "sensorLossGraceSeconds": "Seconds to wait after signal loss before applying the policy",
+        "warningMotorIntensity": "Vibration warning strength during the low-HR grace window (0 to disable)",
+        "backgroundKeepAlive": "Keep hosted monitoring active when phone screen is locked or app is backgrounded (off stops on background)"
+      },
+      "paramUnits": {
+        "duration": "min",
+        "minHeartRate": "bpm",
+        "warmupSeconds": "s",
+        "shockVoltage": "V",
+        "shockDurationSeconds": "s",
+        "cooldownSeconds": "s",
+        "belowThresholdGraceSeconds": "s",
+        "progressiveStepVoltage": "V",
+        "maxShockVoltage": "V",
+        "sensorLossGraceSeconds": "s"
+      }
+    }
+  }
+}
+</script>
+<style>
+  :root {
+    --bg: #0b1120;
+    --panel: #131c31;
+    --panel-border: rgba(148, 163, 184, 0.16);
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --ok: #10b981;
+    --warn: #f59e0b;
+    --danger: #ef4444;
+    --cool: #38bdf8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 14px;
+    font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: radial-gradient(circle at top, #172554 0%, var(--bg) 58%);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  .shell {
+    max-width: 780px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.28);
+  }
+  .shell.is-shocking .hero-card {
+    border-color: rgba(239, 68, 68, 0.85);
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.35), 0 12px 30px rgba(239, 68, 68, 0.25);
+  }
+  .topbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  .title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .title-group h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+  .phase-pill {
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    background: rgba(56, 189, 248, 0.16);
+    color: var(--cool);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+  }
+  [data-phase="ACTIVE_OK"] .phase-pill {
+    background: rgba(16, 185, 129, 0.16);
+    color: #34d399;
+    border-color: rgba(16, 185, 129, 0.4);
+  }
+  [data-phase="WARMUP"] .phase-pill,
+  [data-phase="WARNING"] .phase-pill {
+    background: rgba(245, 158, 11, 0.18);
+    color: #fbbf24;
+    border-color: rgba(245, 158, 11, 0.42);
+  }
+  [data-phase="SHOCKING"] .phase-pill {
+    background: rgba(239, 68, 68, 0.24);
+    color: #fca5a5;
+    border-color: rgba(239, 68, 68, 0.65);
+  }
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chip {
+    padding: 3px 9px;
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--muted);
+    background: rgba(15, 23, 42, 0.65);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+  }
+  .shock-banner {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: linear-gradient(90deg, rgba(185, 28, 28, 0.92), rgba(239, 68, 68, 0.92));
+    color: #fff;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.02em;
+  }
+  .hero-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 16px;
+    align-items: center;
+    margin-top: 10px;
+  }
+  @media (max-width: 560px) {
+    .hero-grid { grid-template-columns: 1fr; }
+  }
+  .bpm-display {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .bpm-number {
+    font-size: 64px;
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    color: #f8fafc;
+  }
+  [data-phase="ACTIVE_OK"] .bpm-number { color: #34d399; }
+  [data-phase="WARNING"] .bpm-number { color: #fbbf24; }
+  [data-phase="SHOCKING"] .bpm-number { color: #f87171; }
+  .bpm-unit {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .hr-delta {
+    margin-top: 6px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .hr-delta.ok { color: #34d399; }
+  .hr-delta.danger { color: #f87171; }
+  .hr-delta.muted { color: var(--muted); }
+  .target-box {
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .status-line {
+    font-size: 15px;
+    font-weight: 700;
+    color: #e2e8f0;
+  }
+  .hint-line {
+    margin-top: 4px;
+    font-size: 13px;
+    color: #fbbf24;
+    min-height: 18px;
+  }
+  .target-row {
+    margin-top: 8px;
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .target-row strong {
+    color: #f8fafc;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+  }
+  .gauge-track {
+    position: relative;
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.85);
+    margin-top: 14px;
+    overflow: hidden;
+  }
+  .gauge-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 999px;
+    transition: width 0.2s ease, background-color 0.2s ease;
+    background: var(--cool);
+  }
+  .gauge-fill.ok { background: linear-gradient(90deg, #059669, #34d399); }
+  .gauge-fill.low { background: linear-gradient(90deg, #dc2626, #f59e0b); }
+  .gauge-marker {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 3px;
+    background: #fbbf24;
+    border-radius: 2px;
+    box-shadow: 0 0 6px rgba(251, 191, 36, 0.85);
+  }
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+  @media (max-width: 620px) {
+    .stats-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    padding: 11px 13px;
+  }
+  .stat-label {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .stat-value {
+    margin-top: 4px;
+    font-size: 22px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-sub {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .cfg-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+  .cfg-strip b { color: #e2e8f0; }
+  .chart-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  canvas#hrChart {
+    width: 100%;
+    height: 150px;
+    display: block;
+  }
+  .actions-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  button.btn {
+    appearance: none;
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    background: #1e293b;
+    color: #f8fafc;
+    border-radius: 10px;
+    padding: 9px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.08s ease, background 0.15s ease;
+  }
+  button.btn:hover:not(:disabled) { background: #334155; }
+  button.btn:active:not(:disabled) { transform: scale(0.98); }
+  button.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  button.btn.primary {
+    background: #0284c7;
+    border-color: #38bdf8;
+  }
+  button.btn.warn {
+    background: rgba(217, 119, 6, 0.25);
+    border-color: rgba(245, 158, 11, 0.55);
+    color: #fde68a;
+  }
+  button.btn.danger {
+    background: rgba(185, 28, 28, 0.28);
+    border-color: rgba(239, 68, 68, 0.55);
+    color: #fecaca;
+  }
+  .logs-title {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  ul#logs {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 165px;
+    overflow-y: auto;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .log-item {
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    color: #cbd5e1;
+  }
+  .log-item.log-warn { color: #fca5a5; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="shell" id="appRoot" data-phase="IDLE">
+  <div class="shock-banner" id="shockFlashBanner">
+    <span>⚡</span>
+    <span id="shockFlashText">低心率电击提醒中</span>
+  </div>
+
+  <div class="card hero-card">
+    <div class="topbar">
+      <div class="title-group">
+        <h1 data-en="Heart Rate Workout Coach">运动心率电击提醒</h1>
+        <span class="phase-pill" id="phaseBadge">准备就绪</span>
+      </div>
+      <div class="badges">
+        <span class="chip" id="sensorBadge">等待连接</span>
+        <span class="chip" id="batteryBadge">电量 --</span>
+        <span class="chip" id="lockBadge">已解锁</span>
+      </div>
+    </div>
+
+    <div class="hero-grid">
+      <div>
+        <div class="bpm-display">
+          <span class="bpm-number" id="hrValue">--</span>
+          <span class="bpm-unit">BPM</span>
+        </div>
+        <div class="hr-delta muted" id="hrDeltaText">暂无有效读数</div>
+      </div>
+
+      <div class="target-box">
+        <div class="status-line" id="statusText">准备就绪</div>
+        <div class="hint-line" id="phaseHint"></div>
+        <div class="target-row">
+          <span data-en="Minimum Target">目标心率下限</span>
+          <strong>≥ <span id="minHrValue">120</span> bpm</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="gauge-track">
+      <div class="gauge-fill" id="hrGaugeFill"></div>
+      <div class="gauge-marker" id="hrGaugeMarker" style="left: 57%;"></div>
+    </div>
+
+    <div class="cfg-strip">
+      <span><span data-en="Intensity">电击强度</span>: <b id="cfgSummaryVoltage">18V</b></span>
+      <span><span data-en="Duration">单次时长</span>: <b id="cfgSummaryDuration">2s</b></span>
+      <span><span data-en="Cooldown">冷却恢复</span>: <b id="cfgSummaryCooldown">15s</b></span>
+      <span><span data-en="Grace">低心率容忍</span>: <b id="cfgSummaryGrace">5s</b></span>
+    </div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label" data-en="Remaining Time">剩余运动时间</div>
+      <div class="stat-value" id="remainingClock">20:00</div>
+      <div class="stat-sub" data-en="Hosted core active">后台托管计时</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label" data-en="In-Zone Rate">心率达标率</div>
+      <div class="stat-value" id="complianceRate">100%</div>
+      <div class="stat-sub" data-en="Post-warmup compliance">热身结束后统计</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label" data-en="Shock Reminders">累计电击提醒</div>
+      <div class="stat-value" id="shockCountValue">0</div>
+      <div class="stat-sub" id="nextVoltageHint">下次电击 18V</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label" data-en="Avg / Peak BPM">平均 / 峰值心率</div>
+      <div class="stat-value" id="avgMaxHr">-- / --</div>
+      <div class="stat-sub">BPM</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="chart-head">
+      <span data-en="Real-time Heart Rate Trend (Last 2 min)">实时心率曲线（最近 2 分钟）</span>
+      <span data-en="Dashed = Min HR · Red dot = Shock">虚线 = 下限 · 红点 = 电击</span>
+    </div>
+    <canvas id="hrChart" width="680" height="150"></canvas>
+  </div>
+
+  <div class="card">
+    <div class="actions-bar">
+      <button class="btn primary" type="button" data-action="togglePause">
+        <span id="pauseBtnLabel">暂停</span>
+      </button>
+      <button class="btn warn" type="button" id="skipWarmupBtn" data-action="skipWarmup" data-en="Skip warmup">跳过热身</button>
+      <button class="btn" type="button" data-action="adjustMinHr" data-delta="-5" data-en="Min HR -5">下限 -5</button>
+      <button class="btn" type="button" data-action="adjustMinHr" data-delta="5" data-en="Min HR +5">下限 +5</button>
+      <button class="btn" type="button" data-action="adjustVoltage" data-delta="-2" data-en="Shock -2V">强度 -2V</button>
+      <button class="btn" type="button" data-action="adjustVoltage" data-delta="2" data-en="Shock +2V">强度 +2V</button>
+      <button class="btn" type="button" id="unlockBtn" data-action="unlock" data-en="Unlock">手动开锁</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="logs-title" data-en="Workout & Shock Log">实时事件记录</div>
+    <ul id="logs"></ul>
+  </div>
+</div>
+
+<script src="/bridge-api/device-api-bridge.js"></script>
+<script src="/bridge-api/game-runtime-bridge.js"></script>
+<script src="/bridge-api/game-i18n.js"></script>
+<script src="i18n.js"></script>
+<script src="game-core.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

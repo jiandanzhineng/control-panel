@@ -116,6 +116,18 @@
       { "slug": "kuoyue-sensor", "role": "optional", "note": "开启提肛或寸止附加规则时的独立气压传感器。", "noteEn": "Standalone pressure sensor for optional pelvic or edging rules." }
     ]
   },
+  "heart-rate-trainer": {
+    "summary": "需自备标准蓝牙心率带（胸带或臂带），并搭配电击设备（背单词电击强化器，或寸止01主机+电极贴）；可选配跳蛋震动预警与自动锁。",
+    "summaryEn": "Requires a standard Bluetooth BLE heart rate strap (chest or arm band) plus a shock device (Vocabulary Shock Trainer, or CunZhi-01 main unit with electrode pads). Vibration warning and auto lock are optional.",
+    "docPath": "",
+    "items": [
+      { "slug": "beidanci", "role": "kit", "note": "一套配齐电击提醒主机与电极贴。", "noteEn": "Complete shock reminder kit with electrode pads." },
+      { "slug": "cunzhi01-host", "role": "required", "note": "可用已有分体主机替代套装，搭配电极贴。", "noteEn": "Use your existing standalone main unit with electrode pads." },
+      { "slug": "electrode-pad-wire", "role": "required", "note": "选用分体电击主机时需配电极贴和线。", "noteEn": "Pair these electrode pads and wire with the standalone main unit." },
+      { "slug": "mini-vibe-2", "role": "optional", "note": "低心率容忍期内先震动预警提醒加速。", "noteEn": "Provides vibration warning before shock during the low-HR grace window." },
+      { "slug": "zidongsuo-auto-lock", "role": "optional", "note": "运动开始自动上锁，坚持完成时长后解锁。", "noteEn": "Locks at start and unlocks automatically upon finishing the workout." }
+    ]
+  },
   "device-control": {
     "summary": "无需特定套件，连接任意硅基之下自研或已兼容的第三方蓝牙设备即可调试。",
     "summaryEn": "No specific kit is required. Connect any UnderSilicon device or a compatible third-party Bluetooth device to test it.",

@@ -1,5 +1,5 @@
 <template>
-  <PlayCarrierShell v-if="!embedded" mode="iframe" :stoppable="!!iframeSrc || waiting" :stopping="stopping" @stop="stop">
+  <PlayCarrierShell v-if="!embedded" mode="iframe" :stoppable="!!iframeSrc || waiting || !!(localSnapshot as any)?.running" :stopping="stopping" @stop="stop">
     <div class="runtime-view">
       <div v-if="connection === 'reconnecting'" class="connection-alert">
         <el-alert type="warning" :closable="false" :title="t('gameRuntime.reconnecting')" show-icon />
@@ -53,6 +53,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import PlayCarrierShell from '../components/PlayCarrierShell.vue'
@@ -107,6 +108,7 @@ const pageResolving = ref(false)
 const pageError = ref('')
 let stream: GameStateStreamHandle | null = null
 let stopWait: (() => void) | null = null
+let unmounted = false
 let failures = 0
 let lastParams: Record<string, unknown> = {}
 let lastGameId = ''
@@ -173,6 +175,10 @@ async function beginDeferred() {
   const params = JSON.parse(String(route.query.params || '{}'))
   try {
     await startGameRuntime({ gameId: id, deviceMap, params })
+    if (unmounted) {
+      await stopGameRuntime('cancelled_during_start').catch(() => {})
+      return
+    }
   } catch (error: any) {
     // 被控端本地玩法在跑（HOST_PLAY_ACTIVE）等：给出可读提示，不进入等待按钮态
     waiting.value = false
@@ -204,9 +210,14 @@ async function retryLoad() {
 async function stop() {
   if (props.source === 'remote') return
   stopping.value = true
-  try { await stopGameRuntime('user_stop') } catch (_) {}
-  stopping.value = false
-  finish('user_stop')
+  try {
+    await stopGameRuntime('user_stop')
+    finish('user_stop')
+  } catch (err) {
+    ElMessage.error(friendlyMessage(err, (key) => t(key)))
+  } finally {
+    stopping.value = false
+  }
 }
 
 function finish(reason: string) {
@@ -270,7 +281,7 @@ onMounted(async () => {
   stream.start()
 })
 
-onBeforeUnmount(() => { stream?.stop(); stream = null; stopWait?.(); stopWait = null })
+onBeforeUnmount(() => { unmounted = true; stream?.stop(); stream = null; stopWait?.(); stopWait = null })
 </script>
 
 <style scoped>

@@ -15,6 +15,7 @@ const GAME_SOURCES = {
   'pressure-edging': 'backend/games/pressure-edging',
   'maid-punishment': 'backend/games/maid-punishment',
   'rc-car': 'backend/games/rc-car',
+  'heart-rate-trainer': 'backend/games/heart-rate-trainer',
   'surge-edging': 'play-registry/games/surge-edging',
 };
 const GAME_IDS = Object.keys(GAME_SOURCES);
@@ -23,6 +24,7 @@ const HOST_CORES = {
   'surge-edging': ['backend/game-runtime/cores/surge-edging-core.js', 'SurgeEdgingCore', './surge-edging-manifest'],
   'maid-punishment': ['backend/games/maid-punishment/game-core.js', 'MaidPunishmentCore'],
   'rc-car': ['backend/games/rc-car/game-core.js', 'RcCarCore'],
+  'heart-rate-trainer': ['backend/games/heart-rate-trainer/game-core.js', 'HeartRateTrainerCore'],
 };
 
 // Both repositories store text with LF. Keep checksums stable after a Git
@@ -90,7 +92,8 @@ function buildMobileCore(gameId) {
 }
 function buildMobilePressureCore() { return buildMobileCore('pressure-edging-v2'); }
 
-function sourceFiles() {
+function sourceFiles(excluded = new Set()) {
+  const activeGameIds = GAME_IDS.filter(id => !excluded.has(id));
   const files = new Map();
   function collect(dir, prefix) {
     for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -98,14 +101,14 @@ function sourceFiles() {
       else files.set(`${prefix}/${item.name}`, readSource(path.join(dir, item.name)));
     }
   }
-  for (const id of GAME_IDS) collect(path.join(ROOT, GAME_SOURCES[id]), id);
+  for (const id of activeGameIds) collect(path.join(ROOT, GAME_SOURCES[id]), id);
   files.set('_shared/game-i18n.js', readSource(path.join(ROOT, 'backend/public/game-i18n.js')));
   const pressureHtml = files.get('pressure-edging-v2/index.html').toString();
   const manifest = JSON.parse(pressureHtml.match(/<script[^>]*id="game-manifest"[^>]*>([\s\S]*?)<\/script>/)[1]);
   files.set('_shared/pressure-edging-v2-manifest.json', Buffer.from(JSON.stringify(manifest, null, 2) + '\n'));
   files.set('pressure-edging-v2/game-core.js', Buffer.from(buildMobilePressureCore()));
   const hostManifests = [], renderers = {};
-  for (const id of Object.keys(HOST_CORES)) {
+  for (const id of Object.keys(HOST_CORES).filter(k => !excluded.has(k))) {
     const html = files.get(`${id}/index.html`).toString();
     hostManifests.push(JSON.parse(html.match(/<script[^>]*id="game-manifest"[^>]*>([\s\S]*?)<\/script>/)[1]));
     files.set(`${id}/game-core.js`, Buffer.from(buildMobileCore(id)));
@@ -122,14 +125,73 @@ function sourceFiles() {
   files.set('_shared/game-host-manifests.json', Buffer.from(JSON.stringify(hostManifests, null, 2) + '\n'));
   files.set('_shared/game-host-renderers.json', Buffer.from(JSON.stringify(renderers, null, 2) + '\n'));
   const checksums = Object.fromEntries([...files].map(([name, data]) => [name, crypto.createHash('sha256').update(data).digest('hex')]));
-  files.set('_shared/shared-game-sources.json', Buffer.from(JSON.stringify({ source: 'control-panel', games: GAME_IDS, files: checksums }, null, 2) + '\n'));
+  files.set('_shared/shared-game-sources.json', Buffer.from(JSON.stringify({ source: 'control-panel', games: activeGameIds, files: checksums }, null, 2) + '\n'));
   return files;
 }
 
-function sync(mobileRoot, check = false) {
+function sync(mobileRoot, check = false, excluded = new Set()) {
   const differences = [];
-  for (const [relative, data] of sourceFiles()) {
+  for (const [relative, data] of sourceFiles(excluded)) {
     const target = path.join(mobileRoot, 'assets/games', relative);
+    if (fs.existsSync(target) && fs.readFileSync(target).equals(data)) continue;
+    differences.push(relative);
+    if (!check) { fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, data); }
+  }
+  if (check && differences.length) throw new Error(`Shared game assets differ:\n${differences.join('\n')}`);
+  return differences;
+}
+
+function syncSelected(mobileRoot, selectedIds, check = false) {
+  const only = new Set(selectedIds);
+  const generated = sourceFiles();
+  const gamesRoot = path.join(mobileRoot, 'assets/games');
+  const existingSourcesPath = path.join(gamesRoot, '_shared/shared-game-sources.json');
+  const existingManifestsPath = path.join(gamesRoot, '_shared/game-host-manifests.json');
+  const existingRenderersPath = path.join(gamesRoot, '_shared/game-host-renderers.json');
+
+  const existingSources = JSON.parse(fs.readFileSync(existingSourcesPath, 'utf8'));
+  const existingManifests = JSON.parse(fs.readFileSync(existingManifestsPath, 'utf8'));
+  const existingRenderers = JSON.parse(fs.readFileSync(existingRenderersPath, 'utf8'));
+
+  const updates = new Map();
+  for (const [rel, data] of generated) {
+    const top = rel.split('/')[0];
+    if (only.has(top)) updates.set(rel, data);
+  }
+
+  for (const id of only) {
+    if (!HOST_CORES[id]) continue;
+    const html = generated.get(`${id}/index.html`).toString();
+    const manifest = JSON.parse(html.match(/<script[^>]*id="game-manifest"[^>]*>([\s\S]*?)<\/script>/)[1]);
+    const idx = existingManifests.findIndex(m => m.id === id);
+    if (idx >= 0) existingManifests[idx] = manifest;
+    else existingManifests.push(manifest);
+    existingRenderers[id] = JSON.parse(generated.get('_shared/game-host-renderers.json').toString())[id];
+  }
+
+  updates.set('_shared/game-host-manifests.json', Buffer.from(JSON.stringify(existingManifests, null, 2) + '\n'));
+  updates.set('_shared/game-host-renderers.json', Buffer.from(JSON.stringify(existingRenderers, null, 2) + '\n'));
+
+  const nextGames = [...existingSources.games];
+  for (const id of GAME_IDS) {
+    if (only.has(id) && !nextGames.includes(id)) nextGames.push(id);
+  }
+  const nextFiles = { ...existingSources.files };
+  for (const key of Object.keys(nextFiles)) {
+    if (only.has(key.split('/')[0])) delete nextFiles[key];
+  }
+  for (const [rel, data] of updates) {
+    nextFiles[rel] = crypto.createHash('sha256').update(data).digest('hex');
+  }
+  updates.set('_shared/shared-game-sources.json', Buffer.from(JSON.stringify({
+    source: 'control-panel',
+    games: nextGames,
+    files: nextFiles,
+  }, null, 2) + '\n'));
+
+  const differences = [];
+  for (const [relative, data] of updates) {
+    const target = path.join(gamesRoot, relative);
     if (fs.existsSync(target) && fs.readFileSync(target).equals(data)) continue;
     differences.push(relative);
     if (!check) { fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, data); }
@@ -141,8 +203,13 @@ function sync(mobileRoot, check = false) {
 if (require.main === module) {
   const args = process.argv.slice(2);
   const mobileRoot = args.find(arg => !arg.startsWith('--'));
-  if (!mobileRoot) throw new Error('Usage: node scripts/sync-mobile-games.js <mobile-repo> [--check]');
-  const changed = sync(path.resolve(mobileRoot), args.includes('--check'));
-  console.log(`Shared games ${args.includes('--check') ? 'verified' : 'synchronized'} (${changed.length} changed files).`);
+  if (!mobileRoot) throw new Error('Usage: node scripts/sync-mobile-games.js <mobile-repo> [--check] [--exclude=id1,id2] [--only=id1,id2]');
+  const onlyArg = args.find(arg => arg.startsWith('--only='));
+  const excludeArg = args.find(arg => arg.startsWith('--exclude='));
+  const check = args.includes('--check');
+  const changed = onlyArg
+    ? syncSelected(path.resolve(mobileRoot), onlyArg.slice('--only='.length).split(',').map(s => s.trim()).filter(Boolean), check)
+    : sync(path.resolve(mobileRoot), check, new Set(excludeArg ? excludeArg.slice('--exclude='.length).split(',').map(s => s.trim()).filter(Boolean) : []));
+  console.log(`Shared games ${check ? 'verified' : 'synchronized'} (${changed.length} changed files).`);
 }
-module.exports = { buildMobileCore, buildMobilePressureCore, sourceFiles, sync };
+module.exports = { buildMobileCore, buildMobilePressureCore, sourceFiles, sync, syncSelected };
